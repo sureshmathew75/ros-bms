@@ -1,0 +1,49 @@
+# ROS Business Management System – Architecture
+
+## Core Files
+
+### App.jsx
+Main application UI and workflow logic.
+
+Contains:
+- shop dashboards
+- CRM lead pipeline
+- sales statistics
+- dispatch tracking
+- announcements
+- attendance
+- login / authentication
+
+### constants.js
+UI configuration and visual constants.
+
+Contains:
+- shop themes
+- stage colors
+- avatar styles
+- chart datasets
+- logo assets
+
+### utils.js
+Pure helper functions.
+
+Contains:
+- formatCurrency()
+- formatNumber()
+- formatDate()
+
+These helpers must remain side-effect free.
+
+### index.js
+React application entry point.
+
+---
+
+## Rules for Code Changes
+
+When modifying the project:
+
+1. Do NOT modify helper logic inside utils.js unless required.
+2. Do NOT modify constant values in constants.js unless updating UI configuration.
+3. Business workflow lives in App.jsx.
+4. UI formatting should use helpers from utils.js.
