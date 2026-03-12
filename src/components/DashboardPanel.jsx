@@ -1,4 +1,5 @@
 import KPI from "./ui/KPI";
+import PanelContainer from "./ui/PanelContainer";
 import {
   AreaChart, Area,
   XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
@@ -18,7 +19,7 @@ export default function DashboardPanel({
   totRev
 }) {
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:22}}>
+    <PanelContainer gap={22}>
       <div style={{background:shop.sb,borderRadius:18,padding:"24px 28px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"relative",overflow:"hidden"}}>
         <div style={{position:"absolute",right:-30,top:-30,width:180,height:180,borderRadius:"50%",background:"rgba(255,255,255,0.07)"}}/>
         <div style={{position:"relative",zIndex:1}}>
@@ -136,6 +137,6 @@ export default function DashboardPanel({
           }
         </div>
       </div>
-    </div>
+    </PanelContainer>
   );
 }

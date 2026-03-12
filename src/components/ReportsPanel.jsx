@@ -1,7 +1,10 @@
+import PanelContainer from "./ui/PanelContainer";
+import SectionHeader from "./ui/SectionHeader";
+
 export default function ReportsPanel({ shop, showPdf }) {
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:20}}>
-      <h2 style={{margin:0,fontSize:22,fontWeight:900,color:"#0f172a"}}>Reports — {shop.name}</h2>
+    <PanelContainer>
+      <SectionHeader>Reports — {shop.name}</SectionHeader>
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(255px,1fr))",gap:14}}>
         {[{t:"Sales Report",d:"Sales summary with customer breakdown",ic:"📊"},{t:"Purchase Report",d:"Supplier purchases & payment status",ic:"📦"},{t:"P&L Statement",d:"Revenue, expenses and profit/loss",ic:"💹"},{t:"Stock Report",d:"Inventory levels and valuation",ic:"🏷️"},{t:"Customer Report",d:"Customer activity and lifetime value",ic:"👥"},{t:"Expense Report",d:"Expense breakdown by category",ic:"💳"}].map(r=>(
           <div key={r.t} style={{background:"white",borderRadius:16,padding:22,border:"1px solid #f1f5f9",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",cursor:"pointer",transition:"all 0.18s"}}
@@ -17,6 +20,6 @@ export default function ReportsPanel({ shop, showPdf }) {
           </div>
         ))}
       </div>
-    </div>
+    </PanelContainer>
   );
 }

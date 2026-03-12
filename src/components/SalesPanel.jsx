@@ -1,3 +1,5 @@
+import PanelContainer from "./ui/PanelContainer";
+
 export default function SalesPanel({
   Badge,
   customers,
@@ -22,7 +24,7 @@ export default function SalesPanel({
   TD
 }) {
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:20}}>
+    <PanelContainer>
       {(()=>{
         const now=new Date();
         const periodFilter=(s)=>{
@@ -303,6 +305,6 @@ export default function SalesPanel({
           </div>
         </div>
       </div>
-    </div>
+    </PanelContainer>
   );
 }

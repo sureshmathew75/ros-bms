@@ -1,10 +1,12 @@
 import KPI from "./ui/KPI";
+import PanelContainer from "./ui/PanelContainer";
+import SectionHeader from "./ui/SectionHeader";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from "recharts";
 
 export default function AnalyticsPanel({ customers, fmt, MONTHLY, sales, shop, shopId, totRev }) {
   return (
-    <div style={{display:"flex",flexDirection:"column",gap:22}}>
-      <h2 style={{margin:0,fontSize:22,fontWeight:900,color:"#0f172a"}}>Analytics — {shop.name}</h2>
+    <PanelContainer gap={22}>
+      <SectionHeader>Analytics — {shop.name}</SectionHeader>
       <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:14}}>
         <KPI label="Conversion Rate"  val="68%"  change="3%"  plus={true} icon="🎯" color={shop.k[0]}/>
         <KPI label="Avg Order Value"   val={fmt(shopId,Math.round(totRev/(sales.length||1)))} change="5%" plus={true} icon="💰" color={shop.k[1]}/>
@@ -41,6 +43,6 @@ export default function AnalyticsPanel({ customers, fmt, MONTHLY, sales, shop, s
           ))}
         </div>
       </div>
-    </div>
+    </PanelContainer>
   );
 }

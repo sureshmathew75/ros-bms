@@ -885,9 +885,6 @@ return(
           )}
 
           {/* ─── LOGISTICS ─── */}
-          )}
-
-          {/* ─── LOGISTICS ─── */}
           {tab==="logistics"&&(
             <LogisticsPanel logs={logs} onNewShipment={()=>setModal("new-shipment")} shop={shop}/>
           )}
