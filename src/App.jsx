@@ -1,16 +1,18 @@
-import KPI from "./components/ui/KPI";
 import StatCard from "./components/StatCard";
 import { useState, useEffect, useRef, useCallback } from "react";
 import CommandPalette from "./components/CommandPalette";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import AgentsPanel from "./components/AgentsPanel";
 import CustomersPanel from "./components/CustomersPanel";
+import DashboardPanel from "./components/DashboardPanel";
 import DocumentsPanel from "./components/DocumentsPanel";
 import ExpensesPanel from "./components/ExpensesPanel";
+import InvoicesPanel from "./components/InvoicesPanel";
 import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
 import PurchasesPanel from "./components/PurchasesPanel";
 import ReportsPanel from "./components/ReportsPanel";
+import SalesPanel from "./components/SalesPanel";
 import SuppliersPanel from "./components/SuppliersPanel";
 import {
   L_SEL,
@@ -23,12 +25,6 @@ import {
   STAGE_THEME
 } from "./constants";
 import { formatCurrency, formatDate, formatNumber } from "./utils";
-import {
-  AreaChart, Area,
-  XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
-  PieChart, Pie, Cell
-} from "recharts";
-
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -607,69 +603,6 @@ const ShopDashboard=({shopId,onBack})=>{
     setModal(null);
   };
 
-  /* KPI card — white card, coloured icon bg */
-  const KPI=({label,val,change,plus,icon,color,sub})=>{
-  const [hovered,setHovered]=useState(false);
-  // Soft pastel card backgrounds keyed by colour
-  const getBg=(c)=>{
-    if(!c)return{card:"#f8fafc",border:"#e2e8f0",label:"#64748b"};
-    const map={
-      "#059669":{card:"linear-gradient(145deg,#ecfdf5,#f0fdf9)",border:"#a7f3d0",label:"#059669"},
-      "#10b981":{card:"linear-gradient(145deg,#ecfdf5,#f0fdf9)",border:"#a7f3d0",label:"#059669"},
-      "#ef4444":{card:"linear-gradient(145deg,#fff5f5,#fef2f2)",border:"#fecaca",label:"#dc2626"},
-      "#f59e0b":{card:"linear-gradient(145deg,#fffbeb,#fef9ec)",border:"#fde68a",label:"#d97706"},
-      "#3b82f6":{card:"linear-gradient(145deg,#eff6ff,#f0f7ff)",border:"#bfdbfe",label:"#2563eb"},
-      "#6366f1":{card:"linear-gradient(145deg,#eef2ff,#f0f1ff)",border:"#c7d2fe",label:"#4f46e5"},
-      "#8b5cf6":{card:"linear-gradient(145deg,#f5f3ff,#f3f0ff)",border:"#ddd6fe",label:"#7c3aed"},
-      "#ec4899":{card:"linear-gradient(145deg,#fdf2f8,#fef0f7)",border:"#fbcfe8",label:"#db2777"},
-      "#e95597":{card:"linear-gradient(145deg,#fdf2f8,#fef0f7)",border:"#fbcfe8",label:"#db2777"},
-      "#14b8a6":{card:"linear-gradient(145deg,#f0fdfa,#f0fefb)",border:"#99f6e4",label:"#0d9488"},
-      "#64748b":{card:"linear-gradient(145deg,#f8fafc,#f1f5f9)",border:"#e2e8f0",label:"#475569"},
-      "#0ea5e9":{card:"linear-gradient(145deg,#f0f9ff,#f0faff)",border:"#bae6fd",label:"#0284c7"},
-    };
-    return map[c]||{card:"linear-gradient(145deg,"+c+"12,"+c+"08)",border:c+"33",label:c};
-  };
-  const bg=getBg(color);
-  return(
-    <div
-      onMouseEnter={()=>setHovered(true)}
-      onMouseLeave={()=>setHovered(false)}
-      style={{
-        background:bg.card,
-        borderRadius:18,
-        padding:"20px 22px",
-        boxShadow:hovered?"0 10px 28px "+color+"22":"0 2px 8px "+color+"12",
-        border:"1px solid "+(hovered?bg.border:bg.border+"bb"),
-        display:"flex",flexDirection:"column",gap:14,
-        cursor:"default",
-        transition:"all 0.2s ease",
-        transform:hovered?"translateY(-8px)":"translateY(0)",
-        position:"relative",overflow:"hidden",
-       transform:hovered?"translateY(-8px)":"translateY(0)",
-        boxShadow:"0 12px 28px rgba(0,0,0,0.08)",
-        transition:"all 0.18s ease",
-      }}>
-      {/* Decorative accent bar */}
-      <div style={{position:"absolute",top:0,left:0,right:0,height:3,background:"linear-gradient(90deg,"+color+","+color+"66)",borderRadius:"18px 18px 0 0"}}/>
-      {/* Large decorative bg circle */}
-      <div style={{position:"absolute",right:-24,bottom:-24,width:96,height:96,borderRadius:"50%",background:color+"12",pointerEvents:"none"}}/>
-      <div style={{position:"absolute",right:20,bottom:-10,width:40,height:40,borderRadius:"50%",background:color+"08",pointerEvents:"none"}}/>
-      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",position:"relative"}}>
-        <div style={{width:46,height:46,borderRadius:14,background:"white",border:"1px solid "+bg.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,boxShadow:"0 2px 8px "+color+"18"}}>{icon}</div>
-        <div style={{display:"flex",alignItems:"center",gap:3,background:plus?"#dcfce7":"#fee2e2",borderRadius:999,padding:"4px 10px",border:plus?"1px solid #bbf7d0":"1px solid #fecaca"}}>
-          <span style={{fontSize:11,fontWeight:800,color:plus?"#15803d":"#dc2626"}}>{plus?"↑":"↓"} {change}</span>
-        </div>
-      </div>
-      <div style={{position:"relative"}}>
-        <p style={{margin:"0 0 4px",fontSize:10,color:bg.label,fontWeight:800,textTransform:"uppercase",letterSpacing:"0.07em",opacity:0.8}}>{label}</p>
-        <p style={{margin:0,fontSize:26,fontWeight:900,color:"#0f172a",letterSpacing:"-0.03em",lineHeight:1}}>{val}</p>
-        {sub&&<p style={{margin:"5px 0 0",fontSize:11,color:bg.label,fontWeight:600}}>{sub}</p>}
-      </div>
-    </div>
-  );
-};
-
-  const TH=({ch})=><th style={{textAlign:"left",padding:"10px 16px",fontSize:11,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"1px solid #f1f5f9",whiteSpace:"nowrap"}}>{ch}</th>;
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
 
   const [pdfMode,setPdfMode]=useState(false);
@@ -881,447 +814,45 @@ return(
 
           {/* ─── DASHBOARD ─── */}
           {tab==="dashboard"&&(
-            <div style={{display:"flex",flexDirection:"column",gap:22}}>
-              {/* welcome banner — gradient matches sidebar */}
-              <div style={{background:shop.sb,borderRadius:18,padding:"24px 28px",display:"flex",alignItems:"center",justifyContent:"space-between",position:"relative",overflow:"hidden"}}>
-                <div style={{position:"absolute",right:-30,top:-30,width:180,height:180,borderRadius:"50%",background:"rgba(255,255,255,0.07)"}}/>
-                <div style={{position:"relative",zIndex:1}}>
-                  <p style={{margin:"0 0 4px",fontSize:13,color:"rgba(255,255,255,0.70)",fontWeight:500}}>Welcome back, Admin</p>
-                  <h2 style={{margin:"0 0 6px",fontSize:24,fontWeight:900,color:"white",letterSpacing:"-0.5px"}}>Business Command Center</h2>
-                  <p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.60)"}}>{shop.tagline} · Live data</p>
-                </div>
-                <div style={{background:"white",borderRadius:12,padding:"8px 16px",display:"inline-flex",alignItems:"center",boxShadow:"0 4px 16px rgba(0,0,0,0.15)",position:"relative",zIndex:1}}>
-                  <img src={shop.logo} alt="" style={{height:40,width:"auto",maxWidth:200,objectFit:"contain",display:"block"}}/>
-                </div>
-              </div>
-
-              {/* quick action cards */}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:18}}>
-                {shop.quickCards.map((qc,i)=>(
-                  <button key={i}
-                    style={{background:qc.g,borderRadius:14,padding:"16px 10px",border:"none",cursor:"pointer",
-                      display:"flex",flexDirection:"column",alignItems:"center",gap:7,
-                      boxShadow:"0 3px 12px rgba(0,0,0,0.13)",fontFamily:"inherit",transition:"all 0.16s"}}
-                    onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow="0 8px 22px rgba(0,0,0,0.18)";}}
-                    onMouseLeave={e=>{e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="0 3px 12px rgba(0,0,0,0.13)";}}>
-                    <span style={{fontSize:20}}>{qc.ic}</span>
-                    <span style={{fontSize:9.5,fontWeight:800,color:"white",letterSpacing:"0.06em",textAlign:"center",lineHeight:1.35}}>{qc.l}</span>
-                  </button>
-                ))}
-              </div>
-
-              {/* KPI row */}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:14}}>
-                {[
-                  {label:"Today's Sales",  val:fmt(shopId,shop.todaySales),  change:"12%",plus:true, icon:"🛒",color:shop.k[0],sub:sales.length+" orders"},
-                  {label:"Monthly Revenue", val:fmt(shopId,shop.monthRevenue),change:"8%", plus:true, icon:"📈",color:shop.k[1],sub:"Progress 68%"},
-                  {label:"Pending Orders",  val:shop.pendingOrders,           change:"2",  plus:false,icon:"⏳",color:shop.k[2],sub:""},
-                  {label:"Low Stock",       val:lowStk.length+" items",       change:"3",  plus:false,icon:"⚠️",color:"#ef4444",sub:""},
-                  {label:"Receivables",     val:fmt(shopId,totRev),           change:"5%", plus:true, icon:"💰",color:shop.k[4],sub:""},
-                  {label:"Payables",        val:fmt(shopId,pendAmt),          change:"3%", plus:false,icon:"💳",color:shop.k[5],sub:""},
-                ].map((k,i)=><KPI key={i} {...k}/>)}
-              </div>
-
-              {/* charts */}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(320px,1fr))",gap:20}}>
-                <div style={{background:"white",borderRadius:16,padding:"22px 24px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",border:"1px solid #f1f5f9"}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
-                    <h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>Sales Performance</h3>
-                    <div style={{display:"flex",gap:5}}>
-                      {["7D","30D","3M"].map((p,i)=>(
-                        <button key={p} style={{padding:"4px 11px",borderRadius:8,border:"1px solid #e2e8f0",background:i===1?shop.accent:"white",color:i===1?"white":"#64748b",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>{p}</button>
-                      ))}
-                    </div>
-                  </div>
-                  <ResponsiveContainer width="100%" height={210}>
-                    <AreaChart data={MONTHLY}>
-                      <defs>
-                        <linearGradient id={"ag"+shopId} x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor={shop.chartLine} stopOpacity={0.30}/>
-                          <stop offset="100%" stopColor={shop.chartLine} stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9"/>
-                      <XAxis dataKey="m" tick={{fontSize:11,fill:"#94a3b8"}} axisLine={false} tickLine={false}/>
-                      <YAxis tick={{fontSize:11,fill:"#94a3b8"}} axisLine={false} tickLine={false}/>
-                      <Tooltip contentStyle={{borderRadius:12,border:"1px solid #f1f5f9",fontSize:13,boxShadow:"0 4px 14px rgba(0,0,0,0.10)"}}/>
-                      <Area type="monotone" dataKey="v" stroke={shop.chartLine} strokeWidth={2.5} fill={"url(#ag"+shopId+")"} dot={{fill:shop.chartLine,r:3.5}} activeDot={{r:6,strokeWidth:0}}/>
-                    </AreaChart>
-                  </ResponsiveContainer>
-                </div>
-
-                <div style={{background:"white",borderRadius:16,padding:"22px 24px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",border:"1px solid #f1f5f9"}}>
-                  <h3 style={{margin:"0 0 4px",fontSize:15,fontWeight:800,color:"#0f172a"}}>Revenue Breakdown</h3>
-                  <ResponsiveContainer width="100%" height={160}>
-                    <PieChart>
-                      <Pie data={PIE_D} cx="50%" cy="50%" innerRadius={42} outerRadius={72} paddingAngle={3} dataKey="value">
-                        {PIE_D.map((_,i)=><Cell key={i} fill={shop.pie[i%shop.pie.length]}/>)}
-                      </Pie>
-                      <Tooltip contentStyle={{borderRadius:10,fontSize:12}}/>
-                    </PieChart>
-                  </ResponsiveContainer>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:8,justifyContent:"center"}}>
-                    {PIE_D.map((d,i)=>(
-                      <div key={d.name} style={{display:"flex",alignItems:"center",gap:4}}>
-                        <span style={{width:8,height:8,borderRadius:"50%",background:shop.pie[i%shop.pie.length],display:"inline-block"}}/>
-                        <span style={{fontSize:11,color:"#64748b"}}>{d.name}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* recent + low stock */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20}}>
-                <div style={{background:"white",borderRadius:16,padding:"22px 24px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",border:"1px solid #f1f5f9"}}>
-                  <h3 style={{margin:"0 0 14px",fontSize:15,fontWeight:800,color:"#0f172a"}}>Recent Orders</h3>
-                  {sales.slice(0,4).map(s=>(
-                    <div key={s.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",background:"#f8fafc",borderRadius:10,marginBottom:8}}>
-                      <div>
-                        <p style={{margin:0,fontSize:12,fontWeight:700,color:shop.accent,fontFamily:"DM Mono,monospace"}}>{s.id}</p>
-                        <p style={{margin:0,fontSize:12,color:"#64748b"}}>{s.customer}</p>
-                      </div>
-                      <div style={{textAlign:"right"}}>
-                        <p style={{margin:0,fontSize:14,fontWeight:900,color:"#0f172a"}}>{fmt(shopId,s.amount)}</p>
-                        <Badge l={s.pay}/>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-                <div style={{background:"white",borderRadius:16,padding:"22px 24px",boxShadow:"0 1px 6px rgba(0,0,0,0.06)",border:"1px solid #f1f5f9"}}>
-                  <h3 style={{margin:"0 0 14px",fontSize:15,fontWeight:800,color:"#0f172a"}}>⚠️ Low Stock Alerts</h3>
-                  {lowStk.length===0
-                    ?<div style={{textAlign:"center",padding:"28px 0",color:"#94a3b8"}}><p style={{fontSize:36,margin:"0 0 8px"}}>✅</p><p style={{margin:0,fontSize:13}}>All products well stocked</p></div>
-                    :lowStk.map(p=>(
-                      <div key={p.id} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 12px",background:"#fff5f5",border:"1px solid #fecaca",borderRadius:10,marginBottom:8}}>
-                        <div>
-                          <p style={{margin:0,fontSize:13,fontWeight:700,color:"#1e293b"}}>{p.name}</p>
-                          <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>{p.sku}</p>
-                        </div>
-                        <span style={{background:"#fee2e2",color:"#dc2626",border:"1px solid #fecaca",borderRadius:999,padding:"3px 12px",fontSize:12,fontWeight:700}}>{p.stock} left</span>
-                      </div>
-                    ))
-                  }
-                </div>
-              </div>
-            </div>
+            <DashboardPanel
+              Badge={Badge}
+              fmt={fmt}
+              lowStk={lowStk}
+              MONTHLY={MONTHLY}
+              pendAmt={pendAmt}
+              PIE_D={PIE_D}
+              sales={sales}
+              shop={shop}
+              shopId={shopId}
+              totRev={totRev}
+            />
           )}
 
           {/* ─── SALES ─── */}
           {tab==="sales"&&(
-            <div style={{display:"flex",flexDirection:"column",gap:20}}>
-              {/* ── SALES OVERVIEW BANNER ── */}
-              {(()=>{
-                // Filter sales by selected period
-                const now=new Date();
-                const periodFilter=(s)=>{
-                  if(!s.date)return false;
-                  const d=new Date(s.date);
-                  if(salesPeriod==="day"){
-                    return d.toDateString()===now.toDateString();
-                  } else if(salesPeriod==="week"){
-                    const weekAgo=new Date(now);weekAgo.setDate(now.getDate()-7);
-                    return d>=weekAgo;
-                  } else if(salesPeriod==="month"){
-                    return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();
-                  } else if(salesPeriod==="year"){
-                    return d.getFullYear()===now.getFullYear();
-                  } else if(salesPeriod==="lifetime"){
-                    return true;
-                  }
-                  return true;
-                };
-                // Previous period filter for trend comparison
-                const prevFilter=(s)=>{
-                  if(salesPeriod==="lifetime")return false;
-                  if(!s.date)return false;
-                  const d=new Date(s.date);
-                  if(salesPeriod==="day"){
-                    const yd=new Date(now);yd.setDate(now.getDate()-1);
-                    return d.toDateString()===yd.toDateString();
-                  } else if(salesPeriod==="week"){
-                    const w2=new Date(now);w2.setDate(now.getDate()-14);
-                    const w1=new Date(now);w1.setDate(now.getDate()-7);
-                    return d>=w2&&d<w1;
-                  } else if(salesPeriod==="month"){
-                    const pm=now.getMonth()===0?11:now.getMonth()-1;
-                    const py=now.getMonth()===0?now.getFullYear()-1:now.getFullYear();
-                    return d.getMonth()===pm&&d.getFullYear()===py;
-                  } else if(salesPeriod==="year"){
-                    return d.getFullYear()===now.getFullYear()-1;
-                  }
-                  return false;
-                };
-
-                const cur=sales.filter(periodFilter);
-                const prev=sales.filter(prevFilter);
-
-                const curRevenue=cur.reduce((s,x)=>s+(Number(x.amount)||0),0);
-                const prevRevenue=prev.reduce((s,x)=>s+(Number(x.amount)||0),0);
-                const curOrders=cur.length;
-                const prevOrders=prev.length;
-                const curQty=cur.reduce((s,x)=>s+(Number(x.qty)||1),0);
-                const prevQty=prev.reduce((s,x)=>s+(Number(x.qty)||1),0);
-                const curAOV=curOrders>0?curRevenue/curOrders:0;
-                const prevAOV=prevOrders>0?prevRevenue/prevOrders:0;
-
-                const trend=(cur,prev)=>{
-                  if(prev===0)return{pct:cur>0?100:0,plus:true};
-                  const p=Math.round(((cur-prev)/prev)*100);
-                  return{pct:Math.abs(p),plus:p>=0};
-                };
-                const tRev=trend(curRevenue,prevRevenue);
-                const tOrd=trend(curOrders,prevOrders);
-                const tQty=trend(curQty,prevQty);
-                const tAOV=trend(curAOV,prevAOV);
-
-                const periodLabel={day:"vs yesterday",week:"vs last week",month:"vs last month",year:"vs last year",lifetime:"all time"}[salesPeriod];
-
-                // Mini sparkline data — last 6 data points
-                const sparkData=(()=>{
-                  const pts=[];
-                  for(let i=5;i>=0;i--){
-                    const d=new Date(now);
-                    if(salesPeriod==="day") d.setHours(now.getHours()-i*3);
-                    else if(salesPeriod==="week") d.setDate(now.getDate()-i);
-                    else if(salesPeriod==="month") d.setDate(now.getDate()-i*4);
-                    else d.setMonth(now.getMonth()-i);
-                    pts.push({t:d,v:Math.round(Math.random()*500+200)});
-                  }
-                  return pts;
-                })();
-
-                const CARDS=[
-                  {label:"Total Orders",val:curOrders,raw:curOrders,trend:tOrd,icon:"📋",color:"#3b82f6",fmt:(v)=>v},
-                  {label:"Total Quantity",val:curQty,raw:curQty,trend:tQty,icon:"📦",color:"#8b5cf6",fmt:(v)=>v+" units"},
-                  {label:"Total Revenue",val:curRevenue,raw:curRevenue,trend:tRev,icon:"💰",color:shop.k[0],fmt:(v)=>fmt(shopId,v)},
-                  {label:"Avg Order Value",val:curAOV,raw:curAOV,trend:tAOV,icon:"📈",color:"#f59e0b",fmt:(v)=>fmt(shopId,parseFloat(v.toFixed(2)))},
-                ];
-
-                return(
-                  <div style={{background:"white",borderRadius:20,border:"1px solid #f1f5f9",boxShadow:"0 2px 16px rgba(0,0,0,0.06)",overflow:"hidden"}}>
-                    {/* Header */}
-                    <div style={{padding:"18px 24px 14px",borderBottom:"1px solid #f8fafc",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
-                      <div>
-                        <h3 style={{margin:0,fontSize:15,fontWeight:900,color:"#0f172a",letterSpacing:"-0.01em"}}>Sales Overview</h3>
-                        <p style={{margin:"2px 0 0",fontSize:12,color:"#94a3b8"}}>Performance metrics for {shop.name}</p>
-                      </div>
-                      {/* Period Toggle */}
-                      <div style={{display:"flex",alignItems:"center",gap:3,background:"#f8fafc",borderRadius:12,padding:4,border:"1px solid #f1f5f9"}}>
-                        {[["day","Day"],["week","Week"],["month","Month"],["year","Year"],["lifetime","Lifetime"]].map(([id,lbl])=>(
-                          <button key={id} onClick={()=>setSalesPeriod(id)}
-                            style={{
-                              padding:"6px 16px",borderRadius:9,border:"none",cursor:"pointer",
-                              fontFamily:"inherit",fontSize:12,fontWeight:700,
-                              transition:"all 0.18s ease",
-                              background:salesPeriod===id?shop.accent:"transparent",
-                              color:salesPeriod===id?"white":"#64748b",
-                              boxShadow:salesPeriod===id?"0 2px 8px "+shop.accent+"44":"none",
-                            }}>{lbl}</button>
-                        ))}
-                      </div>
-                    </div>
-                    {/* KPI Grid */}
-                    <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:0}}>
-                      {CARDS.map((card,i)=>{
-                        const isLast=i===CARDS.length-1;
-                        const spark=[40,55,35,70,60,80,card.raw>0?90:20].map(v=>v+Math.random()*10);
-                        const sparkMax=Math.max(...spark);
-                        const sparkMin=Math.min(...spark);
-                        const sparkRange=sparkMax-sparkMin||1;
-                        const W=80,H=32;
-                        const pts=spark.map((v,j)=>{
-                          const x=(j/(spark.length-1))*W;
-                          const y=H-((v-sparkMin)/sparkRange)*(H-6)-3;
-                          return `${x},${y}`;
-                        }).join(" ");
-                        const fillPts=`0,${H} ${pts} ${W},${H}`;
-                        return(
-                          <div key={card.label}
-                            style={{
-                              padding:"24px 26px 20px",
-                              borderRight:isLast?"none":"1px solid "+card.color+"22",
-                              position:"relative",
-                              transition:"all 0.22s ease",
-                              background:"linear-gradient(145deg,"+card.color+"11,"+card.color+"06)",
-                              cursor:"default",
-                            }}
-                            onMouseEnter={e=>{
-                              e.currentTarget.style.background="linear-gradient(145deg,"+card.color+"22,"+card.color+"0f)";
-                              e.currentTarget.style.boxShadow="inset 0 0 0 1px "+card.color+"33, 0 8px 28px "+card.color+"22";
-                              e.currentTarget.style.transform="translateY(-2px)";
-                              const icon=e.currentTarget.querySelector(".card-icon");
-                              if(icon){icon.style.background=card.color;icon.style.transform="scale(1.12)";}
-                            }}
-                            onMouseLeave={e=>{
-                              e.currentTarget.style.background="linear-gradient(145deg,"+card.color+"11,"+card.color+"06)";
-                              e.currentTarget.style.boxShadow="none";
-                              e.currentTarget.style.transform="translateY(0)";
-                              const icon=e.currentTarget.querySelector(".card-icon");
-                              if(icon){icon.style.background=card.color+"18";icon.style.transform="scale(1)";}
-                            }}>
-                            {/* Top accent bar */}
-                            <div style={{position:"absolute",top:0,left:0,right:0,height:4,background:"linear-gradient(90deg,"+card.color+","+card.color+"66)",borderRadius:"0 0 0 0"}}/>
-                            {/* Decorative circle */}
-                            <div style={{position:"absolute",right:-20,top:-20,width:90,height:90,borderRadius:"50%",background:card.color+"0e",pointerEvents:"none"}}/>
-                            <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:16,position:"relative"}}>
-                              <div className="card-icon" style={{width:44,height:44,borderRadius:14,background:card.color+"18",border:"1px solid "+card.color+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,transition:"all 0.22s ease",boxShadow:"0 2px 8px "+card.color+"22"}}>{card.icon}</div>
-                              {/* Trend badge */}
-                              <div style={{display:"flex",alignItems:"center",gap:3,background:card.trend.plus?"#f0fdf4":"#fff5f5",borderRadius:999,padding:"5px 10px",border:card.trend.plus?"1px solid #86efac":"1px solid #fca5a5",boxShadow:card.trend.plus?"0 1px 4px #bbf7d044":"0 1px 4px #fecaca44"}}>
-                                <span style={{fontSize:10,fontWeight:900,color:card.trend.plus?"#16a34a":"#dc2626"}}>{card.trend.plus?"▲":"▼"} {card.trend.pct}%</span>
-                              </div>
-                            </div>
-                            <p style={{margin:"0 0 4px",fontSize:10,fontWeight:800,color:card.color,textTransform:"uppercase",letterSpacing:"0.09em",opacity:0.9,position:"relative"}}>{card.label}</p>
-                            <p style={{margin:"0 0 2px",fontSize:30,fontWeight:900,color:"#0f172a",letterSpacing:"-0.04em",lineHeight:1,position:"relative"}}>{card.fmt(card.val)}</p>
-                            <p style={{margin:"0 0 16px",fontSize:11,color:card.trend.plus?"#16a34a":"#dc2626",fontWeight:700,position:"relative"}}>
-                              {card.trend.plus?"+":"-"}{card.trend.pct}% {periodLabel}
-                            </p>
-                            {/* Sparkline */}
-                            <svg width={W} height={H} style={{display:"block",opacity:0.7}}>
-                              <defs>
-                                <linearGradient id={"sg"+i} x1="0" y1="0" x2="0" y2="1">
-                                  <stop offset="0%" stopColor={card.color} stopOpacity="0.25"/>
-                                  <stop offset="100%" stopColor={card.color} stopOpacity="0.02"/>
-                                </linearGradient>
-                              </defs>
-                              <polygon points={fillPts} fill={"url(#sg"+i+")"}/>
-                              <polyline points={pts} fill="none" stroke={card.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                            </svg>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })()}
-              <div style={{background:"white",borderRadius:18,padding:20,boxShadow:"0 2px 16px rgba(0,0,0,0.07)",border:"1px solid #f1f5f9",overflow:"hidden"}}>
-                <div style={{padding:"16px 20px",borderBottom:"1px solid "+shop.accent+"12",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:"linear-gradient(135deg,"+shop.accent+"0a,"+shop.accent+"04)"}}>
-                  <div style={{display:"flex",alignItems:"center",gap:8,background:"white",border:"1px solid "+shop.accent+"44",borderRadius:10,padding:"7px 12px",flex:1,minWidth:180}}>
-                    <span style={{color:"#94a3b8"}}>🔍</span>
-                    <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search invoice or customer…"
-                      style={{border:"none",background:"transparent",outline:"none",fontSize:13,color:"#374151",width:"100%",fontFamily:"inherit"}}/>
-                  </div>
-                  <select style={{border:"1px solid #e2e8f0",borderRadius:10,padding:"7px 11px",fontSize:13,color:"#374151",background:"white",fontFamily:"inherit"}}>
-                    <option>All Status</option><option>Paid</option><option>Pending</option>
-                  </select>
-                  <select style={{border:"1px solid #e2e8f0",borderRadius:10,padding:"7px 11px",fontSize:13,color:"#374151",background:"white",fontFamily:"inherit"}}>
-                    <option>All Tags</option><option>VIP</option><option>New Customer</option><option>Wholesale</option>
-                  </select>
-                  <button onClick={()=>setModal("import-sales")}
-                    style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
-                    <span>⬇</span> Import
-                  </button>
-                  <button onClick={()=>setModal("export-sales")}
-                    style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:10,border:"1px solid "+shop.accent+"66",background:shop.accentBg,color:shop.accentText,fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
-                    <span>⬆</span> Export
-                  </button>
-                  <button onClick={()=>setModal("new-sale")} style={{padding:"7px 18px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px "+shop.accent+"44"}}>+ New Sale</button>
-                </div>
-                <div style={{overflowX:"auto"}}>
-                  <table style={{width:"100%",borderCollapse:"collapse"}}>
-                    <thead><tr style={{background:"linear-gradient(90deg,#0f172a,#1e293b)"}}>{["Inv.","Date","Customer Name","Amount","Qty","Status","Tag","Remarks","Actions"].map(h=><th key={h} style={{textAlign:"left",padding:"11px 16px",fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.85)",textTransform:"uppercase",letterSpacing:"0.07em",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
-                    <tbody>
-                      {filtSales.map((s,i)=>(
-                        <tr key={s.id} style={{borderBottom:"1px solid #f8fafc",background:i%2===0?"white":"#fafafa",position:"relative"}}
-                          onMouseEnter={e=>e.currentTarget.style.background=shop.accent+"0d"}
-                          onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"white":"#fafafa"}>
-                          <TD ch={s.id} mono c={shop.accent} fw={700}/>
-                          <TD ch={formatDate(s.date)} c="#64748b"/>
-                          <td style={{padding:"12px 20px"}} onClick={e=>{
-                              e.stopPropagation();
-                              // Look in CUSTOMERS first, fall back to data stored on the sale itself
-                              const c=CUSTOMERS.find(x=>x.name===s.customer)||{
-                                id:s.id,
-                                name:s.customer,
-                                phone:s.contact||s.phone||"—",
-                                whatsapp:s.contact||s.phone||"—",
-                                address:s.address||"—",
-                                notes:s.remarks||s.rem||"",
-                                purchases:1,
-                                spend:s.amount||0,
-                                last:s.date||"—",
-                                tag:s.tag||"",
-                              };
-                              setSelCustomer(c);
-                            }}>
-                            <span style={{fontWeight:600,color:"#1e293b",cursor:"pointer",borderBottom:"1px dashed #94a3b8",paddingBottom:1}}>{s.customer}</span>
-                          </td>
-                          <TD ch={fmt(shopId,s.amount)} fw={900} c="#0f172a"/>
-                          <TD ch={s.qty||"1"} c="#475569" fw={600}/>
-                          <td style={{padding:"10px 16px"}}><Badge l={s.ful||s.status||"PENDING"}/></td>
-                          <td style={{padding:"10px 16px"}}>{s.tag&&<Badge l={s.tag}/>}</td>
-                          <TD ch={s.rem||"—"} c="#94a3b8"/>
-                          {/* ── ACTIONS CELL ── */}
-                          <td style={{padding:"8px 12px",whiteSpace:"nowrap"}} onClick={e=>e.stopPropagation()}>
-                            <div style={{display:"flex",alignItems:"center",gap:4}}>
-                              {/* Preview */}
-                              <button title="Preview" onClick={()=>setSelRow(s)}
-                                style={{width:30,height:30,borderRadius:8,border:"1px solid #e2e8f0",background:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:"#64748b",transition:"all 0.15s"}}
-                                onMouseEnter={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.borderColor=shop.accent;e.currentTarget.style.color=shop.accent;}}
-                                onMouseLeave={e=>{e.currentTarget.style.background="white";e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.color="#64748b";}}>
-                                👁
-                              </button>
-                              {/* Edit */}
-                              <button title="Edit" onClick={()=>{setEditRow(s);setModal("edit-sale");}}
-                                style={{width:30,height:30,borderRadius:8,border:"1px solid #e2e8f0",background:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:"#64748b",transition:"all 0.15s"}}
-                                onMouseEnter={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.borderColor=shop.accent;e.currentTarget.style.color=shop.accent;}}
-                                onMouseLeave={e=>{e.currentTarget.style.background="white";e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.color="#64748b";}}>
-                                ✏️
-                              </button>
-                              {/* More actions ⋯ */}
-                              <div style={{position:"relative"}}>
-                                <button title="More actions" onClick={()=>setOpenMenu(openMenu===s.id?null:s.id)}
-                                  style={{width:30,height:30,borderRadius:8,border:"1px solid #e2e8f0",background:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:"#64748b",transition:"all 0.15s",fontWeight:900}}
-                                  onMouseEnter={e=>{e.currentTarget.style.background="#f8fafc";e.currentTarget.style.borderColor="#94a3b8";}}
-                                  onMouseLeave={e=>{e.currentTarget.style.background="white";e.currentTarget.style.borderColor="#e2e8f0";}}>
-                                  ⋯
-                                </button>
-                                {openMenu===s.id&&(
-                                  <div style={{position:"absolute",right:0,top:34,zIndex:50,background:"white",borderRadius:14,boxShadow:"0 8px 32px rgba(0,0,0,0.14)",border:"1px solid #f1f5f9",minWidth:200,overflow:"hidden"}}
-                                    onMouseLeave={()=>setOpenMenu(null)}>
-                                    <div style={{background:shop.accent,padding:"10px 14px"}}>
-                                      <p style={{margin:0,fontSize:11,fontWeight:800,color:"white",textTransform:"uppercase",letterSpacing:"0.06em"}}>Actions</p>
-                                    </div>
-                                    {[
-                                      {ic:"🛡",  label:"Send Care Catalog",    action:()=>alert("Sending Care Catalog to "+s.customer)},
-                                      {ic:"💬",  label:"Send Feedback Request",action:()=>alert("Sending Feedback Request to "+s.customer)},
-                                      {ic:"⭐",  label:"Record Feedback",      action:()=>alert("Recording feedback for "+s.id)},
-                                      null,
-                                      {ic:"🚚",  label:"Mark Dispatched",      action:()=>{setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>x.id===s.id?{...x,ful:"DISPATCHED"}:x)}));setOpenMenu(null);}},
-                                      {ic:"↩️",  label:"Manage Return",        action:()=>{setEditRow(s);setModal("edit-sale");setOpenMenu(null);}},
-                                      null,
-                                      {ic:"🧾",  label:"View Invoice",         action:()=>{setInvoiceRow(s);setOpenMenu(null);}},
-                                      null,
-                                      {ic:"🗑",  label:"Delete",               action:()=>{if(window.confirm("Delete sale "+s.id+"?"))setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).filter(x=>x.id!==s.id)}));setOpenMenu(null);}, red:true},
-                                    ].map((item,mi)=>item===null
-                                      ? <div key={mi} style={{height:1,background:"#f1f5f9",margin:"2px 0"}}/>
-                                      : <button key={mi} onClick={()=>{item.action();setOpenMenu(null);}}
-                                          style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",border:"none",background:"transparent",cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:600,color:item.red?"#dc2626":"#374151",textAlign:"left",transition:"background 0.12s"}}
-                                          onMouseEnter={e=>e.currentTarget.style.background=item.red?"#fff5f5":shop.accentBg}
-                                          onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                                          <span style={{fontSize:15,width:20,textAlign:"center"}}>{item.ic}</span>
-                                          {item.label}
-                                        </button>
-                                    )}
-                                  </div>
-                                )}
-                              </div>
-                            </div>
-                          </td>
-                        </tr>
-                      ))}
-                      {filtSales.length===0&&<tr><td colSpan={9} style={{textAlign:"center",padding:"60px",color:"#94a3b8",fontSize:14}}>No results found.</td></tr>}
-                    </tbody>
-                  </table>
-                </div>
-                <div style={{padding:"11px 18px",borderTop:"1px solid #f8fafc",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                  <span style={{fontSize:12,color:"#94a3b8"}}>{filtSales.length} records</span>
-                  <div style={{display:"flex",gap:4}}>
-                    {[1,2,3].map(p=><button key={p} style={{width:30,height:30,borderRadius:8,border:p===1?"none":"1px solid #e2e8f0",background:p===1?shop.accent:"white",color:p===1?"white":"#374151",fontSize:13,cursor:"pointer",fontWeight:700}}>{p}</button>)}
-                  </div>
-                </div>
-              </div>
-            </div>
+            <SalesPanel
+              Badge={Badge}
+              customers={CUSTOMERS}
+              filtSales={filtSales}
+              fmt={fmt}
+              formatDate={formatDate}
+              openMenu={openMenu}
+              search={search}
+              sales={sales}
+              salesPeriod={salesPeriod}
+              setEditRow={setEditRow}
+              setInvoiceRow={setInvoiceRow}
+              setModal={setModal}
+              setOpenMenu={setOpenMenu}
+              setSalesData={setSalesData}
+              setSearch={setSearch}
+              setSelCustomer={setSelCustomer}
+              setSelRow={setSelRow}
+              setSalesPeriod={setSalesPeriod}
+              shop={shop}
+              shopId={shopId}
+              TD={TD}
+            />
           )}
 
           {/* ─── PURCHASES ─── */}
@@ -1394,15 +925,7 @@ return(
 
           {/* INVOICES placeholder */}
           {tab==="invoices"&&(
-            <div style={{display:"flex",flexDirection:"column",gap:20}}>
-              <h2 style={{margin:0,fontSize:22,fontWeight:900,color:"#0f172a"}}>Invoices</h2>
-              <div style={{background:"white",borderRadius:16,padding:60,textAlign:"center",border:"1px solid #f1f5f9"}}>
-                <div style={{fontSize:48,marginBottom:14}}>🧾</div>
-                <h3 style={{margin:"0 0 8px",fontSize:18,fontWeight:800,color:"#374151"}}>Invoice Management</h3>
-                <p style={{color:"#94a3b8",fontSize:14,margin:"0 0 22px"}}>Generate, send and track invoices for {shop.name}</p>
-                <button style={{padding:"11px 28px",borderRadius:12,border:"none",background:shop.accent,color:"white",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>+ Create Invoice</button>
-              </div>
-            </div>
+            <InvoicesPanel shop={shop}/>
           )}
         </main>
       </div>
