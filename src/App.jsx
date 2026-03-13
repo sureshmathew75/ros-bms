@@ -217,6 +217,12 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings})=>{
   const [hov,setHov]=useState(null);
   const [cmd,setCmd]=useState(false);
   const [statHov,setStatHov]=useState(null);
+  const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
+  useEffect(()=>{
+    const h=()=>setIsMobile(window.innerWidth<768);
+    window.addEventListener("resize",h);
+    return()=>window.removeEventListener("resize",h);
+  },[]);
   useEffect(()=>{
     const h=e=>{if(e.key==="/"){e.preventDefault();setCmd(true);}if(e.key==="Escape")setCmd(false);};
     window.addEventListener("keydown",h);
@@ -276,60 +282,58 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings})=>{
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&family=Arimo:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 
       {/* ── header ── */}
-      <header className="mob-selector-header" style={{background:"white",borderBottom:"1px solid #e2e8f0",height:60,display:"flex",alignItems:"center",padding:"0 32px",justifyContent:"space-between",boxShadow:"0 1px 4px rgba(0,0,0,0.06)",position:"sticky",top:0,zIndex:40}}>
-        <div style={{display:"flex",alignItems:"center",gap:12}}>
-          <div style={{width:38,height:38,borderRadius:11,background:"linear-gradient(135deg,#2563eb,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(37,99,235,0.30)"}}>
+      <header style={{background:"white",borderBottom:"1px solid #e2e8f0",height:isMobile?52:60,display:"flex",alignItems:"center",padding:isMobile?"0 14px":"0 32px",justifyContent:"space-between",boxShadow:"0 1px 4px rgba(0,0,0,0.06)",position:"sticky",top:0,zIndex:40}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{width:36,height:36,borderRadius:11,background:"linear-gradient(135deg,#2563eb,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(37,99,235,0.30)",flexShrink:0}}>
             <span style={{color:"white",fontWeight:900,fontSize:17}}>R</span>
           </div>
           <div>
-            <span style={{fontWeight:900,fontSize:16,color:"#0f172a",letterSpacing:"-0.3px"}}>ROS</span>
-            <span className="mob-hide" style={{fontWeight:400,fontSize:14,color:"#94a3b8",marginLeft:8}}>Business Management</span>
+            <span style={{fontWeight:900,fontSize:15,color:"#0f172a",letterSpacing:"-0.3px"}}>ROS</span>
+            {!isMobile&&<span style={{fontWeight:400,fontSize:14,color:"#94a3b8",marginLeft:8}}>Business Management</span>}
           </div>
         </div>
-        <div className="mob-selector-right" style={{display:"flex",alignItems:"center",gap:14}}>
-          <span className="mob-hide" style={{fontSize:10,fontWeight:600,color:"#94a3b8",letterSpacing:"0.04em"}}>
+        <div style={{display:"flex",alignItems:"center",gap:isMobile?8:14}}>
+          {!isMobile&&<span style={{fontSize:10,fontWeight:600,color:"#94a3b8",letterSpacing:"0.04em"}}>
             Developed by <strong style={{color:"#2563eb"}}>ROS Nexus</strong>
-          </span>
-          <button className="mob-hide" onClick={()=>setCmd(true)} style={{display:"flex",alignItems:"center",gap:8,background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"7px 16px",color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+          </span>}
+          {!isMobile&&<button onClick={()=>setCmd(true)} style={{display:"flex",alignItems:"center",gap:8,background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"7px 16px",color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
             🔍 Search… <kbd style={{background:"#e2e8f0",borderRadius:4,padding:"1px 7px",fontSize:11,marginLeft:4}}>/</kbd>
-          </button>
+          </button>}
           {user?.role==="superadmin"&&(
             <button onClick={onOpenSettings}
-              style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",
+              style={{display:"flex",alignItems:"center",gap:6,padding:isMobile?"7px 10px":"7px 14px",
                 background:"linear-gradient(135deg,#1d4ed8,#7c3aed)",border:"none",
                 borderRadius:10,cursor:"pointer",color:"white",fontSize:12,fontWeight:700,
-                fontFamily:"inherit",boxShadow:"0 2px 8px rgba(37,99,235,0.35)",
-                transition:"all 0.15s"}}
-              onMouseEnter={e=>e.currentTarget.style.opacity="0.88"}
-              onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-              ⚙️ Settings
+                fontFamily:"inherit",boxShadow:"0 2px 8px rgba(37,99,235,0.35)"}}>
+              ⚙️{!isMobile&&" Settings"}
             </button>
           )}
-          <div style={{display:"flex",alignItems:"center",gap:8,padding:"4px 12px 4px 4px",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:999,cursor:"pointer"}}
+          <div style={{display:"flex",alignItems:"center",gap:8,padding:"4px 10px 4px 4px",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:999,cursor:"pointer"}}
             onClick={onLogout} title="Logout">
-            <div style={{width:28,height:28,borderRadius:"50%",background:user?.avatar||"linear-gradient(135deg,#2563eb,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11}}>
+            <div style={{width:28,height:28,borderRadius:"50%",background:user?.avatar||"linear-gradient(135deg,#2563eb,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11,flexShrink:0}}>
               {user?.initials||"A"}
             </div>
-            <span style={{fontSize:13,fontWeight:600,color:"#374151"}}>{user?.name||"Admin"}</span>
-            <span style={{fontSize:10,color:"#94a3b8",marginLeft:2}}>· Logout</span>
+            {!isMobile&&<span style={{fontSize:13,fontWeight:600,color:"#374151"}}>{user?.name||"Admin"}</span>}
+            {!isMobile&&<span style={{fontSize:10,color:"#94a3b8",marginLeft:2}}>· Logout</span>}
+            {isMobile&&<span style={{fontSize:11,color:"#94a3b8",fontWeight:600}}>Out</span>}
           </div>
         </div>
       </header>
 
-      <main className="mob-main-padding" style={{maxWidth:1160,margin:"0 auto",padding:"60px 24px 80px"}}>
+      <main style={{maxWidth:1160,margin:"0 auto",padding:isMobile?"16px 14px 60px":"60px 24px 80px"}}>
 
         {/* ── hero ── */}
-        <div className="mob-hero-section" style={{textAlign:"center",marginBottom:52}}>
-          <div style={{display:"inline-flex",alignItems:"center",gap:6,background:"white",border:"1px solid #e2e8f0",borderRadius:999,padding:"5px 16px",fontSize:12,fontWeight:700,color:"#64748b",marginBottom:20,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
+        <div style={{textAlign:"center",marginBottom:isMobile?24:52}}>
+          <div style={{display:"inline-flex",alignItems:"center",gap:6,background:"white",border:"1px solid #e2e8f0",borderRadius:999,padding:"5px 16px",fontSize:12,fontWeight:700,color:"#64748b",marginBottom:16,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
             <span style={{width:6,height:6,borderRadius:"50%",background:"#22c55e",display:"inline-block"}}/>
             3 Active Workspaces
           </div>
-          <h1 className="mob-hero-title" style={{fontSize:42,fontWeight:900,color:"#0f172a",letterSpacing:"-1.5px",lineHeight:1.1,margin:"0 0 12px"}}>Select Your Workspace</h1>
-          <p className="mob-hero-sub" style={{fontSize:15,color:"#64748b",margin:0}}>Choose a shop to manage sales, purchases, logistics and analytics.</p>
+          <h1 style={{fontSize:isMobile?26:42,fontWeight:900,color:"#0f172a",letterSpacing:isMobile?"-0.5px":"-1.5px",lineHeight:1.1,margin:"0 0 10px"}}>Select Your Workspace</h1>
+          <p style={{fontSize:isMobile?13:15,color:"#64748b",margin:0}}>Choose a shop to manage sales, purchases, logistics and analytics.</p>
         </div>
 
         {/* ── 3 shop cards ── */}
-        <div className="mob-shop-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:24,marginBottom:48}}>
+        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:isMobile?14:24,marginBottom:isMobile?24:48}}>
           {SHOPS.filter(sh=>user?.role==="superadmin"||user?.role==="admin"||(user?.shops||[]).includes(sh.id)).map(shop=>{
             const h=hov===shop.id;
             const isStaff=user?.role==="staff";
@@ -591,7 +595,12 @@ const ShopDashboard=({shopId,onBack,user,onLogout})=>{
   const invSubtotal = _invInc ? parseFloat((_invEntered/(1+_invTaxR)).toFixed(2)) : _invEntered;
   const invTaxAmt   = parseFloat((invSubtotal*_invTaxR).toFixed(2));
   const invGrand    = parseFloat((invSubtotal+invTaxAmt).toFixed(2));
-  const isMobile=typeof window!=="undefined"&&window.innerWidth<768;
+  const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
+  useEffect(()=>{
+    const h=()=>setIsMobile(window.innerWidth<768);
+    window.addEventListener("resize",h);
+    return()=>window.removeEventListener("resize",h);
+  },[]);
   const [coll,setColl]=useState(false);
   const [mobileOpen,setMobileOpen]=useState(false);
   const [salesData,setSalesData]=useState(SALES_SEED);
@@ -1166,7 +1175,7 @@ return(
             return(
               <div>
                 {/* ── QUICK ACTION CARDS ── */}
-                <div className="mob-quick-grid" style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:12,marginBottom:24}}>
+                <div className="mob-quick-grid" style={{display:"grid",gridTemplateColumns:isMobile?"repeat(3,1fr)":"repeat(6,1fr)",gap:isMobile?8:12,marginBottom:24}}>
                   {quickActions.map((q,i)=>{
                     const isH=hov==="qa-"+i;
                     return(
@@ -1232,7 +1241,7 @@ return(
                 </div>
 
                 {/* ── 6 KPI CARDS — 9:16 portrait ratio ── */}
-                <div className="mob-kpi-grid" style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:14,marginBottom:28}}>
+                <div className="mob-kpi-grid" style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(6,1fr)",gap:isMobile?10:14,marginBottom:28}}>
                   {kpis.map((k,i)=>{
                     const isH=hov==="kpi-"+i;
                     return(
@@ -1240,11 +1249,12 @@ return(
                         onMouseEnter={()=>setHov("kpi-"+i)}
                         onMouseLeave={()=>setHov(null)}
                         style={{
-                          borderRadius:18,overflow:"hidden",
+                          borderRadius:isMobile?14:18,overflow:"hidden",
                           background:k.grad,
                           position:"relative",
                           cursor:"default",
-                          aspectRatio:"9/16",
+                          aspectRatio:isMobile?"unset":"9/16",
+                          minHeight:isMobile?120:undefined,
                           display:"flex",flexDirection:"column",
                           transform:isH?"translateY(-6px) scale(1.03)":"translateY(0) scale(1)",
                           transition:"all 0.25s cubic-bezier(0.34,1.56,0.64,1)",
