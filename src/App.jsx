@@ -158,9 +158,9 @@ const Badge=({l})=>{
   return <span style={{display:"inline-flex",alignItems:"center",padding:"2px 10px",borderRadius:999,fontSize:11,fontWeight:700,background:b.bg,color:b.c,border:"1px solid "+b.b}}>{l}</span>;
 };
 const Modal=({title,onClose,accent,children})=>(
-  <div style={{position:"fixed",inset:0,zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={onClose}>
+  <div style={{position:"fixed",inset:0,zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
     <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(6px)"}}/>
-    <div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.20)",width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto"}} onClick={e=>e.stopPropagation()}>
+    <div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.20)",width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"18px 24px",borderBottom:"1px solid #f1f5f9",background:accent+"12",borderRadius:"20px 20px 0 0"}}>
         <h3 style={{margin:0,fontSize:16,fontWeight:800,color:"#0f172a"}}>{title}</h3>
         <button onClick={onClose} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:20,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>×</button>
