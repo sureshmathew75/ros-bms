@@ -591,7 +591,9 @@ const ShopDashboard=({shopId,onBack,user,onLogout})=>{
   const invSubtotal = _invInc ? parseFloat((_invEntered/(1+_invTaxR)).toFixed(2)) : _invEntered;
   const invTaxAmt   = parseFloat((invSubtotal*_invTaxR).toFixed(2));
   const invGrand    = parseFloat((invSubtotal+invTaxAmt).toFixed(2));
+  const isMobile=typeof window!=="undefined"&&window.innerWidth<768;
   const [coll,setColl]=useState(false);
+  const [mobileOpen,setMobileOpen]=useState(false);
   const [salesData,setSalesData]=useState(SALES_SEED);
 
   const shop=SHOPS.find(s=>s.id===shopId);
@@ -730,17 +732,32 @@ return(
           box-shadow:0 4px 12px rgba(0,0,0,0.25);
         }
         .sb-nav-btn:hover .sb-tooltip{opacity:1;}
+        @media(max-width:768px){
+          .mobile-hide{display:none!important;}
+          .topbar-title{font-size:14px!important;}
+          .topbar-sub{display:none!important;}
+          .main-content{padding:12px!important;}
+        }
       `}</style>
+
+      {/* ══ MOBILE OVERLAY BACKDROP ══ */}
+      {isMobile&&mobileOpen&&(
+        <div onClick={()=>setMobileOpen(false)} style={{
+          position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:39,
+        }}/>
+      )}
 
       {/* ══ SIDEBAR ══ */}
       <aside style={{
-        width:coll?72:240,
-        transition:"width 0.28s cubic-bezier(0.4,0,0.2,1)",
+        width:isMobile?260:(coll?72:240),
+        transition:"transform 0.28s cubic-bezier(0.4,0,0.2,1), width 0.28s cubic-bezier(0.4,0,0.2,1)",
         background:shop.sb,
         display:"flex",flexDirection:"column",
-        position:"sticky",top:0,height:"100vh",flexShrink:0,zIndex:40,
+        position:isMobile?"fixed":"sticky",
+        top:0,left:0,height:"100vh",flexShrink:0,zIndex:40,
         overflow:"hidden",
         boxShadow:"4px 0 24px rgba(0,0,0,0.22)",
+        transform:isMobile?(mobileOpen?"translateX(0)":"translateX(-100%)"):"none",
       }}>
 
         {/* ── brand / logo area ── */}
@@ -832,7 +849,7 @@ return(
                   return(
                     <button key={n.id}
                       className="sb-nav-btn"
-                      onClick={()=>setTab(n.id)}
+                      onClick={()=>{setTab(n.id);if(isMobile)setMobileOpen(false);}}
                       style={{
                         display:"flex",alignItems:"center",
                         gap:coll?0:10,
@@ -983,7 +1000,7 @@ return(
           boxShadow:"0 2px 12px "+shop.accent+"14",
         }}>
           <div style={{display:"flex",alignItems:"center",gap:14}}>
-            <button onClick={()=>setColl(c=>!c)}
+            <button onClick={()=>isMobile?setMobileOpen(o=>!o):setColl(c=>!c)}
               style={{width:36,height:36,borderRadius:10,border:"1px solid "+shop.accent+"33",background:shop.accentBg,cursor:"pointer",fontSize:15,color:shop.accent,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}}
               onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.color="white";}}
               onMouseLeave={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accent;}}>
