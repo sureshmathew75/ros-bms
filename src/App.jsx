@@ -1,10 +1,6 @@
-import StatCard from "./components/StatCard";
 import { useState, useEffect, useRef, useCallback } from "react";
 import CommandPalette from "./components/CommandPalette";
 import AnalyticsPanel from "./components/AnalyticsPanel";
-import AgentsPanel from "./components/AgentsPanel";
-import CustomersPanel from "./components/CustomersPanel";
-import DashboardPanel from "./components/DashboardPanel";
 import DocumentsPanel from "./components/DocumentsPanel";
 import ExpensesPanel from "./components/ExpensesPanel";
 import InvoicesPanel from "./components/InvoicesPanel";
@@ -43,7 +39,7 @@ const SHOPS = [
     id:"ros-selections", name:"ROS Selections UK", short:"Selections",
     flag:"🇬🇧", currency:"GBP", symbol:"£", logo:L_SEL,
     tagline:"Buy with Confidence",
-    todaySales:2500, pendingOrders:8, stockValue:"£84k", monthRevenue:38400,
+    todaySales:0, pendingOrders:0, stockValue:"—", monthRevenue:0,
     // Sidebar: rich emerald — readable white text
     sb:"linear-gradient(160deg,#059669 0%,#10b981 60%,#34d399 100%)",
     cardBg:"linear-gradient(135deg,#059669 0%,#34d399 100%)",
@@ -70,7 +66,7 @@ const SHOPS = [
     id:"ros-hairlines", name:"ROS Hairlines UK", short:"Hairlines",
     flag:"🇬🇧", currency:"GBP", symbol:"£", logo:L_HAIR,
     tagline:"Reclaim Your Inner Confidence",
-    todaySales:1800, pendingOrders:5, stockValue:"£322k", monthRevenue:29600,
+    todaySales:0, pendingOrders:0, stockValue:"—", monthRevenue:0,
     // Sidebar: slate gray — matches card colour scheme
     sb:"linear-gradient(160deg,#1e293b 0%,#334155 50%,#475569 100%)",
     cardBg:"linear-gradient(135deg,#334155 0%,#475569 60%,#64748b 100%)",
@@ -96,7 +92,7 @@ const SHOPS = [
     id:"ros-india", name:"ROS INDIA", short:"India",
     flag:"🇮🇳", currency:"INR", symbol:"₹", logo:L_IND,
     tagline:"Be Confident with Indian Style",
-    todaySales:75000, pendingOrders:12, stockValue:"₹5.2L", monthRevenue:1240000,
+    todaySales:0, pendingOrders:0, stockValue:"—", monthRevenue:0,
     // Sidebar: deep navy (#00143c) → rose (#dc5078) — exact logo colours
     sb:"linear-gradient(160deg,#1a0a2e 0%,#7d1a4a 50%,#e95597 100%)",
     cardBg:"linear-gradient(135deg,#e95597 0%,#c73d80 100%)",
@@ -121,96 +117,16 @@ const SHOPS = [
 ];
 
 /* ─── seed data ─────────────────────────────────────── */
-const CUSTOMERS = [
-  {id:1,name:"John Carter",  phone:"+44 7894561223",whatsapp:"+44 7894561223",address:"123 Oak Street, London",    notes:"Saved on Sales Team Phone",purchases:5, spend:1900, last:"12 Apr 2024",tag:"VIP"},
-  {id:2,name:"Emily Watson", phone:"+44 7712345678",whatsapp:"+44 7712345678",address:"45 Rose Lane, Manchester",  notes:"Prefers WhatsApp",          purchases:3, spend:960,  last:"28 Mar 2024",tag:"New Customer"},
-  {id:3,name:"Michael Brown",phone:"+44 7698765432",whatsapp:"+44 7698765432",address:"78 Pine Ave, Birmingham",   notes:"Corporate account",         purchases:8, spend:4800, last:"5 May 2024", tag:"VIP"},
-  {id:4,name:"Priya Sharma", phone:"+91 9876543210",whatsapp:"+91 9876543210",address:"22 MG Road, Mumbai",       notes:"Bulk orders only",           purchases:12,spend:145000,last:"10 May 2024",tag:"Wholesale"},
-  {id:5,name:"Raj Patel",    phone:"+91 9988776655",whatsapp:"+91 9988776655",address:"5 Park Street, Delhi",     notes:"Seasonal buyer",             purchases:4, spend:48000,last:"1 May 2024", tag:"Regular"},
-  {id:6,name:"Sarah Johnson",phone:"+44 7756123456",whatsapp:"+44 7756123456",address:"10 Baker Street, London",  notes:"",                           purchases:2, spend:640,  last:"20 Apr 2024",tag:"New Customer"},
-];
-const SUPPLIERS=[
-  {id:1,name:"Elite Supplies",          contact:"James Elite", phone:"+44 2012345678",email:"james@elitesupplies.com", category:"Hair Products",terms:"Net 30"},
-  {id:2,name:"Global Hair Distributors",contact:"Maria Global",phone:"+44 1612233445",email:"maria@ghd.com",           category:"Extensions",   terms:"Net 15"},
-  {id:3,name:"UniTrade Imports",        contact:"Sam Uni",     phone:"+44 1712233445",email:"sam@unitrade.com",         category:"Accessories",  terms:"Net 30"},
-  {id:4,name:"Mumbai Textiles",         contact:"Anita Shah",  phone:"+91 2234567890",email:"anita@mbtextiles.in",     category:"Fabric",       terms:"Net 45"},
-  {id:5,name:"Delhi Wholesale",         contact:"Rakesh Gupta",phone:"+91 1134567890",email:"rakesh@delhiwholesale.in",category:"Clothing",     terms:"Advance"},
-];
-const PRODUCTS=[
-  {id:1,name:"Premium Hair Extensions 20\"",sku:"PHE-20", cat:"Extensions",cost:45, sell:120,stock:34, min:10},
-  {id:2,name:"Luxury Wig Collection",         sku:"LWC-001",cat:"Wigs",      cost:180,sell:450,stock:8,  min:5},
-  {id:3,name:"Hair Care Bundle",              sku:"HCB-01", cat:"Care",      cost:22, sell:55, stock:120,min:20},
-  {id:4,name:"Clip-in Extensions Set",        sku:"CIE-SET",cat:"Extensions",cost:30, sell:85, stock:3,  min:10},
-  {id:5,name:"Silk Press Oil",                sku:"SPO-01", cat:"Oils",      cost:8,  sell:24, stock:200,min:30},
-];
-const AGENTS=[
-  {id:1,name:"DHL Express",type:"Courier",contact:"0345 740 740",  url:"https://dhl.com/track"},
-  {id:2,name:"Royal Mail", type:"Postal", contact:"03457 740740",  url:"https://royalmail.com/track"},
-  {id:3,name:"FedEx",      type:"Courier",contact:"03456 007809",  url:"https://fedex.com/track"},
-  {id:4,name:"India Post", type:"Postal", contact:"1800-266-6868", url:"https://indiapost.gov.in"},
-];
-const SALES_SEED={
-  "ros-selections":[
-    {id:"SI-1023",date:"2024-05-12",customer:"John Carter",  amount:450, pay:"Paid",   ful:"Shipped",   tag:"VIP",         rem:"Express delivery"},
-    {id:"SI-1022",date:"2024-05-12",customer:"Emily Watson", amount:320, pay:"Pending",ful:"New",        tag:"New Customer",rem:""},
-    {id:"SI-1018",date:"2024-05-11",customer:"Michael Brown",amount:600, pay:"Paid",   ful:"Completed", tag:"",            rem:"Bulk corporate"},
-    {id:"SI-1015",date:"2024-05-10",customer:"Sarah Johnson",amount:185, pay:"Paid",   ful:"Processing",tag:"New Customer",rem:""},
-    {id:"SI-1014",date:"2024-05-09",customer:"John Carter",  amount:340, pay:"Paid",   ful:"Completed", tag:"VIP",         rem:""},
-  ],
-  "ros-hairlines":[
-    {id:"SH-0892",date:"2024-05-12",customer:"Emily Watson", amount:280,pay:"Paid",   ful:"Shipped",  tag:"",   rem:""},
-    {id:"SH-0891",date:"2024-05-11",customer:"Michael Brown",amount:750,pay:"Pending",ful:"New",      tag:"VIP",rem:"Awaiting payment"},
-    {id:"SH-0887",date:"2024-05-10",customer:"John Carter",  amount:420,pay:"Paid",   ful:"Completed",tag:"VIP",rem:""},
-  ],
-  "ros-india":[
-    {id:"IN-2341",date:"2024-05-12",customer:"Priya Sharma",amount:12500,pay:"Paid",   ful:"Shipped",  tag:"Wholesale",rem:"GST invoice required"},
-    {id:"IN-2340",date:"2024-05-12",customer:"Raj Patel",   amount:8900, pay:"Pending",ful:"New",      tag:"",          rem:""},
-    {id:"IN-2335",date:"2024-05-11",customer:"Priya Sharma",amount:22000,pay:"Paid",   ful:"Completed",tag:"Wholesale",rem:"Bulk Q2"},
-  ],
-};
-const PURCH_SEED={
-  "ros-selections":[
-    {id:"PO-1057",date:"2024-05-10",batch:"Mo 1057",sup:"Elite Supplies",          inv:"ELT-7821",gst:0,  total:2800,pay:"Paid",   rem:""},
-    {id:"PO-2021",date:"2024-05-08",batch:"22 2021",sup:"Global Hair Distributors",inv:"GHD-4412",gst:0,  total:1450,pay:"Pending",rem:"Balance 15 Jun"},
-  ],
-  "ros-hairlines":[
-    {id:"PH-0498",date:"2024-05-09",batch:"SL 498",sup:"UniTrade Imports",         inv:"UTI-3310",gst:172,total:1890,pay:"Paid",   rem:""},
-    {id:"PH-0060",date:"2024-05-07",batch:"SI-060",sup:"Global Hair Distributors", inv:"GHD-4398",gst:200,total:2200,pay:"Partial",rem:"50% paid"},
-  ],
-  "ros-india":[
-    {id:"PI-0712",date:"2024-05-11",batch:"MH-712",sup:"Mumbai Textiles",          inv:"MBT-9901",gst:18, total:45000,pay:"Paid",  rem:"GST 18%"},
-    {id:"PI-0680",date:"2024-05-09",batch:"DL-680",sup:"Delhi Wholesale",          inv:"DLW-2201",gst:12, total:28000,pay:"Pending",rem:""},
-  ],
-};
-const EXP_SEED={
-  "ros-selections":[
-    {id:"EX-001",date:"2024-05-10",cat:"Shipping",     desc:"DHL monthly account", amount:320,method:"Bank Transfer"},
-    {id:"EX-002",date:"2024-05-08",cat:"Marketing",    desc:"Instagram Ads May",   amount:150,method:"Card"},
-    {id:"EX-003",date:"2024-05-01",cat:"Platform Fees",desc:"Shopify subscription",amount:79, method:"Card"},
-  ],
-  "ros-hairlines":[
-    {id:"EH-001",date:"2024-05-11",cat:"Packaging",    desc:"Luxury boxes order",  amount:480,method:"Bank Transfer"},
-    {id:"EH-002",date:"2024-05-05",cat:"Platform Fees",desc:"Etsy fees April",     amount:220,method:"Card"},
-  ],
-  "ros-india":[
-    {id:"EI-001",date:"2024-05-10",cat:"GST Filing",   desc:"CA fees May",         amount:5000,method:"UPI"},
-    {id:"EI-002",date:"2024-05-08",cat:"Shipping",     desc:"India Post bulk",     amount:3200,method:"Bank Transfer"},
-  ],
-};
-const LOG_SEED={
-  "ros-selections":[
-    {id:"LOG-1023",order:"SI-1023",agent:"DHL Express",track:"1234567890",   status:"In Transit",disp:"2024-05-12",eta:"2024-05-14"},
-    {id:"LOG-1018",order:"SI-1018",agent:"Royal Mail", track:"RM987654321GB",status:"Delivered",  disp:"2024-05-11",eta:"2024-05-12"},
-  ],
-  "ros-hairlines":[{id:"LH-892",order:"SH-0892",agent:"FedEx",    track:"FX112233445",  status:"In Transit",disp:"2024-05-12",eta:"2024-05-13"}],
-  "ros-india":    [{id:"LI-2341",order:"IN-2341",agent:"India Post",track:"ED123456789IN",status:"Dispatched", disp:"2024-05-12",eta:"2024-05-16"}],
-};
-const MONTHLY=[
-  {m:"Jan",v:28000},{m:"Feb",v:34000},{m:"Mar",v:29000},{m:"Apr",v:42000},
-  {m:"May",v:38000},{m:"Jun",v:51000},{m:"Jul",v:44000},{m:"Aug",v:57000},
-  {m:"Sep",v:48000},{m:"Oct",v:52000},{m:"Nov",v:45000},{m:"Dec",v:61000},
-];
-const PIE_D=[{name:"Clothing",value:38},{name:"Hair Products",value:27},{name:"Jewellery",value:21},{name:"Flowers",value:14}];
+const CUSTOMERS = [];
+const SUPPLIERS=[];
+const PRODUCTS=[];
+const AGENTS=[];
+const SALES_SEED={"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
+const PURCH_SEED={"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
+const EXP_SEED={"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
+const LOG_SEED={"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
+const MONTHLY=[];
+const PIE_D=[];
 
 /* ─── helpers ───────────────────────────────────────── */
 const fmt=(sid,n)=>{
@@ -254,10 +170,50 @@ const Modal=({title,onClose,accent,children})=>(
   </div>
 );
 
+/* ─── Per-shop logo image map — uses the same imports as shop.logo ─── */
+const SHOP_LOGO_SRC = {
+  "ros-selections": L_SEL,
+  "ros-hairlines":  L_HAIR,
+  "ros-india":      L_IND,
+};
+
+/* size: "card" (large, on coloured bg) | "sidebar" (small, on gradient bg) */
+const ShopLogo = ({ shopId, size = "card" }) => {
+  const src = SHOP_LOGO_SRC[shopId];
+  if (!src) return null;
+  const isCard = size === "card";
+  return (
+    <div style={{
+      background: "white",
+      borderRadius: isCard ? 10 : 8,
+      padding: isCard ? "4px 8px" : "3px 5px",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      boxShadow: isCard
+        ? "0 2px 8px rgba(0,0,0,0.15)"
+        : "0 2px 8px rgba(0,0,0,0.20),inset 0 1px 0 rgba(255,255,255,0.30)",
+      flexShrink: 0,
+    }}>
+      <img
+        src={src}
+        alt={shopId}
+        style={{
+          height: isCard ? 40 : 32,
+          width: "auto",
+          maxWidth: isCard ? 100 : 80,
+          objectFit: "contain",
+          display: "block",
+        }}
+      />
+    </div>
+  );
+};
+
 /* ════════════════════════════════════════════════════
    SHOP SELECTOR
 ════════════════════════════════════════════════════ */
-const ShopSelector=({onSelect})=>{
+const ShopSelector=({onSelect,user,onLogout,onOpenSettings})=>{
   const [hov,setHov]=useState(null);
   const [cmd,setCmd]=useState(false);
   const [statHov,setStatHov]=useState(null);
@@ -317,7 +273,7 @@ const ShopSelector=({onSelect})=>{
 
   return(
     <div style={{minHeight:"100vh",background:"#f0f4f8",fontFamily:"\'DM Sans\',system-ui,sans-serif"}} onClick={()=>statHov&&setStatHov(null)}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&family=Arimo:wght@400;500;600;700&display=swap" rel="stylesheet"/>
 
       {/* ── header ── */}
       <header style={{background:"white",borderBottom:"1px solid #e2e8f0",height:60,display:"flex",alignItems:"center",padding:"0 32px",justifyContent:"space-between",boxShadow:"0 1px 4px rgba(0,0,0,0.06)",position:"sticky",top:0,zIndex:40}}>
@@ -331,15 +287,31 @@ const ShopSelector=({onSelect})=>{
           </div>
         </div>
         <div style={{display:"flex",alignItems:"center",gap:14}}>
+          <span style={{fontSize:10,fontWeight:600,color:"#94a3b8",letterSpacing:"0.04em"}}>
+            Developed by <strong style={{color:"#2563eb"}}>ROS Nexus</strong>
+          </span>
           <button onClick={()=>setCmd(true)} style={{display:"flex",alignItems:"center",gap:8,background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"7px 16px",color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
             🔍 Search… <kbd style={{background:"#e2e8f0",borderRadius:4,padding:"1px 7px",fontSize:11,marginLeft:4}}>/</kbd>
           </button>
-          <button style={{position:"relative",background:"none",border:"none",cursor:"pointer",color:"#64748b",fontSize:20,padding:4}}>🔔
-            <span style={{position:"absolute",top:2,right:2,width:7,height:7,background:"#ef4444",borderRadius:"50%",border:"2px solid white"}}/>
-          </button>
-          <div style={{display:"flex",alignItems:"center",gap:8,padding:"5px 12px",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:999}}>
-            <div style={{width:26,height:26,borderRadius:"50%",background:"linear-gradient(135deg,#2563eb,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11}}>A</div>
-            <span style={{fontSize:13,fontWeight:600,color:"#374151"}}>Admin</span>
+          {user?.role==="superadmin"&&(
+            <button onClick={onOpenSettings}
+              style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",
+                background:"linear-gradient(135deg,#1d4ed8,#7c3aed)",border:"none",
+                borderRadius:10,cursor:"pointer",color:"white",fontSize:12,fontWeight:700,
+                fontFamily:"inherit",boxShadow:"0 2px 8px rgba(37,99,235,0.35)",
+                transition:"all 0.15s"}}
+              onMouseEnter={e=>e.currentTarget.style.opacity="0.88"}
+              onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
+              ⚙️ Settings
+            </button>
+          )}
+          <div style={{display:"flex",alignItems:"center",gap:8,padding:"4px 12px 4px 4px",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:999,cursor:"pointer"}}
+            onClick={onLogout} title="Logout">
+            <div style={{width:28,height:28,borderRadius:"50%",background:user?.avatar||"linear-gradient(135deg,#2563eb,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11}}>
+              {user?.initials||"A"}
+            </div>
+            <span style={{fontSize:13,fontWeight:600,color:"#374151"}}>{user?.name||"Admin"}</span>
+            <span style={{fontSize:10,color:"#94a3b8",marginLeft:2}}>· Logout</span>
           </div>
         </div>
       </header>
@@ -358,19 +330,23 @@ const ShopSelector=({onSelect})=>{
 
         {/* ── 3 shop cards ── */}
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:24,marginBottom:48}}>
-          {SHOPS.map(shop=>{
+          {SHOPS.filter(sh=>user?.role==="superadmin"||user?.role==="admin"||(user?.shops||[]).includes(sh.id)).map(shop=>{
             const h=hov===shop.id;
+            const isStaff=user?.role==="staff";
+            const staffLocked=isStaff&&!(user?.shops||[]).includes(shop.id);
             return(
               <div key={shop.id}
-                onClick={()=>onSelect(shop.id)}
-                onMouseEnter={()=>setHov(shop.id)}
+                onClick={()=>!staffLocked&&onSelect(shop.id)}
+                onMouseEnter={()=>!staffLocked&&setHov(shop.id)}
                 onMouseLeave={()=>setHov(null)}
-                style={{borderRadius:22,overflow:"hidden",cursor:"pointer",
+                style={{borderRadius:22,overflow:"hidden",cursor:staffLocked?"not-allowed":"pointer",
                   transform:h?"translateY(-5px) scale(1.012)":"none",
                   transition:"all 0.22s cubic-bezier(.4,0,.2,1)",
                   boxShadow:h?"0 20px 48px -8px "+shop.accent+"44,0 4px 16px rgba(0,0,0,0.08)":"0 2px 12px rgba(0,0,0,0.08)",
                   background:"white",
                   border:h?"2px solid "+shop.accent+"55":"2px solid transparent",
+                  opacity:staffLocked?0.45:1,
+                  filter:staffLocked?"grayscale(0.6)":"none",
                 }}>
 
                 {/* ── coloured top section ── */}
@@ -382,11 +358,8 @@ const ShopSelector=({onSelect})=>{
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,position:"relative",zIndex:1}}>
                     {/* Left: logo badge + name */}
                     <div style={{display:"flex",alignItems:"center",gap:10}}>
-                      {/* logo in a white pill/badge */}
-                      <div style={{background:"rgba(255,255,255,0.92)",borderRadius:12,padding:"6px 10px",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.12)"}}>
-                        <img src={shop.logo} alt={shop.name}
-                          style={{height:32,width:"auto",maxWidth:120,objectFit:"contain",objectPosition:"left"}}/>
-                      </div>
+                      {/* logo badge — unique per shop */}
+                      <ShopLogo shopId={shop.id} size="card" />
                     </div>
                     {/* Right: country flag badge */}
                     <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
@@ -397,37 +370,48 @@ const ShopSelector=({onSelect})=>{
 
                   {/* shop name — clearly readable on colour */}
                   <div style={{position:"relative",zIndex:1,marginBottom:14}}>
-                    <p style={{margin:"0 0 2px",fontSize:16,fontWeight:900,color:"white",letterSpacing:"-0.3px",textShadow:"0 1px 3px rgba(0,0,0,0.15)"}}>{shop.name}</p>
+                    <p style={{margin:"0 0 2px",fontSize:17,fontWeight:700,color:"white",letterSpacing:"0.04em",textShadow:"0 1px 3px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif",textTransform:"uppercase"}}>{shop.name}</p>
                     <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.65)",fontStyle:"italic"}}>{shop.tagline}</p>
                   </div>
 
-                  {/* revenue */}
+                  {/* revenue — hidden for staff on non-India shops */}
                   <div style={{position:"relative",zIndex:1}}>
                     <p style={{margin:"0 0 2px",fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Today\'s Revenue</p>
-                    <p style={{margin:0,fontSize:32,fontWeight:900,color:"white",letterSpacing:"-1px",textShadow:"0 1px 4px rgba(0,0,0,0.15)"}}>{shop.id==="ros-india"
-  ? formatCurrency(shop.todaySales)
-  : "£"+formatNumber(shop.todaySales)}</p>
+                    {staffLocked
+                      ? <p style={{margin:0,fontSize:22,fontWeight:700,color:"rgba(255,255,255,0.30)",letterSpacing:2,fontFamily:"'Arimo',Arial,sans-serif"}}>● ● ● ●</p>
+                      : <p style={{margin:0,fontSize:34,fontWeight:700,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif"}}>{shop.id==="ros-india"
+                          ? formatCurrency(shop.todaySales)
+                          : "£"+formatNumber(shop.todaySales)}</p>
+                    }
                   </div>
                 </div>
 
                 {/* ── white lower section ── */}
                 <div style={{padding:"18px 20px 20px"}}>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
-                    {[{l:"Orders",v:shop.pendingOrders},{l:"Pending",v:shop.pendingOrders},{l:"Stock",v:shop.stockValue}].map((s,i)=>(
-                      <div key={i} style={{textAlign:"center",background:shop.accentBg,borderRadius:10,padding:"9px 5px",border:"1px solid "+shop.accent+"18"}}>
-                        <p style={{margin:0,fontWeight:900,fontSize:16,color:shop.accentText}}>{s.v}</p>
-                        <p style={{margin:"2px 0 0",fontSize:10,color:shop.accent,fontWeight:700}}>{s.l}</p>
-                      </div>
-                    ))}
-                  </div>
-                  <button style={{
-                    width:"100%",padding:"12px 0",borderRadius:12,border:"none",cursor:"pointer",
-                    background:h?shop.sb:shop.accentBg,
-                    color:h?"white":shop.accentText,
+                  {staffLocked?(
+                    <div style={{textAlign:"center",padding:"12px 0 8px"}}>
+                      <span style={{fontSize:18}}>🔒</span>
+                      <p style={{margin:"6px 0 0",fontSize:11,fontWeight:700,color:"#94a3b8"}}>No Access</p>
+                    </div>
+                  ):(
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
+                      {[{l:"Orders",v:shop.pendingOrders},{l:"Pending",v:shop.pendingOrders},{l:"Stock",v:shop.stockValue}].map((s,i)=>(
+                        <div key={i} style={{textAlign:"center",background:shop.accentBg,borderRadius:10,padding:"9px 5px",border:"1px solid "+shop.accent+"18"}}>
+                          <p style={{margin:0,fontWeight:900,fontSize:16,color:shop.accentText}}>{s.v}</p>
+                          <p style={{margin:"2px 0 0",fontSize:10,color:shop.accent,fontWeight:700}}>{s.l}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  <button disabled={staffLocked} style={{
+                    width:"100%",padding:"12px 0",borderRadius:12,border:"none",
+                    cursor:staffLocked?"not-allowed":"pointer",
+                    background:staffLocked?"#f1f5f9":h?shop.sb:shop.accentBg,
+                    color:staffLocked?"#cbd5e1":h?"white":shop.accentText,
                     fontWeight:800,fontSize:14,transition:"all 0.2s",fontFamily:"inherit",
-                    boxShadow:h?"0 4px 14px "+shop.accent+"44":"none",
+                    boxShadow:(!staffLocked&&h)?"0 4px 14px "+shop.accent+"44":"none",
                   }}>
-                    Enter Workspace →
+                    {staffLocked?"🔒 Restricted":"Enter Workspace →"}
                   </button>
                 </div>
               </div>
@@ -435,105 +419,163 @@ const ShopSelector=({onSelect})=>{
           })}
         </div>
 
-        {/* ── GLOBAL STATS ── */}
-        <div
-          style={{
-            background: "white",
-            borderRadius: 18,
-            padding: "8px",
-            boxShadow: "0 2px 10px rgba(0,0,0,0.06)",
-            border: "1px solid #f1f5f9",
-            display: "grid",
-            gridTemplateColumns: "repeat(5,1fr)",
-            gap: 0
-          }}
-        >
-          {(() => {
-            const ukSales = [
-              ...(SALES_SEED["ros-selections"] || []),
-              ...(SALES_SEED["ros-hairlines"] || [])
-            ];
-            const inSales = SALES_SEED["ros-india"] || [];
-            const ukPurch = [
-              ...(PURCH_SEED["ros-selections"] || []),
-              ...(PURCH_SEED["ros-hairlines"] || [])
-            ];
-            const inPurch = PURCH_SEED["ros-india"] || [];
+        {/* ── LIFETIME STATS — admin only ── */}
+        {user?.role!=="staff"&&(()=>{
+          const ukSales=[...(SALES_SEED["ros-selections"]||[]),...(SALES_SEED["ros-hairlines"]||[])];
+          const inSales=SALES_SEED["ros-india"]||[];
+          const ukPurch=[...(PURCH_SEED["ros-selections"]||[]),...(PURCH_SEED["ros-hairlines"]||[])];
+          const inPurch=PURCH_SEED["ros-india"]||[];
+          const sumAmt=arr=>arr.reduce((a,x)=>a+(x.amount||0),0);
+          const sumTot=arr=>arr.reduce((a,x)=>a+(x.total||0),0);
+          const playBell=()=>{
+            try{
+              const ctx=new(window.AudioContext||window.webkitAudioContext)();
+              const o=ctx.createOscillator();
+              const g=ctx.createGain();
+              o.connect(g); g.connect(ctx.destination);
+              o.type="sine";
+              o.frequency.setValueAtTime(880,ctx.currentTime);
+              o.frequency.exponentialRampToValueAtTime(660,ctx.currentTime+0.15);
+              g.gain.setValueAtTime(0.18,ctx.currentTime);
+              g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.35);
+              o.start(ctx.currentTime);
+              o.stop(ctx.currentTime+0.35);
+            }catch(e){}
+          };
+          const tiles=[
+            {
+              icon:"👥", label:"Total Customers", sub:"Lifetime · All Shops",
+              display:CUSTOMERS.length.toString(), suffix:"",
+              grad:"linear-gradient(135deg,#1d4ed8 0%,#3b82f6 50%,#60a5fa 100%)",
+              glow:"rgba(59,130,246,0.35)", shine:"rgba(255,255,255,0.15)",
+            },
+            {
+              icon:"🇬🇧", label:"Sales Volume UK", sub:"Selections + Hairlines",
+              display:"£"+formatNumber(sumAmt(ukSales)), suffix:"lifetime",
+              grad:"linear-gradient(135deg,#0e7490 0%,#06b6d4 50%,#67e8f9 100%)",
+              glow:"rgba(6,182,212,0.35)", shine:"rgba(255,255,255,0.15)",
+            },
+            {
+              icon:"🇮🇳", label:"Sales Volume India", sub:"ROS India",
+              display:formatCurrency(sumAmt(inSales)), suffix:"lifetime",
+              grad:"linear-gradient(135deg,#9d174d 0%,#e95597 50%,#f9a8d4 100%)",
+              glow:"rgba(233,85,151,0.35)", shine:"rgba(255,255,255,0.15)",
+            },
+            {
+              icon:"📦", label:"Purchases UK", sub:"Selections + Hairlines",
+              display:"£"+formatNumber(sumTot(ukPurch)), suffix:"lifetime",
+              grad:"linear-gradient(135deg,#5b21b6 0%,#7c3aed 50%,#a78bfa 100%)",
+              glow:"rgba(124,58,237,0.35)", shine:"rgba(255,255,255,0.15)",
+            },
+            {
+              icon:"🛒", label:"Purchases India", sub:"ROS India",
+              display:formatCurrency(sumTot(inPurch)), suffix:"lifetime",
+              grad:"linear-gradient(135deg,#92400e 0%,#d97706 50%,#fcd34d 100%)",
+              glow:"rgba(217,119,6,0.35)", shine:"rgba(255,255,255,0.15)",
+            },
+          ];
+          return(
+            <div style={{marginBottom:0}}>
+              {/* ── toggle header ── */}
+              <div
+                onClick={()=>setStatHov(statHov==="open"?"closed":"open")}
+                style={{
+                  display:"flex",alignItems:"center",justifyContent:"space-between",
+                  background:"white",borderRadius:statHov==="open"?"16px 16px 0 0":"16px",
+                  padding:"14px 22px",cursor:"pointer",
+                  border:"1px solid #e2e8f0",
+                  borderBottom:statHov==="open"?"1px solid #f1f5f9":"1px solid #e2e8f0",
+                  boxShadow:"0 2px 8px rgba(0,0,0,0.05)",
+                  transition:"border-radius 0.3s",
+                  userSelect:"none",
+                }}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{width:32,height:32,borderRadius:9,background:"linear-gradient(135deg,#1d4ed8,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15}}>📊</div>
+                  <div>
+                    <p style={{margin:0,fontWeight:800,fontSize:14,color:"#0f172a",letterSpacing:"-0.2px"}}>Lifetime Business Overview</p>
+                    <p style={{margin:0,fontSize:11,color:"#94a3b8",fontWeight:500}}>All-time totals across every workspace</p>
+                  </div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{fontSize:11,fontWeight:700,color:"#64748b",background:"#f1f5f9",borderRadius:999,padding:"3px 10px"}}>
+                    {statHov==="open"?"Hide":"Show"} Stats
+                  </span>
+                  <div style={{
+                    width:28,height:28,borderRadius:"50%",background:"#f1f5f9",
+                    display:"flex",alignItems:"center",justifyContent:"center",
+                    fontSize:13,transition:"transform 0.3s",
+                    transform:statHov==="open"?"rotate(180deg)":"rotate(0deg)",
+                  }}>▼</div>
+                </div>
+              </div>
 
-            const sumAmt = arr => arr.reduce((a, x) => a + (x.amount || 0), 0);
-            const sumTot = arr => arr.reduce((a, x) => a + (x.total || 0), 0);
-
-            const fmtGBP = n => "£" + formatNumber(n);
-            const fmtINR = n => formatCurrency(n);
-
-            const tiles = [
-              {
-                icon: "👥",
-                label: "Total Customers",
-                sub: "Across all shops",
-                display: CUSTOMERS.length.toString(),
-                color: "#2563eb",
-                bg: "#eff6ff",
-                border: "#bfdbfe"
-              },
-              {
-                icon: "🇬🇧",
-                label: "Sales Volume UK",
-                sub: "Selections + Hairlines",
-                display: fmtGBP(sumAmt(ukSales)),
-                color: "#0891b2",
-                bg: "#ecfeff",
-                border: "#a5f3fc"
-              },
-              {
-                icon: "🇮🇳",
-                label: "Sales Volume India",
-                sub: "ROS India",
-                display: fmtINR(sumAmt(inSales)),
-                color: "#7d1a4a",
-                bg: "#fef0f7",
-                border: "#f9c1e0"
-              },
-              {
-                icon: "📦",
-                label: "Purchases UK",
-                sub: "Selections + Hairlines",
-                display: fmtGBP(sumTot(ukPurch)),
-                color: "#7c3aed",
-                bg: "#f5f3ff",
-                border: "#ddd6fe"
-              },
-              {
-                icon: "📦",
-                label: "Purchases India",
-                sub: "ROS India",
-                display: fmtINR(sumTot(inPurch)),
-                color: "#7d1a4a",
-                bg: "#fef0f7",
-                border: "#f9c1e0"
-              }
-            ];
-{tiles.map((t, i) => (
-  <StatCard
-    key={t.label || i}
-    icon={t.icon}
-    label={t.label}
-    value={t.display}
-    sub={t.sub}
-    color={t.color}
-    bg={t.bg}
-    border={t.border}
-  />
-))}   
-  })()}
-</div>
+              {/* ── cards panel ── */}
+              <div style={{
+                overflow:"hidden",
+                maxHeight:statHov==="open"?"260px":"0px",
+                transition:"max-height 0.4s cubic-bezier(0.4,0,0.2,1)",
+                background:"white",
+                borderRadius:"0 0 16px 16px",
+                border:statHov==="open"?"1px solid #e2e8f0":"none",
+                borderTop:"none",
+                boxShadow:statHov==="open"?"0 4px 16px rgba(0,0,0,0.06)":"none",
+              }}>
+                <div style={{
+                  display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:16,
+                  padding:"20px 20px 20px",
+                }}>
+                  {tiles.map((t,i)=>{
+                    const isHov=hov==="stat-"+i;
+                    return(
+                      <div key={i}
+                        onMouseEnter={()=>{setHov("stat-"+i);playBell();}}
+                        onMouseLeave={()=>setHov(null)}
+                        style={{
+                          borderRadius:16,padding:"18px 16px 16px",
+                          background:t.grad,
+                          position:"relative",overflow:"hidden",
+                          cursor:"default",
+                          transform:isHov?"translateY(-4px) scale(1.03)":"none",
+                          transition:"all 0.22s cubic-bezier(0.4,0,0.2,1)",
+                          boxShadow:isHov
+                            ?"0 16px 36px -4px "+t.glow+", 0 4px 12px rgba(0,0,0,0.10)"
+                            :"0 4px 14px "+t.glow+", 0 1px 4px rgba(0,0,0,0.06)",
+                        }}>
+                        {/* decorative circles */}
+                        <div style={{position:"absolute",top:-20,right:-20,width:80,height:80,borderRadius:"50%",background:t.shine,pointerEvents:"none"}}/>
+                        <div style={{position:"absolute",bottom:-14,left:-10,width:50,height:50,borderRadius:"50%",background:"rgba(255,255,255,0.08)",pointerEvents:"none"}}/>
+                        {/* icon */}
+                        <div style={{fontSize:22,marginBottom:10,filter:"drop-shadow(0 1px 3px rgba(0,0,0,0.2))"}}>{t.icon}</div>
+                        {/* value */}
+                        <p style={{
+                          margin:"0 0 4px",fontSize:22,fontWeight:700,color:"white",
+                          letterSpacing:"-0.5px",lineHeight:1,
+                          fontFamily:"'Arimo',Arial,sans-serif",
+                          textShadow:"0 1px 4px rgba(0,0,0,0.18)",
+                        }}>{t.display}</p>
+                        {/* label */}
+                        <p style={{
+                          margin:"0 0 2px",fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.95)",
+                          fontFamily:"'Arimo',Arial,sans-serif",letterSpacing:"0.01em",
+                        }}>{t.label}</p>
+                        {/* sub */}
+                        <p style={{margin:0,fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:500}}>{t.sub}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 </main>
 <CommandPalette cmd={cmd} setCmd={setCmd} />
 </div>
 );
 };
-const ShopDashboard=({shopId,onBack})=>{
-  const [tab,setTab]=useState("dashboard");
+const ShopDashboard=({shopId,onBack,user,onLogout})=>{
+  const [tab,setTab]=useState(user?.role==="staff"?"sales":"dashboard");
+  const [hov,setHov]=useState(null);
   const [search,setSearch]=useState("");
   const [modal,setModal]=useState(null);
   const [selRow,setSelRow]=useState(null);
@@ -576,7 +618,7 @@ const ShopDashboard=({shopId,onBack})=>{
     {id:"documents",l:"Documents",ic:"📎"},
     {id:"analytics",l:"Analytics",ic:"📊"},
     {id:"reports",  l:"Reports",  ic:"📋"},
-  ];
+  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings");
 
   const filtSales=sales.filter(s=>
     s.id.toLowerCase().includes(search.toLowerCase())||
@@ -606,7 +648,11 @@ const ShopDashboard=({shopId,onBack})=>{
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
 
   const [pdfMode,setPdfMode]=useState(false);
-  const [salesPeriod,setSalesPeriod]=useState("month");
+  const [salesPeriod,setSalesPeriodRaw]=useState("month");
+  const setSalesPeriod=(p)=>{
+    if(user?.role==="staff"&&(p==="year"||p==="lifetime"))return;
+    setSalesPeriodRaw(p);
+  };
   const [pdfInv,setPdfInv]=useState(null);
   const showPdf=(inv)=>{setPdfInv(inv);setPdfMode(true);};
   const invoicePrintRef=useRef(null);
@@ -672,92 +718,255 @@ const ShopDashboard=({shopId,onBack})=>{
 
 return(
     <div style={{display:"flex",minHeight:"100vh",background:"#f0f4f8",fontFamily:"'DM Sans',system-ui,sans-serif"}}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&family=Arimo:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+      <style>{`
+        .sb-nav-btn:hover .sb-label{opacity:1!important;}
+        .sb-nav-btn{position:relative;}
+        .sb-tooltip{
+          position:absolute;left:calc(100% + 10px);top:50%;transform:translateY(-50%);
+          background:rgba(15,23,42,0.92);color:white;padding:4px 10px;border-radius:7px;
+          font-size:11px;font-weight:700;white-space:nowrap;pointer-events:none;
+          opacity:0;transition:opacity 0.15s;z-index:999;
+          box-shadow:0 4px 12px rgba(0,0,0,0.25);
+        }
+        .sb-nav-btn:hover .sb-tooltip{opacity:1;}
+      `}</style>
 
-      {/* ══ SIDEBAR — coloured gradient, white readable text ══ */}
+      {/* ══ SIDEBAR ══ */}
       <aside style={{
-        width:coll?64:226,transition:"width 0.22s cubic-bezier(.4,0,.2,1)",
+        width:coll?72:240,
+        transition:"width 0.28s cubic-bezier(0.4,0,0.2,1)",
         background:shop.sb,
         display:"flex",flexDirection:"column",
         position:"sticky",top:0,height:"100vh",flexShrink:0,zIndex:40,
         overflow:"hidden",
-        /* subtle inner glow on right edge */
-        boxShadow:"3px 0 20px rgba(0,0,0,0.18)",
+        boxShadow:"4px 0 24px rgba(0,0,0,0.22)",
       }}>
-        {/* brand */}
-        <div style={{padding:"18px 14px 14px",borderBottom:"1px solid rgba(255,255,255,0.15)"}}>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            <div style={{width:36,height:36,borderRadius:10,background:"rgba(255,255,255,0.22)",backdropFilter:"blur(4px)",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-              <span style={{color:"white",fontWeight:900,fontSize:15}}>R</span>
+
+        {/* ── brand / logo area ── */}
+        <div style={{
+          padding:"0 12px",height:64,
+          display:"flex",alignItems:"center",
+          justifyContent:coll?"center":"space-between",
+          borderBottom:"1px solid rgba(255,255,255,0.12)",
+          flexShrink:0,
+        }}>
+          <div style={{display:"flex",alignItems:"center",gap:10,overflow:"hidden"}}>
+            {/* logo badge */}
+            {/* logo badge — unique per shop */}
+            <ShopLogo shopId={shop.id} size="sidebar" />
+            {/* name — fades out when collapsed */}
+            <div style={{
+              overflow:"hidden",
+              maxWidth:coll?0:160,
+              opacity:coll?0:1,
+              transition:"max-width 0.28s cubic-bezier(0.4,0,0.2,1), opacity 0.20s",
+              whiteSpace:"nowrap",
+            }}>
+              <p style={{margin:0,fontWeight:800,fontSize:13,color:"white",letterSpacing:"-0.2px",lineHeight:1.2}}>{shop.name}</p>
+              <p style={{margin:0,fontSize:9,color:"rgba(255,255,255,0.50)",fontWeight:500,letterSpacing:"0.04em",textTransform:"uppercase"}}>{shop.currency} · {shop.flag}</p>
             </div>
-            {!coll&&(
-              <div>
-                <p style={{margin:0,fontWeight:900,fontSize:15,color:"#ffffff",letterSpacing:"-0.3px"}}>{shop.name}</p>
-              </div>
-            )}
           </div>
+          {/* collapse toggle — only when expanded */}
+          {!coll&&(
+            <button onClick={()=>setColl(true)}
+              style={{
+                width:26,height:26,borderRadius:8,border:"1px solid rgba(255,255,255,0.20)",
+                background:"rgba(255,255,255,0.10)",cursor:"pointer",
+                display:"flex",alignItems:"center",justifyContent:"center",
+                color:"rgba(255,255,255,0.70)",fontSize:12,flexShrink:0,
+                transition:"all 0.15s",
+              }}
+              onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.22)";e.currentTarget.style.color="white";}}
+              onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.10)";e.currentTarget.style.color="rgba(255,255,255,0.70)";}}>
+              ‹‹
+            </button>
+          )}
+          {/* expand button when collapsed */}
+          {coll&&(
+            <button onClick={()=>setColl(false)}
+              style={{
+                position:"absolute",bottom:-1,left:0,right:0,height:28,
+                border:"none",borderTop:"1px solid rgba(255,255,255,0.12)",
+                background:"rgba(255,255,255,0.07)",cursor:"pointer",
+                display:"flex",alignItems:"center",justifyContent:"center",
+                color:"rgba(255,255,255,0.60)",fontSize:11,
+                transition:"all 0.15s",
+              }}
+              onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.15)";e.currentTarget.style.color="white";}}
+              onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.07)";e.currentTarget.style.color="rgba(255,255,255,0.60)";}}>
+              ››
+            </button>
+          )}
         </div>
 
-        {/* shop logo — white (inverted) so it shows on any colour */}
-        {!coll&&(
-          <div style={{padding:"10px 12px",borderBottom:"1px solid rgba(255,255,255,0.15)"}}>
-            <div style={{background:"white",borderRadius:10,padding:"7px 12px",display:"inline-flex",alignItems:"center",boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>
-              <img src={shop.logo} alt={shop.name}
-                style={{height:30,width:"auto",maxWidth:160,objectFit:"contain",objectPosition:"left",
-                  display:"block"}}/>
-            </div>
-          </div>
-        )}
-
-        {/* nav */}
-        <nav style={{flex:1,padding:"10px 8px",overflowY:"auto",overflowX:"hidden"}}>
-          {NAV.map(n=>{
-            const active=tab===n.id;
+        {/* ── nav sections ── */}
+        <nav style={{flex:1,padding:"10px 8px 6px",overflowY:"auto",overflowX:"hidden",scrollbarWidth:"none"}}>
+          {/* group labels */}
+          {[
+            {label:"MAIN",    ids:["dashboard","sales","purchases"]},
+            {label:"MANAGE",  ids:["logistics","customers","suppliers","agents","products"]},
+            {label:"FINANCE", ids:["invoices","expenses"]},
+            {label:"INSIGHTS",ids:["documents","analytics","reports"]},
+          ].map(group=>{
+            const groupItems=NAV.filter(n=>group.ids.includes(n.id));
+            if(groupItems.length===0)return null;
             return(
-              <button key={n.id} onClick={()=>setTab(n.id)} title={coll?n.l:""}
-                style={{
-                  display:"flex",alignItems:"center",gap:10,
-                  width:"100%",padding:coll?"10px 0":"9px 12px",
-                  justifyContent:coll?"center":"flex-start",
-                  borderRadius:10,border:"none",cursor:"pointer",
-                  background:active?"rgba(255,255,255,0.20)":"transparent",
-                  /* WHITE text on ALL states — critical for legibility */
-                  color:"#ffffff",
-                  fontWeight:active?800:500,
-                  fontSize:14,fontFamily:"inherit",
-                  transition:"all 0.14s",marginBottom:2,
-                  borderLeft:active?"3px solid rgba(255,255,255,0.95)":"3px solid transparent",
-                }}
-                onMouseEnter={e=>{if(!active)e.currentTarget.style.background="rgba(255,255,255,0.12)";}}
-                onMouseLeave={e=>{if(!active)e.currentTarget.style.background="transparent";}}>
-                <span style={{fontSize:16,flexShrink:0}}>{n.ic}</span>
-                {!coll&&<span style={{whiteSpace:"nowrap"}}>{n.l}</span>}
-              </button>
+              <div key={group.label} style={{marginBottom:6}}>
+                {/* section label — hidden when collapsed */}
+                <div style={{
+                  overflow:"hidden",
+                  maxHeight:coll?0:20,
+                  opacity:coll?0:1,
+                  transition:"max-height 0.25s, opacity 0.20s",
+                  marginBottom:coll?0:4,
+                  paddingLeft:10,
+                }}>
+                  <span style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,0.58)",letterSpacing:"0.10em",textTransform:"uppercase"}}>
+                    {group.label}
+                  </span>
+                </div>
+                {/* nav buttons */}
+                {groupItems.map(n=>{
+                  const active=tab===n.id;
+                  return(
+                    <button key={n.id}
+                      className="sb-nav-btn"
+                      onClick={()=>setTab(n.id)}
+                      style={{
+                        display:"flex",alignItems:"center",
+                        gap:coll?0:10,
+                        width:"100%",
+                        height:40,
+                        padding:coll?"0":"0 10px",
+                        justifyContent:coll?"center":"flex-start",
+                        borderRadius:10,
+                        border:active?"1px solid rgba(255,255,255,0.30)":"1px solid transparent",
+                        cursor:"pointer",
+                        marginBottom:2,
+                        position:"relative",
+                        background:active?"rgba(255,255,255,0.28)":"transparent",
+                        boxShadow:active?"0 2px 12px rgba(0,0,0,0.18),inset 0 1px 0 rgba(255,255,255,0.20)":"none",
+                        transition:"all 0.15s",
+                        fontFamily:"inherit",
+                      }}
+                      onMouseEnter={e=>{
+                        if(!active){
+                          e.currentTarget.style.background="rgba(255,255,255,0.15)";
+                          e.currentTarget.style.border="1px solid rgba(255,255,255,0.18)";
+                        }
+                      }}
+                      onMouseLeave={e=>{
+                        if(!active){
+                          e.currentTarget.style.background="transparent";
+                          e.currentTarget.style.border="1px solid transparent";
+                        }
+                      }}>
+
+                      {/* active pill indicator */}
+                      {active&&(
+                        <div style={{
+                          position:"absolute",left:0,top:"50%",transform:"translateY(-50%)",
+                          width:4,height:24,borderRadius:"0 4px 4px 0",
+                          background:"white",
+                          boxShadow:"0 0 10px rgba(255,255,255,0.9)",
+                        }}/>
+                      )}
+
+                      {/* icon container */}
+                      <div style={{
+                        width:32,height:32,borderRadius:9,flexShrink:0,
+                        display:"flex",alignItems:"center",justifyContent:"center",
+                        background:active?"rgba(255,255,255,0.22)":"transparent",
+                        transition:"background 0.15s",
+                        fontSize:16,
+                      }}>
+                        {n.ic}
+                      </div>
+
+                      {/* label */}
+                      <span className="sb-label" style={{
+                        fontSize:13,
+                        fontWeight:active?800:600,
+                        color:"#ffffff",
+                        whiteSpace:"nowrap",overflow:"hidden",
+                        maxWidth:coll?0:140,
+                        opacity:coll?0:active?1:0.85,
+                        transition:"max-width 0.28s cubic-bezier(0.4,0,0.2,1), opacity 0.18s",
+                        letterSpacing:active?"-0.2px":"0",
+                        textShadow:active?"0 1px 4px rgba(0,0,0,0.20)":"none",
+                      }}>{n.l}</span>
+
+                      {/* tooltip when collapsed */}
+                      {coll&&<div className="sb-tooltip">{n.l}</div>}
+                    </button>
+                  );
+                })}
+              </div>
             );
           })}
         </nav>
 
-        {/* back */}
-        <div style={{padding:"10px 8px",borderTop:"1px solid rgba(255,255,255,0.15)"}}>
+        {/* ── user info + all shops footer ── */}
+        <div style={{padding:"8px",borderTop:"1px solid rgba(255,255,255,0.12)",flexShrink:0}}>
+          {/* user row */}
+          <div style={{
+            display:"flex",alignItems:"center",gap:9,
+            padding:coll?"8px 0":"8px 10px",
+            justifyContent:coll?"center":"flex-start",
+            borderRadius:10,
+            background:"rgba(255,255,255,0.08)",
+            marginBottom:6,
+            overflow:"hidden",
+          }}>
+            <div style={{
+              width:30,height:30,borderRadius:9,flexShrink:0,
+              background:user?.avatar||"rgba(255,255,255,0.25)",
+              display:"flex",alignItems:"center",justifyContent:"center",
+              color:"white",fontWeight:800,fontSize:11,
+              boxShadow:"0 2px 6px rgba(0,0,0,0.20)",
+            }}>{user?.initials||"A"}</div>
+            <div style={{
+              overflow:"hidden",
+              maxWidth:coll?0:140,opacity:coll?0:1,
+              transition:"max-width 0.28s cubic-bezier(0.4,0,0.2,1),opacity 0.18s",
+              whiteSpace:"nowrap",
+            }}>
+              <p style={{margin:0,fontSize:12,fontWeight:700,color:"white",lineHeight:1.3}}>{user?.name||"Admin"}</p>
+              <p style={{margin:0,fontSize:9,color:"rgba(255,255,255,0.45)",textTransform:"capitalize",fontWeight:500}}>{user?.role==="staff"?"Staff":"Administrator"}</p>
+            </div>
+          </div>
+
+          {/* all shops button */}
           <button onClick={onBack}
+            className="sb-nav-btn"
             style={{
-              display:"flex",alignItems:"center",gap:10,width:"100%",
-              padding:coll?"12px 0":"12px 14px",
+              display:"flex",alignItems:"center",gap:9,
+              width:"100%",height:40,
+              padding:coll?"0":"0 10px",
               justifyContent:coll?"center":"flex-start",
-              borderRadius:12,border:"1px solid rgba(255,255,255,0.25)",
+              borderRadius:10,border:"1px solid rgba(255,255,255,0.18)",
               cursor:"pointer",
               background:"rgba(255,255,255,0.10)",
-              color:"#ffffff",
-              fontSize:15,fontWeight:700,
+              color:"white",fontSize:13,fontWeight:700,
               fontFamily:"inherit",
-              transition:"all 0.18s",
-              backdropFilter:"blur(4px)",
+              transition:"all 0.15s",
+              overflow:"hidden",
             }}
-            onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.20)";e.currentTarget.style.borderColor="rgba(255,255,255,0.45)";}}
-            onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.10)";e.currentTarget.style.borderColor="rgba(255,255,255,0.25)";}}>
-            <span style={{fontSize:18,lineHeight:1}}>🏪</span>
-            {!coll&&<span style={{flex:1,textAlign:"left"}}>All Shops</span>}
-            {!coll&&<span style={{fontSize:16,opacity:0.80}}>↩</span>}
+            onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.20)";e.currentTarget.style.borderColor="rgba(255,255,255,0.35)";}}
+            onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.10)";e.currentTarget.style.borderColor="rgba(255,255,255,0.18)";}}>
+            <span style={{fontSize:16,flexShrink:0}}>🏪</span>
+            <span style={{
+              maxWidth:coll?0:140,opacity:coll?0:1,
+              transition:"max-width 0.28s cubic-bezier(0.4,0,0.2,1),opacity 0.18s",
+              whiteSpace:"nowrap",overflow:"hidden",
+            }}>All Shops</span>
+            <span style={{
+              marginLeft:"auto",fontSize:13,opacity:0.60,flexShrink:0,
+              maxWidth:coll?0:20,overflow:"hidden",
+              transition:"max-width 0.28s",
+            }}>↩</span>
+            {coll&&<div className="sb-tooltip">All Shops</div>}
           </button>
         </div>
       </aside>
@@ -766,67 +975,415 @@ return(
       <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
 
         {/* topbar */}
-        <header style={{background:"white",borderBottom:"1px solid #f1f5f9",height:64,display:"flex",alignItems:"center",padding:"0 28px",justifyContent:"space-between",position:"sticky",top:0,zIndex:30,boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
+        <header style={{
+          background:"linear-gradient(90deg,"+shop.accent+"18 0%,white 40%)",
+          borderBottom:"1px solid "+shop.accent+"22",
+          height:64,display:"flex",alignItems:"center",padding:"0 28px",
+          justifyContent:"space-between",position:"sticky",top:0,zIndex:30,
+          boxShadow:"0 2px 12px "+shop.accent+"14",
+        }}>
           <div style={{display:"flex",alignItems:"center",gap:14}}>
             <button onClick={()=>setColl(c=>!c)}
-              style={{width:36,height:36,borderRadius:10,border:"1px solid #f1f5f9",background:"#f8fafc",cursor:"pointer",fontSize:15,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}}
-              onMouseEnter={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accent;e.currentTarget.style.borderColor=shop.accent+"44";}}
-              onMouseLeave={e=>{e.currentTarget.style.background="#f8fafc";e.currentTarget.style.color="#64748b";e.currentTarget.style.borderColor="#f1f5f9";}}>
+              style={{width:36,height:36,borderRadius:10,border:"1px solid "+shop.accent+"33",background:shop.accentBg,cursor:"pointer",fontSize:15,color:shop.accent,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}}
+              onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.color="white";}}
+              onMouseLeave={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accent;}}>
               ☰
             </button>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <div style={{width:3,height:28,borderRadius:999,background:shop.sb}}/>
               <div>
-                <h1 style={{margin:0,fontSize:16,fontWeight:900,color:"#0f172a",letterSpacing:"-0.01em"}}>{NAV.find(n=>n.id===tab)?.l}</h1>
+                <h1 style={{margin:0,fontSize:16,fontWeight:900,color:"#0f172a",letterSpacing:"-0.01em"}}>{NAV.find(n=>n.id===tab)?.l||"Dashboard"}</h1>
                 <p style={{margin:0,fontSize:11,color:"#94a3b8",fontWeight:500}}>{shop.name} · {shop.currency}</p>
               </div>
             </div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:10}}>
+            {/* ROS Nexus credit */}
+            <span style={{fontSize:10,fontWeight:600,color:shop.accent+"99",letterSpacing:"0.04em",marginRight:4,whiteSpace:"nowrap"}}>
+              Developed by <strong style={{fontWeight:800,color:shop.accent}}>ROS Nexus</strong>
+            </span>
             {/* Search */}
-            <div style={{display:"flex",alignItems:"center",gap:8,background:"#f8fafc",border:"1px solid #f1f5f9",borderRadius:12,padding:"8px 14px",transition:"all 0.2s"}}
+            <div style={{display:"flex",alignItems:"center",gap:8,background:"white",border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"8px 14px",transition:"all 0.2s"}}
               onFocus={e=>{e.currentTarget.style.border="1px solid "+shop.accent+"66";e.currentTarget.style.boxShadow="0 0 0 3px "+shop.accent+"15";}}
-              onBlur={e=>{e.currentTarget.style.border="1px solid #f1f5f9";e.currentTarget.style.boxShadow="none";}}>
-              <span style={{color:"#94a3b8",fontSize:13}}>🔍</span>
+              onBlur={e=>{e.currentTarget.style.border="1px solid "+shop.accent+"33";e.currentTarget.style.boxShadow="none";}}>
+              <span style={{color:shop.accent,fontSize:13}}>🔍</span>
               <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search…"
-                style={{border:"none",background:"transparent",outline:"none",fontSize:13,color:"#374151",width:150,fontFamily:"inherit"}}/>
+                style={{border:"none",background:"transparent",outline:"none",fontSize:13,color:"#374151",width:140,fontFamily:"inherit"}}/>
             </div>
-            {/* Low stock badge */}
-            {lowStk.length>0&&(
-              <div style={{display:"flex",alignItems:"center",gap:6,background:"linear-gradient(135deg,#fef2f2,#fff5f5)",border:"1px solid #fecaca",borderRadius:10,padding:"6px 12px"}}>
-                <span style={{width:7,height:7,borderRadius:"50%",background:"#ef4444",display:"inline-block",boxShadow:"0 0 0 2px #fee2e2"}}/>
-                <span style={{fontSize:12,fontWeight:700,color:"#dc2626"}}>{lowStk.length} Low Stock</span>
-              </div>
-            )}
             {/* Notification bell */}
-            <button style={{position:"relative",width:38,height:38,borderRadius:11,border:"1px solid #f1f5f9",background:"#f8fafc",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,transition:"all 0.15s"}}
-              onMouseEnter={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.borderColor=shop.accent+"44";}}
-              onMouseLeave={e=>{e.currentTarget.style.background="#f8fafc";e.currentTarget.style.borderColor="#f1f5f9";}}>
+            <button style={{position:"relative",width:38,height:38,borderRadius:11,border:"1px solid "+shop.accent+"33",background:shop.accentBg,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,transition:"all 0.15s"}}
+              onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.borderColor=shop.accent;}}
+              onMouseLeave={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.borderColor=shop.accent+"33";}}>
               🔔
-              <span style={{position:"absolute",top:8,right:8,width:8,height:8,background:"#ef4444",borderRadius:"50%",border:"2px solid white",boxShadow:"0 0 0 1px #ef4444"}}/>
+              <span style={{position:"absolute",top:8,right:8,width:7,height:7,background:"#ef4444",borderRadius:"50%",border:"2px solid white"}}/>
             </button>
-            {/* Avatar */}
-            <div style={{width:38,height:38,borderRadius:12,background:shop.sb,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:900,fontSize:14,cursor:"pointer",boxShadow:"0 3px 10px rgba(0,0,0,0.18)",letterSpacing:"-0.01em"}}>A</div>
+            {/* User avatar + name + logout */}
+            <div style={{display:"flex",alignItems:"center",gap:8,background:"white",border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"5px 10px 5px 5px",cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}
+              onClick={onLogout}
+              title="Click to logout"
+              onMouseEnter={e=>{e.currentTarget.style.background=shop.accentBg;}}
+              onMouseLeave={e=>{e.currentTarget.style.background="white";}}>
+              <div style={{width:30,height:30,borderRadius:9,background:user?.avatar||shop.sb,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:12,flexShrink:0}}>
+                {user?.initials||"A"}
+              </div>
+              <div>
+                <p style={{margin:0,fontSize:12,fontWeight:700,color:"#0f172a",lineHeight:1.2}}>{user?.name||"Admin"}</p>
+                <p style={{margin:0,fontSize:9,color:shop.accent,fontWeight:600,textTransform:"capitalize"}}>{user?.role==="staff"?"Staff":"Admin"} · Logout</p>
+              </div>
+            </div>
           </div>
         </header>
 
         <main style={{flex:1,padding:24,overflowY:"auto"}}>
 
           {/* ─── DASHBOARD ─── */}
-          {tab==="dashboard"&&(
-            <DashboardPanel
-              Badge={Badge}
-              fmt={fmt}
-              lowStk={lowStk}
-              MONTHLY={MONTHLY}
-              pendAmt={pendAmt}
-              PIE_D={PIE_D}
-              sales={sales}
-              shop={shop}
-              shopId={shopId}
-              totRev={totRev}
-            />
-          )}
+          {tab==="dashboard"&&(()=>{
+            const now=new Date();
+            const todayStr=now.toISOString().slice(0,10);
+            const curMonth=now.getMonth();
+            const curYear=now.getFullYear();
+            // UK financial year: Apr 6 – Apr 5
+            const fyStart=now.getMonth()<3||(now.getMonth()===3&&now.getDate()<6)
+              ? new Date(curYear-1,3,6) : new Date(curYear,3,6);
+
+            const isSameDay=d=>d===todayStr;
+            const isSameMonth=d=>{const dt=new Date(d);return dt.getMonth()===curMonth&&dt.getFullYear()===curYear;};
+            const isInFY=d=>new Date(d)>=fyStart;
+
+            const todaySales   =sales.filter(s=>isSameDay(s.date)).reduce((a,s)=>a+(s.amount||0),0);
+            const monthSales   =sales.filter(s=>isSameMonth(s.date)).reduce((a,s)=>a+(s.amount||0),0);
+            const fySales      =sales.filter(s=>isInFY(s.date)).reduce((a,s)=>a+(s.amount||0),0);
+            const pendingOrders=sales.filter(s=>s.pay==="Pending"||s.ful==="New"||s.ful==="Processing").length;
+            const monthReturns =sales.filter(s=>isSameMonth(s.date)&&(s.ful==="RETURN REQUESTED"||s.ful==="RETURNED"||s.ful==="EXCHANGED")).length;
+            const monthRefunds =sales.filter(s=>isSameMonth(s.date)&&(s.ful==="REFUNDED")).reduce((a,s)=>a+(s.refundAmt||0),0);
+
+            const monthCount=sales.filter(s=>isSameMonth(s.date)).length;
+            const fyCount=sales.filter(s=>isInFY(s.date)).length;
+            const kpis=[
+              {
+                icon:"🛒", label:"Today's Sales", sub:"Live · "+todayStr,
+                value:fmt(shopId,todaySales),
+                accent:"#3b82f6", dark:"#1d4ed8",
+                grad:"linear-gradient(145deg,#1e3a8a 0%,#1d4ed8 45%,#3b82f6 100%)",
+                glow:"rgba(59,130,246,0.45)",
+                trend:"up", trendVal:todaySales>0?"+active":"—",
+                tagGreen:todaySales>0, tag:todaySales>0?"● Live":"○ No Sales",
+                progress:Math.min(100,Math.round((todaySales/(shop.todaySales||1))*100)),
+              },
+              {
+                icon:"📅", label:"Monthly Sales", sub:now.toLocaleString("default",{month:"long",year:"numeric"}),
+                value:fmt(shopId,monthSales),
+                accent:"#06b6d4", dark:"#0e7490",
+                grad:"linear-gradient(145deg,#164e63 0%,#0e7490 45%,#06b6d4 100%)",
+                glow:"rgba(6,182,212,0.45)",
+                trend:"up", trendVal:monthCount+" orders",
+                tagGreen:true, tag:monthCount+" Orders",
+                progress:Math.min(100,Math.round((monthSales/(shop.monthRevenue||1))*100)),
+              },
+              {
+                icon:"📈", label:"Financial Year", sub:"Apr "+fyStart.getFullYear()+" – Mar "+(fyStart.getFullYear()+1),
+                value:fmt(shopId,fySales),
+                accent:"#10b981", dark:"#065f46",
+                grad:"linear-gradient(145deg,#064e3b 0%,#065f46 45%,#059669 100%)",
+                glow:"rgba(5,150,105,0.45)",
+                trend:"up", trendVal:fyCount+" orders",
+                tagGreen:true, tag:fyCount+" Orders",
+                progress:Math.min(100,Math.round((fySales/((shop.monthRevenue||1)*12))*100)),
+              },
+              {
+                icon:"⏳", label:"Pending Orders", sub:"Awaiting fulfilment",
+                value:pendingOrders.toString(),
+                accent:"#f59e0b", dark:"#92400e",
+                grad:"linear-gradient(145deg,#78350f 0%,#92400e 45%,#d97706 100%)",
+                glow:"rgba(217,119,6,0.45)",
+                trend:pendingOrders>0?"warn":"ok", trendVal:pendingOrders>0?"Needs action":"All clear",
+                tagGreen:pendingOrders===0, tag:pendingOrders>0?"⚠ Action":"✓ Clear",
+                progress:Math.min(100,pendingOrders*20),
+              },
+              {
+                icon:"↩️", label:"Returns This Month", sub:"Returned / Exchanged",
+                value:monthReturns.toString(),
+                accent:"#e95597", dark:"#9d174d",
+                grad:"linear-gradient(145deg,#831843 0%,#9d174d 45%,#e95597 100%)",
+                glow:"rgba(233,85,151,0.45)",
+                trend:monthReturns>0?"warn":"ok", trendVal:monthReturns===0?"None this month":monthReturns+" return"+(monthReturns>1?"s":""),
+                tagGreen:monthReturns===0, tag:monthReturns===0?"✓ None":"↩ Returned",
+                progress:Math.min(100,monthReturns*25),
+              },
+              {
+                icon:"💸", label:"Refunds This Month", sub:"Total refunded value",
+                value:monthRefunds>0?fmt(shopId,monthRefunds):"—",
+                accent:"#a78bfa", dark:"#5b21b6",
+                grad:"linear-gradient(145deg,#2e1065 0%,#5b21b6 45%,#7c3aed 100%)",
+                glow:"rgba(124,58,237,0.45)",
+                trend:monthRefunds>0?"warn":"ok", trendVal:monthRefunds===0?"None this month":"Refunded",
+                tagGreen:monthRefunds===0, tag:monthRefunds===0?"✓ None":"💸 Issued",
+                progress:Math.min(100,monthRefunds>0?60:0),
+              },
+            ];
+
+            const quickActions=[
+              {l:"New Sale",      ic:"🛒", desc:"Record a sale",       g:shop.quickCards[0].g, action:()=>setModal("new-sale")},
+              {l:"New Purchase",  ic:"📦", desc:"Log a purchase",      g:shop.quickCards[1].g, action:()=>setModal("new-purchase")},
+              {l:"Add Customer",  ic:"👤", desc:"Register customer",   g:shop.quickCards[2].g, action:()=>setTab("customers")},
+              {l:"Add Product",   ic:"➕", desc:"List a product",      g:shop.quickCards[3].g, action:()=>setTab("products")},
+              {l:"Record Expense",ic:"💳", desc:"Log an expense",      g:shop.quickCards[4].g, action:()=>setTab("expenses")},
+              {l:"Gen. Report",   ic:"📋", desc:"View reports",        g:shop.quickCards[5].g, action:()=>setTab("reports")},
+            ];
+
+            return(
+              <div>
+                {/* ── QUICK ACTION CARDS ── */}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:12,marginBottom:24}}>
+                  {quickActions.map((q,i)=>{
+                    const isH=hov==="qa-"+i;
+                    return(
+                      <div key={i}
+                        onClick={q.action}
+                        onMouseEnter={()=>setHov("qa-"+i)}
+                        onMouseLeave={()=>setHov(null)}
+                        style={{
+                          borderRadius:16,overflow:"hidden",cursor:"pointer",
+                          background:q.g,position:"relative",
+                          transform:isH?"translateY(-4px) scale(1.04)":"translateY(0) scale(1)",
+                          transition:"all 0.2s cubic-bezier(0.34,1.56,0.64,1)",
+                          boxShadow:isH
+                            ?"0 14px 28px -4px rgba(0,0,0,0.25),0 4px 10px rgba(0,0,0,0.12)"
+                            :"0 3px 10px rgba(0,0,0,0.12)",
+                        }}>
+                        {/* shimmer overlay on hover */}
+                        <div style={{
+                          position:"absolute",inset:0,
+                          background:isH?"linear-gradient(135deg,rgba(255,255,255,0.18) 0%,transparent 60%)":"transparent",
+                          transition:"background 0.2s",pointerEvents:"none",zIndex:0,
+                        }}/>
+                        {/* mesh dots */}
+                        <div style={{
+                          position:"absolute",inset:0,zIndex:0,pointerEvents:"none",
+                          backgroundImage:"radial-gradient(rgba(255,255,255,0.12) 1px,transparent 1px)",
+                          backgroundSize:"14px 14px",
+                        }}/>
+                        <div style={{position:"relative",zIndex:1,padding:"16px 12px 14px",textAlign:"center"}}>
+                          {/* icon circle */}
+                          <div style={{
+                            width:44,height:44,borderRadius:"50%",margin:"0 auto 10px",
+                            background:"rgba(255,255,255,0.20)",
+                            backdropFilter:"blur(6px)",
+                            display:"flex",alignItems:"center",justifyContent:"center",
+                            fontSize:20,
+                            boxShadow:"0 2px 8px rgba(0,0,0,0.15),inset 0 1px 0 rgba(255,255,255,0.25)",
+                            transform:isH?"scale(1.12)":"scale(1)",
+                            transition:"transform 0.2s cubic-bezier(0.34,1.56,0.64,1)",
+                          }}>{q.ic}</div>
+                          {/* label */}
+                          <p style={{
+                            margin:"0 0 2px",fontSize:11,fontWeight:800,color:"white",
+                            letterSpacing:"0.04em",textTransform:"uppercase",
+                            fontFamily:"'Arimo',Arial,sans-serif",
+                            textShadow:"0 1px 4px rgba(0,0,0,0.20)",
+                          }}>{q.l}</p>
+                          {/* desc */}
+                          <p style={{
+                            margin:0,fontSize:9,color:"rgba(255,255,255,0.65)",
+                            fontWeight:500,
+                          }}>{q.desc}</p>
+                        </div>
+                        {/* bottom accent line */}
+                        <div style={{
+                          height:3,
+                          background:isH?"rgba(255,255,255,0.55)":"rgba(255,255,255,0.20)",
+                          transition:"background 0.2s",
+                        }}/>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* ── 6 KPI CARDS — 9:16 portrait ratio ── */}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:14,marginBottom:28}}>
+                  {kpis.map((k,i)=>{
+                    const isH=hov==="kpi-"+i;
+                    return(
+                      <div key={i}
+                        onMouseEnter={()=>setHov("kpi-"+i)}
+                        onMouseLeave={()=>setHov(null)}
+                        style={{
+                          borderRadius:18,overflow:"hidden",
+                          background:k.grad,
+                          position:"relative",
+                          cursor:"default",
+                          /* 9:16 ratio via aspect-ratio */
+                          aspectRatio:"9/16",
+                          display:"flex",flexDirection:"column",
+                          transform:isH?"translateY(-6px) scale(1.03)":"translateY(0) scale(1)",
+                          transition:"all 0.25s cubic-bezier(0.34,1.56,0.64,1)",
+                          boxShadow:isH
+                            ?"0 22px 44px -8px "+k.glow+",0 6px 18px rgba(0,0,0,0.14)"
+                            :"0 5px 18px "+k.glow+",0 2px 5px rgba(0,0,0,0.07)",
+                        }}>
+
+                        {/* mesh grid overlay */}
+                        <div style={{
+                          position:"absolute",inset:0,zIndex:0,pointerEvents:"none",
+                          backgroundImage:"radial-gradient(rgba(255,255,255,0.10) 1px,transparent 1px)",
+                          backgroundSize:"16px 16px",
+                        }}/>
+
+                        {/* glowing orb bottom-right */}
+                        <div style={{
+                          position:"absolute",bottom:-50,right:-50,width:130,height:130,
+                          borderRadius:"50%",background:"rgba(255,255,255,0.07)",
+                          pointerEvents:"none",zIndex:0,filter:"blur(24px)",
+                        }}/>
+
+                        {/* glowing orb top-left */}
+                        <div style={{
+                          position:"absolute",top:-30,left:-30,width:90,height:90,
+                          borderRadius:"50%",background:"rgba(255,255,255,0.09)",
+                          pointerEvents:"none",zIndex:0,filter:"blur(18px)",
+                        }}/>
+
+                        {/* large watermark icon */}
+                        <div style={{
+                          position:"absolute",bottom:20,right:-8,fontSize:72,lineHeight:1,
+                          opacity:isH?0.20:0.08,pointerEvents:"none",zIndex:0,
+                          transition:"opacity 0.3s,transform 0.3s",
+                          transform:isH?"scale(1.12) rotate(-8deg)":"scale(1) rotate(0deg)",
+                        }}>{k.icon}</div>
+
+                        {/* ── TOP SECTION: icon + tag ── */}
+                        <div style={{position:"relative",zIndex:1,padding:"16px 14px 0",flex:"0 0 auto"}}>
+                          {/* status tag top-right */}
+                          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}>
+                            <span style={{
+                              fontSize:9,fontWeight:800,padding:"3px 9px",borderRadius:999,
+                              background:k.tagGreen?"rgba(255,255,255,0.20)":"rgba(220,38,38,0.35)",
+                              color:"white",letterSpacing:"0.06em",textTransform:"uppercase",
+                              border:"1px solid rgba(255,255,255,0.18)",
+                              backdropFilter:"blur(4px)",
+                            }}>{k.tag}</span>
+                          </div>
+
+                          {/* icon badge */}
+                          <div style={{
+                            width:46,height:46,borderRadius:14,marginBottom:16,
+                            background:"rgba(255,255,255,0.16)",
+                            backdropFilter:"blur(10px)",
+                            display:"flex",alignItems:"center",justifyContent:"center",
+                            fontSize:22,
+                            boxShadow:"0 4px 12px rgba(0,0,0,0.15),inset 0 1px 0 rgba(255,255,255,0.25)",
+                            transform:isH?"scale(1.08)":"scale(1)",
+                            transition:"transform 0.25s cubic-bezier(0.34,1.56,0.64,1)",
+                          }}>{k.icon}</div>
+                        </div>
+
+                        {/* ── MIDDLE SECTION: value + label + sub ── */}
+                        <div style={{position:"relative",zIndex:1,padding:"0 14px",flex:"1 1 auto",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+                          {/* value */}
+                          <p style={{
+                            margin:"0 0 4px",
+                            fontSize:k.value.length>7?18:24,
+                            fontWeight:800,color:"white",
+                            letterSpacing:"-0.5px",lineHeight:1,
+                            fontFamily:"'Arimo',Arial,sans-serif",
+                            textShadow:"0 2px 10px rgba(0,0,0,0.25)",
+                          }}>{k.value}</p>
+
+                          {/* label */}
+                          <p style={{
+                            margin:"0 0 3px",fontSize:12,fontWeight:700,
+                            color:"rgba(255,255,255,0.95)",
+                            fontFamily:"'Arimo',Arial,sans-serif",
+                            letterSpacing:"0.01em",lineHeight:1.3,
+                          }}>{k.label}</p>
+
+                          {/* sub */}
+                          <p style={{
+                            margin:0,fontSize:9,
+                            color:"rgba(255,255,255,0.52)",fontWeight:500,
+                            lineHeight:1.4,
+                          }}>{k.sub}</p>
+                        </div>
+
+                        {/* ── BOTTOM SECTION: divider + trend + progress ── */}
+                        <div style={{position:"relative",zIndex:1,flex:"0 0 auto"}}>
+                          {/* divider */}
+                          <div style={{height:"1px",background:"rgba(255,255,255,0.12)",margin:"0 14px 10px"}}/>
+
+                          {/* trend row */}
+                          <div style={{display:"flex",alignItems:"center",gap:5,padding:"0 14px 12px"}}>
+                            <span style={{
+                              fontSize:10,fontWeight:800,
+                              color:k.trend==="up"?"#86efac":k.trend==="ok"?"#86efac":"#fca5a5",
+                            }}>
+                              {k.trend==="up"?"▲":k.trend==="ok"?"✓":"▼"}
+                            </span>
+                            <span style={{fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:600,lineHeight:1.3}}>{k.trendVal}</span>
+                          </div>
+
+                          {/* progress bar */}
+                          <div style={{height:4,background:"rgba(0,0,0,0.22)"}}>
+                            <div style={{
+                              height:"100%",
+                              width:isH?k.progress+"%":"0%",
+                              background:"rgba(255,255,255,0.60)",
+                              borderRadius:"0 3px 3px 0",
+                              transition:"width 0.65s cubic-bezier(0.4,0,0.2,1) 0.08s",
+                              boxShadow:"0 0 10px rgba(255,255,255,0.55)",
+                            }}/>
+                          </div>
+                        </div>
+
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {/* ── RECENT SALES TABLE ── */}
+                <div style={{background:"white",borderRadius:16,border:"1px solid #f1f5f9",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",marginBottom:24,overflow:"hidden"}}>
+                  <div style={{padding:"16px 20px",borderBottom:"1px solid #f1f5f9",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                    <div>
+                      <p style={{margin:0,fontWeight:800,fontSize:15,color:"#0f172a"}}>Recent Sales</p>
+                      <p style={{margin:0,fontSize:11,color:"#94a3b8",fontWeight:500}}>Latest {Math.min(5,sales.length)} transactions</p>
+                    </div>
+                    <button onClick={()=>setTab("sales")} style={{fontSize:12,fontWeight:700,color:shop.accent,background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:8,padding:"5px 12px",cursor:"pointer",fontFamily:"inherit"}}>View All →</button>
+                  </div>
+                  <table style={{width:"100%",borderCollapse:"collapse"}}>
+                    <thead>
+                      <tr style={{background:"#f8fafc"}}>
+                        {["ID","Customer","Amount","Status","Date"].map(h=>(
+                          <th key={h} style={{padding:"10px 16px",textAlign:"left",fontSize:11,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sales.slice(0,5).map((s,i)=>(
+                        <tr key={s.id} style={{borderTop:"1px solid #f1f5f9",background:i%2===0?"white":"#fafafa"}}>
+                          <td style={{padding:"11px 16px",fontSize:12,fontWeight:700,color:shop.accent}}>{s.id}</td>
+                          <td style={{padding:"11px 16px",fontSize:13,color:"#374151",fontWeight:600}}>{s.customer}</td>
+                          <td style={{padding:"11px 16px",fontSize:13,fontWeight:800,color:"#0f172a"}}>{fmt(shopId,s.amount)}</td>
+                          <td style={{padding:"11px 16px"}}><Badge l={s.pay}/></td>
+                          <td style={{padding:"11px 16px",fontSize:12,color:"#94a3b8"}}>{s.date}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* ── LOW STOCK ALERT ── */}
+                {lowStk.length>0&&(
+                  <div style={{background:"#fff7ed",borderRadius:14,border:"1px solid #fed7aa",padding:"14px 18px",display:"flex",alignItems:"center",gap:12}}>
+                    <span style={{fontSize:22}}>⚠️</span>
+                    <div>
+                      <p style={{margin:0,fontWeight:800,fontSize:13,color:"#c2410c"}}>{lowStk.length} product{lowStk.length>1?"s":""} low on stock</p>
+                      <p style={{margin:0,fontSize:11,color:"#ea580c"}}>{lowStk.map(p=>p.name).join(" · ")}</p>
+                    </div>
+                    <button onClick={()=>setTab("products")} style={{marginLeft:"auto",fontSize:12,fontWeight:700,color:"#c2410c",background:"white",border:"1px solid #fed7aa",borderRadius:8,padding:"5px 12px",cursor:"pointer",fontFamily:"inherit"}}>View Products →</button>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* ─── SALES ─── */}
           {tab==="sales"&&(
@@ -852,6 +1409,8 @@ return(
               shop={shop}
               shopId={shopId}
               TD={TD}
+              user={user}
+              isStaff={user?.role==="staff"}
             />
           )}
 
@@ -940,14 +1499,14 @@ return(
         </Modal>
       )}
       {/* ── IMPORT MODAL — SALES ── */}
-      {modal==="import-sales"&&(
+      {modal==="import-sales"&&user?.role!=="staff"&&(
         <Modal title="⬇ Import Sales" onClose={()=>setModal(null)} accent={shop.accent}>
           <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}/>
         </Modal>
       )}
 
       {/* ── EXPORT MODAL — SALES ── */}
-      {modal==="export-sales"&&(
+      {modal==="export-sales"&&user?.role!=="staff"&&(
         <Modal title="⬆ Export Sales" onClose={()=>setModal(null)} accent={shop.accent}>
           <ImportExportPanel type="export" entity="Sales" shop={shop} shopId={shopId} data={sales} onClose={()=>setModal(null)}/>
         </Modal>
@@ -2265,7 +2824,7 @@ const NewShipmentForm=({shopId,shop,purch,onSave,onClose})=>{
   );
 
   const COURIERS=["DHL","FedEx","Royal Mail","Evri","UPS","DPD","India Post","DTDC","Blue Dart","Other"];
-  const AGENTS_LIST=["Elite Logistics","Global Hair Distributors","UniTrade Imports","Other"];
+  const AGENTS_LIST=["Other"];
   const STATUS_OPTS=["PENDING","DISPATCHED","IN TRANSIT","OUT FOR DELIVERY","DELIVERED","RETURNED","ON HOLD"];
   const statusColor={"PENDING":"#a16207","DISPATCHED":"#1d4ed8","IN TRANSIT":"#0369a1","OUT FOR DELIVERY":"#7c3aed","DELIVERED":"#15803d","RETURNED":"#c2410c","ON HOLD":"#6b7280"};
 
@@ -3150,14 +3709,872 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum})=>{
 };
 
 /* =========================================================
+   INLINE PANEL COMPONENTS
+   ========================================================= */
+
+/* ── CustomersPanel ── */
+const CustomersPanel=({customers,search,shop,Badge})=>{
+  const [sel,setSel]=useState(null);
+  const [hovR,setHovR]=useState(null);
+  const filtered=(customers||[]).filter(c=>
+    !search||c.name.toLowerCase().includes(search.toLowerCase())||
+    c.phone.includes(search)||c.tag.toLowerCase().includes(search.toLowerCase())
+  );
+  const tagColor={
+    "VIP":          {bg:"#fef9c3",color:"#854d0e",border:"#fde68a"},
+    "Wholesale":    {bg:"#ede9fe",color:"#5b21b6",border:"#ddd6fe"},
+    "Regular":      {bg:"#dcfce7",color:"#166534",border:"#bbf7d0"},
+    "New Customer": {bg:"#dbeafe",color:"#1e40af",border:"#bfdbfe"},
+  };
+  const tc=t=>tagColor[t]||{bg:"#f1f5f9",color:"#475569",border:"#e2e8f0"};
+
+  return(
+    <div style={{padding:0}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <div>
+          <h2 style={{margin:"0 0 2px",fontSize:20,fontWeight:800,color:"#0f172a"}}>Customers</h2>
+          <p style={{margin:0,fontSize:12,color:"#94a3b8"}}>{filtered.length} contact{filtered.length!==1?"s":""}</p>
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {["VIP","Wholesale","Regular","New Customer"].map(tag=>{
+            const t=tc(tag);
+            return(
+              <span key={tag} style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:999,
+                background:t.bg,color:t.color,border:"1px solid "+t.border}}>
+                {tag} · {(customers||[]).filter(c=>c.tag===tag).length}
+              </span>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{background:"white",borderRadius:16,border:"1px solid #f1f5f9",overflow:"hidden",boxShadow:"0 2px 12px rgba(0,0,0,0.04)"}}>
+        <table style={{width:"100%",borderCollapse:"collapse"}}>
+          <thead>
+            <tr style={{background:"#f8fafc",borderBottom:"1px solid #f1f5f9"}}>
+              {["Customer","Contact","Address","Purchases","Total Spend","Last Order","Tag"].map(h=>(
+                <th key={h} style={{padding:"11px 16px",fontSize:10,fontWeight:800,color:"#64748b",
+                  textTransform:"uppercase",letterSpacing:"0.06em",textAlign:"left",whiteSpace:"nowrap"}}>
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length===0&&(
+              <tr><td colSpan={7} style={{padding:40,textAlign:"center",color:"#94a3b8",fontSize:13}}>No customers found</td></tr>
+            )}
+            {filtered.map((c,i)=>{
+              const isH=hovR===c.id;
+              const isSel=sel===c.id;
+              const t=tc(c.tag);
+              return(
+                <tr key={c.id}
+                  onClick={()=>setSel(isSel?null:c.id)}
+                  onMouseEnter={()=>setHovR(c.id)}
+                  onMouseLeave={()=>setHovR(null)}
+                  style={{
+                    borderBottom:i<filtered.length-1?"1px solid #f8fafc":"none",
+                    background:isSel?shop.accentBg:isH?"#fafafa":"white",
+                    cursor:"pointer",transition:"background 0.12s",
+                  }}>
+                  <td style={{padding:"13px 16px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{width:34,height:34,borderRadius:10,flexShrink:0,
+                        background:shop.sb,display:"flex",alignItems:"center",justifyContent:"center",
+                        color:"white",fontWeight:800,fontSize:13,
+                        boxShadow:"0 2px 6px rgba(0,0,0,0.12)"}}>
+                        {c.name.charAt(0)}
+                      </div>
+                      <div>
+                        <p style={{margin:0,fontWeight:700,fontSize:13,color:"#0f172a"}}>{c.name}</p>
+                        {c.notes&&<p style={{margin:0,fontSize:10,color:"#94a3b8"}}>{c.notes}</p>}
+                      </div>
+                    </div>
+                  </td>
+                  <td style={{padding:"13px 16px"}}>
+                    <p style={{margin:"0 0 2px",fontSize:12,fontWeight:600,color:"#374151"}}>{c.phone}</p>
+                    <p style={{margin:0,fontSize:10,color:"#22c55e",fontWeight:600}}>💬 {c.whatsapp}</p>
+                  </td>
+                  <td style={{padding:"13px 16px",fontSize:12,color:"#64748b",maxWidth:160}}>
+                    <span style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.address}</span>
+                  </td>
+                  <td style={{padding:"13px 16px",textAlign:"center"}}>
+                    <span style={{fontSize:14,fontWeight:800,color:shop.accent}}>{c.purchases}</span>
+                  </td>
+                  <td style={{padding:"13px 16px"}}>
+                    <span style={{fontFamily:"DM Mono,monospace",fontSize:13,fontWeight:700,color:"#0f172a"}}>
+                      {c.spend>=10000?("₹"+c.spend.toLocaleString()):("£"+c.spend.toLocaleString())}
+                    </span>
+                  </td>
+                  <td style={{padding:"13px 16px",fontSize:12,color:"#64748b"}}>{c.last}</td>
+                  <td style={{padding:"13px 16px"}}>
+                    {c.tag&&(
+                      <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:999,
+                        background:t.bg,color:t.color,border:"1px solid "+t.border,whiteSpace:"nowrap"}}>
+                        {c.tag}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {sel&&(()=>{
+        const c=(customers||[]).find(x=>x.id===sel);
+        if(!c)return null;
+        const t=tc(c.tag);
+        return(
+          <div style={{marginTop:16,background:"white",borderRadius:16,border:"1px solid "+shop.accent+"33",
+            padding:20,boxShadow:"0 4px 20px "+shop.accent+"15"}}>
+            <div style={{display:"flex",alignItems:"flex-start",gap:16}}>
+              <div style={{width:52,height:52,borderRadius:14,background:shop.sb,
+                display:"flex",alignItems:"center",justifyContent:"center",
+                color:"white",fontWeight:900,fontSize:20,flexShrink:0,
+                boxShadow:"0 4px 12px rgba(0,0,0,0.15)"}}>
+                {c.name.charAt(0)}
+              </div>
+              <div style={{flex:1}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+                  <h3 style={{margin:0,fontSize:17,fontWeight:800,color:"#0f172a"}}>{c.name}</h3>
+                  {c.tag&&<span style={{fontSize:11,fontWeight:700,padding:"2px 10px",borderRadius:999,
+                    background:t.bg,color:t.color,border:"1px solid "+t.border}}>{c.tag}</span>}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10}}>
+                  {[
+                    {l:"Phone",      v:c.phone,    ic:"📞"},
+                    {l:"WhatsApp",   v:c.whatsapp, ic:"💬"},
+                    {l:"Address",    v:c.address,  ic:"📍"},
+                    {l:"Notes",      v:c.notes||"—",ic:"📝"},
+                    {l:"Purchases",  v:c.purchases, ic:"🛒"},
+                    {l:"Total Spend",v:(c.spend>=10000?"₹":"£")+c.spend.toLocaleString(),ic:"💰"},
+                    {l:"Last Order", v:c.last,      ic:"📅"},
+                  ].map((f,i)=>(
+                    <div key={i} style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",
+                      border:"1px solid #f1f5f9"}}>
+                      <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#94a3b8",
+                        textTransform:"uppercase",letterSpacing:"0.06em"}}>{f.ic} {f.l}</p>
+                      <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a",
+                        wordBreak:"break-word"}}>{String(f.v)}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+    </div>
+  );
+};
+
+/* ── AgentsPanel (Logistics Agents) ── */
+const AgentsPanel=({agents,shop})=>{
+  const [hovR,setHovR]=useState(null);
+  const typeColor={
+    "Courier":{bg:"#dbeafe",color:"#1e40af",border:"#bfdbfe",ic:"🚀"},
+    "Postal": {bg:"#dcfce7",color:"#166534",border:"#bbf7d0",ic:"📦"},
+  };
+  return(
+    <div>
+      <div style={{marginBottom:20}}>
+        <h2 style={{margin:"0 0 2px",fontSize:20,fontWeight:800,color:"#0f172a"}}>Logistics Agents</h2>
+        <p style={{margin:0,fontSize:12,color:"#94a3b8"}}>{(agents||[]).length} shipping partners configured</p>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:16,marginBottom:24}}>
+        {(agents||[]).map(a=>{
+          const tc=typeColor[a.type]||{bg:"#f1f5f9",color:"#475569",border:"#e2e8f0",ic:"🚚"};
+          const isH=hovR===a.id;
+          return(
+            <div key={a.id}
+              onMouseEnter={()=>setHovR(a.id)}
+              onMouseLeave={()=>setHovR(null)}
+              style={{
+                background:"white",borderRadius:16,
+                border:isH?"1px solid "+shop.accent+"44":"1px solid #f1f5f9",
+                padding:20,
+                boxShadow:isH?"0 8px 24px "+shop.accent+"18":"0 2px 8px rgba(0,0,0,0.04)",
+                transition:"all 0.18s",transform:isH?"translateY(-2px)":"none",
+              }}>
+              <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+                <div style={{width:44,height:44,borderRadius:12,background:shop.accentBg,
+                  display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,
+                  border:"1px solid "+shop.accent+"22",flexShrink:0}}>
+                  {tc.ic}
+                </div>
+                <div>
+                  <p style={{margin:"0 0 4px",fontWeight:800,fontSize:15,color:"#0f172a"}}>{a.name}</p>
+                  <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:999,
+                    background:tc.bg,color:tc.color,border:"1px solid "+tc.border}}>
+                    {a.type}
+                  </span>
+                </div>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,background:"#f8fafc",
+                  borderRadius:8,padding:"8px 12px",border:"1px solid #f1f5f9"}}>
+                  <span>📞</span>
+                  <span style={{fontSize:12,fontWeight:600,color:"#374151",fontFamily:"DM Mono,monospace"}}>{a.contact}</span>
+                </div>
+                <a href={a.url} target="_blank" rel="noopener noreferrer"
+                  style={{display:"flex",alignItems:"center",gap:8,background:shop.accentBg,
+                    borderRadius:8,padding:"8px 12px",border:"1px solid "+shop.accent+"22",
+                    textDecoration:"none",cursor:"pointer",transition:"background 0.15s"}}
+                  onMouseEnter={e=>e.currentTarget.style.background=shop.accent+"22"}
+                  onMouseLeave={e=>e.currentTarget.style.background=shop.accentBg}>
+                  <span>🔗</span>
+                  <span style={{fontSize:12,fontWeight:600,color:shop.accent}}>Track Shipment →</span>
+                </a>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div style={{background:"#fffbeb",borderRadius:12,padding:"12px 16px",
+        border:"1px solid #fde68a",display:"flex",alignItems:"center",gap:10}}>
+        <span>💡</span>
+        <p style={{margin:0,fontSize:12,color:"#92400e",fontWeight:500}}>
+          Click <strong>Track Shipment</strong> to open the carrier tracking portal in a new tab.
+        </p>
+      </div>
+    </div>
+  );
+};
+
+
+/* =========================================================
+   SETTINGS PANEL (Suresh / superadmin only)
+   ========================================================= */
+const SettingsPanel=({users,setUsers,currentUser,onClose})=>{
+  const [tab,setTab]=useState("users");
+  const [editId,setEditId]=useState(null);
+  const [hovR,setHovR]=useState(null);
+  // new user form
+  const [newName,setNewName]=useState("");
+  const [newPin,setNewPin]=useState("");
+  const [newRole,setNewRole]=useState("staff");
+  const [newShops,setNewShops]=useState([]);
+  const [formErr,setFormErr]=useState("");
+  const [saved,setSaved]=useState(false);
+  // edit PIN form
+  const [editPin,setEditPin]=useState("");
+  const [editPinErr,setEditPinErr]=useState("");
+
+  const SHOP_LABELS={
+    "ros-selections":"ROS Selections UK",
+    "ros-hairlines":"ROS Hairlines UK",
+    "ros-india":"ROS India",
+  };
+  const AVATARS=[
+    "linear-gradient(135deg,#1d4ed8,#7c3aed)",
+    "linear-gradient(135deg,#059669,#0891b2)",
+    "linear-gradient(135deg,#64748b,#334155)",
+    "linear-gradient(135deg,#dc2626,#f97316)",
+    "linear-gradient(135deg,#7c3aed,#ec4899)",
+    "linear-gradient(135deg,#0891b2,#059669)",
+  ];
+
+  const flash=()=>{setSaved(true);setTimeout(()=>setSaved(false),2000);};
+
+  const savePin=()=>{
+    if(!/^[0-9]{4}$/.test(editPin)){setEditPinErr("PIN must be exactly 4 digits");return;}
+    setUsers(prev=>prev.map(u=>u.id===editId?{...u,pin:editPin}:u));
+    setEditId(null);setEditPin("");setEditPinErr("");flash();
+  };
+
+  const deleteUser=id=>{
+    if(id===currentUser.id){alert("You cannot delete your own account.");return;}
+    setUsers(prev=>prev.filter(u=>u.id!==id));
+  };
+
+  const addUser=()=>{
+    setFormErr("");
+    if(!newName.trim()){setFormErr("Name is required.");return;}
+    if(!/^[0-9]{4}$/.test(newPin)){setFormErr("PIN must be exactly 4 digits.");return;}
+    if(newShops.length===0&&newRole==="staff"){setFormErr("Assign at least one shop for staff.");return;}
+    const id=newName.trim().toLowerCase().replace(/\s+/g,"-")+"-"+Date.now();
+    const initials=newName.trim().split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
+    const av=AVATARS[users.length%AVATARS.length];
+    setUsers(prev=>[...prev,{
+      id, name:newName.trim(), initials, role:newRole, pin:newPin,
+      avatar:av,
+      shops:newRole==="staff"?newShops:SHOP_IDS,
+    }]);
+    setNewName("");setNewPin("");setNewRole("staff");setNewShops([]);setFormErr("");
+    flash();
+  };
+
+  const toggleShop=(id,shopId)=>{
+    setUsers(prev=>prev.map(u=>{
+      if(u.id!==id)return u;
+      const has=(u.shops||[]).includes(shopId);
+      return {...u,shops:has?(u.shops||[]).filter(s=>s!==shopId):[...(u.shops||[]),shopId]};
+    }));
+    flash();
+  };
+
+  const iBtn=(label,onClick,color,bg)=>({
+    label,onClick,color:color||"#374151",bg:bg||"#f8fafc",
+  });
+
+  const roleColor={
+    superadmin:{bg:"#ede9fe",color:"#5b21b6",border:"#ddd6fe",label:"Super Admin"},
+    admin:      {bg:"#dbeafe",color:"#1e40af",border:"#bfdbfe",label:"Admin"},
+    staff:      {bg:"#f0fdf4",color:"#166534",border:"#bbf7d0",label:"Staff"},
+  };
+
+  // input style helper
+  const inp={
+    width:"100%",padding:"9px 12px",borderRadius:9,
+    border:"1px solid #e2e8f0",fontSize:13,fontFamily:"inherit",
+    outline:"none",color:"#0f172a",background:"white",boxSizing:"border-box",
+  };
+
+  return(
+    <div style={{
+      position:"fixed",inset:0,zIndex:200,
+      background:"rgba(15,23,42,0.55)",backdropFilter:"blur(4px)",
+      display:"flex",alignItems:"center",justifyContent:"center",
+      fontFamily:"'DM Sans',system-ui,sans-serif",
+    }} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{
+        width:"100%",maxWidth:780,maxHeight:"90vh",
+        background:"white",borderRadius:20,
+        boxShadow:"0 24px 80px rgba(0,0,0,0.22)",
+        display:"flex",flexDirection:"column",
+        overflow:"hidden",
+      }}>
+        {/* ── header ── */}
+        <div style={{
+          background:"linear-gradient(135deg,#0f172a,#1e293b)",
+          padding:"18px 24px",
+          display:"flex",alignItems:"center",justifyContent:"space-between",
+          flexShrink:0,
+        }}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <div style={{width:38,height:38,borderRadius:11,
+              background:"linear-gradient(135deg,#1d4ed8,#7c3aed)",
+              display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>
+              ⚙️
+            </div>
+            <div>
+              <h2 style={{margin:0,fontSize:17,fontWeight:800,color:"white"}}>Settings</h2>
+              <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.45)"}}>Super Admin · {currentUser.name}</p>
+            </div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:10}}>
+            {saved&&(
+              <span style={{fontSize:12,fontWeight:700,color:"#4ade80",
+                background:"rgba(74,222,128,0.15)",padding:"4px 12px",borderRadius:999}}>
+                ✓ Saved
+              </span>
+            )}
+            <button onClick={onClose}
+              style={{width:32,height:32,borderRadius:9,border:"1px solid rgba(255,255,255,0.20)",
+                background:"rgba(255,255,255,0.08)",color:"white",cursor:"pointer",
+                fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",
+                fontFamily:"inherit"}}>
+              ✕
+            </button>
+          </div>
+        </div>
+
+        {/* ── tab bar ── */}
+        <div style={{display:"flex",gap:4,padding:"12px 24px 0",borderBottom:"1px solid #f1f5f9",flexShrink:0}}>
+          {[
+            {id:"users",   label:"👥 Manage Users"},
+            {id:"add",     label:"➕ Add User"},
+            {id:"shops",   label:"🏪 Shop Access"},
+          ].map(t=>(
+            <button key={t.id} onClick={()=>setTab(t.id)}
+              style={{
+                padding:"8px 16px",borderRadius:"9px 9px 0 0",border:"none",
+                cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",
+                background:tab===t.id?"white":"transparent",
+                color:tab===t.id?"#0f172a":"#64748b",
+                borderBottom:tab===t.id?"2px solid #1d4ed8":"2px solid transparent",
+                marginBottom:"-1px",transition:"all 0.15s",
+              }}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── body ── */}
+        <div style={{flex:1,overflowY:"auto",padding:24}}>
+
+          {/* ────────── MANAGE USERS tab ────────── */}
+          {tab==="users"&&(
+            <div>
+              <p style={{margin:"0 0 16px",fontSize:13,color:"#64748b"}}>
+                Click a user to change their PIN. Suresh's role cannot be changed.
+              </p>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {users.map(u=>{
+                  const rc=roleColor[u.role]||roleColor.staff;
+                  const isEdit=editId===u.id;
+                  const isH=hovR===u.id;
+                  const isSelf=u.id===currentUser.id;
+                  return(
+                    <div key={u.id}
+                      onMouseEnter={()=>setHovR(u.id)}
+                      onMouseLeave={()=>setHovR(null)}
+                      style={{
+                        border:isEdit?"1px solid #1d4ed8":"1px solid #f1f5f9",
+                        borderRadius:14,padding:"14px 16px",
+                        background:isEdit?"#f8faff":isH?"#fafafa":"white",
+                        transition:"all 0.15s",
+                      }}>
+                      {/* user row */}
+                      <div style={{display:"flex",alignItems:"center",gap:12}}>
+                        <div style={{width:42,height:42,borderRadius:12,flexShrink:0,
+                          background:u.avatar,display:"flex",alignItems:"center",
+                          justifyContent:"center",color:"white",fontWeight:800,fontSize:14,
+                          boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>
+                          {u.initials}
+                        </div>
+                        <div style={{flex:1}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}>
+                            <span style={{fontWeight:700,fontSize:14,color:"#0f172a"}}>{u.name}</span>
+                            {isSelf&&<span style={{fontSize:9,fontWeight:800,color:"#1d4ed8",
+                              background:"#dbeafe",padding:"1px 7px",borderRadius:999}}>YOU</span>}
+                            <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",
+                              borderRadius:999,background:rc.bg,color:rc.color,
+                              border:"1px solid "+rc.border}}>
+                              {rc.label}
+                            </span>
+                          </div>
+                          <span style={{fontSize:11,color:"#94a3b8"}}>
+                            PIN: {'●'.repeat(4)} · Shops: {(u.shops||SHOP_IDS).length===3?"All":
+                              (u.shops||[]).map(s=>({
+                                "ros-selections":"UK Sel","ros-hairlines":"UK Hair","ros-india":"India"
+                              }[s]||s)).join(", ")||"None"}
+                          </span>
+                        </div>
+                        <div style={{display:"flex",gap:8}}>
+                          {!isEdit&&(
+                            <button onClick={()=>{setEditId(u.id);setEditPin("");setEditPinErr("");}}
+                              style={{padding:"6px 14px",borderRadius:8,border:"1px solid #e2e8f0",
+                                background:"#f8fafc",fontSize:12,fontWeight:700,color:"#374151",
+                                cursor:"pointer",fontFamily:"inherit"}}>
+                              🔑 Change PIN
+                            </button>
+                          )}
+                          {!isSelf&&u.role!=="superadmin"&&(
+                            <button onClick={()=>deleteUser(u.id)}
+                              style={{padding:"6px 12px",borderRadius:8,border:"1px solid #fecaca",
+                                background:"#fef2f2",fontSize:12,fontWeight:700,color:"#dc2626",
+                                cursor:"pointer",fontFamily:"inherit"}}>
+                              🗑
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* PIN edit row */}
+                      {isEdit&&(
+                        <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #f1f5f9",
+                          display:"flex",alignItems:"flex-end",gap:10}}>
+                          <div style={{flex:1}}>
+                            <label style={{fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:4}}>
+                              New 4-digit PIN for {u.name}
+                            </label>
+                            <input
+                              type="password" maxLength={4}
+                              value={editPin}
+                              onChange={e=>{setEditPin(e.target.value.replace(/\D/g,"").slice(0,4));setEditPinErr("");}}
+                              placeholder="● ● ● ●"
+                              style={{...inp,width:160,letterSpacing:"0.2em",fontSize:18,textAlign:"center"}}
+                            />
+                            {editPinErr&&<p style={{margin:"4px 0 0",fontSize:11,color:"#dc2626"}}>{editPinErr}</p>}
+                          </div>
+                          <button onClick={savePin}
+                            style={{padding:"9px 18px",borderRadius:9,border:"none",
+                              background:"linear-gradient(135deg,#1d4ed8,#7c3aed)",
+                              color:"white",fontWeight:700,fontSize:13,cursor:"pointer",
+                              fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                            ✓ Save PIN
+                          </button>
+                          <button onClick={()=>{setEditId(null);setEditPin("");setEditPinErr("");}}
+                            style={{padding:"9px 14px",borderRadius:9,border:"1px solid #e2e8f0",
+                              background:"white",color:"#64748b",fontWeight:600,fontSize:13,
+                              cursor:"pointer",fontFamily:"inherit"}}>
+                            Cancel
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* ────────── ADD USER tab ────────── */}
+          {tab==="add"&&(
+            <div style={{maxWidth:480}}>
+              <p style={{margin:"0 0 20px",fontSize:13,color:"#64748b"}}>
+                Create a new user account. Staff accounts can be restricted to specific shops.
+              </p>
+              <div style={{display:"flex",flexDirection:"column",gap:14}}>
+                <div>
+                  <label style={{fontSize:11,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>
+                    FULL NAME
+                  </label>
+                  <input value={newName} onChange={e=>setNewName(e.target.value)}
+                    placeholder="e.g. Alex Johnson" style={inp}/>
+                </div>
+                <div>
+                  <label style={{fontSize:11,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>
+                    4-DIGIT PIN
+                  </label>
+                  <input type="password" maxLength={4}
+                    value={newPin} onChange={e=>setNewPin(e.target.value.replace(/\D/g,"").slice(0,4))}
+                    placeholder="● ● ● ●"
+                    style={{...inp,width:160,letterSpacing:"0.2em",fontSize:18,textAlign:"center"}}/>
+                </div>
+                <div>
+                  <label style={{fontSize:11,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>
+                    ROLE
+                  </label>
+                  <div style={{display:"flex",gap:10}}>
+                    {[
+                      {v:"admin",  l:"Admin",  desc:"Full access to all features"},
+                      {v:"staff",  l:"Staff",  desc:"Sales only, shop-restricted"},
+                    ].map(r=>(
+                      <div key={r.v} onClick={()=>setNewRole(r.v)}
+                        style={{
+                          flex:1,padding:"12px 14px",borderRadius:12,cursor:"pointer",
+                          border:newRole===r.v?"2px solid #1d4ed8":"2px solid #f1f5f9",
+                          background:newRole===r.v?"#eff6ff":"white",
+                          transition:"all 0.15s",
+                        }}>
+                        <p style={{margin:"0 0 2px",fontWeight:700,fontSize:13,
+                          color:newRole===r.v?"#1d4ed8":"#374151"}}>{r.l}</p>
+                        <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>{r.desc}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+                {newRole==="staff"&&(
+                  <div>
+                    <label style={{fontSize:11,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>
+                      SHOP ACCESS (select one or more)
+                    </label>
+                    <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                      {Object.entries(SHOP_LABELS).map(([sid,sname])=>{
+                        const has=newShops.includes(sid);
+                        return(
+                          <div key={sid} onClick={()=>setNewShops(p=>has?p.filter(x=>x!==sid):[...p,sid])}
+                            style={{
+                              display:"flex",alignItems:"center",gap:10,padding:"10px 14px",
+                              borderRadius:10,cursor:"pointer",
+                              border:has?"1px solid #1d4ed8":"1px solid #f1f5f9",
+                              background:has?"#eff6ff":"#fafafa",
+                              transition:"all 0.15s",
+                            }}>
+                            <div style={{
+                              width:18,height:18,borderRadius:5,flexShrink:0,
+                              border:has?"2px solid #1d4ed8":"2px solid #e2e8f0",
+                              background:has?"#1d4ed8":"white",
+                              display:"flex",alignItems:"center",justifyContent:"center",
+                            }}>
+                              {has&&<span style={{color:"white",fontSize:10,fontWeight:900}}>✓</span>}
+                            </div>
+                            <span style={{fontSize:13,fontWeight:600,color:has?"#1d4ed8":"#374151"}}>{sname}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {formErr&&(
+                  <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,
+                    padding:"10px 14px",fontSize:12,color:"#dc2626",fontWeight:600}}>
+                    ⚠️ {formErr}
+                  </div>
+                )}
+                <button onClick={addUser}
+                  style={{padding:"12px 0",borderRadius:11,border:"none",
+                    background:"linear-gradient(135deg,#1d4ed8,#7c3aed)",
+                    color:"white",fontWeight:800,fontSize:14,cursor:"pointer",
+                    fontFamily:"inherit",boxShadow:"0 4px 16px rgba(37,99,235,0.30)",
+                    marginTop:4}}>
+                  ➕ Create User
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* ────────── SHOP ACCESS tab ────────── */}
+          {tab==="shops"&&(
+            <div>
+              <p style={{margin:"0 0 16px",fontSize:13,color:"#64748b"}}>
+                Toggle shop access for each staff member. Admin accounts always have full access.
+              </p>
+              <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                {users.filter(u=>u.role==="staff").length===0&&(
+                  <div style={{textAlign:"center",padding:"40px 0",color:"#94a3b8",fontSize:13}}>
+                    No staff members yet. Add one in the <strong>Add User</strong> tab.
+                  </div>
+                )}
+                {users.filter(u=>u.role==="staff").map(u=>(
+                  <div key={u.id} style={{border:"1px solid #f1f5f9",borderRadius:14,padding:"16px 18px",background:"white"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
+                      <div style={{width:36,height:36,borderRadius:10,background:u.avatar,
+                        display:"flex",alignItems:"center",justifyContent:"center",
+                        color:"white",fontWeight:800,fontSize:13,flexShrink:0}}>
+                        {u.initials}
+                      </div>
+                      <div>
+                        <p style={{margin:0,fontWeight:700,fontSize:14,color:"#0f172a"}}>{u.name}</p>
+                        <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>Staff · Sales tab only per assigned shop</p>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
+                      {Object.entries(SHOP_LABELS).map(([sid,sname])=>{
+                        const has=(u.shops||[]).includes(sid);
+                        return(
+                          <div key={sid} onClick={()=>toggleShop(u.id,sid)}
+                            style={{
+                              display:"flex",alignItems:"center",gap:8,padding:"8px 14px",
+                              borderRadius:10,cursor:"pointer",
+                              border:has?"1px solid #1d4ed8":"1px solid #e2e8f0",
+                              background:has?"#eff6ff":"#f8fafc",
+                              transition:"all 0.15s",
+                            }}>
+                            <div style={{
+                              width:16,height:16,borderRadius:4,flexShrink:0,
+                              border:has?"2px solid #1d4ed8":"2px solid #cbd5e1",
+                              background:has?"#1d4ed8":"white",
+                              display:"flex",alignItems:"center",justifyContent:"center",
+                            }}>
+                              {has&&<span style={{color:"white",fontSize:9,fontWeight:900}}>✓</span>}
+                            </div>
+                            <span style={{fontSize:12,fontWeight:600,color:has?"#1d4ed8":"#64748b"}}>{sname}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* info box */}
+              <div style={{marginTop:20,background:"#fffbeb",borderRadius:12,padding:"12px 16px",
+                border:"1px solid #fde68a",display:"flex",gap:10}}>
+                <span style={{fontSize:16,flexShrink:0}}>💡</span>
+                <p style={{margin:0,fontSize:12,color:"#92400e"}}>
+                  Staff members can only view <strong>Sales</strong> in their assigned shops.
+                  Analytics, reports, customers, and all other tabs are hidden for staff.
+                </p>
+              </div>
+            </div>
+          )}
+
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* =========================================================
+   USERS / AUTH
+   ========================================================= */
+const INITIAL_USERS=[
+  {id:"suresh", name:"Suresh", initials:"SU", role:"superadmin", pin:"1111",
+   avatar:"linear-gradient(135deg,#1d4ed8,#7c3aed)", shops:["ros-selections","ros-hairlines","ros-india"]},
+  {id:"rani",   name:"Rani",   initials:"RA", role:"admin",      pin:"2222",
+   avatar:"linear-gradient(135deg,#059669,#0891b2)", shops:["ros-selections","ros-hairlines","ros-india"]},
+  {id:"staff",  name:"Staff",  initials:"ST", role:"staff",      pin:"3333",
+   avatar:"linear-gradient(135deg,#64748b,#334155)", shops:["ros-india"]},
+];
+const ROLE_NAV={
+  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","documents","analytics","reports","settings"],
+  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","documents","analytics","reports"],
+  staff:["sales"],
+};
+const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
+
+/* ── Login Screen ── */
+const LoginScreen=({onLogin,users})=>{
+  const [selUser,setSelUser]=useState(null);
+  const [pin,setPin]=useState("");
+  const [err,setErr]=useState("");
+  const [hovU,setHovU]=useState(null);
+  const [hovB,setHovB]=useState(false);
+  const [showPin,setShowPin]=useState(false);
+
+  const handlePin=(d)=>{
+    if(pin.length>=4)return;
+    const np=pin+d;
+    setPin(np);
+    setErr("");
+    if(np.length===4){
+      setTimeout(()=>{
+        if(np===selUser.pin){ onLogin(selUser); }
+        else{ setErr("Wrong PIN — try again"); setPin(""); }
+      },200);
+    }
+  };
+  const back=()=>{setSelUser(null);setPin("");setErr("");};
+
+  return(
+    <div style={{
+      minHeight:"100vh",
+      background:"linear-gradient(145deg,#0f172a 0%,#1e293b 40%,#0f172a 100%)",
+      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+      fontFamily:"'Arimo',Arial,sans-serif",
+      position:"relative",overflow:"hidden",
+    }}>
+      {/* background mesh */}
+      <div style={{position:"absolute",inset:0,backgroundImage:"radial-gradient(rgba(255,255,255,0.03) 1px,transparent 1px)",backgroundSize:"28px 28px",pointerEvents:"none"}}/>
+      {/* glowing orbs */}
+      <div style={{position:"absolute",top:-120,left:-120,width:400,height:400,borderRadius:"50%",background:"rgba(37,99,235,0.12)",filter:"blur(80px)",pointerEvents:"none"}}/>
+      <div style={{position:"absolute",bottom:-100,right:-100,width:350,height:350,borderRadius:"50%",background:"rgba(124,58,237,0.10)",filter:"blur(80px)",pointerEvents:"none"}}/>
+
+      {/* logo + brand */}
+      <div style={{textAlign:"center",marginBottom:40,position:"relative",zIndex:1}}>
+        <div style={{width:64,height:64,borderRadius:20,background:"linear-gradient(135deg,#2563eb,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",boxShadow:"0 8px 32px rgba(37,99,235,0.40)"}}>
+          <span style={{color:"white",fontWeight:900,fontSize:28}}>R</span>
+        </div>
+        <h1 style={{margin:"0 0 4px",fontSize:26,fontWeight:800,color:"white",letterSpacing:"-0.5px"}}>ROS Business Suite</h1>
+        <p style={{margin:0,fontSize:13,color:"rgba(255,255,255,0.45)",fontWeight:500}}>Select your account to continue</p>
+      </div>
+
+      {!selUser?(
+        /* ── user selection ── */
+        <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:420,padding:"0 24px"}}>
+          <div style={{display:"flex",flexDirection:"column",gap:12}}>
+            {(users||[]).map(u=>{
+              const isH=hovU===u.id;
+              return(
+                <div key={u.id}
+                  onClick={()=>setSelUser(u)}
+                  onMouseEnter={()=>setHovU(u.id)}
+                  onMouseLeave={()=>setHovU(null)}
+                  style={{
+                    display:"flex",alignItems:"center",gap:14,
+                    background:isH?"rgba(255,255,255,0.10)":"rgba(255,255,255,0.05)",
+                    border:isH?"1px solid rgba(255,255,255,0.20)":"1px solid rgba(255,255,255,0.08)",
+                    borderRadius:16,padding:"14px 18px",cursor:"pointer",
+                    transition:"all 0.18s",
+                    transform:isH?"translateX(4px)":"none",
+                  }}>
+                  <div style={{width:46,height:46,borderRadius:14,background:u.avatar,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:15,flexShrink:0,boxShadow:"0 4px 14px rgba(0,0,0,0.25)"}}>
+                    {u.initials}
+                  </div>
+                  <div style={{flex:1}}>
+                    <p style={{margin:0,fontWeight:700,fontSize:15,color:"white"}}>{u.name}</p>
+                  </div>
+                  <span style={{color:"rgba(255,255,255,0.30)",fontSize:18}}>›</span>
+                </div>
+              );
+            })}
+          </div>
+          <p style={{textAlign:"center",marginTop:32,fontSize:11,color:"rgba(255,255,255,0.22)"}}>Developed by ROS Nexus</p>
+        </div>
+      ):(
+        /* ── PIN entry ── */
+        <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:340,padding:"0 24px",textAlign:"center"}}>
+          {/* user badge */}
+          <div style={{marginBottom:24}}>
+            <div style={{width:60,height:60,borderRadius:18,background:selUser.avatar,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:20,margin:"0 auto 10px",boxShadow:"0 8px 24px rgba(0,0,0,0.30)"}}>
+              {selUser.initials}
+            </div>
+            <p style={{margin:"0 0 2px",fontWeight:700,fontSize:17,color:"white"}}>{selUser.name}</p>
+            <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.40)"}}>Enter your 4-digit PIN</p>
+          </div>
+
+          {/* PIN dots */}
+          <div style={{display:"flex",justifyContent:"center",gap:14,marginBottom:8}}>
+            {[0,1,2,3].map(i=>(
+              <div key={i} style={{
+                width:14,height:14,borderRadius:"50%",
+                background:pin.length>i?"white":"rgba(255,255,255,0.15)",
+                border:"2px solid rgba(255,255,255,0.30)",
+                transition:"background 0.15s",
+                boxShadow:pin.length>i?"0 0 10px rgba(255,255,255,0.5)":"none",
+              }}/>
+            ))}
+          </div>
+          {err&&<p style={{margin:"0 0 8px",fontSize:12,color:"#f87171",fontWeight:600}}>{err}</p>}
+
+          {/* numpad */}
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:20,marginBottom:16}}>
+            {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((d,i)=>{
+              const isEmpty=d==="";
+              const isDel=d==="⌫";
+              const isHB=hovB===i;
+              return(
+                <button key={i}
+                  onMouseEnter={()=>setHovB(i)}
+                  onMouseLeave={()=>setHovB(false)}
+                  onClick={()=>{ if(isEmpty)return; if(isDel){setPin(p=>p.slice(0,-1));setErr("");}else handlePin(String(d)); }}
+                  style={{
+                    height:52,borderRadius:13,border:"1px solid rgba(255,255,255,0.12)",
+                    background:isEmpty?"transparent":isHB?"rgba(255,255,255,0.20)":"rgba(255,255,255,0.08)",
+                    color:isEmpty?"transparent":"white",
+                    fontSize:isDel?18:20,fontWeight:isDel?500:700,
+                    cursor:isEmpty?"default":"pointer",
+                    transition:"all 0.15s",
+                    fontFamily:"inherit",
+                    transform:isHB&&!isEmpty?"scale(0.95)":"scale(1)",
+                  }}>
+                  {d}
+                </button>
+              );
+            })}
+          </div>
+
+          <button onClick={back} style={{background:"none",border:"none",color:"rgba(255,255,255,0.40)",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
+            ← Back to accounts
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/* =========================================================
    UI COMPONENTS
    ========================================================= */
 
 export default function App(){
+  const [user,setUser]=useState(null);
   const [shop,setShop]=useState(null);
-  if(shop) return <ShopDashboard shopId={shop} onBack={()=>setShop(null)}/>;
-  return <ShopSelector onSelect={setShop}/>;
+  const [users,setUsers]=useState(INITIAL_USERS);
+  const [settingsOpen,setSettingsOpen]=useState(false);
+
+  const handleLogin=u=>{
+    // always use latest user data from state
+    const fresh=users.find(x=>x.id===u.id)||u;
+    setUser(fresh);setShop(null);
+  };
+
+  if(!user) return <LoginScreen users={users} onLogin={handleLogin}/>;
+
+  // staff: auto-route to their only shop if they only have 1
+  const allowedShops=(user.shops||SHOP_IDS);
+
+  if(shop&&allowedShops.includes(shop))
+    return <ShopDashboard shopId={shop} onBack={()=>setShop(null)} user={user} onLogout={()=>{setUser(null);setShop(null);}}/>;
+
+  return(
+    <>
+      <ShopSelector onSelect={setShop} user={user}
+        onLogout={()=>{setUser(null);setShop(null);}}
+        onOpenSettings={()=>setSettingsOpen(true)}/>
+      {settingsOpen&&user?.role==="superadmin"&&(
+        <SettingsPanel
+          users={users}
+          setUsers={setUsers}
+          currentUser={user}
+          onClose={()=>setSettingsOpen(false)}/>
+      )}
+    </>
+  );
 }
-
-
-

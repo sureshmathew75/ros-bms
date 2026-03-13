@@ -35,11 +35,10 @@ export default function DashboardPanel({
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:18}}>
         {shop.quickCards.map((qc,i)=>(
           <button key={i}
+            className="ros-qcard"
             style={{background:qc.g,borderRadius:14,padding:"16px 10px",border:"none",cursor:"pointer",
               display:"flex",flexDirection:"column",alignItems:"center",gap:7,
-              boxShadow:"0 3px 12px rgba(0,0,0,0.13)",fontFamily:"inherit",transition:"all 0.16s"}}
-            onMouseEnter={e=>{e.currentTarget.style.transform="translateY(-3px)";e.currentTarget.style.boxShadow="0 8px 22px rgba(0,0,0,0.18)";}}
-            onMouseLeave={e=>{e.currentTarget.style.transform="none";e.currentTarget.style.boxShadow="0 3px 12px rgba(0,0,0,0.13)";}}>
+              boxShadow:"0 3px 12px rgba(0,0,0,0.13)",fontFamily:"inherit"}}>
             <span style={{fontSize:20}}>{qc.ic}</span>
             <span style={{fontSize:9.5,fontWeight:800,color:"white",letterSpacing:"0.06em",textAlign:"center",lineHeight:1.35}}>{qc.l}</span>
           </button>
