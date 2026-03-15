@@ -1,4 +1,17 @@
+import { useState } from "react";
 import PanelContainer from "./ui/PanelContainer";
+import { dbDeleteSale } from "../db";
+
+const STATUSES=["ALL","PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"];
+const STATUS_COLOURS={
+  "PENDING":       "#fffbeb",
+  "FULFILLED":     "#f0fdf4",
+  "GOOD FEEDBACK": "#ecfdf5",
+  "RTRN REQSTD":   "#fff7ed",
+  "RETRN RCVD":    "#fef2f2",
+  "EXCHANGED":     "#eef2ff",
+  "REFUNDED":      "#faf5ff",
+};
 
 export default function SalesPanel({
   Badge,
@@ -21,8 +34,11 @@ export default function SalesPanel({
   setSalesPeriod,
   shop,
   shopId,
-  TD
+  TD,
+  user,
+  isStaff,
 }) {
+  const [statusFilter,setStatusFilter]=useState("ALL");
   return (
     <PanelContainer>
       {(()=>{
@@ -206,14 +222,28 @@ export default function SalesPanel({
           </button>
           <button onClick={()=>setModal("new-sale")} style={{padding:"7px 18px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px "+shop.accent+"44"}}>+ New Sale</button>
         </div>
+        {/* ── Status Filter Bar ── */}
+        <div style={{display:"flex",gap:6,padding:"10px 18px",borderBottom:"1px solid #f1f5f9",flexWrap:"wrap"}}>
+          {STATUSES.map(st=>(
+            <button key={st} onClick={()=>setStatusFilter(st)}
+              style={{padding:"5px 14px",borderRadius:999,border:"1px solid",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",
+                background:statusFilter===st?(st==="ALL"?shop.accent:(STATUS_COLOURS[st]||"#f1f5f9")):"white",
+                color:statusFilter===st?(st==="ALL"?"white":shop.accentText):"#64748b",
+                borderColor:statusFilter===st?(st==="ALL"?shop.accent:shop.accent+"66"):"#e2e8f0",
+                boxShadow:statusFilter===st?"0 2px 8px rgba(0,0,0,0.10)":"none",
+              }}>{st}</button>
+          ))}
+        </div>
         <div style={{overflowX:"auto"}}>
           <table style={{width:"100%",borderCollapse:"collapse"}}>
             <thead><tr style={{background:"linear-gradient(90deg,#0f172a,#1e293b)"}}>{["Inv.","Date","Customer Name","Amount","Qty","Status","Tag","Remarks","Actions"].map(h=><th key={h} style={{textAlign:"left",padding:"11px 16px",fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.85)",textTransform:"uppercase",letterSpacing:"0.07em",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
             <tbody>
-              {filtSales.map((s,i)=>(
-                <tr key={s.id} style={{borderBottom:"1px solid #f8fafc",background:i%2===0?"white":"#fafafa",position:"relative"}}
-                  onMouseEnter={e=>e.currentTarget.style.background=shop.accent+"0d"}
-                  onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"white":"#fafafa"}>
+              {filtSales.filter(s=>statusFilter==="ALL"||(s.ful||s.status||"PENDING").toUpperCase()===statusFilter).map((s,i)=>{
+                const rowBg=STATUS_COLOURS[(s.ful||s.status||"PENDING").toUpperCase()]||"white";
+                return(
+                <tr key={s.id} style={{borderBottom:"1px solid #f8fafc",background:rowBg,position:"relative"}}
+                  onMouseEnter={e=>e.currentTarget.style.background=shop.accent+"22"}
+                  onMouseLeave={e=>e.currentTarget.style.background=rowBg}>
                   <TD ch={s.id} mono c={shop.accent} fw={700}/>
                   <TD ch={formatDate(s.date)} c="#64748b"/>
                   <td style={{padding:"12px 20px"}} onClick={e=>{
@@ -271,7 +301,7 @@ export default function SalesPanel({
                               {ic:"💬",  label:"Send Feedback Request",action:()=>alert("Sending Feedback Request to "+s.customer)},
                               {ic:"⭐",  label:"Record Feedback",      action:()=>alert("Recording feedback for "+s.id)},
                               null,
-                              {ic:"🚚",  label:"Mark Dispatched",      action:()=>{setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>x.id===s.id?{...x,ful:"DISPATCHED"}:x)}));setOpenMenu(null);}},
+                              {ic:"🚚",  label:"Mark Fulfilled",        action:()=>{setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>x.id===s.id?{...x,ful:"FULFILLED"}:x)}));setOpenMenu(null);}},
                               {ic:"↩️",  label:"Manage Return",        action:()=>{setEditRow(s);setModal("edit-sale");setOpenMenu(null);}},
                               null,
                               {ic:"🧾",  label:"View Invoice",         action:()=>{setInvoiceRow(s);setOpenMenu(null);}},
@@ -293,8 +323,9 @@ export default function SalesPanel({
                     </div>
                   </td>
                 </tr>
-              ))}
-              {filtSales.length===0&&<tr><td colSpan={9} style={{textAlign:"center",padding:"60px",color:"#94a3b8",fontSize:14}}>No results found.</td></tr>}
+              );
+              })}
+              {filtSales.filter(s=>statusFilter==="ALL"||(s.ful||s.status||"PENDING").toUpperCase()===statusFilter).length===0&&<tr><td colSpan={9} style={{textAlign:"center",padding:"60px",color:"#94a3b8",fontSize:14}}>No results found.</td></tr>}
             </tbody>
           </table>
         </div>

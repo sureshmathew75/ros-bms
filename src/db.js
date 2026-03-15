@@ -104,3 +104,10 @@ export const dbLoadCustomers = async () => {
     last:      r.last || '',
   }));
 };
+
+export const dbDeleteCustomer = async (id) => {
+  if (!sb) return;
+  const { error } = await sb.from('customers').delete().eq('id', id);
+  if (error) console.error('Delete customer error:', error);
+  else console.log('Customer deleted ✅');
+};

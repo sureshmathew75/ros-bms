@@ -21,7 +21,7 @@ import {
   STAGE_THEME
 } from "./constants";
 import { formatCurrency, formatDate, formatNumber } from "./utils";
-import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers } from "./db";
+import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -139,20 +139,38 @@ const fmt=(sid,n)=>{
 };
 
 const BSTYLE={
-  Paid:       {bg:"#dcfce7",c:"#15803d",b:"#bbf7d0"},
-  Pending:    {bg:"#fef9c3",c:"#a16207",b:"#fde047"},
-  Partial:    {bg:"#ffedd5",c:"#c2410c",b:"#fed7aa"},
-  Shipped:    {bg:"#dbeafe",c:"#1d4ed8",b:"#bfdbfe"},
-  Completed:  {bg:"#dcfce7",c:"#15803d",b:"#bbf7d0"},
-  New:        {bg:"#f3e8ff",c:"#7e22ce",b:"#e9d5ff"},
-  Processing: {bg:"#cffafe",c:"#0e7490",b:"#a5f3fc"},
-  "In Transit":{bg:"#dbeafe",c:"#1d4ed8",b:"#bfdbfe"},
-  Delivered:  {bg:"#dcfce7",c:"#15803d",b:"#bbf7d0"},
-  Dispatched: {bg:"#e0e7ff",c:"#4338ca",b:"#c7d2fe"},
-  VIP:        {bg:"#fef9c3",c:"#854d0e",b:"#fde047"},
-  Wholesale:  {bg:"#f3e8ff",c:"#7e22ce",b:"#e9d5ff"},
-  "New Customer":{bg:"#cffafe",c:"#0e7490",b:"#a5f3fc"},
-  Regular:    {bg:"#f1f5f9",c:"#475569",b:"#e2e8f0"},
+  // ── Delivery statuses ──
+  "PENDING":        {bg:"#fef9c3",c:"#a16207",b:"#fde047"},
+  "FULFILLED":      {bg:"#dcfce7",c:"#15803d",b:"#bbf7d0"},
+  "GOOD FEEDBACK":  {bg:"#d1fae5",c:"#065f46",b:"#6ee7b7"},
+  "RTRN REQSTD":    {bg:"#ffedd5",c:"#c2410c",b:"#fed7aa"},
+  "RETRN RCVD":     {bg:"#fee2e2",c:"#991b1b",b:"#fca5a5"},
+  "EXCHANGED":      {bg:"#e0e7ff",c:"#4338ca",b:"#c7d2fe"},
+  "REFUNDED":       {bg:"#f3e4ff",c:"#7e22ce",b:"#d8b4fe"},
+  // ── Legacy support ──
+  "DISPATCHED":     {bg:"#e0e7ff",c:"#4338ca",b:"#c7d2fe"},
+  "DELIVERED":      {bg:"#dcfce7",c:"#15803d",b:"#bbf7d0"},
+  // ── Payment ──
+  Paid:             {bg:"#dcfce7",c:"#15803d",b:"#bbf7d0"},
+  Pending:          {bg:"#fef9c3",c:"#a16207",b:"#fde047"},
+  Partial:          {bg:"#ffedd5",c:"#c2410c",b:"#fed7aa"},
+  SHOP:             {bg:"#dbeafe",c:"#1d4ed8",b:"#bfdbfe"},
+  // ── Customer tags ──
+  VIP:              {bg:"#fef9c3",c:"#854d0e",b:"#fde047"},
+  Wholesale:        {bg:"#f3e8ff",c:"#7e22ce",b:"#e9d5ff"},
+  "New Customer":   {bg:"#cffafe",c:"#0e7490",b:"#a5f3fc"},
+  Regular:          {bg:"#f1f5f9",c:"#475569",b:"#e2e8f0"},
+};
+
+// Row background colour per delivery status
+const STATUS_ROW_BG={
+  "PENDING":       "#fffbeb",
+  "FULFILLED":     "#f0fdf4",
+  "GOOD FEEDBACK": "#ecfdf5",
+  "RTRN REQSTD":   "#fff7ed",
+  "RETRN RCVD":    "#fef2f2",
+  "EXCHANGED":     "#eef2ff",
+  "REFUNDED":      "#faf5ff",
 };
 const Badge=({l})=>{
   const b=BSTYLE[l]||{bg:"#f1f5f9",c:"#475569",b:"#e2e8f0"};
@@ -1149,7 +1167,7 @@ return(
             const monthSales   =sales.filter(s=>isSameMonth(s.date)).reduce((a,s)=>a+(s.amount||0),0);
             const fySales      =sales.filter(s=>isInFY(s.date)).reduce((a,s)=>a+(s.amount||0),0);
             const pendingOrders=sales.filter(s=>s.pay==="Pending"||s.ful==="New"||s.ful==="Processing").length;
-            const monthReturns =sales.filter(s=>isSameMonth(s.date)&&(s.ful==="RETURN REQUESTED"||s.ful==="RETURNED"||s.ful==="EXCHANGED")).length;
+            const monthReturns =sales.filter(s=>isSameMonth(s.date)&&(s.ful==="RTRN REQSTD"||s.ful==="RETRN RCVD"||s.ful==="EXCHANGED")).length;
             const monthRefunds =sales.filter(s=>isSameMonth(s.date)&&(s.ful==="REFUNDED")).reduce((a,s)=>a+(s.refundAmt||0),0);
 
             const monthCount=sales.filter(s=>isSameMonth(s.date)).length;
@@ -1525,7 +1543,7 @@ return(
 
           {/* ─── CUSTOMERS ─── */}
           {tab==="customers"&&(
-            <CustomersPanel Badge={Badge} customers={customers} search={search} shop={shop}/>
+            <CustomersPanel Badge={Badge} customers={customers} search={search} shop={shop} setCustomers={setCustomers} user={user} dbDeleteCustomer={dbDeleteCustomer}/>
           )}
 
           {/* ─── SUPPLIERS ─── */}
@@ -2691,7 +2709,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     </div>
   );
 
-  const needReturn=["RETURN REQUESTED","RETURNED","EXCHANGED","REFUNDED"].includes(form.status);
+  const needReturn=["RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"].includes(form.status);
   const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8"};
   const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
@@ -2830,7 +2848,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
           <label style={lbl}>Delivery Status</label>
           <select value={form.status} onChange={e=>set("status",e.target.value)}
             style={{...inp,fontWeight:700,color:statusColor[form.status]||"#374151"}}>
-            {["PENDING","DISPATCHED","DELIVERED","RETURN REQUESTED","RETURNED","EXCHANGED","REFUNDED"].map(o=>(
+            {["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"].map(o=>(
               <option key={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>
             ))}
           </select>
@@ -3501,7 +3519,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum})=>{
     </div>
   );
 
-  const needReturn=["RETURN REQUESTED","RETURNED","EXCHANGED","REFUNDED"].includes(form.status);
+  const needReturn=["RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"].includes(form.status);
   const useCustomItem=form.item==="__custom__";
 
   const handleAddCustomer=(newCust)=>{
@@ -3733,7 +3751,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum})=>{
           <label style={lbl}>Delivery Status</label>
           <select value={form.status} onChange={e=>set("status",e.target.value)}
             style={{...inp,color:statusColor[form.status]||"#374151",fontWeight:700}}>
-            {["PENDING","DISPATCHED","DELIVERED","RETURN REQUESTED","RETURNED","EXCHANGED","REFUNDED"].map(o=>(
+            {["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"].map(o=>(
               <option key={o} value={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>
             ))}
           </select>
@@ -3808,7 +3826,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum})=>{
    ========================================================= */
 
 /* ── CustomersPanel ── */
-const CustomersPanel=({customers,search,shop,Badge})=>{
+const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCustomer})=>{
   const [sel,setSel]=useState(null);
   const [hovR,setHovR]=useState(null);
   const filtered=(customers||[]).filter(c=>
@@ -3958,6 +3976,21 @@ const CustomersPanel=({customers,search,shop,Badge})=>{
                   ))}
                 </div>
               </div>
+            </div>
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
+              {(user?.role==="superadmin"||user?.role==="admin")&&(
+                <button onClick={()=>{
+                  if(window.confirm("Delete "+c.name+" from customer database?")){
+                    setCustomers(prev=>prev.filter(x=>x.id!==c.id));
+                    if(dbDeleteCustomer) dbDeleteCustomer(c.id);
+                    setSel(null);
+                  }
+                }} style={{padding:"8px 20px",borderRadius:10,border:"1px solid #fca5a5",
+                  background:"#fff5f5",color:"#dc2626",fontSize:13,fontWeight:700,
+                  cursor:"pointer",fontFamily:"inherit"}}>
+                  🗑 Delete Customer
+                </button>
+              )}
             </div>
           </div>
         );
