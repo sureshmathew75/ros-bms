@@ -625,10 +625,14 @@ const ShopDashboard=({shopId,onBack,user,onLogout})=>{
   },[]);
 
   useEffect(()=>{
-    import("./db").then(({dbLoadSales})=>dbLoadSales(shopId)).then(data=>{
-      if(data&&data.length>0) setSalesData(d=>({...d,[shopId]:data}));
+    // Load all shops at once to prevent cross-shop data wipe
+    const shops=["ros-selections","ros-hairlines","ros-india"];
+    shops.forEach(sid=>{
+      import("./db").then(({dbLoadSales})=>dbLoadSales(sid)).then(data=>{
+        if(data&&data.length>0) setSalesData(d=>({...d,[sid]:data}));
+      }).catch(()=>{});
     });
-  },[shopId]);
+  },[]);
 
   useEffect(()=>{
     import("./db").then(({dbLoadCustomers})=>dbLoadCustomers()).then(data=>{
@@ -719,7 +723,7 @@ const addSale = async (form) => {
       if(idx>=0){const n=[...prev];n[idx]=updatedCust;return n;}
       return [...prev,updatedCust];
     });
-    import("./db").then(({dbSaveCustomer})=>dbSaveCustomer(updatedCust)).catch(err=>console.error("❌ Customer save failed:",err));
+    import("./db").then(({dbSaveCustomer})=>dbSaveCustomer(updatedCust)).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
   }
 };
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
