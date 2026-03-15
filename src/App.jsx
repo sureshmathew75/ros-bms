@@ -214,27 +214,24 @@ const ShopLogo = ({ shopId, size = "card" }) => {
 /* ════════════════════════════════════════════════════
    SHOP SELECTOR
 ════════════════════════════════════════════════════ */
-const ShopSelector=({onSelect,user,onLogout,onOpenSettings})=>{
+const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
   const [hov,setHov]=useState(null);
   const [cmd,setCmd]=useState(false);
   const [statHov,setStatHov]=useState(null);
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
-  const [shopStats,setShopStats]=useState({});
+  // shopStats computed directly from salesData prop
 
-  useEffect(()=>{
-    const today=new Date().toISOString().split('T')[0];
-    SHOPS.forEach(shop=>{
-      Promise.resolve(dbLoadSales(shop.id)).then(data=>{
-        if(!data) return;
-        const todaySales=data.filter(s=>s.date===today);
-        const todayRev=todaySales.reduce((a,s)=>a+(s.amount||0),0);
-        const totalRev=data.reduce((a,s)=>a+(s.amount||0),0);
-        const pending=data.filter(s=>s.pay==="Pending"||s.pay==="PENDING").length;
-        const orders=data.length;
-        setShopStats(prev=>({...prev,[shop.id]:{todaySales:todayRev,totalRev,pendingOrders:pending,orders}}));
-      }).catch(()=>{});
-    });
-  },[]);
+  // Calculate stats directly from salesData prop (always up to date)
+  const today=new Date().toISOString().split('T')[0];
+  const shopStats={};
+  SHOPS.forEach(shop=>{
+    const data=salesData[shop.id]||[];
+    const todayRev=data.filter(s=>s.date===today).reduce((a,s)=>a+(s.amount||0),0);
+    const totalRev=data.reduce((a,s)=>a+(s.amount||0),0);
+    const pending=data.filter(s=>s.pay==="Pending"||s.pay==="PENDING").length;
+    const orders=data.length;
+    shopStats[shop.id]={todaySales:todayRev,totalRev,pendingOrders:pending,orders};
+  });
 
   useEffect(()=>{
     const h=()=>setIsMobile(window.innerWidth<768);
@@ -4693,7 +4690,7 @@ export default function App(){
 
   return(
     <>
-      <ShopSelector onSelect={handleSetShop} user={user}
+      <ShopSelector onSelect={handleSetShop} user={user} salesData={salesData}
         onLogout={handleLogout}
         onOpenSettings={()=>setSettingsOpen(true)}/>
       {settingsOpen&&user?.role==="superadmin"&&(
