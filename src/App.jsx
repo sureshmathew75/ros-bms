@@ -591,7 +591,24 @@ const ShopDashboard=({shopId,onBack,user,onLogout})=>{
   const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
   const [coll,setColl]=useState(false);
   const [mobileOpen,setMobileOpen]=useState(false);
-  
+  const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
+  const [pdfMode,setPdfMode]=useState(false);
+  const [salesPeriod,setSalesPeriodRaw]=useState("month");
+  const [pdfInv,setPdfInv]=useState(null);
+  const invoicePrintRef=useRef(null);
+
+  useEffect(()=>{
+    const h=()=>setIsMobile(window.innerWidth<768);
+    window.addEventListener("resize",h);
+    return()=>window.removeEventListener("resize",h);
+  },[]);
+
+  useEffect(()=>{
+    import("./db").then(({dbLoadSales})=>dbLoadSales(shopId)).then(data=>{
+      if(data&&data.length>0) setSalesData(d=>({...d,[shopId]:data}));
+    });
+  },[shopId]);
+
   // ── Invoice computed vars ──
   const _invTaxR    = invoiceRow ? ((invoiceRow.taxRate!==undefined?invoiceRow.taxRate:(shopId==="ros-india"?18:20))/100) : 0;
   const _invInc     = invoiceRow ? invoiceRow.taxInclusive!==false : true;
@@ -599,12 +616,6 @@ const ShopDashboard=({shopId,onBack,user,onLogout})=>{
   const invSubtotal = _invInc ? parseFloat((_invEntered/(1+_invTaxR)).toFixed(2)) : _invEntered;
   const invTaxAmt   = parseFloat((invSubtotal*_invTaxR).toFixed(2));
   const invGrand    = parseFloat((invSubtotal+invTaxAmt).toFixed(2));
-  const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
-useEffect(()=>{
-  import("./db").then(({dbLoadSales})=>dbLoadSales(shopId)).then(data=>{
-    if(data&&data.length>0) setSalesData(d=>({...d,[shopId]:data}));
-  });
-},[shopId]);
 
   const shop=SHOPS.find(s=>s.id===shopId);
   const sales=salesData[shopId]||[];
@@ -663,15 +674,11 @@ const addSale = async (form) => {
 };
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
 
-  const [pdfMode,setPdfMode]=useState(false);
-  const [salesPeriod,setSalesPeriodRaw]=useState("month");
   const setSalesPeriod=(p)=>{
     if(user?.role==="staff"&&(p==="year"||p==="lifetime"))return;
     setSalesPeriodRaw(p);
   };
-  const [pdfInv,setPdfInv]=useState(null);
   const showPdf=(inv)=>{setPdfInv(inv);setPdfMode(true);};
-  const invoicePrintRef=useRef(null);
   const handlePrint=useCallback((inv)=>{
     const el=document.getElementById('invoice-content');
     if(!el){
