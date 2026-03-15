@@ -598,7 +598,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings})=>{
 </div>
 );
 };
-const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData})=>{
+const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":"dashboard");
   const [hov,setHov]=useState(null);
   const [search,setSearch]=useState("");
@@ -609,8 +609,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData})=>{
   const [openMenu,setOpenMenu]=useState(null);
   const [invoiceRow,setInvoiceRow]=useState(null);
   const [printMode,setPrintMode]=useState(false);
-  // salesData/setSalesData received as props from App (persists across shop switches)
-  const [customers,setCustomers]=useState([]);
+  // salesData, setSalesData, customers, setCustomers all received as props from App
   const [coll,setColl]=useState(false);
   const [mobileOpen,setMobileOpen]=useState(false);
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
@@ -627,11 +626,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData})=>{
 
   // Sales loaded at App level
 
-  useEffect(()=>{
-    dbLoadCustomers().then(data=>{
-      if(data&&data.length>0) setCustomers(data);
-    }).catch(()=>{});
-  },[]);
+  // Customers loaded at App level
 
   // ── Invoice computed vars ──
   const _invTaxR    = invoiceRow ? ((invoiceRow.taxRate!==undefined?invoiceRow.taxRate:(shopId==="ros-india"?18:20))/100) : 0;
@@ -692,8 +687,12 @@ const addSale = async (form) => {
   // Update UI instantly
   setSalesData(d => ({...d, [shopId]: [newSale, ...d[shopId]]}));
   setModal(null);
-  // Save to Supabase in background
-  dbSaveSale(shopId, newSale).catch(err => console.error("❌ Supabase save failed:", err));
+  // Save to Supabase then reload that shop's sales to ensure consistency
+  dbSaveSale(shopId, newSale).then(()=>{
+    dbLoadSales(shopId).then(data=>{
+      if(data&&data.length>0) setSalesData(d=>({...d,[shopId]:data}));
+    }).catch(()=>{});
+  }).catch(err => console.error("❌ Supabase save failed:", err));
   // Auto-save/update customer record
   if(form.customer){
     const existing=customers.find(c=>c.name===form.customer);
@@ -4652,15 +4651,21 @@ export default function App(){
   const [users,setUsers]=useState(INITIAL_USERS);
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
+  const [customers,setCustomers]=useState([]);
 
-  // Load all shops sales once at app level so data persists across shop switches
+  // Load all data once at app level so it persists across shop switches
   useEffect(()=>{
+    // Load sales for all shops
     const shops=["ros-selections","ros-hairlines","ros-india"];
     shops.forEach(sid=>{
       dbLoadSales(sid).then(data=>{
         if(data&&data.length>0) setSalesData(d=>({...d,[sid]:data}));
       }).catch(()=>{});
     });
+    // Load customers
+    dbLoadCustomers().then(data=>{
+      if(data&&data.length>0) setCustomers(data);
+    }).catch(()=>{});
   },[]);
 
   const handleLogin=u=>{
@@ -4684,7 +4689,7 @@ export default function App(){
   const allowedShops=(user.shops||SHOP_IDS);
 
   if(shop&&allowedShops.includes(shop))
-    return <ShopDashboard shopId={shop} onBack={()=>{setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={setSalesData}/>;
+    return <ShopDashboard shopId={shop} onBack={()=>{setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={setSalesData} customers={customers} setCustomers={setCustomers}/>;
 
   return(
     <>
