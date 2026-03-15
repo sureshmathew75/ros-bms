@@ -21,6 +21,7 @@ import {
   STAGE_THEME
 } from "./constants";
 import { formatCurrency, formatDate, formatNumber } from "./utils";
+import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -223,7 +224,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings})=>{
   useEffect(()=>{
     const today=new Date().toISOString().split('T')[0];
     SHOPS.forEach(shop=>{
-      import("./db").then(({dbLoadSales})=>dbLoadSales(shop.id)).then(data=>{
+      Promise.resolve(dbLoadSales(shop.id)).then(data=>{
         if(!data) return;
         const todaySales=data.filter(s=>s.date===today);
         const todayRev=todaySales.reduce((a,s)=>a+(s.amount||0),0);
@@ -627,7 +628,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData})=>{
   // Sales loaded at App level
 
   useEffect(()=>{
-    import("./db").then(({dbLoadCustomers})=>dbLoadCustomers()).then(data=>{
+    dbLoadCustomers().then(data=>{
       if(data&&data.length>0) setCustomers(data);
     }).catch(()=>{});
   },[]);
@@ -692,8 +693,7 @@ const addSale = async (form) => {
   setSalesData(d => ({...d, [shopId]: [newSale, ...d[shopId]]}));
   setModal(null);
   // Save to Supabase in background
-  import("./db").then(({dbSaveSale}) => dbSaveSale(shopId, newSale))
-    .catch(err => console.error("❌ Supabase save failed:", err));
+  dbSaveSale(shopId, newSale).catch(err => console.error("❌ Supabase save failed:", err));
   // Auto-save/update customer record
   if(form.customer){
     const existing=customers.find(c=>c.name===form.customer);
@@ -715,7 +715,7 @@ const addSale = async (form) => {
       if(idx>=0){const n=[...prev];n[idx]=updatedCust;return n;}
       return [...prev,updatedCust];
     });
-    import("./db").then(({dbSaveCustomer})=>dbSaveCustomer(updatedCust)).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
+    dbSaveCustomer(updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
   }
 };
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
@@ -4657,7 +4657,7 @@ export default function App(){
   useEffect(()=>{
     const shops=["ros-selections","ros-hairlines","ros-india"];
     shops.forEach(sid=>{
-      import("./db").then(({dbLoadSales})=>dbLoadSales(sid)).then(data=>{
+      dbLoadSales(sid).then(data=>{
         if(data&&data.length>0) setSalesData(d=>({...d,[sid]:data}));
       }).catch(()=>{});
     });

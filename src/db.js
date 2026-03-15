@@ -1,21 +1,12 @@
-let _sb = null;
+import { createClient } from '@supabase/supabase-js';
 
-const getSB = async () => {
-  if (_sb) return _sb;
-  try {
-    const url = process.env.REACT_APP_SUPABASE_URL;
+const url = process.env.REACT_APP_SUPABASE_URL;
 const key = process.env.REACT_APP_SUPABASE_ANON_KEY;
-    if (!url || !key) return null;
-    const { createClient } = await import('@supabase/supabase-js');
-    _sb = createClient(url, key);
-  } catch(e) {
-    console.warn('Supabase not available:', e);
-  }
-  return _sb;
-};
+
+// Single instance created once at module level
+const sb = (url && key) ? createClient(url, key) : null;
 
 export const dbSaveSale = async (shopId, sale) => {
-  const sb = await getSB();
   if (!sb) return;
   const { error } = await sb.from('sales').upsert({
     id:            sale.id,
@@ -41,7 +32,6 @@ export const dbSaveSale = async (shopId, sale) => {
 };
 
 export const dbLoadSales = async (shopId) => {
-  const sb = await getSB();
   if (!sb) return null;
   const { data, error } = await sb
     .from('sales')
@@ -68,8 +58,15 @@ export const dbLoadSales = async (shopId) => {
     invoiceNo:   r.invoice_no || r.id,
   }));
 };
+
+export const dbDeleteSale = async (id) => {
+  if (!sb) return;
+  const { error } = await sb.from('sales').delete().eq('id', id);
+  if (error) console.error('Delete sale error:', error);
+  else console.log('Sale deleted ✅');
+};
+
 export const dbSaveCustomer = async (customer) => {
-  const sb = await getSB();
   if (!sb) return;
   const { error } = await sb.from('customers').upsert({
     id:        customer.id,
@@ -82,13 +79,12 @@ export const dbSaveCustomer = async (customer) => {
     purchases: customer.purchases || 0,
     spend:     customer.spend || 0,
     last:      customer.last || '',
-  });
+  }, { onConflict: 'id' });
   if (error) console.error('Save customer error:', error);
   else console.log('Customer saved ✅');
 };
 
 export const dbLoadCustomers = async () => {
-  const sb = await getSB();
   if (!sb) return null;
   const { data, error } = await sb
     .from('customers')
@@ -107,12 +103,4 @@ export const dbLoadCustomers = async () => {
     spend:     r.spend || 0,
     last:      r.last || '',
   }));
-};
-
-export const dbDeleteSale = async (id) => {
-  const sb = await getSB();
-  if (!sb) return;
-  const { error } = await sb.from('sales').delete().eq('id', id);
-  if (error) console.error('Delete sale error:', error);
-  else console.log('Sale deleted ✅');
 };
