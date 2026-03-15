@@ -597,7 +597,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings})=>{
 </div>
 );
 };
-const ShopDashboard=({shopId,onBack,user,onLogout})=>{
+const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":"dashboard");
   const [hov,setHov]=useState(null);
   const [search,setSearch]=useState("");
@@ -608,7 +608,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout})=>{
   const [openMenu,setOpenMenu]=useState(null);
   const [invoiceRow,setInvoiceRow]=useState(null);
   const [printMode,setPrintMode]=useState(false);
-  const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
+  // salesData/setSalesData received as props from App (persists across shop switches)
   const [customers,setCustomers]=useState([]);
   const [coll,setColl]=useState(false);
   const [mobileOpen,setMobileOpen]=useState(false);
@@ -624,15 +624,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout})=>{
     return()=>window.removeEventListener("resize",h);
   },[]);
 
-  useEffect(()=>{
-    // Load all shops at once to prevent cross-shop data wipe
-    const shops=["ros-selections","ros-hairlines","ros-india"];
-    shops.forEach(sid=>{
-      import("./db").then(({dbLoadSales})=>dbLoadSales(sid)).then(data=>{
-        if(data&&data.length>0) setSalesData(d=>({...d,[sid]:data}));
-      }).catch(()=>{});
-    });
-  },[]);
+  // Sales loaded at App level
 
   useEffect(()=>{
     import("./db").then(({dbLoadCustomers})=>dbLoadCustomers()).then(data=>{
@@ -4659,6 +4651,17 @@ export default function App(){
   });
   const [users,setUsers]=useState(INITIAL_USERS);
   const [settingsOpen,setSettingsOpen]=useState(false);
+  // salesData/setSalesData received as props from App (persists across shop switches)
+
+  // Load all shops sales once at app level so data persists across shop switches
+  useEffect(()=>{
+    const shops=["ros-selections","ros-hairlines","ros-india"];
+    shops.forEach(sid=>{
+      import("./db").then(({dbLoadSales})=>dbLoadSales(sid)).then(data=>{
+        if(data&&data.length>0) setSalesData(d=>({...d,[sid]:data}));
+      }).catch(()=>{});
+    });
+  },[]);
 
   const handleLogin=u=>{
     const fresh=users.find(x=>x.id===u.id)||u;
@@ -4681,7 +4684,7 @@ export default function App(){
   const allowedShops=(user.shops||SHOP_IDS);
 
   if(shop&&allowedShops.includes(shop))
-    return <ShopDashboard shopId={shop} onBack={()=>{setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}} user={user} onLogout={handleLogout}/>;
+    return <ShopDashboard shopId={shop} onBack={()=>{setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={setSalesData}/>;
 
   return(
     <>
