@@ -221,15 +221,16 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings})=>{
   const [shopStats,setShopStats]=useState({});
 
   useEffect(()=>{
-    // Load today's sales for each shop from Supabase
     const today=new Date().toISOString().split('T')[0];
     SHOPS.forEach(shop=>{
       import("./db").then(({dbLoadSales})=>dbLoadSales(shop.id)).then(data=>{
         if(!data) return;
         const todaySales=data.filter(s=>s.date===today);
         const todayRev=todaySales.filter(s=>s.pay==="Paid").reduce((a,s)=>a+(s.amount||0),0);
+        const totalRev=data.filter(s=>s.pay==="Paid").reduce((a,s)=>a+(s.amount||0),0);
         const pending=data.filter(s=>s.pay==="Pending").length;
-        setShopStats(prev=>({...prev,[shop.id]:{todaySales:todayRev,pendingOrders:pending}}));
+        const orders=data.length;
+        setShopStats(prev=>({...prev,[shop.id]:{todaySales:todayRev,totalRev,pendingOrders:pending,orders}}));
       }).catch(()=>{});
     });
   },[]);
@@ -441,15 +442,15 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings})=>{
 
         {/* ── LIFETIME STATS — admin only ── */}
         {user?.role!=="staff"&&(()=>{
-          const ukSales=[...(SALES_SEED["ros-selections"]||[]),...(SALES_SEED["ros-hairlines"]||[])];
-          const inSales=SALES_SEED["ros-india"]||[];
-          const ukPurch=[...(PURCH_SEED["ros-selections"]||[]),...(PURCH_SEED["ros-hairlines"]||[])];
-          const inPurch=PURCH_SEED["ros-india"]||[];
-          // Add live stats on top
-          const ukLiveRev=(shopStats["ros-selections"]?.todaySales||0)+(shopStats["ros-hairlines"]?.todaySales||0);
-          const inLiveRev=shopStats["ros-india"]?.todaySales||0;
           const sumAmt=arr=>arr.reduce((a,x)=>a+(x.amount||0),0);
           const sumTot=arr=>arr.reduce((a,x)=>a+(x.total||0),0);
+          // Use live data from shopStats
+          const ukLiveRev=(shopStats["ros-selections"]?.totalRev||0)+(shopStats["ros-hairlines"]?.totalRev||0);
+          const inLiveRev=shopStats["ros-india"]?.totalRev||0;
+          const ukPendingOrders=(shopStats["ros-selections"]?.pendingOrders||0)+(shopStats["ros-hairlines"]?.pendingOrders||0);
+          const inPendingOrders=shopStats["ros-india"]?.pendingOrders||0;
+          const ukSales=[];const inSales=[];
+          const ukPurch=[];const inPurch=[];
           const playBell=()=>{
             try{
               const ctx=new(window.AudioContext||window.webkitAudioContext)();
@@ -474,13 +475,13 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings})=>{
             },
             {
               icon:"🇬🇧", label:"Sales Volume UK", sub:"Selections + Hairlines",
-              display:"£"+formatNumber(sumAmt(ukSales)+ukLiveRev), suffix:"lifetime",
+              display:"£"+formatNumber(ukLiveRev), suffix:"lifetime",
               grad:"linear-gradient(135deg,#0e7490 0%,#06b6d4 50%,#67e8f9 100%)",
               glow:"rgba(6,182,212,0.35)", shine:"rgba(255,255,255,0.15)",
             },
             {
               icon:"🇮🇳", label:"Sales Volume India", sub:"ROS India",
-              display:formatCurrency(sumAmt(inSales)+inLiveRev), suffix:"lifetime",
+              display:formatCurrency(inLiveRev), suffix:"lifetime",
               grad:"linear-gradient(135deg,#9d174d 0%,#e95597 50%,#f9a8d4 100%)",
               glow:"rgba(233,85,151,0.35)", shine:"rgba(255,255,255,0.15)",
             },
@@ -608,6 +609,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout})=>{
   const [invoiceRow,setInvoiceRow]=useState(null);
   const [printMode,setPrintMode]=useState(false);
   const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
+  const [customers,setCustomers]=useState([]);
   const [coll,setColl]=useState(false);
   const [mobileOpen,setMobileOpen]=useState(false);
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
@@ -627,6 +629,12 @@ const ShopDashboard=({shopId,onBack,user,onLogout})=>{
       if(data&&data.length>0) setSalesData(d=>({...d,[shopId]:data}));
     });
   },[shopId]);
+
+  useEffect(()=>{
+    import("./db").then(({dbLoadCustomers})=>dbLoadCustomers()).then(data=>{
+      if(data&&data.length>0) setCustomers(data);
+    }).catch(()=>{});
+  },[]);
 
   // ── Invoice computed vars ──
   const _invTaxR    = invoiceRow ? ((invoiceRow.taxRate!==undefined?invoiceRow.taxRate:(shopId==="ros-india"?18:20))/100) : 0;
@@ -669,7 +677,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout})=>{
 
 const addSale = async (form) => {
   const pfx = {["ros-selections"]:"SI",["ros-hairlines"]:"SH",["ros-india"]:"IN"}[shopId];
-  const nid = form.invoiceNo || `${pfx}-${1060 + sales.length}`;
+  const nid = form.invoiceNo || `${pfx}-${Date.now().toString().slice(-6)}`;
   const newSale = {
     id: nid, ...form,
     amount:       Number(form.amount) || 0,
@@ -690,6 +698,29 @@ const addSale = async (form) => {
   // Save to Supabase in background
   import("./db").then(({dbSaveSale}) => dbSaveSale(shopId, newSale))
     .catch(err => console.error("❌ Supabase save failed:", err));
+  // Auto-save/update customer record
+  if(form.customer){
+    const existing=customers.find(c=>c.name===form.customer);
+    const custId=existing?.id||("CUST-"+Date.now().toString().slice(-6));
+    const updatedCust={
+      id: custId,
+      name: form.customer,
+      phone: form.contact||existing?.phone||"",
+      whatsapp: form.contact||existing?.whatsapp||"",
+      address: form.address||existing?.address||"",
+      tag: existing?.tag||"New Customer",
+      notes: existing?.notes||"",
+      purchases: (existing?.purchases||0)+1,
+      spend: (existing?.spend||0)+(Number(form.amount)||0),
+      last: new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}),
+    };
+    setCustomers(prev=>{
+      const idx=prev.findIndex(c=>c.name===form.customer);
+      if(idx>=0){const n=[...prev];n[idx]=updatedCust;return n;}
+      return [...prev,updatedCust];
+    });
+    import("./db").then(({dbSaveCustomer})=>dbSaveCustomer(updatedCust)).catch(()=>{});
+  }
 };
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
 
@@ -1461,7 +1492,7 @@ return(
           {tab==="sales"&&(
             <SalesPanel
               Badge={Badge}
-              customers={CUSTOMERS}
+              customers={customers}
               filtSales={filtSales}
               fmt={fmt}
               formatDate={formatDate}
@@ -1502,7 +1533,7 @@ return(
 
           {/* ─── CUSTOMERS ─── */}
           {tab==="customers"&&(
-            <CustomersPanel Badge={Badge} customers={CUSTOMERS} search={search} shop={shop}/>
+            <CustomersPanel Badge={Badge} customers={customers} search={search} shop={shop}/>
           )}
 
           {/* ─── SUPPLIERS ─── */}
@@ -1537,7 +1568,7 @@ return(
 
           {tab==="analytics"&&(
             <AnalyticsPanel
-              customers={CUSTOMERS}
+              customers={customers}
               fmt={fmt}
               MONTHLY={MONTHLY}
               sales={sales}
@@ -2703,7 +2734,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose})=>{
           <label style={lbl}>Customer Name</label>
           <select value={form.customer} onChange={e=>set("customer",e.target.value)} style={inp}>
             <option value="">Select customer…</option>
-            {CUSTOMERS.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+            {customers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
           </select>
         </div>
         <div>
