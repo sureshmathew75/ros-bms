@@ -474,13 +474,13 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings})=>{
             },
             {
               icon:"🇬🇧", label:"Sales Volume UK", sub:"Selections + Hairlines",
-              display:"£"+formatNumber(sumAmt(ukSales)), suffix:"lifetime",
+              display:"£"+formatNumber(sumAmt(ukSales)+ukLiveRev), suffix:"lifetime",
               grad:"linear-gradient(135deg,#0e7490 0%,#06b6d4 50%,#67e8f9 100%)",
               glow:"rgba(6,182,212,0.35)", shine:"rgba(255,255,255,0.15)",
             },
             {
               icon:"🇮🇳", label:"Sales Volume India", sub:"ROS India",
-              display:formatCurrency(sumAmt(inSales)), suffix:"lifetime",
+              display:formatCurrency(sumAmt(inSales)+inLiveRev), suffix:"lifetime",
               grad:"linear-gradient(135deg,#9d174d 0%,#e95597 50%,#f9a8d4 100%)",
               glow:"rgba(233,85,151,0.35)", shine:"rgba(255,255,255,0.15)",
             },
@@ -4616,29 +4616,42 @@ const LoginScreen=({onLogin,users})=>{
    ========================================================= */
 
 export default function App(){
-  const [user,setUser]=useState(null);
-  const [shop,setShop]=useState(null);
+  const [user,setUser]=useState(()=>{
+    try{const s=localStorage.getItem("ros_user");return s?JSON.parse(s):null;}catch{return null;}
+  });
+  const [shop,setShop]=useState(()=>{
+    try{return localStorage.getItem("ros_shop")||null;}catch{return null;}
+  });
   const [users,setUsers]=useState(INITIAL_USERS);
   const [settingsOpen,setSettingsOpen]=useState(false);
 
   const handleLogin=u=>{
-    // always use latest user data from state
     const fresh=users.find(x=>x.id===u.id)||u;
     setUser(fresh);setShop(null);
+    try{localStorage.setItem("ros_user",JSON.stringify(fresh));localStorage.removeItem("ros_shop");}catch{}
+  };
+
+  const handleLogout=()=>{
+    setUser(null);setShop(null);
+    try{localStorage.removeItem("ros_user");localStorage.removeItem("ros_shop");}catch{}
+  };
+
+  const handleSetShop=(s)=>{
+    setShop(s);
+    try{localStorage.setItem("ros_shop",s);}catch{}
   };
 
   if(!user) return <LoginScreen users={users} onLogin={handleLogin}/>;
 
-  // staff: auto-route to their only shop if they only have 1
   const allowedShops=(user.shops||SHOP_IDS);
 
   if(shop&&allowedShops.includes(shop))
-    return <ShopDashboard shopId={shop} onBack={()=>setShop(null)} user={user} onLogout={()=>{setUser(null);setShop(null);}}/>;
+    return <ShopDashboard shopId={shop} onBack={()=>{setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}} user={user} onLogout={handleLogout}/>;
 
   return(
     <>
-      <ShopSelector onSelect={setShop} user={user}
-        onLogout={()=>{setUser(null);setShop(null);}}
+      <ShopSelector onSelect={handleSetShop} user={user}
+        onLogout={handleLogout}
         onOpenSettings={()=>setSettingsOpen(true)}/>
       {settingsOpen&&user?.role==="superadmin"&&(
         <SettingsPanel
