@@ -226,9 +226,9 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings})=>{
       import("./db").then(({dbLoadSales})=>dbLoadSales(shop.id)).then(data=>{
         if(!data) return;
         const todaySales=data.filter(s=>s.date===today);
-        const todayRev=todaySales.filter(s=>s.pay==="Paid").reduce((a,s)=>a+(s.amount||0),0);
-        const totalRev=data.filter(s=>s.pay==="Paid").reduce((a,s)=>a+(s.amount||0),0);
-        const pending=data.filter(s=>s.pay==="Pending").length;
+        const todayRev=todaySales.reduce((a,s)=>a+(s.amount||0),0);
+        const totalRev=data.reduce((a,s)=>a+(s.amount||0),0);
+        const pending=data.filter(s=>s.pay==="Pending"||s.pay==="PENDING").length;
         const orders=data.length;
         setShopStats(prev=>({...prev,[shop.id]:{todaySales:todayRev,totalRev,pendingOrders:pending,orders}}));
       }).catch(()=>{});
