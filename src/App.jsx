@@ -4651,7 +4651,7 @@ export default function App(){
   });
   const [users,setUsers]=useState(INITIAL_USERS);
   const [settingsOpen,setSettingsOpen]=useState(false);
-  // salesData/setSalesData received as props from App (persists across shop switches)
+  const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
 
   // Load all shops sales once at app level so data persists across shop switches
   useEffect(()=>{
