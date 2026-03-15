@@ -719,7 +719,7 @@ const addSale = async (form) => {
       if(idx>=0){const n=[...prev];n[idx]=updatedCust;return n;}
       return [...prev,updatedCust];
     });
-    import("./db").then(({dbSaveCustomer})=>dbSaveCustomer(updatedCust)).catch(()=>{});
+    import("./db").then(({dbSaveCustomer})=>dbSaveCustomer(updatedCust)).catch(err=>console.error("❌ Customer save failed:",err));
   }
 };
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
