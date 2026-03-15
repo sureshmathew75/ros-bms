@@ -596,14 +596,11 @@ const ShopDashboard=({shopId,onBack,user,onLogout})=>{
   const invTaxAmt   = parseFloat((invSubtotal*_invTaxR).toFixed(2));
   const invGrand    = parseFloat((invSubtotal+invTaxAmt).toFixed(2));
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
-  useEffect(()=>{
-    const h=()=>setIsMobile(window.innerWidth<768);
-    window.addEventListener("resize",h);
-    return()=>window.removeEventListener("resize",h);
-  },[]);
-  const [coll,setColl]=useState(false);
-  const [mobileOpen,setMobileOpen]=useState(false);
-  const [salesData,setSalesData]=useState(SALES_SEED);
+useEffect(()=>{
+  import("./db").then(({dbLoadSales})=>dbLoadSales(shopId)).then(data=>{
+    if(data&&data.length>0) setSalesData(d=>({...d,[shopId]:data}));
+  });
+},[shopId]);
 
   const shop=SHOPS.find(s=>s.id===shopId);
   const sales=salesData[shopId]||[];
@@ -636,25 +633,29 @@ const ShopDashboard=({shopId,onBack,user,onLogout})=>{
     s.customer.toLowerCase().includes(search.toLowerCase())
   );
 
-  const addSale=form=>{
-    const pfx={["ros-selections"]:"SI",["ros-hairlines"]:"SH",["ros-india"]:"IN"}[shopId];
-    const nid=form.invoiceNo||`${pfx}-${1060+sales.length}`;
-    setSalesData(d=>({...d,[shopId]:[{
-      id:nid, ...form,
-      amount:      Number(form.amount)||0,
-      taxRate:     form.taxRate!==undefined ? form.taxRate : (shopId==="ros-india"?18:20),
-      taxInclusive:form.taxInclusive!==false,
-      contact: form.contact||"",
-      phone:   form.contact||"",
-      address: form.address||"",
-      qty:     form.qty||"1",
-      item:    form.itemCustom||form.item||"",
-      ful:     form.status||"PENDING",
-      pay:     form.payBy||"SHOP",
-      rem:     form.remarks||"",
-    },...d[shopId]]}));
-    setModal(null);
+const addSale=async(form)=>{
+  const pfx={["ros-selections"]:"SI",["ros-hairlines"]:"SH",["ros-india"]:"IN"}[shopId];
+  const nid=form.invoiceNo||`${pfx}-${1060+sales.length}`;
+  const newSale={
+    id:nid, ...form,
+    amount:      Number(form.amount)||0,
+    taxRate:     form.taxRate!==undefined ? form.taxRate : (shopId==="ros-india"?18:20),
+    taxInclusive:form.taxInclusive!==false,
+    contact: form.contact||"",
+    phone:   form.contact||"",
+    address: form.address||"",
+    qty:     form.qty||"1",
+    item:    form.itemCustom||form.item||"",
+    ful:     form.status||"PENDING",
+    pay:     form.payBy||"SHOP",
+    rem:     form.remarks||"",
   };
+  // Update UI instantly
+  setSalesData(d=>({...d,[shopId]:[newSale,...d[shopId]]}));
+  setModal(null);
+  // Save to Supabase in background
+ import("./db").then(({dbSaveSale}) => dbSaveSale(shopId, newSale))
+  .catch(err => console.error("❌ Supabase save failed:", err));
 
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
 
