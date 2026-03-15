@@ -3,8 +3,8 @@ let _sb = null;
 const getSB = async () => {
   if (_sb) return _sb;
   try {
-    const url = import.meta.env.VITE_SUPABASE_URL;
-    const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const url = process.env.REACT_APP_SUPABASE_URL;
+const key = process.env.REACT_APP_SUPABASE_ANON_KEY;
     if (!url || !key) return null;
     const { createClient } = await import('@supabase/supabase-js');
     _sb = createClient(url, key);
