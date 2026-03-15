@@ -589,6 +589,9 @@ const ShopDashboard=({shopId,onBack,user,onLogout})=>{
   const [invoiceRow,setInvoiceRow]=useState(null);
   const [printMode,setPrintMode]=useState(false);
   const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
+  const [coll,setColl]=useState(false);
+  const [mobileOpen,setMobileOpen]=useState(false);
+  
   // ── Invoice computed vars ──
   const _invTaxR    = invoiceRow ? ((invoiceRow.taxRate!==undefined?invoiceRow.taxRate:(shopId==="ros-india"?18:20))/100) : 0;
   const _invInc     = invoiceRow ? invoiceRow.taxInclusive!==false : true;
