@@ -79,7 +79,7 @@ export const dbSaveCustomer = async (customer) => {
     purchases: customer.purchases || 0,
     spend:     customer.spend || 0,
     last:      customer.last || '',
-  }, { onConflict: 'id' });
+  });
   if (error) console.error('Save customer error:', error);
   else console.log('Customer saved ✅');
 };

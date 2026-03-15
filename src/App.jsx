@@ -1682,7 +1682,7 @@ return(
       {modal==="edit-sale"&&editRow&&(
         <Modal title={"✏️ Edit Sale — "+editRow.id} onClose={()=>{setModal(null);setEditRow(null);}} accent={shop.accent}>
           <EditSaleForm
-            shopId={shopId} shop={shop} sale={editRow}
+            shopId={shopId} shop={shop} sale={editRow} customers={customers}
             onSave={(updated)=>{
               setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>x.id===updated.id?{...x,...updated}:x)}));
               setModal(null);setEditRow(null);
@@ -2660,7 +2660,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
 /* ══════════════════════════════════════════════════════
    NEW PURCHASE FORM
 ══════════════════════════════════════════════════════ */
-const EditSaleForm=({shopId,shop,sale,onSave,onClose})=>{
+const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
   const [form,setForm]=useState({
     id:          sale.id||"",
     date:        sale.date||new Date().toISOString().slice(0,10),
