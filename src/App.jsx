@@ -218,6 +218,22 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings})=>{
   const [cmd,setCmd]=useState(false);
   const [statHov,setStatHov]=useState(null);
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
+  const [shopStats,setShopStats]=useState({});
+
+  useEffect(()=>{
+    // Load today's sales for each shop from Supabase
+    const today=new Date().toISOString().split('T')[0];
+    SHOPS.forEach(shop=>{
+      import("./db").then(({dbLoadSales})=>dbLoadSales(shop.id)).then(data=>{
+        if(!data) return;
+        const todaySales=data.filter(s=>s.date===today);
+        const todayRev=todaySales.filter(s=>s.pay==="Paid").reduce((a,s)=>a+(s.amount||0),0);
+        const pending=data.filter(s=>s.pay==="Pending").length;
+        setShopStats(prev=>({...prev,[shop.id]:{todaySales:todayRev,pendingOrders:pending}}));
+      }).catch(()=>{});
+    });
+  },[]);
+
   useEffect(()=>{
     const h=()=>setIsMobile(window.innerWidth<768);
     window.addEventListener("resize",h);
@@ -384,8 +400,8 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings})=>{
                     {staffLocked
                       ? <p style={{margin:0,fontSize:22,fontWeight:700,color:"rgba(255,255,255,0.30)",letterSpacing:2,fontFamily:"'Arimo',Arial,sans-serif"}}>● ● ● ●</p>
                       : <p style={{margin:0,fontSize:34,fontWeight:700,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif"}}>{shop.id==="ros-india"
-                          ? formatCurrency(shop.todaySales)
-                          : "£"+formatNumber(shop.todaySales)}</p>
+                          ? formatCurrency(shopStats[shop.id]?.todaySales||0)
+                          : "£"+formatNumber(shopStats[shop.id]?.todaySales||0)}</p>
                     }
                   </div>
                 </div>
@@ -399,7 +415,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings})=>{
                     </div>
                   ):(
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
-                      {[{l:"Orders",v:shop.pendingOrders},{l:"Pending",v:shop.pendingOrders},{l:"Stock",v:shop.stockValue}].map((s,i)=>(
+                      {[{l:"Orders",v:shopStats[shop.id]?.pendingOrders||0},{l:"Pending",v:shopStats[shop.id]?.pendingOrders||0},{l:"Stock",v:shop.stockValue}].map((s,i)=>(
                         <div key={i} style={{textAlign:"center",background:shop.accentBg,borderRadius:10,padding:"9px 5px",border:"1px solid "+shop.accent+"18"}}>
                           <p style={{margin:0,fontWeight:900,fontSize:16,color:shop.accentText}}>{s.v}</p>
                           <p style={{margin:"2px 0 0",fontSize:10,color:shop.accent,fontWeight:700}}>{s.l}</p>
@@ -429,6 +445,9 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings})=>{
           const inSales=SALES_SEED["ros-india"]||[];
           const ukPurch=[...(PURCH_SEED["ros-selections"]||[]),...(PURCH_SEED["ros-hairlines"]||[])];
           const inPurch=PURCH_SEED["ros-india"]||[];
+          // Add live stats on top
+          const ukLiveRev=(shopStats["ros-selections"]?.todaySales||0)+(shopStats["ros-hairlines"]?.todaySales||0);
+          const inLiveRev=shopStats["ros-india"]?.todaySales||0;
           const sumAmt=arr=>arr.reduce((a,x)=>a+(x.amount||0),0);
           const sumTot=arr=>arr.reduce((a,x)=>a+(x.total||0),0);
           const playBell=()=>{
