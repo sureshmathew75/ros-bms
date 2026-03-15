@@ -633,30 +633,30 @@ useEffect(()=>{
     s.customer.toLowerCase().includes(search.toLowerCase())
   );
 
-const addSale=async(form)=>{
-  const pfx={["ros-selections"]:"SI",["ros-hairlines"]:"SH",["ros-india"]:"IN"}[shopId];
-  const nid=form.invoiceNo||`${pfx}-${1060+sales.length}`;
-  const newSale={
-    id:nid, ...form,
-    amount:      Number(form.amount)||0,
-    taxRate:     form.taxRate!==undefined ? form.taxRate : (shopId==="ros-india"?18:20),
-    taxInclusive:form.taxInclusive!==false,
-    contact: form.contact||"",
-    phone:   form.contact||"",
-    address: form.address||"",
-    qty:     form.qty||"1",
-    item:    form.itemCustom||form.item||"",
-    ful:     form.status||"PENDING",
-    pay:     form.payBy||"SHOP",
-    rem:     form.remarks||"",
+const addSale = async (form) => {
+  const pfx = {["ros-selections"]:"SI",["ros-hairlines"]:"SH",["ros-india"]:"IN"}[shopId];
+  const nid = form.invoiceNo || `${pfx}-${1060 + sales.length}`;
+  const newSale = {
+    id: nid, ...form,
+    amount:       Number(form.amount) || 0,
+    taxRate:      form.taxRate !== undefined ? form.taxRate : (shopId === "ros-india" ? 18 : 20),
+    taxInclusive: form.taxInclusive !== false,
+    contact:  form.contact || "",
+    phone:    form.contact || "",
+    address:  form.address || "",
+    qty:      form.qty || "1",
+    item:     form.itemCustom || form.item || "",
+    ful:      form.status || "PENDING",
+    pay:      form.payBy || "SHOP",
+    rem:      form.remarks || "",
   };
   // Update UI instantly
-  setSalesData(d=>({...d,[shopId]:[newSale,...d[shopId]]}));
+  setSalesData(d => ({...d, [shopId]: [newSale, ...d[shopId]]}));
   setModal(null);
   // Save to Supabase in background
- import("./db").then(({dbSaveSale}) => dbSaveSale(shopId, newSale))
-  .catch(err => console.error("❌ Supabase save failed:", err));
-
+  import("./db").then(({dbSaveSale}) => dbSaveSale(shopId, newSale))
+    .catch(err => console.error("❌ Supabase save failed:", err));
+};
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
 
   const [pdfMode,setPdfMode]=useState(false);
