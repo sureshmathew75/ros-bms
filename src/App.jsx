@@ -4685,8 +4685,11 @@ export default function App(){
 
   const allowedShops=(user.shops||SHOP_IDS);
 
-  if(shop&&allowedShops.includes(shop))
-    return <ShopDashboard shopId={shop} onBack={()=>{setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={setSalesData} customers={customers} setCustomers={setCustomers}/>;
+  // Auto-route staff directly to their assigned shop
+  const activeShop = shop || (user.role==="staff" && allowedShops.length===1 ? allowedShops[0] : null);
+
+  if(activeShop&&allowedShops.includes(activeShop))
+    return <ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={setSalesData} customers={customers} setCustomers={setCustomers}/>;
 
   return(
     <>

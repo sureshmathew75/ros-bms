@@ -1,5 +1,4 @@
 import PanelContainer from "./ui/PanelContainer";
-import { dbDeleteSale } from "../db";
 
 export default function SalesPanel({
   Badge,
@@ -277,7 +276,7 @@ export default function SalesPanel({
                               null,
                               {ic:"🧾",  label:"View Invoice",         action:()=>{setInvoiceRow(s);setOpenMenu(null);}},
                               null,
-                              {ic:"🗑",  label:"Delete",               action:()=>{if(window.confirm("Delete sale "+s.id+"?"))setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).filter(x=>x.id!==s.id)}));setOpenMenu(null);}, red:true},
+                              ...(!isStaff?[{ic:"🗑",label:"Delete",action:()=>{if(window.confirm("Delete sale "+s.id+"?")){setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).filter(x=>x.id!==s.id)}));dbDeleteSale(s.id).catch(()=>{});}setOpenMenu(null);},red:true}]:[]),
                             ].map((item,mi)=>item===null
                               ? <div key={mi} style={{height:1,background:"#f1f5f9",margin:"2px 0"}}/>
                               : <button key={mi} onClick={()=>{item.action();setOpenMenu(null);}}
