@@ -3577,8 +3577,11 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const handleAddCustomer=(newCust)=>{
     setCustomerList(l=>[newCust,...l]);
     set("customer",newCust.name);
-    set("contact",newCust.phone);
+    set("contact",newCust.phone||"");
+    setCustQuery("");
     setShowNewCust(false);
+    // Save to DB
+    if(onSaveCustomer)onSaveCustomer(newCust);
   };
 
   /* Status colour map */
@@ -3611,7 +3614,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
           </div>
           <div style={{padding:22}}>
-            <NewCustomerForm shop={shop} onSave={handleAddCustomer} onClose={()=>setShowNewCust(false)}/>
+            <NewCustomerForm shop={shop} onSave={handleAddCustomer} onClose={()=>setShowNewCust(false)} initialName={form.customer}/>
           </div>
         </div>
       </div>
@@ -3746,56 +3749,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             );
           })()}
 
-          {/* ── Inline new customer details ── */}
-          {isNewCustInline&&(
-            <div style={{marginTop:10,background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"14px 16px"}}>
-              <p style={{margin:"0 0 10px",fontWeight:800,fontSize:12,color:"#15803d"}}>➕ New Customer — {form.customer}</p>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-                <div>
-                  <label style={{...lbl,color:"#15803d"}}>Phone / WhatsApp</label>
-                  <input value={newCustPhone} onChange={e=>{setNewCustPhone(e.target.value);set("contact",e.target.value);}}
-                    placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
-                </div>
-                <div>
-                  <label style={{...lbl,color:"#15803d"}}>Address (optional)</label>
-                  <input value={newCustAddress} onChange={e=>setNewCustAddress(e.target.value)}
-                    placeholder="Town / City" style={inp} onFocus={fo} onBlur={bl}/>
-                </div>
-              </div>
-              <div style={{display:"flex",gap:8}}>
-                <button
-                  type="button"
-                  onMouseDown={()=>{
-                    const newC={
-                      id:"CUST-"+Date.now().toString().slice(-8)+Math.random().toString(36).slice(-3).toUpperCase(),
-                      name:form.customer.trim(),
-                      phone:newCustPhone,
-                      whatsapp:newCustPhone,
-                      address:newCustAddress,
-                      tag:"New Customer",
-                      notes:"",purchases:0,spend:0,
-                      last:new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}),
-                    };
-                    setCustomerList(l=>[newC,...l]);
-                    if(onSaveCustomer)onSaveCustomer(newC);
-                    set("contact",newCustPhone);
-                    setIsNewCustInline(false);
-                    setCustQuery("");
-                  }}
-                  style={{flex:1,padding:"9px 0",borderRadius:9,border:"none",
-                    background:"#16a34a",color:"white",fontWeight:800,fontSize:13,
-                    cursor:"pointer",fontFamily:"inherit"}}>
-                  ✅ Save Customer
-                </button>
-                <button type="button" onMouseDown={()=>{setIsNewCustInline(false);}}
-                  style={{padding:"9px 16px",borderRadius:9,border:"1px solid #e2e8f0",
-                    background:"white",color:"#64748b",fontWeight:700,fontSize:13,
-                    cursor:"pointer",fontFamily:"inherit"}}>
-                  Skip
-                </button>
-              </div>
-            </div>
-          )}
+
         </div>
         <div>
           <label style={lbl}>Contact Number</label>
