@@ -3678,6 +3678,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 if(match){set("contact",match.phone||"");}
               }}
               onFocus={()=>setCustDropOpen(true)}
+              onBlur={()=>setTimeout(()=>setCustDropOpen(false),150)}
               placeholder="Type customer name…"
               style={{...inp,paddingRight:36}}
               autoComplete="off"
@@ -3694,7 +3695,9 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             const matches=customers.filter(c=>c.name.toLowerCase().includes(q));
             const exactMatch=customers.find(c=>c.name.toLowerCase()===q);
             return(
-              <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:99,background:"white",
+              <div
+                onMouseDown={e=>e.preventDefault()}
+                style={{position:"absolute",top:"100%",left:0,right:0,zIndex:99,background:"white",
                 border:"1px solid "+shop.accent+"44",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,0.12)",
                 marginTop:4,maxHeight:200,overflowY:"auto"}}>
                 {matches.length>0&&matches.map(c=>(
