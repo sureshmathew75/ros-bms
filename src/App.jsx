@@ -642,7 +642,18 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     return()=>window.removeEventListener("resize",h);
   },[]);
 
-  // Sales loaded at App level
+  // Reload all shops data each time we enter a shop
+  useEffect(()=>{
+    const shops=["ros-selections","ros-hairlines","ros-india"];
+    shops.forEach(sid=>{
+      dbLoadSales(sid).then(data=>{
+        if(data&&data.length>0) setSalesData(d=>({...d,[sid]:data}));
+      }).catch(()=>{});
+    });
+    dbLoadCustomers().then(data=>{
+      if(data&&data.length>0) setCustomers(data);
+    }).catch(()=>{});
+  },[shopId]);
 
   // Customers loaded at App level
 
@@ -4712,7 +4723,12 @@ export default function App(){
   });
   const [users,setUsers]=useState(INITIAL_USERS);
   const [settingsOpen,setSettingsOpen]=useState(false);
-  const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
+  const [salesData,setSalesData]=useState(()=>{
+    try{
+      const s=localStorage.getItem("ros_salesData");
+      return s?JSON.parse(s):{"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
+    }catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
+  });
   const [customers,setCustomers]=useState([]);
   const [shopItems,setShopItems]=useState(()=>{
     try{const s=localStorage.getItem("ros_shopItems");return s?JSON.parse(s):{"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
@@ -4723,13 +4739,22 @@ export default function App(){
     try{localStorage.setItem("ros_shopItems",JSON.stringify(updated));}catch{}
   };
 
+  // Save salesData to localStorage whenever it updates
+  const updateSalesData=(updater)=>{
+    setSalesData(prev=>{
+      const next=typeof updater==="function"?updater(prev):updater;
+      try{localStorage.setItem("ros_salesData",JSON.stringify(next));}catch{}
+      return next;
+    });
+  };
+
   // Load all data once at app level so it persists across shop switches
   useEffect(()=>{
     // Load sales for all shops
     const shops=["ros-selections","ros-hairlines","ros-india"];
     shops.forEach(sid=>{
       dbLoadSales(sid).then(data=>{
-        if(data&&data.length>0) setSalesData(d=>({...d,[sid]:data}));
+        if(data&&data.length>0) updateSalesData(d=>({...d,[sid]:data}));
       }).catch(()=>{});
     });
     // Load customers
@@ -4762,7 +4787,7 @@ export default function App(){
   const activeShop = shop || (user.role==="staff" && allowedShops.length===1 ? allowedShops[0] : null);
 
   if(activeShop&&allowedShops.includes(activeShop))
-    return <ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={setSalesData} customers={customers} setCustomers={setCustomers} shopItems={shopItems} saveShopItems={saveShopItems}/>;
+    return <ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={updateSalesData} customers={customers} setCustomers={setCustomers} shopItems={shopItems} saveShopItems={saveShopItems}/>;
 
   return(
     <>
