@@ -4735,18 +4735,20 @@ export default function App(){
     });
   };
 
-  // Load all data once on mount - use functional update to avoid stale closure
+  // Load each shop independently - never overwrite state, only add if empty
   useEffect(()=>{
     const shops=["ros-selections","ros-hairlines","ros-india"];
-    Promise.all(shops.map(sid=>dbLoadSales(sid).catch(()=>null))).then(results=>{
-      setSalesData(prev=>{
-        const merged={...prev};
-        results.forEach((data,i)=>{
-          if(data&&data.length>0) merged[shops[i]]=data;
+    shops.forEach(sid=>{
+      dbLoadSales(sid).then(data=>{
+        if(!data||data.length===0) return;
+        setSalesData(prev=>{
+          // Only update if Supabase has MORE data than what we have
+          if((prev[sid]||[]).length>=data.length) return prev;
+          const merged={...prev,[sid]:data};
+          try{localStorage.setItem("ros_salesData",JSON.stringify(merged));}catch{}
+          return merged;
         });
-        try{localStorage.setItem("ros_salesData",JSON.stringify(merged));}catch{}
-        return merged;
-      });
+      }).catch(()=>{});
     });
     dbLoadCustomers().then(data=>{
       if(data&&data.length>0) setCustomers(data);
