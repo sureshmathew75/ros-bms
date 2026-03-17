@@ -3,16 +3,23 @@ import { createClient } from '@supabase/supabase-js';
 const url = process.env.REACT_APP_SUPABASE_URL;
 const key = process.env.REACT_APP_SUPABASE_ANON_KEY;
 
-// Single instance created once at module level
 const sb = (url && key) ? createClient(url, key) : null;
 
 export const dbSaveSale = async (shopId, sale) => {
   if (!sb) return;
-  const { error } = await sb.from('sales').upsert({
+
+  // Step 1: Check if this ID already exists (edit vs new)
+  const { data: existing } = await sb
+    .from('sales')
+    .select('id')
+    .eq('id', sale.id)
+    .maybeSingle();
+
+  const payload = {
     id:            sale.id,
     shop_id:       shopId,
     customer:      sale.customer || '',
-    amount:        sale.amount || 0,
+    amount:        Number(sale.amount) || 0,
     status:        sale.status || '',
     pay:           sale.pay || '',
     ful:           sale.ful || '',
@@ -26,12 +33,22 @@ export const dbSaveSale = async (shopId, sale) => {
     tax_rate:      sale.taxRate || 20,
     tax_inclusive: sale.taxInclusive !== false,
     invoice_no:    sale.invoiceNo || sale.id,
-  }, {
-    onConflict: 'id',
-    ignoreDuplicates: false,
-  });
-  if (error) console.error('Save sale error:', error);
-  else console.log('Sale saved ✅');
+  };
+
+  let error;
+
+  if (existing) {
+    // Row exists → UPDATE it
+    console.log('🔄 Updating existing sale:', sale.id);
+    ({ error } = await sb.from('sales').update(payload).eq('id', sale.id));
+  } else {
+    // New row → INSERT it (never overwrites anything)
+    console.log('➕ Inserting new sale:', sale.id, 'amount:', sale.amount);
+    ({ error } = await sb.from('sales').insert(payload));
+  }
+
+  if (error) console.error('❌ Save sale error:', error);
+  else console.log('✅ Sale saved successfully, id:', sale.id, 'amount:', sale.amount);
 };
 
 export const dbLoadSales = async (shopId) => {
@@ -42,10 +59,11 @@ export const dbLoadSales = async (shopId) => {
     .eq('shop_id', shopId)
     .order('created_at', { ascending: false });
   if (error) { console.error('Load sales error:', error); return null; }
+  console.log(`📦 Loaded ${data.length} sales for ${shopId}`);
   return data.map(r => ({
     id:           r.id,
     customer:     r.customer || '',
-    amount:       r.amount || 0,
+    amount:       Number(r.amount) || 0,
     status:       r.status || '',
     pay:          r.pay || '',
     ful:          r.ful || '',
@@ -71,7 +89,14 @@ export const dbDeleteSale = async (id) => {
 
 export const dbSaveCustomer = async (customer) => {
   if (!sb) return;
-  const { error } = await sb.from('customers').upsert({
+
+  const { data: existing } = await sb
+    .from('customers')
+    .select('id')
+    .eq('id', customer.id)
+    .maybeSingle();
+
+  const payload = {
     id:        customer.id,
     name:      customer.name || '',
     phone:     customer.phone || '',
@@ -82,9 +107,15 @@ export const dbSaveCustomer = async (customer) => {
     purchases: customer.purchases || 0,
     spend:     customer.spend || 0,
     last:      customer.last || '',
-  }, {
-    onConflict: 'id',
-  });
+  };
+
+  let error;
+  if (existing) {
+    ({ error } = await sb.from('customers').update(payload).eq('id', customer.id));
+  } else {
+    ({ error } = await sb.from('customers').insert(payload));
+  }
+
   if (error) console.error('Save customer error:', error);
   else console.log('Customer saved ✅');
 };
