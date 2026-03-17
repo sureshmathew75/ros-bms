@@ -3730,7 +3730,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 ))}
                 {!exactMatch&&(custQuery||form.customer).trim().length>1&&(
                   <div
-                    onMouseDown={()=>{setIsNewCustInline(true);setCustDropOpen(false);setNewCustPhone("");setNewCustAddress("");}}
+                    onMouseDown={()=>{setCustDropOpen(false);setIsNewCustInline(false);setShowNewCust(true);}}
                     style={{padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10,
                       background:"#f0fdf4",borderTop:matches.length>0?"1px solid #e2e8f0":"none"}}
                     onMouseEnter={e=>e.currentTarget.style.background="#dcfce7"}
