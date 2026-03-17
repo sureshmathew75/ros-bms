@@ -4735,15 +4735,18 @@ export default function App(){
     });
   };
 
-  // Load all data once at app level - wait for ALL shops before setting state
+  // Load all data once on mount - use functional update to avoid stale closure
   useEffect(()=>{
     const shops=["ros-selections","ros-hairlines","ros-india"];
     Promise.all(shops.map(sid=>dbLoadSales(sid).catch(()=>null))).then(results=>{
-      const merged={...salesData};
-      results.forEach((data,i)=>{
-        if(data&&data.length>0) merged[shops[i]]=data;
+      setSalesData(prev=>{
+        const merged={...prev};
+        results.forEach((data,i)=>{
+          if(data&&data.length>0) merged[shops[i]]=data;
+        });
+        try{localStorage.setItem("ros_salesData",JSON.stringify(merged));}catch{}
+        return merged;
       });
-      updateSalesData(merged);
     });
     dbLoadCustomers().then(data=>{
       if(data&&data.length>0) setCustomers(data);
