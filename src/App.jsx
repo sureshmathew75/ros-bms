@@ -237,6 +237,20 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
   const [cmd,setCmd]=useState(false);
   const [statHov,setStatHov]=useState(null);
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
+  const playBell=()=>{
+    try{
+      const ctx=new(window.AudioContext||window.webkitAudioContext)();
+      const o=ctx.createOscillator();
+      const g=ctx.createGain();
+      o.connect(g);g.connect(ctx.destination);
+      o.type="sine";
+      o.frequency.setValueAtTime(880,ctx.currentTime);
+      o.frequency.exponentialRampToValueAtTime(660,ctx.currentTime+0.15);
+      g.gain.setValueAtTime(0.18,ctx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.35);
+      o.start(ctx.currentTime);o.stop(ctx.currentTime+0.35);
+    }catch(e){}
+  };
   // shopStats computed directly from salesData prop
 
   // Calculate stats directly from salesData prop (always up to date)
@@ -377,7 +391,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
             return(
               <div key={shop.id}
                 onClick={()=>!staffLocked&&onSelect(shop.id)}
-                onMouseEnter={()=>!staffLocked&&setHov(shop.id)}
+                onMouseEnter={()=>{if(!staffLocked){setHov(shop.id);playBell();}}}
                 onMouseLeave={()=>setHov(null)}
                 style={{borderRadius:22,overflow:"hidden",cursor:staffLocked?"not-allowed":"pointer",
                   transform:h?"translateY(-5px) scale(1.012)":"none",
@@ -1052,11 +1066,12 @@ return(
             </div>
           </div>
 
-          {/* all shops button */}
+          {/* all shops button — desktop sidebar only; topbar has it on mobile */}
           <button onClick={onBack}
             className="sb-nav-btn"
             style={{
-              display:"flex",alignItems:"center",gap:9,
+              display: isMobile ? "none" : "flex",
+              alignItems:"center",gap:9,
               width:"100%",height:40,
               padding:coll?"0":"0 10px",
               justifyContent:coll?"center":"flex-start",
@@ -1104,6 +1119,17 @@ return(
               onMouseLeave={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accent;}}>
               ☰
             </button>
+            {/* ── All Shops button in topbar (always visible, especially helpful on mobile) ── */}
+            {user?.role!=="staff"&&(
+              <button onClick={onBack}
+                style={{display:"flex",alignItems:"center",gap:6,height:36,padding:"0 12px",borderRadius:10,border:"1px solid "+shop.accent+"33",background:shop.accentBg,cursor:"pointer",color:shop.accentText,fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap",flexShrink:0}}
+                onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.color="white";e.currentTarget.style.borderColor=shop.accent;}}
+                onMouseLeave={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accentText;e.currentTarget.style.borderColor=shop.accent+"33";}}>
+                <span style={{fontSize:14}}>🏪</span>
+                <span className="mob-hide">All Shops</span>
+                <span style={{fontSize:11,opacity:0.7}} className="mob-hide">↩</span>
+              </button>
+            )}
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <div style={{width:3,height:28,borderRadius:999,background:shop.sb}}/>
               <div>
