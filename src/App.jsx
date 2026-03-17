@@ -704,8 +704,12 @@ const addSale = async (form) => {
   setSalesData(d => ({...d, [shopId]: [newSale, ...d[shopId]]}));
   setModal(null);
   // Save to Supabase then reload that shop's sales to ensure consistency
-  // Save to Supabase - UI already updated optimistically above
-  dbSaveSale(shopId, newSale).catch(err => console.error("❌ Supabase save failed:", err));
+  // Save to Supabase then reload THIS shop only to confirm sync
+  dbSaveSale(shopId, newSale).then(()=>{
+    dbLoadSales(shopId).then(data=>{
+      if(data) setSalesData(prev=>({...prev,[shopId]:data}));
+    }).catch(()=>{});
+  }).catch(err => console.error("❌ Supabase save failed:", err));
   // Auto-save/update customer record
   if(form.customer){
     const existing=customers.find(c=>c.name===form.customer);
@@ -4710,12 +4714,7 @@ export default function App(){
   });
   const [users,setUsers]=useState(INITIAL_USERS);
   const [settingsOpen,setSettingsOpen]=useState(false);
-  const [salesData,setSalesData]=useState(()=>{
-    try{
-      const s=localStorage.getItem("ros_salesData");
-      return s?JSON.parse(s):{"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
-    }catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
-  });
+  const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
   const [customers,setCustomers]=useState([]);
   const [shopItems,setShopItems]=useState(()=>{
     try{const s=localStorage.getItem("ros_shopItems");return s?JSON.parse(s):{"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
@@ -4726,28 +4725,15 @@ export default function App(){
     try{localStorage.setItem("ros_shopItems",JSON.stringify(updated));}catch{}
   };
 
-  // Save salesData to localStorage whenever it updates
-  const updateSalesData=(updater)=>{
-    setSalesData(prev=>{
-      const next=typeof updater==="function"?updater(prev):updater;
-      try{localStorage.setItem("ros_salesData",JSON.stringify(next));}catch{}
-      return next;
-    });
-  };
+  const updateSalesData=setSalesData;
 
-  // Load each shop independently - never overwrite state, only add if empty
+  // Load from Supabase on mount - Supabase is single source of truth
   useEffect(()=>{
     const shops=["ros-selections","ros-hairlines","ros-india"];
     shops.forEach(sid=>{
       dbLoadSales(sid).then(data=>{
-        if(!data||data.length===0) return;
-        setSalesData(prev=>{
-          // Only update if Supabase has MORE data than what we have
-          if((prev[sid]||[]).length>=data.length) return prev;
-          const merged={...prev,[sid]:data};
-          try{localStorage.setItem("ros_salesData",JSON.stringify(merged));}catch{}
-          return merged;
-        });
+        if(!data) return;
+        setSalesData(prev=>({...prev,[sid]:data}));
       }).catch(()=>{});
     });
     dbLoadCustomers().then(data=>{
