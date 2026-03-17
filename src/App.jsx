@@ -1637,6 +1637,15 @@ return(
               const updated={...(shopItems||{}),[shopId]:[...new Set([...current,item])]};
               if(saveShopItems) saveShopItems(updated);
             }}
+            customers={customers||[]}
+            onSaveCustomer={(c)=>{
+              setCustomers(prev=>{
+                const idx=prev.findIndex(x=>x.id===c.id);
+                if(idx>=0){const n=[...prev];n[idx]=c;return n;}
+                return [c,...prev];
+              });
+              dbSaveCustomer(c).catch(()=>{});
+            }}
           />
         </Modal>
       )}
@@ -3492,7 +3501,7 @@ const NewCustomerForm=({shop,onSave,onClose})=>{
 /* ══════════════════════════════════════════════════════
    NEW SALE FORM
 ══════════════════════════════════════════════════════ */
-const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem})=>{
+const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,customers=[],onSaveCustomer})=>{
   const nextNum=(lastInvoiceNum||1312)+1;
   /* Financial year suffix: Apr-Mar cycle
      e.g. sale in Jan 2026 → FY 2025-26 → suffix "6"
@@ -3531,6 +3540,18 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const [showNewCust,setShowNewCust]=useState(false);
   const [showAddItem,setShowAddItem]=useState(false);
   const [newItemInput,setNewItemInput]=useState("");
+  /* combobox state */
+  const [custQuery,setCustQuery]=useState("");
+  const [custDropOpen,setCustDropOpen]=useState(false);
+  const [isNewCustInline,setIsNewCustInline]=useState(false);
+  const [newCustPhone,setNewCustPhone]=useState("");
+  const [newCustAddress,setNewCustAddress]=useState("");
+  const custRef=useRef(null);
+  useEffect(()=>{
+    const h=e=>{if(custRef.current&&!custRef.current.contains(e.target)){setCustDropOpen(false);setIsNewCustInline(false);}};
+    document.addEventListener("mousedown",h);
+    return()=>document.removeEventListener("mousedown",h);
+  },[]);
 
   const inp={
     width:"100%",border:"1px solid #e2e8f0",borderRadius:9,
@@ -3640,32 +3661,138 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
       {/* CUSTOMER */}
       <Divider title="Customer"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
+        <div ref={custRef} style={{position:"relative",gridColumn:"1/-1"}}>
           <label style={lbl}>Customer Name</label>
-          <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            <select value={form.customer} onChange={e=>{
-                set("customer",e.target.value);
-                const c=customerList.find(x=>x.name===e.target.value);
-                if(c)set("contact",c.phone||"");
-              }} style={{...inp,flex:1}}>
-              <option value="">Select customer…</option>
-              {customerList.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
-            </select>
-            {/* + add new customer */}
-            <button onClick={()=>setShowNewCust(true)}
-              title="Add new customer"
-              style={{flexShrink:0,width:34,height:34,borderRadius:8,cursor:"pointer",
-                border:"1px solid "+shop.accent,
-                background:shop.accent,color:"white",
-                fontSize:18,fontWeight:900,
-                display:"flex",alignItems:"center",justifyContent:"center",
-                boxShadow:"0 2px 8px "+shop.accent+"44",
-                transition:"all 0.15s",}}
-              onMouseEnter={e=>e.currentTarget.style.transform="scale(1.08)"}
-              onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
-              +
-            </button>
+          {/* ── Smart combobox ── */}
+          <div style={{position:"relative"}}>
+            <input
+              value={custQuery||form.customer}
+              onChange={e=>{
+                const v=e.target.value;
+                setCustQuery(v);
+                set("customer",v);
+                setCustDropOpen(true);
+                setIsNewCustInline(false);
+                // clear contact if typing new name
+                const match=customers.find(c=>c.name.toLowerCase()===v.toLowerCase());
+                if(match){set("contact",match.phone||"");}
+              }}
+              onFocus={()=>setCustDropOpen(true)}
+              placeholder="Type customer name…"
+              style={{...inp,paddingRight:36}}
+              autoComplete="off"
+            />
+            {(custQuery||form.customer)&&(
+              <button onClick={()=>{setCustQuery("");set("customer","");set("contact","");setCustDropOpen(false);setIsNewCustInline(false);}}
+                style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:16,color:"#94a3b8",lineHeight:1}}>×</button>
+            )}
           </div>
+
+          {/* ── Dropdown ── */}
+          {custDropOpen&&(custQuery||form.customer)&&(()=>{
+            const q=(custQuery||form.customer).toLowerCase();
+            const matches=customers.filter(c=>c.name.toLowerCase().includes(q));
+            const exactMatch=customers.find(c=>c.name.toLowerCase()===q);
+            return(
+              <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:99,background:"white",
+                border:"1px solid "+shop.accent+"44",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,0.12)",
+                marginTop:4,maxHeight:200,overflowY:"auto"}}>
+                {matches.length>0&&matches.map(c=>(
+                  <div key={c.id}
+                    onMouseDown={()=>{
+                      set("customer",c.name);
+                      set("contact",c.phone||"");
+                      setCustQuery("");
+                      setCustDropOpen(false);
+                      setIsNewCustInline(false);
+                    }}
+                    style={{padding:"10px 14px",cursor:"pointer",borderBottom:"1px solid #f1f5f9",
+                      display:"flex",alignItems:"center",gap:10,transition:"background 0.1s"}}
+                    onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg}
+                    onMouseLeave={e=>e.currentTarget.style.background="white"}>
+                    <div style={{width:30,height:30,borderRadius:8,background:shop.accent,
+                      display:"flex",alignItems:"center",justifyContent:"center",
+                      color:"white",fontWeight:800,fontSize:12,flexShrink:0}}>
+                      {c.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p style={{margin:0,fontWeight:700,fontSize:13,color:"#0f172a"}}>{c.name}</p>
+                      {c.phone&&<p style={{margin:0,fontSize:11,color:"#94a3b8"}}>{c.phone}</p>}
+                    </div>
+                    <span style={{marginLeft:"auto",fontSize:11,color:shop.accent,fontWeight:600}}>Select →</span>
+                  </div>
+                ))}
+                {!exactMatch&&(custQuery||form.customer).trim().length>1&&(
+                  <div
+                    onMouseDown={()=>{setIsNewCustInline(true);setCustDropOpen(false);setNewCustPhone("");setNewCustAddress("");}}
+                    style={{padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10,
+                      background:"#f0fdf4",borderTop:matches.length>0?"1px solid #e2e8f0":"none"}}
+                    onMouseEnter={e=>e.currentTarget.style.background="#dcfce7"}
+                    onMouseLeave={e=>e.currentTarget.style.background="#f0fdf4"}>
+                    <span style={{fontSize:18}}>➕</span>
+                    <div>
+                      <p style={{margin:0,fontWeight:700,fontSize:13,color:"#15803d"}}>Add "{(custQuery||form.customer).trim()}" as new customer</p>
+                      <p style={{margin:0,fontSize:11,color:"#16a34a"}}>Tap to fill in details and save</p>
+                    </div>
+                  </div>
+                )}
+                {matches.length===0&&(custQuery||form.customer).trim().length<=1&&(
+                  <div style={{padding:"12px 14px",fontSize:12,color:"#94a3b8",textAlign:"center"}}>Type a name to search…</div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* ── Inline new customer details ── */}
+          {isNewCustInline&&(
+            <div style={{marginTop:10,background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"14px 16px"}}>
+              <p style={{margin:"0 0 10px",fontWeight:800,fontSize:12,color:"#15803d"}}>➕ New Customer — {form.customer}</p>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+                <div>
+                  <label style={{...lbl,color:"#15803d"}}>Phone / WhatsApp</label>
+                  <input value={newCustPhone} onChange={e=>{setNewCustPhone(e.target.value);set("contact",e.target.value);}}
+                    placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
+                </div>
+                <div>
+                  <label style={{...lbl,color:"#15803d"}}>Address (optional)</label>
+                  <input value={newCustAddress} onChange={e=>setNewCustAddress(e.target.value)}
+                    placeholder="Town / City" style={inp} onFocus={fo} onBlur={bl}/>
+                </div>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button
+                  type="button"
+                  onMouseDown={()=>{
+                    const newC={
+                      id:"CUST-"+Date.now().toString().slice(-8)+Math.random().toString(36).slice(-3).toUpperCase(),
+                      name:form.customer.trim(),
+                      phone:newCustPhone,
+                      whatsapp:newCustPhone,
+                      address:newCustAddress,
+                      tag:"New Customer",
+                      notes:"",purchases:0,spend:0,
+                      last:new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}),
+                    };
+                    setCustomerList(l=>[newC,...l]);
+                    if(onSaveCustomer)onSaveCustomer(newC);
+                    set("contact",newCustPhone);
+                    setIsNewCustInline(false);
+                    setCustQuery("");
+                  }}
+                  style={{flex:1,padding:"9px 0",borderRadius:9,border:"none",
+                    background:"#16a34a",color:"white",fontWeight:800,fontSize:13,
+                    cursor:"pointer",fontFamily:"inherit"}}>
+                  ✅ Save Customer
+                </button>
+                <button type="button" onMouseDown={()=>{setIsNewCustInline(false);}}
+                  style={{padding:"9px 16px",borderRadius:9,border:"1px solid #e2e8f0",
+                    background:"white",color:"#64748b",fontWeight:700,fontSize:13,
+                    cursor:"pointer",fontFamily:"inherit"}}>
+                  Skip
+                </button>
+              </div>
+            </div>
+          )}
         </div>
         <div>
           <label style={lbl}>Contact Number</label>
