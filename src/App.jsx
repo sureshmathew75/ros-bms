@@ -699,7 +699,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
 
 const addSale = async (form) => {
   const pfx = {["ros-selections"]:"SI",["ros-hairlines"]:"SH",["ros-india"]:"IN"}[shopId];
-  const nid = form.invoiceNo || `${pfx}-${Date.now().toString().slice(-6)}`;
+  const nid = form.invoiceNo || `${pfx}-${Date.now().toString().slice(-8)}${Math.random().toString(36).slice(-3).toUpperCase()}`;
   const newSale = {
     id: nid, ...form,
     amount:       Number(form.amount) || 0,
@@ -727,7 +727,7 @@ const addSale = async (form) => {
   // Auto-save/update customer record
   if(form.customer){
     const existing=customers.find(c=>c.name===form.customer);
-    const custId=existing?.id||("CUST-"+Date.now().toString().slice(-6));
+    const custId=existing?.id||("CUST-"+Date.now().toString().slice(-8)+Math.random().toString(36).slice(-3).toUpperCase());
     const updatedCust={
       id: custId,
       name: form.customer,
