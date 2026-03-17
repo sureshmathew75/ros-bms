@@ -714,16 +714,11 @@ const addSale = async (form) => {
     pay:      form.payBy || "SHOP",
     rem:      form.remarks || "",
   };
-  // Update UI instantly
+  // Update UI instantly — do NOT reload from Supabase after save
+  // Reloading overwrites the correct optimistic state with stale data and corrupts totals
   setSalesData(d => ({...d, [shopId]: [newSale, ...d[shopId]]}));
   setModal(null);
-  // Save to Supabase then reload that shop's sales to ensure consistency
-  // Save to Supabase then reload THIS shop only to confirm sync
-  dbSaveSale(shopId, newSale).then(()=>{
-    dbLoadSales(shopId).then(data=>{
-      if(data) setSalesData(prev=>({...prev,[shopId]:data}));
-    }).catch(()=>{});
-  }).catch(err => console.error("❌ Supabase save failed:", err));
+  dbSaveSale(shopId, newSale).catch(err => console.error("❌ Supabase save failed:", err));
   // Auto-save/update customer record
   if(form.customer){
     const existing=customers.find(c=>c.name===form.customer);
