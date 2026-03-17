@@ -361,8 +361,11 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
             <span style={{width:6,height:6,borderRadius:"50%",background:"#22c55e",display:"inline-block"}}/>
             3 Active Workspaces
           </div>
-          <h1 style={{fontSize:isMobile?26:42,fontWeight:900,color:"#0f172a",letterSpacing:isMobile?"-0.5px":"-1.5px",lineHeight:1.1,margin:"0 0 10px"}}>Select Your Workspace</h1>
+          <h1 style={{fontSize:isMobile?26:42,fontWeight:900,color:"#0f172a",letterSpacing:isMobile?"-0.5px":"-1.5px",lineHeight:1.1,margin:"0 0 10px"}}>ROS Business Management System</h1>
           <p style={{fontSize:isMobile?13:15,color:"#64748b",margin:0}}>Choose a shop to manage sales, purchases, logistics and analytics.</p>
+  
+<p></p>
+<p style={{fontSize:isMobile?7:9,color:"#64748b",lineHeight:1.1,margin:0}}>Developed by ROS Nexus</p>
         </div>
 
         {/* ── 3 shop cards ── */}
@@ -613,7 +616,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
 </div>
 );
 };
-const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers})=>{
+const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":"dashboard");
   const [hov,setHov]=useState(null);
   const [search,setSearch]=useState("");
@@ -1608,6 +1611,12 @@ return(
             lastInvoiceNum={sales.length>0
               ? parseInt((sales[0].id||"0").replace(/[^0-9]/g,""))||1022
               : 1022}
+            shopItems={(shopItems||{})[shopId]||[]}
+            onAddShopItem={(item)=>{
+              const current=(shopItems||{})[shopId]||[];
+              const updated={...(shopItems||{}),[shopId]:[...new Set([...current,item])]};
+              if(saveShopItems) saveShopItems(updated);
+            }}
           />
         </Modal>
       )}
@@ -3463,7 +3472,7 @@ const NewCustomerForm=({shop,onSave,onClose})=>{
 /* ══════════════════════════════════════════════════════
    NEW SALE FORM
 ══════════════════════════════════════════════════════ */
-const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum})=>{
+const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem})=>{
   const nextNum=(lastInvoiceNum||1312)+1;
   /* Financial year suffix: Apr-Mar cycle
      e.g. sale in Jan 2026 → FY 2025-26 → suffix "6"
@@ -3500,6 +3509,8 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum})=>{
   /* local customer list — starts from shared CUSTOMERS, grows if new ones added */
   const [customerList,setCustomerList]=useState([...CUSTOMERS]);
   const [showNewCust,setShowNewCust]=useState(false);
+  const [showAddItem,setShowAddItem]=useState(false);
+  const [newItemInput,setNewItemInput]=useState("");
 
   const inp={
     width:"100%",border:"1px solid #e2e8f0",borderRadius:9,
@@ -3648,19 +3659,43 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum})=>{
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         <div style={{gridColumn:"1/-1"}}>
           <label style={lbl}>Item / Product</label>
-          <div style={{display:"flex",gap:8}}>
-            <select value={form.item} onChange={e=>set("item",e.target.value)} style={{...inp,flex:1}}>
-              <option value="">Select product…</option>
-              <option value="__custom__">✏️ Enter manually…</option>
-              {PRODUCTS.map(p=><option key={p.id} value={p.name}>{p.name} — {shop.symbol}{p.sell}</option>)}
-            </select>
-          </div>
-          {useCustomItem&&(
-            <input value={form.itemCustom} onChange={e=>set("itemCustom",e.target.value)}
-              placeholder="Type item name / description"
-              style={{...inp,marginTop:8,border:"1px solid "+shop.accent}}
-              autoFocus onFocus={fo} onBlur={bl}/>
+          {/* Quick-select saved item tags */}
+          {shopItems.length>0&&(
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
+              {shopItems.map(itm=>(
+                <button key={itm} type="button"
+                  onClick={()=>set("item",itm)}
+                  style={{
+                    padding:"5px 14px",borderRadius:999,fontSize:12,fontWeight:700,
+                    cursor:"pointer",fontFamily:"inherit",border:"1px solid",
+                    transition:"all 0.15s",
+                    background:form.item===itm?shop.accent:"white",
+                    color:form.item===itm?"white":shop.accentText,
+                    borderColor:form.item===itm?shop.accent:shop.accent+"55",
+                  }}>{itm}</button>
+              ))}
+            </div>
           )}
+          {/* Type item name + save button */}
+          <div style={{display:"flex",gap:6}}>
+            <input
+              value={form.item}
+              onChange={e=>set("item",e.target.value)}
+              placeholder="Type item name…"
+              style={{...inp,flex:1}} onFocus={fo} onBlur={bl}/>
+            <button type="button"
+              title="Save item for quick access next time"
+              onClick={()=>{
+                if(form.item.trim()&&onAddShopItem){
+                  onAddShopItem(form.item.trim());
+                }
+              }}
+              style={{padding:"9px 14px",borderRadius:9,border:"1px solid "+shop.accent+"66",
+                background:shop.accentBg,color:shop.accentText,fontSize:12,fontWeight:700,
+                cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+              ＋ Save
+            </button>
+          </div>
         </div>
         <div>
           <label style={lbl}>Quantity</label>
@@ -4682,6 +4717,14 @@ export default function App(){
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
   const [customers,setCustomers]=useState([]);
+  const [shopItems,setShopItems]=useState(()=>{
+    try{const s=localStorage.getItem("ros_shopItems");return s?JSON.parse(s):{"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
+    catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
+  });
+  const saveShopItems=(updated)=>{
+    setShopItems(updated);
+    try{localStorage.setItem("ros_shopItems",JSON.stringify(updated));}catch{}
+  };
 
   // Load all data once at app level so it persists across shop switches
   useEffect(()=>{
@@ -4722,7 +4765,7 @@ export default function App(){
   const activeShop = shop || (user.role==="staff" && allowedShops.length===1 ? allowedShops[0] : null);
 
   if(activeShop&&allowedShops.includes(activeShop))
-    return <ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={setSalesData} customers={customers} setCustomers={setCustomers}/>;
+    return <ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={setSalesData} customers={customers} setCustomers={setCustomers} shopItems={shopItems} saveShopItems={saveShopItems}/>;
 
   return(
     <>
