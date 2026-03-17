@@ -642,20 +642,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     return()=>window.removeEventListener("resize",h);
   },[]);
 
-  // Reload all shops data each time we enter a shop
-  useEffect(()=>{
-    const shops=["ros-selections","ros-hairlines","ros-india"];
-    shops.forEach(sid=>{
-      dbLoadSales(sid).then(data=>{
-        if(data&&data.length>0) setSalesData(d=>({...d,[sid]:data}));
-      }).catch(()=>{});
-    });
-    dbLoadCustomers().then(data=>{
-      if(data&&data.length>0) setCustomers(data);
-    }).catch(()=>{});
-  },[shopId]);
-
-  // Customers loaded at App level
+  // Data loaded at App level and persisted in localStorage
 
   // ── Invoice computed vars ──
   const _invTaxR    = invoiceRow ? ((invoiceRow.taxRate!==undefined?invoiceRow.taxRate:(shopId==="ros-india"?18:20))/100) : 0;
@@ -4748,16 +4735,16 @@ export default function App(){
     });
   };
 
-  // Load all data once at app level so it persists across shop switches
+  // Load all data once at app level - wait for ALL shops before setting state
   useEffect(()=>{
-    // Load sales for all shops
     const shops=["ros-selections","ros-hairlines","ros-india"];
-    shops.forEach(sid=>{
-      dbLoadSales(sid).then(data=>{
-        if(data&&data.length>0) updateSalesData(d=>({...d,[sid]:data}));
-      }).catch(()=>{});
+    Promise.all(shops.map(sid=>dbLoadSales(sid).catch(()=>null))).then(results=>{
+      const merged={...salesData};
+      results.forEach((data,i)=>{
+        if(data&&data.length>0) merged[shops[i]]=data;
+      });
+      updateSalesData(merged);
     });
-    // Load customers
     dbLoadCustomers().then(data=>{
       if(data&&data.length>0) setCustomers(data);
     }).catch(()=>{});
