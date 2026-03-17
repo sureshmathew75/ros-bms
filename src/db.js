@@ -25,7 +25,10 @@ export const dbSaveSale = async (shopId, sale) => {
     rem:           sale.rem || '',
     tax_rate:      sale.taxRate || 20,
     tax_inclusive: sale.taxInclusive !== false,
-    invoice_no:    sale.id,
+    invoice_no:    sale.invoiceNo || sale.id,
+  }, {
+    onConflict: 'id',
+    ignoreDuplicates: false,
   });
   if (error) console.error('Save sale error:', error);
   else console.log('Sale saved ✅');
@@ -40,22 +43,22 @@ export const dbLoadSales = async (shopId) => {
     .order('created_at', { ascending: false });
   if (error) { console.error('Load sales error:', error); return null; }
   return data.map(r => ({
-    id:          r.id,
-    customer:    r.customer || '',
-    amount:      r.amount || 0,
-    status:      r.status || '',
-    pay:         r.pay || '',
-    ful:         r.ful || '',
-    date:        r.date || r.created_at?.split('T')[0] || '',
-    item:        r.item || '',
-    qty:         r.qty || '1',
-    contact:     r.contact || '',
-    phone:       r.phone || '',
-    address:     r.address || '',
-    rem:         r.rem || '',
-    taxRate:     r.tax_rate || 20,
-    taxInclusive:r.tax_inclusive !== false,
-    invoiceNo:   r.invoice_no || r.id,
+    id:           r.id,
+    customer:     r.customer || '',
+    amount:       r.amount || 0,
+    status:       r.status || '',
+    pay:          r.pay || '',
+    ful:          r.ful || '',
+    date:         r.date || r.created_at?.split('T')[0] || '',
+    item:         r.item || '',
+    qty:          r.qty || '1',
+    contact:      r.contact || '',
+    phone:        r.phone || '',
+    address:      r.address || '',
+    rem:          r.rem || '',
+    taxRate:      r.tax_rate || 20,
+    taxInclusive: r.tax_inclusive !== false,
+    invoiceNo:    r.invoice_no || r.id,
   }));
 };
 
@@ -79,6 +82,8 @@ export const dbSaveCustomer = async (customer) => {
     purchases: customer.purchases || 0,
     spend:     customer.spend || 0,
     last:      customer.last || '',
+  }, {
+    onConflict: 'id',
   });
   if (error) console.error('Save customer error:', error);
   else console.log('Customer saved ✅');
