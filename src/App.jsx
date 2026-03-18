@@ -3173,6 +3173,8 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
   const pfx={["ros-selections"]:"PO",["ros-hairlines"]:"PH",["ros-india"]:"PI"}[shopId]||"PO";
   const autoId=`${pfx}-${String(nextNum).padStart(4,"0")}`;
 
+  const blankLine=()=>({id:Date.now()+Math.random(),item:"",itemCustom:"",qty:"",unitPrice:""});
+
   const [form,setForm]=useState({
     date:        new Date().toISOString().slice(0,10),
     purchaseId:  autoId,
@@ -3180,11 +3182,8 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
     supplier:    "",
     invoiceNo:   "",
     batch:       "",
-    item:        "",
-    itemCustom:  "",
-    qty:         "",
-    total:       "",
     gst:         "",
+    adjustment:  "",
     payBy:       "HDFC SURESH",
     payDate:     new Date().toISOString().slice(0,10),
     logisticBy:  "",
@@ -3192,21 +3191,27 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
     receivedDate:"",
     remarks:     "",
   });
+  const [lines,setLines]=useState([blankLine()]);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
-  /* unit cost = total / qty — read-only, auto-calc */
-  const unitCost=(()=>{
-    const q=parseFloat(form.qty);
-    const t=parseFloat(form.total);
-    if(q>0&&t>0) return (t/q).toFixed(2);
-    return "";
-  })();
+  const setLine=(id,k,v)=>setLines(ls=>ls.map(l=>l.id===id?{...l,[k]:v}:l));
+  const addLine=()=>setLines(ls=>[...ls,blankLine()]);
+  const removeLine=(id)=>setLines(ls=>ls.length>1?ls.filter(l=>l.id!==id):ls);
+
+  /* totals */
+  const grossTotal=lines.reduce((a,l)=>{
+    const q=parseFloat(l.qty)||0;
+    const p=parseFloat(l.unitPrice)||0;
+    return a+(q*p);
+  },0);
+  const gstAmt=parseFloat(form.gst)||0;
+  const adjAmt=parseFloat(form.adjustment)||0;
+  const netTotal=grossTotal+gstAmt+adjAmt;
 
   const [supplierList,setSupplierList]=useState([...SUPPLIERS]);
   const [showNewSup,setShowNewSup]=useState(false);
 
   const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white",transition:"border-color 0.15s"};
-  const inpGray={...inp,background:"#f1f5f9",color:"#64748b",cursor:"not-allowed"};
   const fo=e=>e.target.style.borderColor=shop.accent;
   const bl=e=>e.target.style.borderColor="#e2e8f0";
   const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
@@ -3218,8 +3223,6 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
       <div style={{height:1,flex:1,background:"#f1f5f9"}}/>
     </div>
   );
-
-  const useCustomItem=form.item==="__custom__";
 
   const handleAddSupplier=(newSup)=>{
     setSupplierList(l=>[newSup,...l]);
@@ -3295,33 +3298,71 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
         </div>
       </div>
 
-      {/* ITEM */}
-      <Divider title="Item / Product"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div style={{gridColumn:"1/-1"}}>
-          <label style={lbl}>Item</label>
-          <select value={form.item} onChange={e=>set("item",e.target.value)} style={inp}>
-            <option value="">Select product…</option>
-            <option value="__custom__">✏️ Enter manually…</option>
-            {PRODUCTS.map(p=><option key={p.id} value={p.name}>{p.name}</option>)}
-          </select>
-          {useCustomItem&&<input value={form.itemCustom} onChange={e=>set("itemCustom",e.target.value)} placeholder="Type item name" style={{...inp,marginTop:8,border:"1px solid "+shop.accent}} autoFocus onFocus={fo} onBlur={bl}/>}
+      {/* ITEMS */}
+      <Divider title="Items"/>
+      <div style={{marginBottom:4}}>
+        {/* column headers */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 80px 100px 32px",gap:8,marginBottom:6,paddingRight:2}}>
+          <span style={{...lbl,marginBottom:0}}>Item Name</span>
+          <span style={{...lbl,marginBottom:0}}>Qty</span>
+          <span style={{...lbl,marginBottom:0}}>Unit Price ({shop.symbol})</span>
+          <span/>
         </div>
-        <div>
-          <label style={lbl}>Total Quantity</label>
-          <input type="number" min="1" value={form.qty} onChange={e=>set("qty",e.target.value)} placeholder="0" style={inp} onFocus={fo} onBlur={bl}/>
+        {lines.map((l,i)=>(
+          <div key={l.id} style={{display:"grid",gridTemplateColumns:"1fr 80px 100px 32px",gap:8,marginBottom:8,alignItems:"center"}}>
+            <div>
+              <input
+                value={l.item}
+                onChange={e=>setLine(l.id,"item",e.target.value)}
+                placeholder={"Item "+(i+1)+"…"}
+                style={inp} onFocus={fo} onBlur={bl}/>
+            </div>
+            <input type="number" min="0" value={l.qty} onChange={e=>setLine(l.id,"qty",e.target.value)} placeholder="0" style={{...inp,textAlign:"right"}} onFocus={fo} onBlur={bl}/>
+            <input type="number" min="0" value={l.unitPrice} onChange={e=>setLine(l.id,"unitPrice",e.target.value)} placeholder="0.00" style={{...inp,textAlign:"right"}} onFocus={fo} onBlur={bl}/>
+            <button onClick={()=>removeLine(l.id)} title="Remove"
+              style={{width:30,height:30,borderRadius:8,border:"1px solid #fee2e2",background:"#fff1f2",color:"#ef4444",fontWeight:900,fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.15s"}}
+              onMouseEnter={e=>e.currentTarget.style.background="#fee2e2"}
+              onMouseLeave={e=>e.currentTarget.style.background="#fff1f2"}>
+              ×
+            </button>
+          </div>
+        ))}
+        <button onClick={addLine}
+          style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:9,border:"1px dashed "+shop.accent,background:shop.accent+"0d",color:shop.accent,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",marginBottom:16}}
+          onMouseEnter={e=>e.currentTarget.style.background=shop.accent+"1a"}
+          onMouseLeave={e=>e.currentTarget.style.background=shop.accent+"0d"}>
+          + Add Another Item
+        </button>
+      </div>
+
+      {/* INVOICE TOTALS */}
+      <Divider title="Invoice Totals"/>
+      <div style={{background:"#f8fafc",borderRadius:12,padding:"14px 16px",marginBottom:16,border:"1px solid #e2e8f0"}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+          <div>
+            <label style={lbl}>GST / VAT Amount ({shop.symbol})</label>
+            <input type="number" value={form.gst} onChange={e=>set("gst",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+          </div>
+          <div>
+            <label style={lbl}>Adjustment ({shop.symbol})</label>
+            <input type="number" value={form.adjustment} onChange={e=>set("adjustment",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+          </div>
         </div>
-        <div>
-          <label style={lbl}>Total Amount ({shop.symbol})</label>
-          <input type="number" value={form.total} onChange={e=>set("total",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={{...lbl,color:"#94a3b8"}}>Unit Cost ({shop.symbol}) <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0}}>— auto</span></label>
-          <input readOnly value={unitCost} placeholder="Auto-calculated" style={inpGray}/>
-        </div>
-        <div>
-          <label style={lbl}>GST / VAT ({shop.currency==="INR"?"%":"£"})</label>
-          <input type="number" value={form.gst} onChange={e=>set("gst",e.target.value)} placeholder="0" style={inp} onFocus={fo} onBlur={bl}/>
+        <div style={{borderTop:"1px solid #e2e8f0",paddingTop:10,display:"flex",flexDirection:"column",gap:6}}>
+          {[
+            {l:"Gross Total",v:grossTotal,muted:true},
+            {l:"GST / VAT",v:gstAmt,muted:true},
+            {l:"Adjustment",v:adjAmt,muted:true},
+          ].map(r=>(
+            <div key={r.l} style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <span style={{fontSize:12,color:"#64748b",fontWeight:600}}>{r.l}</span>
+              <span style={{fontSize:13,color:"#374151",fontWeight:700,fontFamily:"DM Mono,monospace"}}>{shop.symbol}{r.v.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+            </div>
+          ))}
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:"2px solid #0f172a",paddingTop:8,marginTop:2}}>
+            <span style={{fontSize:14,color:"#0f172a",fontWeight:800}}>Net Invoice Total</span>
+            <span style={{fontSize:18,color:shop.accent,fontWeight:900,fontFamily:"DM Mono,monospace"}}>{shop.symbol}{netTotal.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+          </div>
         </div>
       </div>
 
@@ -3375,7 +3416,7 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
 
       {/* ACTIONS */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave(form)}
+        <button onClick={()=>onSave({...form,lines,grossTotal,gstAmt,adjAmt,netTotal,total:netTotal})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Purchase
         </button>
