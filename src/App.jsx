@@ -659,6 +659,17 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [salesPeriod,setSalesPeriodRaw]=useState("month");
   const [pdfInv,setPdfInv]=useState(null);
   const invoicePrintRef=useRef(null);
+  const [purchasesData,setPurchasesData]=useState(()=>{
+    try{const s=localStorage.getItem("ros_purchases");return s?JSON.parse(s):{"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
+    catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
+  });
+  const savePurchase=(sid,newPurch)=>{
+    setPurchasesData(prev=>{
+      const updated={...prev,[sid]:[newPurch,...(prev[sid]||[])]};
+      try{localStorage.setItem("ros_purchases",JSON.stringify(updated));}catch{}
+      return updated;
+    });
+  };
 
   useEffect(()=>{
     const h=()=>setIsMobile(window.innerWidth<768);
@@ -678,7 +689,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
 
   const shop=SHOPS.find(s=>s.id===shopId);
   const sales=salesData[shopId]||[];
-  const purch=PURCH_SEED[shopId]||[];
+  const purch=purchasesData[shopId]||[];
   const exps=EXP_SEED[shopId]||[];
   const logs=LOG_SEED[shopId]||[];
   const lowStk=PRODUCTS.filter(p=>p.stock<=p.min);
@@ -1749,7 +1760,7 @@ return(
       {/* ── NEW PURCHASE MODAL ── */}
       {modal==="new-purchase"&&(
         <Modal title="📦 New Purchase" onClose={()=>setModal(null)} accent={shop.accent}>
-          <NewPurchaseForm shopId={shopId} shop={shop} lastPurchNum={purch.length>0?parseInt((purch[0].id||"0").replace(/[^0-9]/g,""))||700:700} onSave={(form)=>{setModal(null);}} onClose={()=>setModal(null)}/>
+          <NewPurchaseForm shopId={shopId} shop={shop} lastPurchNum={purch.length>0?parseInt((purch[0].id||"0").replace(/[^0-9]/g,""))||700:700} onSave={(form)=>{savePurchase(shopId,{...form,id:form.purchaseId||("PO-"+Date.now()),savedAt:new Date().toISOString()});setModal(null);}} onClose={()=>setModal(null)}/>
         </Modal>
       )}
 
