@@ -237,32 +237,21 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
   const [cmd,setCmd]=useState(false);
   const [statHov,setStatHov]=useState(null);
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
-  const playBell=()=>{
-    try{
-      const ctx=new(window.AudioContext||window.webkitAudioContext)();
-      const o=ctx.createOscillator();
-      const g=ctx.createGain();
-      o.connect(g);g.connect(ctx.destination);
-      o.type="sine";
-      o.frequency.setValueAtTime(880,ctx.currentTime);
-      o.frequency.exponentialRampToValueAtTime(660,ctx.currentTime+0.15);
-      g.gain.setValueAtTime(0.18,ctx.currentTime);
-      g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.35);
-      o.start(ctx.currentTime);o.stop(ctx.currentTime+0.35);
-    }catch(e){}
-  };
   // shopStats computed directly from salesData prop
 
   // Calculate stats directly from salesData prop (always up to date)
   const today=new Date().toISOString().split('T')[0];
+  const currentMonth=today.slice(0,7); // "YYYY-MM"
   const shopStats={};
   SHOPS.forEach(shop=>{
     const data=salesData[shop.id]||[];
     const todayRev=data.filter(s=>s.date===today).reduce((a,s)=>a+(s.amount||0),0);
     const totalRev=data.reduce((a,s)=>a+(s.amount||0),0);
+    const monthRev=data.filter(s=>s.date&&s.date.startsWith(currentMonth)).reduce((a,s)=>a+(s.amount||0),0);
     const pending=data.filter(s=>s.pay==="Pending"||s.pay==="PENDING").length;
     const orders=data.length;
-    shopStats[shop.id]={todaySales:todayRev,totalRev,pendingOrders:pending,orders};
+    const monthOrders=data.filter(s=>s.date&&s.date.startsWith(currentMonth)).length;
+    shopStats[shop.id]={todaySales:todayRev,totalRev,monthRevenue:monthRev,pendingOrders:pending,orders,monthOrders};
   });
 
   useEffect(()=>{
@@ -391,7 +380,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
             return(
               <div key={shop.id}
                 onClick={()=>!staffLocked&&onSelect(shop.id)}
-                onMouseEnter={()=>{if(!staffLocked){setHov(shop.id);playBell();}}}
+                onMouseEnter={()=>!staffLocked&&setHov(shop.id)}
                 onMouseLeave={()=>setHov(null)}
                 style={{borderRadius:22,overflow:"hidden",cursor:staffLocked?"not-allowed":"pointer",
                   transform:h?"translateY(-5px) scale(1.012)":"none",
@@ -428,14 +417,24 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
                     <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.65)",fontStyle:"italic"}}>{shop.tagline}</p>
                   </div>
 
-                  {/* revenue — hidden for staff on non-India shops */}
+                  {/* revenue — hidden for staff */}
                   <div style={{position:"relative",zIndex:1}}>
-                    <p style={{margin:"0 0 2px",fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Today\'s Revenue</p>
                     {staffLocked
                       ? <p style={{margin:0,fontSize:22,fontWeight:700,color:"rgba(255,255,255,0.30)",letterSpacing:2,fontFamily:"'Arimo',Arial,sans-serif"}}>● ● ● ●</p>
-                      : <p style={{margin:0,fontSize:34,fontWeight:700,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif"}}>{shop.id==="ros-india"
-                          ? formatCurrency(shopStats[shop.id]?.todaySales||0)
-                          : "£"+formatNumber(shopStats[shop.id]?.todaySales||0)}</p>
+                      : (<>
+                          <p style={{margin:"0 0 1px",fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Current Monthly Revenue</p>
+                          <p style={{margin:"0 0 8px",fontSize:30,fontWeight:700,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif"}}>
+                            {shop.id==="ros-india"
+                              ? formatCurrency(shopStats[shop.id]?.monthRevenue||0)
+                              : "£"+formatNumber(shopStats[shop.id]?.monthRevenue||0)}
+                          </p>
+                          <p style={{margin:"0 0 1px",fontSize:10,color:"rgba(255,255,255,0.55)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Today's Revenue</p>
+                          <p style={{margin:0,fontSize:18,fontWeight:700,color:"rgba(255,255,255,0.90)",letterSpacing:"-0.3px",fontFamily:"'Arimo',Arial,sans-serif"}}>
+                            {shop.id==="ros-india"
+                              ? formatCurrency(shopStats[shop.id]?.todaySales||0)
+                              : "£"+formatNumber(shopStats[shop.id]?.todaySales||0)}
+                          </p>
+                        </>)
                     }
                   </div>
                 </div>
@@ -449,7 +448,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
                     </div>
                   ):(
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
-                      {[{l:"Orders",v:shopStats[shop.id]?.pendingOrders||0},{l:"Pending",v:shopStats[shop.id]?.pendingOrders||0},{l:"Stock",v:shop.stockValue}].map((s,i)=>(
+                      {[{l:"Orders",v:shopStats[shop.id]?.monthOrders||0},{l:"Pending",v:shopStats[shop.id]?.pendingOrders||0},{l:"Stock",v:shop.stockValue}].map((s,i)=>(
                         <div key={i} style={{textAlign:"center",background:shop.accentBg,borderRadius:10,padding:"9px 5px",border:"1px solid "+shop.accent+"18"}}>
                           <p style={{margin:0,fontWeight:900,fontSize:16,color:shop.accentText}}>{s.v}</p>
                           <p style={{margin:"2px 0 0",fontSize:10,color:shop.accent,fontWeight:700}}>{s.l}</p>
@@ -465,7 +464,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
                     fontWeight:800,fontSize:14,transition:"all 0.2s",fontFamily:"inherit",
                     boxShadow:(!staffLocked&&h)?"0 4px 14px "+shop.accent+"44":"none",
                   }}>
-                    {staffLocked?"🔒 Restricted":"Enter Workspace →"}
+                    {staffLocked?"🔒 Restricted":"Enter the Shop →"}
                   </button>
                 </div>
               </div>
@@ -699,7 +698,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
 
 const addSale = async (form) => {
   const pfx = {["ros-selections"]:"SI",["ros-hairlines"]:"SH",["ros-india"]:"IN"}[shopId];
-  const nid = form.invoiceNo || `${pfx}-${Date.now().toString().slice(-8)}${Math.random().toString(36).slice(-3).toUpperCase()}`;
+  const nid = form.invoiceNo || `${pfx}-${Date.now().toString().slice(-6)}`;
   const newSale = {
     id: nid, ...form,
     amount:       Number(form.amount) || 0,
@@ -714,15 +713,20 @@ const addSale = async (form) => {
     pay:      form.payBy || "SHOP",
     rem:      form.remarks || "",
   };
-  // Update UI instantly — do NOT reload from Supabase after save
-  // Reloading overwrites the correct optimistic state with stale data and corrupts totals
+  // Update UI instantly
   setSalesData(d => ({...d, [shopId]: [newSale, ...d[shopId]]}));
   setModal(null);
-  dbSaveSale(shopId, newSale).catch(err => console.error("❌ Supabase save failed:", err));
+  // Save to Supabase then reload that shop's sales to ensure consistency
+  // Save to Supabase then reload THIS shop only to confirm sync
+  dbSaveSale(shopId, newSale).then(()=>{
+    dbLoadSales(shopId).then(data=>{
+      if(data) setSalesData(prev=>({...prev,[shopId]:data}));
+    }).catch(()=>{});
+  }).catch(err => console.error("❌ Supabase save failed:", err));
   // Auto-save/update customer record
   if(form.customer){
     const existing=customers.find(c=>c.name===form.customer);
-    const custId=existing?.id||("CUST-"+Date.now().toString().slice(-8)+Math.random().toString(36).slice(-3).toUpperCase());
+    const custId=existing?.id||("CUST-"+Date.now().toString().slice(-6));
     const updatedCust={
       id: custId,
       name: form.customer,
@@ -1061,12 +1065,11 @@ return(
             </div>
           </div>
 
-          {/* all shops button — desktop sidebar only; topbar has it on mobile */}
+          {/* all shops button */}
           <button onClick={onBack}
             className="sb-nav-btn"
             style={{
-              display: isMobile ? "none" : "flex",
-              alignItems:"center",gap:9,
+              display:"flex",alignItems:"center",gap:9,
               width:"100%",height:40,
               padding:coll?"0":"0 10px",
               justifyContent:coll?"center":"flex-start",
@@ -1114,17 +1117,6 @@ return(
               onMouseLeave={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accent;}}>
               ☰
             </button>
-            {/* ── All Shops button in topbar (always visible, especially helpful on mobile) ── */}
-            {user?.role!=="staff"&&(
-              <button onClick={onBack}
-                style={{display:"flex",alignItems:"center",gap:6,height:36,padding:"0 12px",borderRadius:10,border:"1px solid "+shop.accent+"33",background:shop.accentBg,cursor:"pointer",color:shop.accentText,fontSize:12,fontWeight:700,fontFamily:"inherit",transition:"all 0.15s",whiteSpace:"nowrap",flexShrink:0}}
-                onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.color="white";e.currentTarget.style.borderColor=shop.accent;}}
-                onMouseLeave={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accentText;e.currentTarget.style.borderColor=shop.accent+"33";}}>
-                <span style={{fontSize:14}}>🏪</span>
-                <span className="mob-hide">All Shops</span>
-                <span style={{fontSize:11,opacity:0.7}} className="mob-hide">↩</span>
-              </button>
-            )}
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <div style={{width:3,height:28,borderRadius:999,background:shop.sb}}/>
               <div>
@@ -1636,15 +1628,6 @@ return(
               const current=(shopItems||{})[shopId]||[];
               const updated={...(shopItems||{}),[shopId]:[...new Set([...current,item])]};
               if(saveShopItems) saveShopItems(updated);
-            }}
-            customers={customers||[]}
-            onSaveCustomer={(c)=>{
-              setCustomers(prev=>{
-                const idx=prev.findIndex(x=>x.id===c.id);
-                if(idx>=0){const n=[...prev];n[idx]=c;return n;}
-                return [c,...prev];
-              });
-              dbSaveCustomer(c).catch(()=>{});
             }}
           />
         </Modal>
@@ -3501,7 +3484,7 @@ const NewCustomerForm=({shop,onSave,onClose})=>{
 /* ══════════════════════════════════════════════════════
    NEW SALE FORM
 ══════════════════════════════════════════════════════ */
-const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,customers=[],onSaveCustomer})=>{
+const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem})=>{
   const nextNum=(lastInvoiceNum||1312)+1;
   /* Financial year suffix: Apr-Mar cycle
      e.g. sale in Jan 2026 → FY 2025-26 → suffix "6"
@@ -3540,18 +3523,6 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const [showNewCust,setShowNewCust]=useState(false);
   const [showAddItem,setShowAddItem]=useState(false);
   const [newItemInput,setNewItemInput]=useState("");
-  /* combobox state */
-  const [custQuery,setCustQuery]=useState("");
-  const [custDropOpen,setCustDropOpen]=useState(false);
-  const [isNewCustInline,setIsNewCustInline]=useState(false);
-  const [newCustPhone,setNewCustPhone]=useState("");
-  const [newCustAddress,setNewCustAddress]=useState("");
-  const custRef=useRef(null);
-  useEffect(()=>{
-    const h=e=>{if(custRef.current&&!custRef.current.contains(e.target)){setCustDropOpen(false);setIsNewCustInline(false);}};
-    document.addEventListener("mousedown",h);
-    return()=>document.removeEventListener("mousedown",h);
-  },[]);
 
   const inp={
     width:"100%",border:"1px solid #e2e8f0",borderRadius:9,
@@ -3577,11 +3548,8 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const handleAddCustomer=(newCust)=>{
     setCustomerList(l=>[newCust,...l]);
     set("customer",newCust.name);
-    set("contact",newCust.phone||"");
-    setCustQuery("");
+    set("contact",newCust.phone);
     setShowNewCust(false);
-    // Save to DB
-    if(onSaveCustomer)onSaveCustomer(newCust);
   };
 
   /* Status colour map */
@@ -3614,7 +3582,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
           </div>
           <div style={{padding:22}}>
-            <NewCustomerForm shop={shop} onSave={handleAddCustomer} onClose={()=>setShowNewCust(false)} initialName={form.customer}/>
+            <NewCustomerForm shop={shop} onSave={handleAddCustomer} onClose={()=>setShowNewCust(false)}/>
           </div>
         </div>
       </div>
@@ -3664,92 +3632,32 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
       {/* CUSTOMER */}
       <Divider title="Customer"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div ref={custRef} style={{position:"relative",gridColumn:"1/-1"}}>
+        <div>
           <label style={lbl}>Customer Name</label>
-          {/* ── Smart combobox ── */}
-          <div style={{position:"relative"}}>
-            <input
-              value={custQuery||form.customer}
-              onChange={e=>{
-                const v=e.target.value;
-                setCustQuery(v);
-                set("customer",v);
-                setCustDropOpen(true);
-                setIsNewCustInline(false);
-                // clear contact if typing new name
-                const match=customers.find(c=>c.name.toLowerCase()===v.toLowerCase());
-                if(match){set("contact",match.phone||"");}
-              }}
-              onFocus={()=>setCustDropOpen(true)}
-              onBlur={()=>setTimeout(()=>setCustDropOpen(false),150)}
-              placeholder="Type customer name…"
-              style={{...inp,paddingRight:36}}
-              autoComplete="off"
-            />
-            {(custQuery||form.customer)&&(
-              <button onClick={()=>{setCustQuery("");set("customer","");set("contact","");setCustDropOpen(false);setIsNewCustInline(false);}}
-                style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",background:"none",border:"none",cursor:"pointer",fontSize:16,color:"#94a3b8",lineHeight:1}}>×</button>
-            )}
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <select value={form.customer} onChange={e=>{
+                set("customer",e.target.value);
+                const c=customerList.find(x=>x.name===e.target.value);
+                if(c)set("contact",c.phone||"");
+              }} style={{...inp,flex:1}}>
+              <option value="">Select customer…</option>
+              {customerList.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+            {/* + add new customer */}
+            <button onClick={()=>setShowNewCust(true)}
+              title="Add new customer"
+              style={{flexShrink:0,width:34,height:34,borderRadius:8,cursor:"pointer",
+                border:"1px solid "+shop.accent,
+                background:shop.accent,color:"white",
+                fontSize:18,fontWeight:900,
+                display:"flex",alignItems:"center",justifyContent:"center",
+                boxShadow:"0 2px 8px "+shop.accent+"44",
+                transition:"all 0.15s",}}
+              onMouseEnter={e=>e.currentTarget.style.transform="scale(1.08)"}
+              onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
+              +
+            </button>
           </div>
-
-          {/* ── Dropdown ── */}
-          {custDropOpen&&(custQuery||form.customer)&&(()=>{
-            const q=(custQuery||form.customer).toLowerCase();
-            const matches=customers.filter(c=>c.name.toLowerCase().includes(q));
-            const exactMatch=customers.find(c=>c.name.toLowerCase()===q);
-            return(
-              <div
-                onMouseDown={e=>e.preventDefault()}
-                style={{position:"absolute",top:"100%",left:0,right:0,zIndex:99,background:"white",
-                border:"1px solid "+shop.accent+"44",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,0.12)",
-                marginTop:4,maxHeight:200,overflowY:"auto"}}>
-                {matches.length>0&&matches.map(c=>(
-                  <div key={c.id}
-                    onMouseDown={()=>{
-                      set("customer",c.name);
-                      set("contact",c.phone||"");
-                      setCustQuery("");
-                      setCustDropOpen(false);
-                      setIsNewCustInline(false);
-                    }}
-                    style={{padding:"10px 14px",cursor:"pointer",borderBottom:"1px solid #f1f5f9",
-                      display:"flex",alignItems:"center",gap:10,transition:"background 0.1s"}}
-                    onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg}
-                    onMouseLeave={e=>e.currentTarget.style.background="white"}>
-                    <div style={{width:30,height:30,borderRadius:8,background:shop.accent,
-                      display:"flex",alignItems:"center",justifyContent:"center",
-                      color:"white",fontWeight:800,fontSize:12,flexShrink:0}}>
-                      {c.name.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <p style={{margin:0,fontWeight:700,fontSize:13,color:"#0f172a"}}>{c.name}</p>
-                      {c.phone&&<p style={{margin:0,fontSize:11,color:"#94a3b8"}}>{c.phone}</p>}
-                    </div>
-                    <span style={{marginLeft:"auto",fontSize:11,color:shop.accent,fontWeight:600}}>Select →</span>
-                  </div>
-                ))}
-                {!exactMatch&&(custQuery||form.customer).trim().length>1&&(
-                  <div
-                    onMouseDown={()=>{setCustDropOpen(false);setIsNewCustInline(false);setShowNewCust(true);}}
-                    style={{padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",gap:10,
-                      background:"#f0fdf4",borderTop:matches.length>0?"1px solid #e2e8f0":"none"}}
-                    onMouseEnter={e=>e.currentTarget.style.background="#dcfce7"}
-                    onMouseLeave={e=>e.currentTarget.style.background="#f0fdf4"}>
-                    <span style={{fontSize:18}}>➕</span>
-                    <div>
-                      <p style={{margin:0,fontWeight:700,fontSize:13,color:"#15803d"}}>Add "{(custQuery||form.customer).trim()}" as new customer</p>
-                      <p style={{margin:0,fontSize:11,color:"#16a34a"}}>Tap to fill in details and save</p>
-                    </div>
-                  </div>
-                )}
-                {matches.length===0&&(custQuery||form.customer).trim().length<=1&&(
-                  <div style={{padding:"12px 14px",fontSize:12,color:"#94a3b8",textAlign:"center"}}>Type a name to search…</div>
-                )}
-              </div>
-            );
-          })()}
-
-
         </div>
         <div>
           <label style={lbl}>Contact Number</label>
