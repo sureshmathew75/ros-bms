@@ -248,7 +248,8 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
     const todayRev=data.filter(s=>s.date===today).reduce((a,s)=>a+(s.amount||0),0);
     const totalRev=data.reduce((a,s)=>a+(s.amount||0),0);
     const monthRev=data.filter(s=>s.date&&s.date.startsWith(currentMonth)).reduce((a,s)=>a+(s.amount||0),0);
-    const pending=data.filter(s=>s.pay==="Pending"||s.pay==="PENDING").length;
+    const DONE_STATUSES=["FULFILLED","EXCHANGED","REFUNDED","GOOD FEEDBACK"];
+    const pending=data.filter(s=>!DONE_STATUSES.includes((s.status||"").toUpperCase())).length;
     const orders=data.length;
     const monthOrders=data.filter(s=>s.date&&s.date.startsWith(currentMonth)).length;
     shopStats[shop.id]={todaySales:todayRev,totalRev,monthRevenue:monthRev,pendingOrders:pending,orders,monthOrders};
@@ -421,20 +422,30 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
                   <div style={{position:"relative",zIndex:1}}>
                     {staffLocked
                       ? <p style={{margin:0,fontSize:22,fontWeight:700,color:"rgba(255,255,255,0.30)",letterSpacing:2,fontFamily:"'Arimo',Arial,sans-serif"}}>● ● ● ●</p>
-                      : (<>
-                          <p style={{margin:"0 0 1px",fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Current Monthly Revenue</p>
-                          <p style={{margin:"0 0 8px",fontSize:30,fontWeight:700,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif"}}>
-                            {shop.id==="ros-india"
-                              ? formatCurrency(shopStats[shop.id]?.monthRevenue||0)
-                              : "£"+formatNumber(shopStats[shop.id]?.monthRevenue||0)}
-                          </p>
-                          <p style={{margin:"0 0 1px",fontSize:10,color:"rgba(255,255,255,0.55)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Today's Revenue</p>
-                          <p style={{margin:0,fontSize:18,fontWeight:700,color:"rgba(255,255,255,0.90)",letterSpacing:"-0.3px",fontFamily:"'Arimo',Arial,sans-serif"}}>
-                            {shop.id==="ros-india"
-                              ? formatCurrency(shopStats[shop.id]?.todaySales||0)
-                              : "£"+formatNumber(shopStats[shop.id]?.todaySales||0)}
-                          </p>
-                        </>)
+                      : (
+                        <div style={{display:"flex",alignItems:"stretch",gap:0}}>
+                          {/* Today */}
+                          <div style={{flex:1}}>
+                            <p style={{margin:"0 0 3px",fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Today's</p>
+                            <p style={{margin:0,fontSize:22,fontWeight:800,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif",lineHeight:1.1}}>
+                              {shop.id==="ros-india"
+                                ? formatCurrency(shopStats[shop.id]?.todaySales||0)
+                                : "£"+formatNumber(shopStats[shop.id]?.todaySales||0)}
+                            </p>
+                          </div>
+                          {/* Divider */}
+                          <div style={{width:1,background:"rgba(255,255,255,0.25)",margin:"0 14px",borderRadius:1}}/>
+                          {/* Month */}
+                          <div style={{flex:1}}>
+                            <p style={{margin:"0 0 3px",fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Month</p>
+                            <p style={{margin:0,fontSize:22,fontWeight:800,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif",lineHeight:1.1}}>
+                              {shop.id==="ros-india"
+                                ? formatCurrency(shopStats[shop.id]?.monthRevenue||0)
+                                : "£"+formatNumber(shopStats[shop.id]?.monthRevenue||0)}
+                            </p>
+                          </div>
+                        </div>
+                      )
                     }
                   </div>
                 </div>
