@@ -793,7 +793,15 @@ const PurchaseDocuments=({purchase,shop,onUpdate})=>{
   );
 };
 
-const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems})=>{
+const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData:_setSalesData,customers,setCustomers,shopItems={},saveShopItems})=>{
+  // Wrap setSalesData so every update is persisted to localStorage
+  const setSalesData=(updater)=>{
+    _setSalesData(prev=>{
+      const next=typeof updater==="function"?updater(prev):updater;
+      try{localStorage.setItem("ros_salesData",JSON.stringify(next));}catch{}
+      return next;
+    });
+  };
   const [tab,setTab]=useState(user?.role==="staff"?"sales":"dashboard");
   const [hov,setHov]=useState(null);
   const [search,setSearch]=useState("");
@@ -1792,12 +1800,14 @@ return(
                   getMonthLabel={getMonthLabel}
                   netSale={netSale}
                 />
-                {/* ── FY / Month grouped sales table ── */}
-                {salesPeriod==="year"||salesPeriod==="lifetime"?(
-                  <div style={{marginTop:24,background:"white",borderRadius:16,border:"1px solid #e2e8f0",overflow:"hidden",boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
+                {/* ── FY / Month grouped sales table — always shown ── */}
+                {(()=>{
+                  return <div style={{marginTop:24,background:"white",borderRadius:16,border:"1px solid #e2e8f0",overflow:"hidden",boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
                     <div style={{padding:"14px 20px",background:"#f8fafc",borderBottom:"2px solid #e2e8f0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                      <span style={{fontWeight:800,fontSize:15,color:"#0f172a"}}>📅 Sales by Financial Year</span>
-                      <span style={{fontSize:12,color:"#64748b"}}>{sorted.length} total records · Page {safePage} of {totalPages}</span>
+                      <span style={{fontWeight:800,fontSize:15,color:"#0f172a"}}>
+                        {salesPeriod==="year"||salesPeriod==="lifetime"?"📅 Sales by Financial Year":"📅 Sales — "+{day:"Today",week:"This Week",month:"This Month"}[salesPeriod]}
+                      </span>
+                      <span style={{fontSize:12,color:"#64748b"}}>{sorted.length} records · Page {safePage} of {totalPages} · 100 per page</span>
                     </div>
                     <div style={{overflowX:"auto"}}>
                       <table style={{width:"100%",borderCollapse:"collapse",minWidth:700}}>
@@ -1814,7 +1824,7 @@ return(
                             const refund=Number(s.refundAmt)||0;
                             return(
                               <>
-                                {fyChange&&(
+                                {fyChange&&(salesPeriod==="year"||salesPeriod==="lifetime")&&(
                                   <tr key={"fy-"+fy}>
                                     <td colSpan={10} style={{
                                       padding:"10px 16px",
@@ -1829,33 +1839,22 @@ return(
                                     </td>
                                   </tr>
                                 )}
-                                {monthChange&&!fyChange&&(
+                                {monthChange&&(
                                   <tr key={"mo-"+mk+"-"+idx}>
                                     <td colSpan={10} style={{
-                                      padding:"7px 16px",
+                                      padding:"8px 16px",
                                       background:"#f1f5f9",
-                                      borderTop:"2px solid #cbd5e1",
-                                      borderBottom:"1px solid #e2e8f0",
+                                      borderTop:"2px solid #94a3b8",
+                                      borderBottom:"2px solid #94a3b8",
                                     }}>
-                                      <span style={{fontWeight:700,fontSize:12,color:"#475569",textTransform:"uppercase",letterSpacing:"0.06em"}}>
-                                        📆 {getMonthLabel(mk)} &nbsp;·&nbsp;
-                                        {shop.symbol}{sorted.filter(x=>getMonthKey(x.date)===mk&&getFY(x.date)===fy).reduce((a,x)=>a+(Number(x.amount)||0),0).toLocaleString("en-GB",{minimumFractionDigits:2})}
-                                      </span>
-                                    </td>
-                                  </tr>
-                                )}
-                                {monthChange&&fyChange&&(
-                                  <tr key={"mof-"+mk+"-"+idx}>
-                                    <td colSpan={10} style={{
-                                      padding:"7px 16px",
-                                      background:"#f1f5f9",
-                                      borderTop:"1px solid #e2e8f0",
-                                      borderBottom:"1px solid #e2e8f0",
-                                    }}>
-                                      <span style={{fontWeight:700,fontSize:12,color:"#475569",textTransform:"uppercase",letterSpacing:"0.06em"}}>
-                                        📆 {getMonthLabel(mk)} &nbsp;·&nbsp;
-                                        {shop.symbol}{sorted.filter(x=>getMonthKey(x.date)===mk&&getFY(x.date)===fy).reduce((a,x)=>a+(Number(x.amount)||0),0).toLocaleString("en-GB",{minimumFractionDigits:2})}
-                                      </span>
+                                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                                        <span style={{fontWeight:800,fontSize:12,color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>
+                                          📆 {getMonthLabel(mk)}
+                                        </span>
+                                        <span style={{fontWeight:700,fontSize:12,color:shop.accent,fontFamily:"DM Mono,monospace"}}>
+                                          {shop.symbol}{paged.filter(x=>getMonthKey(x.date)===mk).reduce((a,x)=>a+(Number(x.amount)||0),0).toLocaleString("en-GB",{minimumFractionDigits:2})} &nbsp;|&nbsp; {paged.filter(x=>getMonthKey(x.date)===mk).length} orders
+                                        </span>
+                                      </div>
                                     </td>
                                   </tr>
                                 )}
@@ -1910,7 +1909,7 @@ return(
                       </div>
                     )}
                   </div>
-                ):null}
+                })()}
               </div>
             );
           })()}
@@ -2089,11 +2088,51 @@ return(
         <Modal title="⬇ Import Sales" onClose={()=>setModal(null)} accent={shop.accent}>
           <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}
             onImport={(rows)=>{
+              // 1. Update sales state instantly (localStorage persisted via wrapped setSalesData)
               setSalesData(prev=>{
                 const existing=prev[shopId]||[];
                 const existingIds=new Set(existing.map(s=>s.id));
                 const fresh=rows.filter(r=>r.id&&!existingIds.has(r.id));
                 return {...prev,[shopId]:[...fresh,...existing]};
+              });
+              // 2. Auto-update customer database from imported rows
+              setCustomers(prev=>{
+                const updated=[...prev];
+                rows.forEach(row=>{
+                  if(!row.customer) return;
+                  const idx=updated.findIndex(c=>c.name===row.customer);
+                  if(idx>=0){
+                    // update existing customer
+                    updated[idx]={
+                      ...updated[idx],
+                      phone: updated[idx].phone||row.phone||row.contact||"",
+                      whatsapp: updated[idx].whatsapp||row.phone||row.contact||"",
+                      address: updated[idx].address||row.address||"",
+                      purchases: (updated[idx].purchases||0)+1,
+                      spend: (updated[idx].spend||0)+(Number(row.amount)||0),
+                      last: row.date||updated[idx].last||"",
+                    };
+                  } else {
+                    // create new customer
+                    updated.push({
+                      id:"CUST-"+Date.now()+"-"+Math.random().toString(36).slice(2,6),
+                      name: row.customer,
+                      phone: row.phone||row.contact||"",
+                      whatsapp: row.phone||row.contact||"",
+                      address: row.address||"",
+                      tag: "New Customer",
+                      notes: "",
+                      purchases: 1,
+                      spend: Number(row.amount)||0,
+                      last: row.date||"",
+                    });
+                  }
+                });
+                return updated;
+              });
+              // 3. Persist to Supabase (best-effort)
+              rows.forEach(row=>{
+                dbSaveSale(shopId, row).catch(()=>{});
               });
             }}
           />
@@ -5599,7 +5638,13 @@ export default function App(){
   });
   const [users,setUsers]=useState(INITIAL_USERS);
   const [settingsOpen,setSettingsOpen]=useState(false);
-  const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
+  const [salesData,setSalesData]=useState(()=>{
+    // Load from localStorage immediately — instant, survives refresh
+    try{
+      const s=localStorage.getItem("ros_salesData");
+      return s?JSON.parse(s):{"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
+    }catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
+  });
   const [customers,setCustomers]=useState([]);
   const [shopItems,setShopItems]=useState(()=>{
     try{const s=localStorage.getItem("ros_shopItems");return s?JSON.parse(s):{"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
@@ -5610,15 +5655,31 @@ export default function App(){
     try{localStorage.setItem("ros_shopItems",JSON.stringify(updated));}catch{}
   };
 
-  const updateSalesData=setSalesData;
+  // Always persist salesData to localStorage whenever it changes
+  const updateSalesData=(updater)=>{
+    setSalesData(prev=>{
+      const next=typeof updater==="function"?updater(prev):updater;
+      try{localStorage.setItem("ros_salesData",JSON.stringify(next));}catch{}
+      return next;
+    });
+  };
 
-  // Load from Supabase on mount - Supabase is single source of truth
+  // Sync with Supabase on mount — MERGE, never overwrite local data
   useEffect(()=>{
     const shops=["ros-selections","ros-hairlines","ros-india"];
     shops.forEach(sid=>{
-      dbLoadSales(sid).then(data=>{
-        if(!data) return;
-        setSalesData(prev=>({...prev,[sid]:data}));
+      dbLoadSales(sid).then(dbData=>{
+        if(!dbData||dbData.length===0) return;
+        setSalesData(prev=>{
+          const existing=prev[sid]||[];
+          const existingIds=new Set(existing.map(s=>s.id));
+          // add any rows from Supabase not already in local
+          const fromDb=dbData.filter(s=>!existingIds.has(s.id));
+          const merged=[...existing,...fromDb];
+          const next={...prev,[sid]:merged};
+          try{localStorage.setItem("ros_salesData",JSON.stringify(next));}catch{}
+          return next;
+        });
       }).catch(()=>{});
     });
     dbLoadCustomers().then(data=>{
