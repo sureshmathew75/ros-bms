@@ -4881,13 +4881,13 @@ export default function App(){
         });
         setSalesData(prev=>({...prev,[sid]:updated}));
       }).catch(()=>{});
-    });
-    dbLoadPurchases(sid).then(data=>{ if(data) setPurchData(prev=>({...prev,[sid]:data})); }).catch(()=>{});
+      dbLoadPurchases(sid).then(data=>{ if(data) setPurchData(prev=>({...prev,[sid]:data})); }).catch(()=>{});
       dbLoadExpenses(sid).then(data=>{ if(data) setExpData(prev=>({...prev,[sid]:data})); }).catch(()=>{});
       dbLoadLogistics(sid).then(data=>{ if(data) setLogData(prev=>({...prev,[sid]:data})); }).catch(()=>{});
       dbLoadCustomers(sid).then(data=>{ if(data) setCustomers(prev=>({...prev,[sid]:data})); }).catch(()=>{});
       dbLoadSuppliers(sid).then(data=>{ if(data) setSuppData(prev=>({...prev,[sid]:data})); }).catch(()=>{});
-      dbLoadProducts(sid).then(data=>{ if(data) setProdData(prev=>({...prev,[sid]:data})); }).catch(()=>{}));
+      dbLoadProducts(sid).then(data=>{ if(data) setProdData(prev=>({...prev,[sid]:data})); }).catch(()=>{});
+    });
   },[]);
 
   const handleLogin=u=>{
