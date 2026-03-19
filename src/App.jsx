@@ -1906,7 +1906,16 @@ return(
       {/* ── IMPORT MODAL — SALES ── */}
       {modal==="import-sales"&&user?.role!=="staff"&&(
         <Modal title="⬇ Import Sales" onClose={()=>setModal(null)} accent={shop.accent}>
-          <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}/>
+          <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}
+            onImport={(rows)=>{
+              setSalesData(prev=>{
+                const existing=prev[shopId]||[];
+                const existingIds=new Set(existing.map(s=>s.id));
+                const fresh=rows.filter(r=>r.id&&!existingIds.has(r.id));
+                return {...prev,[shopId]:[...fresh,...existing]};
+              });
+            }}
+          />
         </Modal>
       )}
 
@@ -2863,9 +2872,12 @@ return(
 /* ══════════════════════════════════════════════════════
    IMPORT / EXPORT PANEL
 ══════════════════════════════════════════════════════ */
-const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
+const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImport})=>{
   const [dragOver,setDragOver]=useState(false);
   const [fileName,setFileName]=useState(null);
+  const [fileObj,setFileObj]=useState(null);
+  const [importing,setImporting]=useState(false);
+  const [importResult,setImportResult]=useState(null);
   const [fileFmt,setFileFmt]=useState("CSV");
 
   // All 22 export columns — all ON by default
@@ -3081,7 +3093,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
       <div
         onDragOver={e=>{e.preventDefault();setDragOver(true);}}
         onDragLeave={()=>setDragOver(false)}
-        onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f)setFileName(f.name);}}
+        onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f){setFileName(f.name);setFileObj(f);setImportResult(null);}}}
         style={{
           border:"2px dashed "+(dragOver?shop.accent:"#cbd5e1"),
           borderRadius:14,padding:"40px 24px",textAlign:"center",
@@ -3091,7 +3103,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
         onClick={()=>document.getElementById("imp-file-"+entity).click()}>
         <input id={"imp-file-"+entity} type="file" accept=".csv,.xlsx"
           style={{display:"none"}}
-          onChange={e=>setFileName(e.target.files[0]?.name||null)}/>
+          onChange={e=>{const f=e.target.files[0];if(f){setFileName(f.name);setFileObj(f);setImportResult(null);}}}/>
         <div style={{fontSize:40,marginBottom:10}}>{fileName?"✅":"📂"}</div>
         <p style={{margin:0,fontWeight:800,fontSize:15,color:fileName?shop.accent:"#374151"}}>
           {fileName||"Drop your CSV file here"}
@@ -3101,17 +3113,94 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
         </p>
       </div>
 
+      {/* result feedback */}
+      {importResult&&(
+        <div style={{padding:"10px 14px",borderRadius:10,
+          background:importResult.ok?"#dcfce7":"#fee2e2",
+          border:"1px solid "+(importResult.ok?"#bbf7d0":"#fca5a5"),
+          color:importResult.ok?"#15803d":"#991b1b",
+          fontWeight:700,fontSize:13,textAlign:"center"}}>
+          {importResult.ok?"✅ ":"⚠️ "}{importResult.msg}
+        </div>
+      )}
+
       {/* actions */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
         <button
-          onClick={()=>{if(!fileName){alert("Please select a file first.");}else{alert("Import started! "+fileName+" is being processed.");onClose();}}}
+          disabled={!fileObj||importing}
+          onClick={()=>{
+            if(!fileObj||!onImport){return;}
+            setImporting(true);
+            const reader=new FileReader();
+            reader.onload=ev=>{
+              try{
+                const text=ev.target.result;
+                const lines=text.split(/\r?\n/).filter(l=>l.trim());
+                if(lines.length<2){setImportResult({ok:false,msg:"File is empty or has no data rows."});setImporting(false);return;}
+                const headers=lines[0].split(",").map(h=>h.replace(/^"|"$/g,"").trim().toLowerCase());
+                // column index helpers
+                const ci=(names)=>{for(const n of names){const i=headers.indexOf(n);if(i>=0)return i;}return -1;};
+                const colDate=ci(["date","2. date"]);
+                const colInv=ci(["invoice no.","invoice no","3. invoice no.","shop inv.","4. shop inv."]);
+                const colCust=ci(["customer name","5. customer name","customer"]);
+                const colAddr=ci(["addressee","6. addressee"]);
+                const colAddress=ci(["address","7. address"]);
+                const colContact=ci(["contact no.","8. contact no.","contact"]);
+                const colItem=ci(["item","9. item"]);
+                const colQty=ci(["quantity","10. quantity","qty"]);
+                const colTotal=ci(["total","13. total","price (excl. tax)","12. price (excl. tax)"]);
+                const colPay=ci(["payment method","14. payment method","payment"]);
+                const colStatus=ci(["status","fulfillment","ful"]);
+                const colRemarks=ci(["remarks","21. remarks"]);
+                const colTag=ci(["tag","20. tag"]);
+                const getCell=(cells,idx)=>idx>=0&&idx<cells.length?cells[idx].replace(/^"|"$/g,"").trim():"";
+                const rows=[];
+                for(let i=1;i<lines.length;i++){
+                  const cells=lines[i].match(/(".*?"|[^,]+|(?<=,)(?=,)|(?<=,)$|^(?=,))/g)||lines[i].split(",");
+                  const id=getCell(cells,ci(["sale id","1. sale id"]))||("IMP-"+Date.now()+"-"+i);
+                  const row={
+                    id,
+                    date:getCell(cells,colDate),
+                    invoiceNo:getCell(cells,colInv)||id,
+                    customer:getCell(cells,colCust),
+                    addressee:getCell(cells,colAddr),
+                    address:getCell(cells,colAddress),
+                    phone:getCell(cells,colContact),
+                    contact:getCell(cells,colContact),
+                    item:getCell(cells,colItem),
+                    qty:getCell(cells,colQty)||"1",
+                    amount:parseFloat(getCell(cells,colTotal))||0,
+                    pay:getCell(cells,colPay)||"SHOP",
+                    ful:getCell(cells,colStatus)||"PENDING",
+                    status:getCell(cells,colStatus)||"PENDING",
+                    rem:getCell(cells,colRemarks),
+                    remarks:getCell(cells,colRemarks),
+                    tag:getCell(cells,colTag),
+                    taxInclusive:true,
+                    taxRate:(shopId==="ros-india"?18:20),
+                  };
+                  if(row.customer||row.item||row.amount) rows.push(row);
+                }
+                if(rows.length===0){setImportResult({ok:false,msg:"No valid rows found. Check your CSV format."});setImporting(false);return;}
+                onImport(rows);
+                setImportResult({ok:true,msg:rows.length+" record"+(rows.length!==1?"s":"")+" imported successfully!"});
+                setImporting(false);
+                setTimeout(()=>onClose(),1200);
+              }catch(err){
+                setImportResult({ok:false,msg:"Parse error: "+err.message});
+                setImporting(false);
+              }
+            };
+            reader.onerror=()=>{setImportResult({ok:false,msg:"Could not read file."});setImporting(false);};
+            reader.readAsText(fileObj);
+          }}
           style={{padding:"12px 0",borderRadius:11,border:"none",
-            background:fileName?shop.accent:"#e2e8f0",
-            color:fileName?"white":"#94a3b8",fontWeight:800,fontSize:14,
-            cursor:fileName?"pointer":"not-allowed",fontFamily:"inherit",
-            boxShadow:fileName?"0 4px 14px "+shop.accent+"44":"none",
+            background:fileObj&&!importing?shop.accent:"#e2e8f0",
+            color:fileObj&&!importing?"white":"#94a3b8",fontWeight:800,fontSize:14,
+            cursor:fileObj&&!importing?"pointer":"not-allowed",fontFamily:"inherit",
+            boxShadow:fileObj&&!importing?"0 4px 14px "+shop.accent+"44":"none",
             transition:"all 0.2s"}}>
-          ⬆ Import Now
+          {importing?"⏳ Importing…":"⬆ Import Now"}
         </button>
         <button onClick={onClose}
           style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",
