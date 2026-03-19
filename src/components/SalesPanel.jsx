@@ -1,18 +1,158 @@
-import { useState } from "react";
-import PanelContainer from "./ui/PanelContainer";
-import { dbDeleteSale } from "../db";
+import { useState, useMemo } from "react";
 
-const STATUSES=["ALL","PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"];
-const STATUS_COLOURS={
-  "PENDING":       "#fffbeb",
-  "FULFILLED":     "#f0fdf4",
-  "GOOD FEEDBACK": "#ecfdf5",
-  "RTRN REQSTD":   "#fff7ed",
-  "RETRN RCVD":    "#fef2f2",
-  "EXCHANGED":     "#eef2ff",
-  "REFUNDED":      "#faf5ff",
+/* ─────────────────────────────────────────────────────────────────────────
+   SALES PANEL
+   Period definitions:
+     day      → today only (current calendar day)
+     week     → Monday–Sunday of the current ISO week
+     month    → 1st–last date of current calendar month
+     year     → Financial Year: 1 April → 31 March
+     lifetime → all records
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* ── Period helpers ─────────────────────────────────────────────────────── */
+function getPeriodRange(period) {
+  const now = new Date();
+  const y   = now.getFullYear();
+  const m   = now.getMonth();   // 0-based
+  const d   = now.getDate();
+
+  switch (period) {
+    case "day": {
+      const today = now.toISOString().slice(0, 10);
+      return { start: today, end: today };
+    }
+    case "week": {
+      const dow   = now.getDay();
+      const diff  = (dow === 0 ? -6 : 1 - dow);
+      const mon   = new Date(y, m, d + diff);
+      const sun   = new Date(y, m, d + diff + 6);
+      return {
+        start: mon.toISOString().slice(0, 10),
+        end:   sun.toISOString().slice(0, 10),
+      };
+    }
+    case "month": {
+      const first = new Date(y, m, 1).toISOString().slice(0, 10);
+      const last  = new Date(y, m + 1, 0).toISOString().slice(0, 10);
+      return { start: first, end: last };
+    }
+    case "year": {
+      // Financial year: 1 April → 31 March
+      const fyStartYear = (m < 3) ? y - 1 : y;
+      const start = `${fyStartYear}-04-01`;
+      const end   = `${fyStartYear + 1}-03-31`;
+      return { start, end };
+    }
+    case "lifetime":
+    default:
+      return { start: null, end: null };
+  }
+}
+
+function filterByPeriod(sales, period) {
+  const { start, end } = getPeriodRange(period);
+  if (!start && !end) return sales;
+  return sales.filter(s => {
+    const dt = s.date || "";
+    return dt >= start && dt <= end;
+  });
+}
+
+/* ── Date / FY helpers ──────────────────────────────────────────────────── */
+function monthKey(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function monthLabel(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  return d.toLocaleString("default", { month: "long", year: "numeric" });
+}
+
+/** Returns the FY start year for a given date string.
+ *  FY starts 1 April, so Jan–Mar belong to the previous FY start year.
+ *  e.g. 2025-01-15 → FY 2024-25 → fyStartYear = 2024
+ *       2025-05-01 → FY 2025-26 → fyStartYear = 2025
+ */
+function fyStartYear(dateStr) {
+  if (!dateStr) return null;
+  const d = new Date(dateStr);
+  const y = d.getFullYear();
+  const m = d.getMonth(); // 0-based; April = 3
+  return m < 3 ? y - 1 : y;
+}
+
+function fyLabel(startYear) {
+  return `FY ${startYear}–${String(startYear + 1).slice(-2)}`;
+}
+
+/* ── Period button label descriptions ──────────────────────────────────── */
+const PERIOD_META = {
+  day:      { label: "Day",      desc: "Today" },
+  week:     { label: "Week",     desc: "Mon–Sun" },
+  month:    { label: "Month",    desc: "This Month" },
+  year:     { label: "Year",     desc: "Financial Year" },
+  lifetime: { label: "Lifetime", desc: "All Time" },
 };
 
+/* ── Separator row builders ─────────────────────────────────────────────── */
+/**
+ * Walks the descending-date-sorted list and injects two types of separator
+ * objects:
+ *   { _type: "month",  _monthKey, _label }   — shown at every month boundary
+ *   { _type: "fy",     _fyStart, _label }     — shown at every 1-April boundary
+ *
+ * Since rows are newest-first, a boundary fires when the NEXT row is older.
+ * We place the separator BETWEEN the two rows so it reads as the dividing line.
+ * A single transition can trigger BOTH (e.g. crossing from March into April of
+ * a new FY); in that case the FY bar appears first (above the month bar).
+ */
+function buildRowsWithSeparators(sortedRows) {
+  const result = [];
+
+  for (let i = 0; i < sortedRows.length; i++) {
+    const curr = sortedRows[i];
+    const prev = sortedRows[i - 1]; // undefined for first row
+
+    if (prev) {
+      const prevMK  = monthKey(prev.date);
+      const currMK  = monthKey(curr.date);
+      const prevFY  = fyStartYear(prev.date);
+      const currFY  = fyStartYear(curr.date);
+
+      // FY boundary fires first (more prominent, sits above month separator)
+      if (prevFY !== currFY) {
+        result.push({
+          _type: "fy",
+          _fyStart: currFY,
+          _label: fyLabel(currFY),
+          // The new FY started on 1 April of currFY+1 year? No — currFY is the
+          // start year, so the year label is currFY → currFY+1.
+        });
+      }
+
+      // Month boundary (always fire on month change, even when FY also changed)
+      if (prevMK !== currMK) {
+        result.push({
+          _type: "month",
+          _monthKey: currMK,
+          _label: monthLabel(curr.date),
+        });
+      }
+    }
+
+    result.push(curr);
+  }
+
+  return result;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMPONENT
+   ═══════════════════════════════════════════════════════════════════════════ */
 export default function SalesPanel({
   Badge,
   customers,
@@ -38,304 +178,430 @@ export default function SalesPanel({
   user,
   isStaff,
 }) {
-  const [statusFilter,setStatusFilter]=useState("ALL");
+  const [hovR, setHovR] = useState(null);
+  const accent = shop?.accent || "#059669";
+
+  /* ── Compute period-filtered sales ──────────────────────────────────── */
+  const periodSales = useMemo(
+    () => filterByPeriod(filtSales, salesPeriod),
+    [filtSales, salesPeriod]
+  );
+
+  /* ── Sort descending by date ─────────────────────────────────────────── */
+  const sortedSales = useMemo(
+    () => [...periodSales].sort((a, b) => (b.date || "").localeCompare(a.date || "")),
+    [periodSales]
+  );
+
+  /* ── Build rows with month + FY separators ───────────────────────────── */
+  const rowsWithSeparators = useMemo(
+    () => buildRowsWithSeparators(sortedSales),
+    [sortedSales]
+  );
+
+  /* ── Overview KPIs ──────────────────────────────────────────────────── */
+  const totalRev   = periodSales.reduce((a, s) => a + (Number(s.amount) || 0), 0);
+  const paidCount  = periodSales.filter(s => s.pay === "Paid" || s.pay === "SHOP" || s.pay === "BANK").length;
+  const pendCount  = periodSales.filter(s => s.pay === "Pending").length;
+  const fulCount   = periodSales.filter(s => (s.ful || s.status || "") === "FULFILLED").length;
+
+  /* ── Period range label ─────────────────────────────────────────────── */
+  const { start, end } = getPeriodRange(salesPeriod);
+  const rangeLabel = (() => {
+    if (!start) return "All records";
+    if (start === end) return formatDate ? formatDate(start) : start;
+    return `${start} → ${end}`;
+  })();
+
+  /* ── Helpers ─────────────────────────────────────────────────────────── */
+  const statusRowBg = {
+    "PENDING":       "#fffbeb",
+    "FULFILLED":     "#f0fdf4",
+    "GOOD FEEDBACK": "#ecfdf5",
+    "RTRN REQSTD":   "#fff7ed",
+    "RETRN RCVD":    "#fef2f2",
+    "EXCHANGED":     "#eef2ff",
+    "REFUNDED":      "#faf5ff",
+  };
+
+  const PERIODS = isStaff
+    ? ["day", "week", "month"]
+    : ["day", "week", "month", "year", "lifetime"];
+
   return (
-    <PanelContainer>
-      {(()=>{
-        const now=new Date();
-        const periodFilter=(s)=>{
-          if(!s.date)return false;
-          const d=new Date(s.date);
-          if(salesPeriod==="day"){
-            return d.toDateString()===now.toDateString();
-          } else if(salesPeriod==="week"){
-            const weekAgo=new Date(now);weekAgo.setDate(now.getDate()-7);
-            return d>=weekAgo;
-          } else if(salesPeriod==="month"){
-            return d.getMonth()===now.getMonth()&&d.getFullYear()===now.getFullYear();
-          } else if(salesPeriod==="year"){
-            return d.getFullYear()===now.getFullYear();
-          } else if(salesPeriod==="lifetime"){
-            return true;
-          }
-          return true;
-        };
-        const prevFilter=(s)=>{
-          if(salesPeriod==="lifetime")return false;
-          if(!s.date)return false;
-          const d=new Date(s.date);
-          if(salesPeriod==="day"){
-            const yd=new Date(now);yd.setDate(now.getDate()-1);
-            return d.toDateString()===yd.toDateString();
-          } else if(salesPeriod==="week"){
-            const w2=new Date(now);w2.setDate(now.getDate()-14);
-            const w1=new Date(now);w1.setDate(now.getDate()-7);
-            return d>=w2&&d<w1;
-          } else if(salesPeriod==="month"){
-            const pm=now.getMonth()===0?11:now.getMonth()-1;
-            const py=now.getMonth()===0?now.getFullYear()-1:now.getFullYear();
-            return d.getMonth()===pm&&d.getFullYear()===py;
-          } else if(salesPeriod==="year"){
-            return d.getFullYear()===now.getFullYear()-1;
-          }
-          return false;
-        };
+    <div style={{ padding: 0 }}>
 
-        const cur=sales.filter(periodFilter);
-        const prev=sales.filter(prevFilter);
-        const curRevenue=cur.reduce((s,x)=>s+(Number(x.amount)||0),0);
-        const prevRevenue=prev.reduce((s,x)=>s+(Number(x.amount)||0),0);
-        const curOrders=cur.length;
-        const prevOrders=prev.length;
-        const curQty=cur.reduce((s,x)=>s+(Number(x.qty)||1),0);
-        const prevQty=prev.reduce((s,x)=>s+(Number(x.qty)||1),0);
-        const curAOV=curOrders>0?curRevenue/curOrders:0;
-        const prevAOV=prevOrders>0?prevRevenue/prevOrders:0;
+      {/* ── PAGE HEADER ── */}
+      <div style={{
+        display: "flex", alignItems: "flex-start", justifyContent: "space-between",
+        marginBottom: 20, flexWrap: "wrap", gap: 12,
+      }}>
+        <div>
+          <h2 style={{ margin: "0 0 2px", fontSize: 20, fontWeight: 800, color: "#0f172a" }}>
+            Sales
+          </h2>
+          <p style={{ margin: 0, fontSize: 12, color: "#94a3b8" }}>
+            {periodSales.length} order{periodSales.length !== 1 ? "s" : ""} · {rangeLabel}
+          </p>
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            onClick={() => setModal("export-sales")}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "8px 14px", borderRadius: 9, border: "1px solid #e2e8f0",
+              background: "white", color: "#374151", fontWeight: 700, fontSize: 13,
+              cursor: "pointer", fontFamily: "inherit",
+            }}>
+            ⬆ Export
+          </button>
+          <button
+            onClick={() => setModal("new-sale")}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "8px 16px", borderRadius: 9, border: "none",
+              background: accent, color: "white", fontWeight: 800, fontSize: 13,
+              cursor: "pointer", fontFamily: "inherit",
+              boxShadow: `0 3px 10px ${accent}44`,
+            }}>
+            + New Sale
+          </button>
+        </div>
+      </div>
 
-        const trend=(cur,prev)=>{
-          if(prev===0)return{pct:cur>0?100:0,plus:true};
-          const p=Math.round(((cur-prev)/prev)*100);
-          return{pct:Math.abs(p),plus:p>=0};
-        };
-        const tRev=trend(curRevenue,prevRevenue);
-        const tOrd=trend(curOrders,prevOrders);
-        const tQty=trend(curQty,prevQty);
-        const tAOV=trend(curAOV,prevAOV);
-        const periodLabel={day:"vs yesterday",week:"vs last week",month:"vs last month",year:"vs last year",lifetime:"all time"}[salesPeriod];
-
-        const CARDS=[
-          {label:"Total Orders",val:curOrders,raw:curOrders,trend:tOrd,icon:"📋",color:"#3b82f6",fmt:(v)=>v},
-          {label:"Total Quantity",val:curQty,raw:curQty,trend:tQty,icon:"📦",color:"#8b5cf6",fmt:(v)=>v+" units"},
-          {label:"Total Revenue",val:curRevenue,raw:curRevenue,trend:tRev,icon:"💰",color:shop.k[0],fmt:(v)=>fmt(shopId,v)},
-          {label:"Avg Order Value",val:curAOV,raw:curAOV,trend:tAOV,icon:"📈",color:"#f59e0b",fmt:(v)=>fmt(shopId,parseFloat(v.toFixed(2)))},
-        ];
-
-        return(
-          <div style={{background:"white",borderRadius:20,border:"1px solid #f1f5f9",boxShadow:"0 2px 16px rgba(0,0,0,0.06)",overflow:"hidden"}}>
-            <div style={{padding:"18px 24px 14px",borderBottom:"1px solid #f8fafc",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
-              <div>
-                <h3 style={{margin:0,fontSize:15,fontWeight:900,color:"#0f172a",letterSpacing:"-0.01em"}}>Sales Overview</h3>
-                <p style={{margin:"2px 0 0",fontSize:12,color:"#94a3b8"}}>Performance metrics for {shop.name}</p>
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:3,background:"#f8fafc",borderRadius:12,padding:4,border:"1px solid #f1f5f9"}}>
-                {[["day","Day"],["week","Week"],["month","Month"],["year","Year"],["lifetime","Lifetime"]].map(([id,lbl])=>(
-                  <button key={id} onClick={()=>setSalesPeriod(id)}
+      {/* ── SALES OVERVIEW BAR ── */}
+      <div style={{
+        background: "white", borderRadius: 16, border: "1px solid #f1f5f9",
+        padding: "16px 20px", marginBottom: 20,
+        boxShadow: "0 2px 12px rgba(0,0,0,0.04)",
+      }}>
+        {/* Period selector row */}
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          marginBottom: 16, flexWrap: "wrap", gap: 10,
+        }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ fontSize: 13, fontWeight: 700, color: "#64748b" }}>Overview:</span>
+            <div style={{
+              display: "flex", background: "#f1f5f9", borderRadius: 10,
+              padding: 3, gap: 2,
+            }}>
+              {PERIODS.map(p => {
+                const isActive = salesPeriod === p;
+                const meta = PERIOD_META[p];
+                return (
+                  <button
+                    key={p}
+                    onClick={() => setSalesPeriod(p)}
+                    title={meta.desc}
                     style={{
-                      padding:"6px 16px",borderRadius:9,border:"none",cursor:"pointer",
-                      fontFamily:"inherit",fontSize:12,fontWeight:700,
-                      transition:"all 0.18s ease",
-                      background:salesPeriod===id?shop.accent:"transparent",
-                      color:salesPeriod===id?"white":"#64748b",
-                      boxShadow:salesPeriod===id?"0 2px 8px "+shop.accent+"44":"none",
-                    }}>{lbl}</button>
-                ))}
-              </div>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:0}}>
-              {CARDS.map((card,i)=>{
-                const isLast=i===CARDS.length-1;
-                const spark=[40,55,35,70,60,80,card.raw>0?90:20].map(v=>v+Math.random()*10);
-                const sparkMax=Math.max(...spark);
-                const sparkMin=Math.min(...spark);
-                const sparkRange=sparkMax-sparkMin||1;
-                const W=80,H=32;
-                const pts=spark.map((v,j)=>{
-                  const x=(j/(spark.length-1))*W;
-                  const y=H-((v-sparkMin)/sparkRange)*(H-6)-3;
-                  return `${x},${y}`;
-                }).join(" ");
-                const fillPts=`0,${H} ${pts} ${W},${H}`;
-                return(
-                  <div key={card.label}
-                    style={{
-                      padding:"24px 26px 20px",
-                      borderRight:isLast?"none":"1px solid "+card.color+"22",
-                      position:"relative",
-                      transition:"all 0.22s ease",
-                      background:"linear-gradient(145deg,"+card.color+"11,"+card.color+"06)",
-                      cursor:"default",
-                    }}
-                    onMouseEnter={e=>{
-                      e.currentTarget.style.background="linear-gradient(145deg,"+card.color+"22,"+card.color+"0f)";
-                      e.currentTarget.style.boxShadow="inset 0 0 0 1px "+card.color+"33, 0 8px 28px "+card.color+"22";
-                      e.currentTarget.style.transform="translateY(-2px)";
-                      const icon=e.currentTarget.querySelector(".card-icon");
-                      if(icon){icon.style.background=card.color;icon.style.transform="scale(1.12)";}
-                    }}
-                    onMouseLeave={e=>{
-                      e.currentTarget.style.background="linear-gradient(145deg,"+card.color+"11,"+card.color+"06)";
-                      e.currentTarget.style.boxShadow="none";
-                      e.currentTarget.style.transform="translateY(0)";
-                      const icon=e.currentTarget.querySelector(".card-icon");
-                      if(icon){icon.style.background=card.color+"18";icon.style.transform="scale(1)";}
+                      padding: "5px 13px", borderRadius: 8, border: "none",
+                      background: isActive ? accent : "transparent",
+                      color: isActive ? "white" : "#64748b",
+                      fontWeight: isActive ? 800 : 600,
+                      fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+                      transition: "all 0.15s",
+                      boxShadow: isActive ? `0 2px 8px ${accent}44` : "none",
                     }}>
-                    <div style={{position:"absolute",top:0,left:0,right:0,height:4,background:"linear-gradient(90deg,"+card.color+","+card.color+"66)",borderRadius:"0 0 0 0"}}/>
-                    <div style={{position:"absolute",right:-20,top:-20,width:90,height:90,borderRadius:"50%",background:card.color+"0e",pointerEvents:"none"}}/>
-                    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:16,position:"relative"}}>
-                      <div className="card-icon" style={{width:44,height:44,borderRadius:14,background:card.color+"18",border:"1px solid "+card.color+"33",display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,transition:"all 0.22s ease",boxShadow:"0 2px 8px "+card.color+"22"}}>{card.icon}</div>
-                      <div style={{display:"flex",alignItems:"center",gap:3,background:card.trend.plus?"#f0fdf4":"#fff5f5",borderRadius:999,padding:"5px 10px",border:card.trend.plus?"1px solid #86efac":"1px solid #fca5a5",boxShadow:card.trend.plus?"0 1px 4px #bbf7d044":"0 1px 4px #fecaca44"}}>
-                        <span style={{fontSize:10,fontWeight:900,color:card.trend.plus?"#16a34a":"#dc2626"}}>{card.trend.plus?"▲":"▼"} {card.trend.pct}%</span>
-                      </div>
-                    </div>
-                    <p style={{margin:"0 0 4px",fontSize:10,fontWeight:800,color:card.color,textTransform:"uppercase",letterSpacing:"0.09em",opacity:0.9,position:"relative"}}>{card.label}</p>
-                    <p style={{margin:"0 0 2px",fontSize:30,fontWeight:900,color:"#0f172a",letterSpacing:"-0.04em",lineHeight:1,position:"relative"}}>{card.fmt(card.val)}</p>
-                    <p style={{margin:"0 0 16px",fontSize:11,color:card.trend.plus?"#16a34a":"#dc2626",fontWeight:700,position:"relative"}}>
-                      {card.trend.plus?"+":"-"}{card.trend.pct}% {periodLabel}
-                    </p>
-                    <svg width={W} height={H} style={{display:"block",opacity:0.7}}>
-                      <defs>
-                        <linearGradient id={"sg"+i} x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="0%" stopColor={card.color} stopOpacity="0.25"/>
-                          <stop offset="100%" stopColor={card.color} stopOpacity="0.02"/>
-                        </linearGradient>
-                      </defs>
-                      <polygon points={fillPts} fill={"url(#sg"+i+")"}/>
-                      <polyline points={pts} fill="none" stroke={card.color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-                    </svg>
-                  </div>
+                    {meta.label}
+                  </button>
                 );
               })}
             </div>
           </div>
-        );
-      })()}
-      <div style={{background:"white",borderRadius:18,padding:20,boxShadow:"0 2px 16px rgba(0,0,0,0.07)",border:"1px solid #f1f5f9",overflow:"hidden"}}>
-        <div style={{padding:"16px 20px",borderBottom:"1px solid "+shop.accent+"12",display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:"linear-gradient(135deg,"+shop.accent+"0a,"+shop.accent+"04)"}}>
-          <div style={{display:"flex",alignItems:"center",gap:8,background:"white",border:"1px solid "+shop.accent+"44",borderRadius:10,padding:"7px 12px",flex:1,minWidth:180}}>
-            <span style={{color:"#94a3b8"}}>🔍</span>
-            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search invoice or customer…"
-              style={{border:"none",background:"transparent",outline:"none",fontSize:13,color:"#374151",width:"100%",fontFamily:"inherit"}}/>
-          </div>
-          <select style={{border:"1px solid #e2e8f0",borderRadius:10,padding:"7px 11px",fontSize:13,color:"#374151",background:"white",fontFamily:"inherit"}}>
-            <option>All Status</option><option>Paid</option><option>Pending</option>
-          </select>
-          <select style={{border:"1px solid #e2e8f0",borderRadius:10,padding:"7px 11px",fontSize:13,color:"#374151",background:"white",fontFamily:"inherit"}}>
-            <option>All Tags</option><option>VIP</option><option>New Customer</option><option>Wholesale</option>
-          </select>
-          <button onClick={()=>setModal("import-sales")}
-            style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
-            <span>⬇</span> Import
-          </button>
-          <button onClick={()=>setModal("export-sales")}
-            style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:10,border:"1px solid "+shop.accent+"66",background:shop.accentBg,color:shop.accentText,fontSize:13,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
-            <span>⬆</span> Export
-          </button>
-          <button onClick={()=>setModal("new-sale")} style={{padding:"7px 18px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontSize:13,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px "+shop.accent+"44"}}>+ New Sale</button>
+          <span style={{
+            fontSize: 11, color: "#94a3b8", fontWeight: 500,
+            background: "#f8fafc", border: "1px solid #f1f5f9",
+            borderRadius: 7, padding: "3px 10px",
+          }}>
+            {rangeLabel}
+          </span>
         </div>
-        {/* ── Status Filter Bar ── */}
-        <div style={{display:"flex",gap:6,padding:"10px 18px",borderBottom:"1px solid #f1f5f9",flexWrap:"wrap"}}>
-          {STATUSES.map(st=>(
-            <button key={st} onClick={()=>setStatusFilter(st)}
-              style={{padding:"5px 14px",borderRadius:999,border:"1px solid",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",
-                background:statusFilter===st?(st==="ALL"?shop.accent:(STATUS_COLOURS[st]||"#f1f5f9")):"white",
-                color:statusFilter===st?(st==="ALL"?"white":shop.accentText):"#64748b",
-                borderColor:statusFilter===st?(st==="ALL"?shop.accent:shop.accent+"66"):"#e2e8f0",
-                boxShadow:statusFilter===st?"0 2px 8px rgba(0,0,0,0.10)":"none",
-              }}>{st}</button>
+
+        {/* KPI tiles */}
+        <div style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))",
+          gap: 12,
+        }}>
+          {[
+            {
+              icon: "💰", label: "Revenue",
+              value: fmt ? fmt(shopId, totalRev) : `${shop?.symbol || "£"}${totalRev.toLocaleString()}`,
+              color: accent, bg: shop?.accentBg || "#ecfdf5",
+            },
+            {
+              icon: "🛒", label: "Orders",
+              value: periodSales.length,
+              color: "#3b82f6", bg: "#eff6ff",
+            },
+            {
+              icon: "✅", label: "Fulfilled",
+              value: fulCount,
+              color: "#10b981", bg: "#ecfdf5",
+            },
+            {
+              icon: "⏳", label: "Pending Pay",
+              value: pendCount,
+              color: "#f59e0b", bg: "#fffbeb",
+            },
+          ].map(kpi => (
+            <div key={kpi.label} style={{
+              background: kpi.bg, borderRadius: 12,
+              padding: "12px 14px",
+              border: `1px solid ${kpi.color}22`,
+            }}>
+              <div style={{ fontSize: 18, marginBottom: 4 }}>{kpi.icon}</div>
+              <div style={{ fontSize: 11, fontWeight: 600, color: "#64748b", marginBottom: 2 }}>
+                {kpi.label}
+              </div>
+              <div style={{ fontSize: 16, fontWeight: 800, color: kpi.color }}>
+                {kpi.value}
+              </div>
+            </div>
           ))}
         </div>
-        <div style={{overflowX:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse"}}>
-            <thead><tr style={{background:"linear-gradient(90deg,#0f172a,#1e293b)"}}>{["Inv.","Date","Customer Name","Amount","Qty","Status","Tag","Remarks","Actions"].map(h=><th key={h} style={{textAlign:"left",padding:"11px 16px",fontSize:10,fontWeight:800,color:"rgba(255,255,255,0.85)",textTransform:"uppercase",letterSpacing:"0.07em",whiteSpace:"nowrap"}}>{h}</th>)}</tr></thead>
+      </div>
+
+      {/* ── SALES TABLE ── */}
+      <div style={{
+        background: "white", borderRadius: 16, border: "1px solid #f1f5f9",
+        overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.04)",
+      }}>
+        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+            <thead>
+              <tr style={{ background: "#f8fafc" }}>
+                {[
+                  "Invoice", "Date", "Customer", "Item", "Amount",
+                  "Payment", "Status", "Actions",
+                ].map((h, i) => (
+                  <th key={h} style={{
+                    padding: "11px 16px", textAlign: i >= 4 ? "right" : "left",
+                    fontSize: 11, fontWeight: 800, color: "#94a3b8",
+                    textTransform: "uppercase", letterSpacing: "0.06em",
+                    borderBottom: "1px solid #f1f5f9", whiteSpace: "nowrap",
+                  }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
             <tbody>
-              {filtSales.filter(s=>statusFilter==="ALL"||(s.ful||s.status||"PENDING").toUpperCase()===statusFilter).map((s,i)=>{
-                const rowBg=STATUS_COLOURS[(s.ful||s.status||"PENDING").toUpperCase()]||"white";
-                return(
-                <tr key={s.id} style={{borderBottom:"1px solid #f8fafc",background:rowBg,position:"relative"}}
-                  onMouseEnter={e=>e.currentTarget.style.background=shop.accent+"22"}
-                  onMouseLeave={e=>e.currentTarget.style.background=rowBg}>
-                  <TD ch={s.id} mono c={shop.accent} fw={700}/>
-                  <TD ch={formatDate(s.date)} c="#64748b"/>
-                  <td style={{padding:"12px 20px"}} onClick={e=>{
-                      e.stopPropagation();
-                      const c=customers.find(x=>x.name===s.customer)||{
-                        id:s.id,
-                        name:s.customer,
-                        phone:s.contact||s.phone||"—",
-                        whatsapp:s.contact||s.phone||"—",
-                        address:s.address||"—",
-                        notes:s.remarks||s.rem||"",
-                        purchases:1,
-                        spend:s.amount||0,
-                        last:s.date||"—",
-                        tag:s.tag||"",
-                      };
-                      setSelCustomer(c);
-                    }}>
-                    <span style={{fontWeight:600,color:"#1e293b",cursor:"pointer",borderBottom:"1px dashed #94a3b8",paddingBottom:1}}>{s.customer}</span>
-                  </td>
-                  <TD ch={fmt(shopId,s.amount)} fw={900} c="#0f172a"/>
-                  <TD ch={s.qty||"1"} c="#475569" fw={600}/>
-                  <td style={{padding:"10px 16px"}}><Badge l={s.ful||s.status||"PENDING"}/></td>
-                  <td style={{padding:"10px 16px"}}>{s.tag&&<Badge l={s.tag}/>}</td>
-                  <TD ch={s.rem||"—"} c="#94a3b8"/>
-                  <td style={{padding:"8px 12px",whiteSpace:"nowrap"}} onClick={e=>e.stopPropagation()}>
-                    <div style={{display:"flex",alignItems:"center",gap:4}}>
-                      <button title="Preview" onClick={()=>setSelRow(s)}
-                        style={{width:30,height:30,borderRadius:8,border:"1px solid #e2e8f0",background:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:"#64748b",transition:"all 0.15s"}}
-                        onMouseEnter={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.borderColor=shop.accent;e.currentTarget.style.color=shop.accent;}}
-                        onMouseLeave={e=>{e.currentTarget.style.background="white";e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.color="#64748b";}}>
-                        👁
-                      </button>
-                      <button title="Edit" onClick={()=>{setEditRow(s);setModal("edit-sale");}}
-                        style={{width:30,height:30,borderRadius:8,border:"1px solid #e2e8f0",background:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,color:"#64748b",transition:"all 0.15s"}}
-                        onMouseEnter={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.borderColor=shop.accent;e.currentTarget.style.color=shop.accent;}}
-                        onMouseLeave={e=>{e.currentTarget.style.background="white";e.currentTarget.style.borderColor="#e2e8f0";e.currentTarget.style.color="#64748b";}}>
-                        ✏️
-                      </button>
-                      <div style={{position:"relative"}}>
-                        <button title="More actions" onClick={()=>setOpenMenu(openMenu===s.id?null:s.id)}
-                          style={{width:30,height:30,borderRadius:8,border:"1px solid #e2e8f0",background:"white",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:"#64748b",transition:"all 0.15s",fontWeight:900}}
-                          onMouseEnter={e=>{e.currentTarget.style.background="#f8fafc";e.currentTarget.style.borderColor="#94a3b8";}}
-                          onMouseLeave={e=>{e.currentTarget.style.background="white";e.currentTarget.style.borderColor="#e2e8f0";}}>
-                          ⋯
-                        </button>
-                        {openMenu===s.id&&(
-                          <div style={{position:"absolute",right:0,top:34,zIndex:50,background:"white",borderRadius:14,boxShadow:"0 8px 32px rgba(0,0,0,0.14)",border:"1px solid #f1f5f9",minWidth:200,overflow:"hidden"}}
-                            onMouseLeave={()=>setOpenMenu(null)}>
-                            <div style={{background:shop.accent,padding:"10px 14px"}}>
-                              <p style={{margin:0,fontSize:11,fontWeight:800,color:"white",textTransform:"uppercase",letterSpacing:"0.06em"}}>Actions</p>
-                            </div>
-                            {[
-                              {ic:"🛡",  label:"Send Care Catalog",    action:()=>alert("Sending Care Catalog to "+s.customer)},
-                              {ic:"💬",  label:"Send Feedback Request",action:()=>alert("Sending Feedback Request to "+s.customer)},
-                              {ic:"⭐",  label:"Record Feedback",      action:()=>alert("Recording feedback for "+s.id)},
-                              null,
-                              {ic:"🚚",  label:"Mark Fulfilled",        action:()=>{setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>x.id===s.id?{...x,ful:"FULFILLED"}:x)}));setOpenMenu(null);}},
-                              {ic:"↩️",  label:"Manage Return",        action:()=>{setEditRow(s);setModal("edit-sale");setOpenMenu(null);}},
-                              null,
-                              {ic:"🧾",  label:"View Invoice",         action:()=>{setInvoiceRow(s);setOpenMenu(null);}},
-                              null,
-                              ...(!isStaff?[{ic:"🗑",label:"Delete",action:()=>{if(window.confirm("Delete sale "+s.id+"?")){setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).filter(x=>x.id!==s.id)}));dbDeleteSale(s.id).catch(()=>{});}setOpenMenu(null);},red:true}]:[]),
-                            ].map((item,mi)=>item===null
-                              ? <div key={mi} style={{height:1,background:"#f1f5f9",margin:"2px 0"}}/>
-                              : <button key={mi} onClick={()=>{item.action();setOpenMenu(null);}}
-                                  style={{display:"flex",alignItems:"center",gap:10,width:"100%",padding:"9px 14px",border:"none",background:"transparent",cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:600,color:item.red?"#dc2626":"#374151",textAlign:"left",transition:"background 0.12s"}}
-                                  onMouseEnter={e=>e.currentTarget.style.background=item.red?"#fff5f5":shop.accentBg}
-                                  onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-                                  <span style={{fontSize:15,width:20,textAlign:"center"}}>{item.ic}</span>
-                                  {item.label}
-                                </button>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
+              {rowsWithSeparators.length === 0 && (
+                <tr>
+                  <td colSpan={8} style={{ padding: "48px 16px", textAlign: "center" }}>
+                    <div style={{ fontSize: 32, marginBottom: 8 }}>🛒</div>
+                    <p style={{ margin: 0, fontWeight: 700, color: "#94a3b8", fontSize: 14 }}>
+                      No sales found for this period
+                    </p>
+                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "#cbd5e1" }}>
+                      Try a different time range or add a new sale
+                    </p>
                   </td>
                 </tr>
-              );
+              )}
+
+              {rowsWithSeparators.map((row, idx) => {
+
+                /* ── FINANCIAL YEAR BOUNDARY ROW ─────────────────────────── */
+                if (row._type === "fy") {
+                  return (
+                    <tr key={`fy-${row._fyStart}-${idx}`}>
+                      <td colSpan={8} style={{ padding: 0 }}>
+                        <div style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          padding: "9px 16px",
+                          background: "linear-gradient(90deg, #fef3c7 0%, #fde68a 40%, #fef3c7 100%)",
+                          borderTop: "2px solid #f59e0b",
+                          borderBottom: "2px solid #f59e0b",
+                        }}>
+                          {/* Diamond icon */}
+                          <span style={{ fontSize: 14, lineHeight: 1 }}>◆</span>
+                          <span style={{
+                            fontSize: 11, fontWeight: 900, color: "#78350f",
+                            textTransform: "uppercase", letterSpacing: "0.10em",
+                          }}>
+                            {row._label} &nbsp;·&nbsp; Financial Year Starts 1 April
+                          </span>
+                          <div style={{ flex: 1, height: 1, background: "#f59e0b88" }} />
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, color: "#92400e",
+                            background: "#fef9c3",
+                            border: "1px solid #fde68a",
+                            borderRadius: 6, padding: "2px 9px",
+                            whiteSpace: "nowrap",
+                          }}>
+                            📅 New Financial Year
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                /* ── MONTH BOUNDARY ROW ──────────────────────────────────── */
+                if (row._type === "month") {
+                  return (
+                    <tr key={`month-${row._monthKey}-${idx}`}>
+                      <td colSpan={8} style={{ padding: 0 }}>
+                        <div style={{
+                          display: "flex",
+                          alignItems: "center",
+                          gap: 10,
+                          padding: "6px 16px",
+                          background: "linear-gradient(90deg, #f0f9ff 0%, #e0f2fe 50%, #f0f9ff 100%)",
+                          borderTop: "1px solid #bae6fd",
+                          borderBottom: "1px solid #bae6fd",
+                        }}>
+                          {/* Dot */}
+                          <div style={{
+                            width: 7, height: 7, borderRadius: "50%",
+                            background: accent, flexShrink: 0,
+                            boxShadow: `0 0 0 2px ${accent}33`,
+                          }} />
+                          <span style={{
+                            fontSize: 11, fontWeight: 800, color: "#0369a1",
+                            textTransform: "uppercase", letterSpacing: "0.08em",
+                          }}>
+                            {row._label}
+                          </span>
+                          <div style={{ flex: 1, height: 1, background: "#7dd3fc" }} />
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, color: "#0284c7",
+                            background: "white",
+                            border: "1px solid #bae6fd",
+                            borderRadius: 6, padding: "2px 8px",
+                            whiteSpace: "nowrap",
+                          }}>
+                            ↕ month boundary
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                /* ── SALE ROW ────────────────────────────────────────────── */
+                const s = row;
+                const ful = s.ful || s.status || "PENDING";
+                const isH = hovR === s.id;
+                const rowBg = isH ? `${accent}08` : (statusRowBg[ful] || "white");
+
+                return (
+                  <tr
+                    key={s.id}
+                    onClick={() => setSelRow(s)}
+                    onMouseEnter={() => setHovR(s.id)}
+                    onMouseLeave={() => setHovR(null)}
+                    style={{
+                      background: rowBg,
+                      cursor: "pointer",
+                      borderBottom: "1px solid #f8fafc",
+                      transition: "background 0.12s",
+                    }}>
+                    {/* Invoice */}
+                    <td style={{ padding: "12px 16px" }}>
+                      <span style={{
+                        fontFamily: "DM Mono, monospace", fontWeight: 700,
+                        fontSize: 12, color: accent,
+                      }}>
+                        {s.id}
+                      </span>
+                    </td>
+                    {/* Date */}
+                    <td style={{ padding: "12px 16px" }}>
+                      <span style={{ fontSize: 12, color: "#64748b", whiteSpace: "nowrap" }}>
+                        {formatDate ? formatDate(s.date) : s.date}
+                      </span>
+                    </td>
+                    {/* Customer */}
+                    <td style={{ padding: "12px 16px" }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: "#0f172a" }}>
+                        {s.customer}
+                      </div>
+                      {s.phone && (
+                        <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>
+                          {s.phone}
+                        </div>
+                      )}
+                    </td>
+                    {/* Item */}
+                    <td style={{ padding: "12px 16px" }}>
+                      <span style={{ fontSize: 12, color: "#374151" }}>
+                        {s.item || "—"}
+                        {s.qty && s.qty !== "1" && (
+                          <span style={{ color: "#94a3b8", marginLeft: 4 }}>×{s.qty}</span>
+                        )}
+                      </span>
+                    </td>
+                    {/* Amount */}
+                    <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                      <span style={{ fontWeight: 800, fontSize: 13, color: "#0f172a" }}>
+                        {fmt ? fmt(shopId, s.amount) : `${shop?.symbol || "£"}${Number(s.amount).toLocaleString()}`}
+                      </span>
+                    </td>
+                    {/* Payment */}
+                    <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                      <Badge l={s.pay || "SHOP"} />
+                    </td>
+                    {/* Status */}
+                    <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                      <Badge l={ful} />
+                    </td>
+                    {/* Actions */}
+                    <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                        <button
+                          onClick={e => { e.stopPropagation(); setInvoiceRow(s); }}
+                          title="View Invoice"
+                          style={{
+                            width: 30, height: 30, borderRadius: 8,
+                            border: "1px solid #e2e8f0", background: "white",
+                            cursor: "pointer", fontSize: 14,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                          }}>
+                          🧾
+                        </button>
+                        <button
+                          onClick={e => { e.stopPropagation(); setEditRow(s); setModal("edit-sale"); }}
+                          title="Edit"
+                          style={{
+                            width: 30, height: 30, borderRadius: 8,
+                            border: `1px solid ${accent}33`, background: `${accent}12`,
+                            color: accent, cursor: "pointer", fontSize: 13,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                          }}>
+                          ✏️
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
               })}
-              {filtSales.filter(s=>statusFilter==="ALL"||(s.ful||s.status||"PENDING").toUpperCase()===statusFilter).length===0&&<tr><td colSpan={9} style={{textAlign:"center",padding:"60px",color:"#94a3b8",fontSize:14}}>No results found.</td></tr>}
             </tbody>
           </table>
         </div>
-        <div style={{padding:"11px 18px",borderTop:"1px solid #f8fafc",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-          <span style={{fontSize:12,color:"#94a3b8"}}>{filtSales.length} records</span>
-          <div style={{display:"flex",gap:4}}>
-            {[1,2,3].map(p=><button key={p} style={{width:30,height:30,borderRadius:8,border:p===1?"none":"1px solid #e2e8f0",background:p===1?shop.accent:"white",color:p===1?"white":"#374151",fontSize:13,cursor:"pointer",fontWeight:700}}>{p}</button>)}
+
+        {/* Table footer */}
+        {periodSales.length > 0 && (
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "10px 20px",
+            borderTop: "1px solid #f1f5f9",
+            background: "#f8fafc",
+          }}>
+            <span style={{ fontSize: 12, color: "#94a3b8" }}>
+              {periodSales.length} record{periodSales.length !== 1 ? "s" : ""}
+            </span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>
+              Total: {fmt ? fmt(shopId, totalRev) : `${shop?.symbol || "£"}${totalRev.toLocaleString()}`}
+            </span>
           </div>
-        </div>
+        )}
       </div>
-    </PanelContainer>
+    </div>
   );
 }
