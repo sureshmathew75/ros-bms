@@ -810,6 +810,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
   const [pdfMode,setPdfMode]=useState(false);
   const [salesPeriod,setSalesPeriodRaw]=useState("month");
+  const [salesPage,setSalesPage]=useState(1);
   const [pdfInv,setPdfInv]=useState(null);
   const invoicePrintRef=useRef(null);
   const [purchasesData,setPurchasesData]=useState(()=>{
@@ -1706,33 +1707,213 @@ return(
           })()}
 
           {/* ─── SALES ─── */}
-          {tab==="sales"&&(
-            <SalesPanel
-              Badge={Badge}
-              customers={customers}
-              filtSales={filtSales}
-              fmt={fmt}
-              formatDate={formatDate}
-              openMenu={openMenu}
-              search={search}
-              sales={sales}
-              salesPeriod={salesPeriod}
-              setEditRow={setEditRow}
-              setInvoiceRow={setInvoiceRow}
-              setModal={setModal}
-              setOpenMenu={setOpenMenu}
-              setSalesData={setSalesData}
-              setSearch={setSearch}
-              setSelCustomer={setSelCustomer}
-              setSelRow={setSelRow}
-              setSalesPeriod={setSalesPeriod}
-              shop={shop}
-              shopId={shopId}
-              TD={TD}
-              user={user}
-              isStaff={user?.role==="staff"}
-            />
-          )}
+          {tab==="sales"&&(()=>{
+            const PAGE_SIZE=100;
+            // Financial year helper — April 1 to March 31
+            const getFY=(dateStr)=>{
+              if(!dateStr) return "Unknown";
+              const d=new Date(dateStr);
+              const m=d.getMonth(); // 0=Jan
+              const y=d.getFullYear();
+              // FY starts April 1 (month index 3)
+              return m>=3 ? y+"–"+(y+1) : (y-1)+"–"+y;
+            };
+            const getMonthKey=(dateStr)=>{
+              if(!dateStr) return "Unknown";
+              const d=new Date(dateStr);
+              return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
+            };
+            const getMonthLabel=(mk)=>{
+              if(!mk||mk==="Unknown") return "Unknown";
+              const [y,m]=mk.split("-");
+              const dt=new Date(parseInt(y),parseInt(m)-1,1);
+              return dt.toLocaleString("default",{month:"long",year:"numeric"});
+            };
+            const netSale=(s)=>{
+              const amt=Number(s.amount)||0;
+              const refund=Number(s.refundAmt)||0;
+              return amt-refund;
+            };
+
+            // Sort by date desc
+            const sorted=[...filtSales].sort((a,b)=>new Date(b.date)-new Date(a.date));
+
+            // Paginate
+            const totalPages=Math.max(1,Math.ceil(sorted.length/PAGE_SIZE));
+            const safePage=Math.min(salesPage,totalPages);
+            const paged=sorted.slice((safePage-1)*PAGE_SIZE, safePage*PAGE_SIZE);
+
+            // Group paged rows by FY then month, track boundaries
+            const rows=[];
+            let lastFY=null, lastMonth=null;
+            paged.forEach((s,idx)=>{
+              const fy=getFY(s.date);
+              const mk=getMonthKey(s.date);
+              const fyChange=fy!==lastFY;
+              const monthChange=mk!==lastMonth||fyChange;
+              if(fyChange){ lastFY=fy; lastMonth=null; }
+              if(monthChange){ lastMonth=mk; }
+              rows.push({s, fy, mk, fyChange, monthChange});
+            });
+
+            return(
+              <div>
+                <SalesPanel
+                  Badge={Badge}
+                  customers={customers}
+                  filtSales={filtSales}
+                  fmt={fmt}
+                  formatDate={formatDate}
+                  openMenu={openMenu}
+                  search={search}
+                  sales={sales}
+                  salesPeriod={salesPeriod}
+                  setEditRow={setEditRow}
+                  setInvoiceRow={setInvoiceRow}
+                  setModal={setModal}
+                  setOpenMenu={setOpenMenu}
+                  setSalesData={setSalesData}
+                  setSearch={setSearch}
+                  setSelCustomer={setSelCustomer}
+                  setSelRow={setSelRow}
+                  setSalesPeriod={setSalesPeriod}
+                  shop={shop}
+                  shopId={shopId}
+                  TD={TD}
+                  user={user}
+                  isStaff={user?.role==="staff"}
+                  salesPage={safePage}
+                  setSalesPage={setSalesPage}
+                  totalPages={totalPages}
+                  PAGE_SIZE={PAGE_SIZE}
+                  pagedSales={paged}
+                  groupedRows={rows}
+                  getFY={getFY}
+                  getMonthLabel={getMonthLabel}
+                  netSale={netSale}
+                />
+                {/* ── FY / Month grouped sales table ── */}
+                {salesPeriod==="year"||salesPeriod==="lifetime"?(
+                  <div style={{marginTop:24,background:"white",borderRadius:16,border:"1px solid #e2e8f0",overflow:"hidden",boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
+                    <div style={{padding:"14px 20px",background:"#f8fafc",borderBottom:"2px solid #e2e8f0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span style={{fontWeight:800,fontSize:15,color:"#0f172a"}}>📅 Sales by Financial Year</span>
+                      <span style={{fontSize:12,color:"#64748b"}}>{sorted.length} total records · Page {safePage} of {totalPages}</span>
+                    </div>
+                    <div style={{overflowX:"auto"}}>
+                      <table style={{width:"100%",borderCollapse:"collapse",minWidth:700}}>
+                        <thead>
+                          <tr style={{background:"#0f172a"}}>
+                            {["Date","Invoice","Customer","Item","Qty","Amount","Refund","Net Sale","Status","Payment"].map((h,i)=>(
+                              <th key={h} style={{padding:"10px 14px",textAlign:i>=4?"right":"left",fontSize:11,fontWeight:800,color:"white",textTransform:"uppercase",letterSpacing:"0.05em",whiteSpace:"nowrap"}}>{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map(({s,fy,mk,fyChange,monthChange},idx)=>{
+                            const net=netSale(s);
+                            const refund=Number(s.refundAmt)||0;
+                            return(
+                              <>
+                                {fyChange&&(
+                                  <tr key={"fy-"+fy}>
+                                    <td colSpan={10} style={{
+                                      padding:"10px 16px",
+                                      background:"#0f172a",
+                                      borderTop:"4px solid #334155",
+                                      borderBottom:"4px solid #334155",
+                                    }}>
+                                      <span style={{fontWeight:900,fontSize:13,color:"white",letterSpacing:"0.08em",textTransform:"uppercase"}}>
+                                        📊 Financial Year {fy} &nbsp;·&nbsp;
+                                        {shop.symbol}{sorted.filter(x=>getFY(x.date)===fy).reduce((a,x)=>a+(Number(x.amount)||0),0).toLocaleString("en-GB",{minimumFractionDigits:2})} gross
+                                      </span>
+                                    </td>
+                                  </tr>
+                                )}
+                                {monthChange&&!fyChange&&(
+                                  <tr key={"mo-"+mk+"-"+idx}>
+                                    <td colSpan={10} style={{
+                                      padding:"7px 16px",
+                                      background:"#f1f5f9",
+                                      borderTop:"2px solid #cbd5e1",
+                                      borderBottom:"1px solid #e2e8f0",
+                                    }}>
+                                      <span style={{fontWeight:700,fontSize:12,color:"#475569",textTransform:"uppercase",letterSpacing:"0.06em"}}>
+                                        📆 {getMonthLabel(mk)} &nbsp;·&nbsp;
+                                        {shop.symbol}{sorted.filter(x=>getMonthKey(x.date)===mk&&getFY(x.date)===fy).reduce((a,x)=>a+(Number(x.amount)||0),0).toLocaleString("en-GB",{minimumFractionDigits:2})}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                )}
+                                {monthChange&&fyChange&&(
+                                  <tr key={"mof-"+mk+"-"+idx}>
+                                    <td colSpan={10} style={{
+                                      padding:"7px 16px",
+                                      background:"#f1f5f9",
+                                      borderTop:"1px solid #e2e8f0",
+                                      borderBottom:"1px solid #e2e8f0",
+                                    }}>
+                                      <span style={{fontWeight:700,fontSize:12,color:"#475569",textTransform:"uppercase",letterSpacing:"0.06em"}}>
+                                        📆 {getMonthLabel(mk)} &nbsp;·&nbsp;
+                                        {shop.symbol}{sorted.filter(x=>getMonthKey(x.date)===mk&&getFY(x.date)===fy).reduce((a,x)=>a+(Number(x.amount)||0),0).toLocaleString("en-GB",{minimumFractionDigits:2})}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                )}
+                                <tr key={s.id||idx}
+                                  onClick={()=>setSelRow(s)}
+                                  style={{borderBottom:"1px solid #f1f5f9",cursor:"pointer",transition:"background 0.1s"}}
+                                  onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
+                                  onMouseLeave={e=>e.currentTarget.style.background="white"}>
+                                  <td style={{padding:"11px 14px",fontSize:12,color:"#64748b",whiteSpace:"nowrap"}}>{formatDate(s.date)||"—"}</td>
+                                  <td style={{padding:"11px 14px",fontSize:12,fontFamily:"DM Mono,monospace",color:shop.accent,fontWeight:700}}>{s.id}</td>
+                                  <td style={{padding:"11px 14px",fontSize:13,fontWeight:600,color:"#0f172a",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.customer||"—"}</td>
+                                  <td style={{padding:"11px 14px",fontSize:12,color:"#374151",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.item||"—"}</td>
+                                  <td style={{padding:"11px 14px",fontSize:12,textAlign:"right",color:"#64748b"}}>{s.qty||1}</td>
+                                  <td style={{padding:"11px 14px",fontSize:13,textAlign:"right",fontWeight:700,color:"#374151",fontFamily:"DM Mono,monospace"}}>{shop.symbol}{(Number(s.amount)||0).toLocaleString("en-GB",{minimumFractionDigits:2})}</td>
+                                  <td style={{padding:"11px 14px",fontSize:12,textAlign:"right",color:refund>0?"#ef4444":"#94a3b8",fontFamily:"DM Mono,monospace"}}>{refund>0?"-"+shop.symbol+refund.toLocaleString("en-GB",{minimumFractionDigits:2}):"—"}</td>
+                                  <td style={{padding:"11px 14px",fontSize:13,textAlign:"right",fontWeight:800,color:net<0?"#ef4444":shop.accent,fontFamily:"DM Mono,monospace"}}>{shop.symbol}{net.toLocaleString("en-GB",{minimumFractionDigits:2})}</td>
+                                  <td style={{padding:"11px 14px"}}><Badge l={s.ful||s.status||"PENDING"}/></td>
+                                  <td style={{padding:"11px 14px",fontSize:12,color:"#64748b"}}>{s.pay||"—"}</td>
+                                </tr>
+                              </>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    {/* pagination */}
+                    {totalPages>1&&(
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 20px",borderTop:"1px solid #e2e8f0",background:"#f8fafc"}}>
+                        <span style={{fontSize:12,color:"#64748b"}}>
+                          Showing {((safePage-1)*PAGE_SIZE)+1}–{Math.min(safePage*PAGE_SIZE,sorted.length)} of {sorted.length} records
+                        </span>
+                        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                          <button onClick={()=>setSalesPage(p=>Math.max(1,p-1))} disabled={safePage===1}
+                            style={{padding:"6px 14px",borderRadius:8,border:"1px solid #e2e8f0",background:safePage===1?"#f8fafc":"white",color:safePage===1?"#cbd5e1":"#374151",fontWeight:700,fontSize:12,cursor:safePage===1?"not-allowed":"pointer",fontFamily:"inherit"}}>
+                            ← Prev
+                          </button>
+                          {Array.from({length:Math.min(totalPages,7)},(_,i)=>{
+                            const pg=totalPages<=7?i+1:(safePage<=4?i+1:safePage-3+i);
+                            if(pg<1||pg>totalPages) return null;
+                            return(
+                              <button key={pg} onClick={()=>setSalesPage(pg)}
+                                style={{width:32,height:32,borderRadius:8,border:"1px solid "+(pg===safePage?shop.accent:"#e2e8f0"),background:pg===safePage?shop.accent:"white",color:pg===safePage?"white":"#374151",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                                {pg}
+                              </button>
+                            );
+                          })}
+                          <button onClick={()=>setSalesPage(p=>Math.min(totalPages,p+1))} disabled={safePage===totalPages}
+                            style={{padding:"6px 14px",borderRadius:8,border:"1px solid #e2e8f0",background:safePage===totalPages?"#f8fafc":"white",color:safePage===totalPages?"#cbd5e1":"#374151",fontWeight:700,fontSize:12,cursor:safePage===totalPages?"not-allowed":"pointer",fontFamily:"inherit"}}>
+                            Next →
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ):null}
+              </div>
+            );
+          })()}
 
           {/* ─── PURCHASES ─── */}
           {tab==="purchases"&&(
