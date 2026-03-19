@@ -3101,15 +3101,15 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImport})=>{
           transition:"all 0.18s",cursor:"pointer",
         }}
         onClick={()=>document.getElementById("imp-file-"+entity).click()}>
-        <input id={"imp-file-"+entity} type="file" accept=".csv,.xlsx"
+        <input id={"imp-file-"+entity} type="file" accept=".csv,.xlsx,.xls"
           style={{display:"none"}}
           onChange={e=>{const f=e.target.files[0];if(f){setFileName(f.name);setFileObj(f);setImportResult(null);}}}/>
         <div style={{fontSize:40,marginBottom:10}}>{fileName?"✅":"📂"}</div>
         <p style={{margin:0,fontWeight:800,fontSize:15,color:fileName?shop.accent:"#374151"}}>
-          {fileName||"Drop your CSV file here"}
+          {fileName||"Drop your file here"}
         </p>
         <p style={{margin:"4px 0 0",fontSize:12,color:"#94a3b8"}}>
-          {fileName?"File ready to import":"or click to browse · CSV accepted"}
+          {fileName?"File ready to import":"or click to browse · CSV or Excel (.xlsx) accepted"}
         </p>
       </div>
 
@@ -3131,68 +3131,127 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImport})=>{
           onClick={()=>{
             if(!fileObj||!onImport){return;}
             setImporting(true);
-            const reader=new FileReader();
-            reader.onload=ev=>{
+            setImportResult(null);
+
+            const processRows=(jsonRows)=>{
               try{
-                const text=ev.target.result;
-                const lines=text.split(/\r?\n/).filter(l=>l.trim());
-                if(lines.length<2){setImportResult({ok:false,msg:"File is empty or has no data rows."});setImporting(false);return;}
-                const headers=lines[0].split(",").map(h=>h.replace(/^"|"$/g,"").trim().toLowerCase());
-                // column index helpers
-                const ci=(names)=>{for(const n of names){const i=headers.indexOf(n);if(i>=0)return i;}return -1;};
-                const colDate=ci(["date","2. date"]);
-                const colInv=ci(["invoice no.","invoice no","3. invoice no.","shop inv.","4. shop inv."]);
-                const colCust=ci(["customer name","5. customer name","customer"]);
-                const colAddr=ci(["addressee","6. addressee"]);
-                const colAddress=ci(["address","7. address"]);
-                const colContact=ci(["contact no.","8. contact no.","contact"]);
-                const colItem=ci(["item","9. item"]);
-                const colQty=ci(["quantity","10. quantity","qty"]);
-                const colTotal=ci(["total","13. total","price (excl. tax)","12. price (excl. tax)"]);
-                const colPay=ci(["payment method","14. payment method","payment"]);
-                const colStatus=ci(["status","fulfillment","ful"]);
-                const colRemarks=ci(["remarks","21. remarks"]);
-                const colTag=ci(["tag","20. tag"]);
-                const getCell=(cells,idx)=>idx>=0&&idx<cells.length?cells[idx].replace(/^"|"$/g,"").trim():"";
+                if(!jsonRows||jsonRows.length<1){setImportResult({ok:false,msg:"File is empty or has no data rows."});setImporting(false);return;}
+                // normalise header keys — strip numbers, lowercase, trim
+                const normKey=k=>String(k).replace(/^\d+\.\s*/,"").trim().toLowerCase();
                 const rows=[];
-                for(let i=1;i<lines.length;i++){
-                  const cells=lines[i].match(/(".*?"|[^,]+|(?<=,)(?=,)|(?<=,)$|^(?=,))/g)||lines[i].split(",");
-                  const id=getCell(cells,ci(["sale id","1. sale id"]))||("IMP-"+Date.now()+"-"+i);
-                  const row={
+                jsonRows.forEach((rawRow,i)=>{
+                  // build a normalised key→value map
+                  const row={};
+                  Object.keys(rawRow).forEach(k=>{row[normKey(k)]=rawRow[k];});
+                  // helper: try multiple possible column names
+                  const g=(...names)=>{for(const n of names){const v=row[n.toLowerCase()];if(v!==undefined&&v!=="")return String(v).trim();}return "";};
+                  // date handling — Excel serial numbers or strings
+                  let dateVal=g("date","2. date");
+                  if(dateVal&&!isNaN(Number(dateVal))){
+                    // Excel serial date → JS date
+                    const d=new Date(Math.round((Number(dateVal)-25569)*86400*1000));
+                    dateVal=d.toISOString().slice(0,10);
+                  } else if(dateVal&&dateVal.includes("/")){
+                    // DD/MM/YYYY or MM/DD/YYYY
+                    const parts=dateVal.split("/");
+                    if(parts.length===3){
+                      // assume DD/MM/YYYY
+                      dateVal=parts[2]+"-"+parts[1].padStart(2,"0")+"-"+parts[0].padStart(2,"0");
+                    }
+                  }
+                  const id=g("saleid","sale id","1. sale id")||("IMP-"+Date.now()+"-"+i);
+                  const totalRaw=parseFloat(g("total","13. total","price","price (excl. tax)"))||0;
+                  const statusRaw=g("status","fulfillment","ful","delivery status")||"PENDING";
+                  const mapped={
                     id,
-                    date:getCell(cells,colDate),
-                    invoiceNo:getCell(cells,colInv)||id,
-                    customer:getCell(cells,colCust),
-                    addressee:getCell(cells,colAddr),
-                    address:getCell(cells,colAddress),
-                    phone:getCell(cells,colContact),
-                    contact:getCell(cells,colContact),
-                    item:getCell(cells,colItem),
-                    qty:getCell(cells,colQty)||"1",
-                    amount:parseFloat(getCell(cells,colTotal))||0,
-                    pay:getCell(cells,colPay)||"SHOP",
-                    ful:getCell(cells,colStatus)||"PENDING",
-                    status:getCell(cells,colStatus)||"PENDING",
-                    rem:getCell(cells,colRemarks),
-                    remarks:getCell(cells,colRemarks),
-                    tag:getCell(cells,colTag),
-                    taxInclusive:true,
+                    date:dateVal,
+                    invoiceNo:g("invoice no.","invoice no","3. invoice no.","shop inv.","4. shop inv.")||id,
+                    customer:g("customer name","5. customer name","customer","customername"),
+                    addressee:g("addressee","6. addressee"),
+                    address:g("address","7. address"),
+                    phone:g("contact no.","8. contact no.","contact","phone"),
+                    contact:g("contact no.","8. contact no.","contact","phone"),
+                    item:g("item","9. item"),
+                    qty:g("quantity","10. quantity","qty")||"1",
+                    amount:totalRaw,
+                    pay:g("payment method","14. payment method","payment","pay")||"SHOP",
+                    ful:statusRaw.toUpperCase(),
+                    status:statusRaw.toUpperCase(),
+                    rem:g("remarks","21. remarks"),
+                    remarks:g("remarks","21. remarks"),
+                    tag:g("tag","20. tag"),
+                    sentDate:g("dispatch date","15. dispatch date","dispatch"),
+                    taxInclusive:false,
                     taxRate:(shopId==="ros-india"?18:20),
                   };
-                  if(row.customer||row.item||row.amount) rows.push(row);
-                }
-                if(rows.length===0){setImportResult({ok:false,msg:"No valid rows found. Check your CSV format."});setImporting(false);return;}
+                  if(mapped.customer||mapped.item||mapped.amount) rows.push(mapped);
+                });
+                if(rows.length===0){setImportResult({ok:false,msg:"No valid rows found. Make sure your file has Customer, Item or Amount data."});setImporting(false);return;}
                 onImport(rows);
                 setImportResult({ok:true,msg:rows.length+" record"+(rows.length!==1?"s":"")+" imported successfully!"});
                 setImporting(false);
-                setTimeout(()=>onClose(),1200);
+                setTimeout(()=>onClose(),1400);
               }catch(err){
                 setImportResult({ok:false,msg:"Parse error: "+err.message});
                 setImporting(false);
               }
             };
-            reader.onerror=()=>{setImportResult({ok:false,msg:"Could not read file."});setImporting(false);};
-            reader.readAsText(fileObj);
+
+            const isXlsx=fileObj.name.match(/\.xlsx?$/i);
+            if(isXlsx){
+              // load SheetJS from CDN if not already loaded
+              const loadXLSX=()=>new Promise((resolve,reject)=>{
+                if(window.XLSX){resolve(window.XLSX);return;}
+                const s=document.createElement("script");
+                s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+                s.onload=()=>resolve(window.XLSX);
+                s.onerror=()=>reject(new Error("Failed to load XLSX library"));
+                document.head.appendChild(s);
+              });
+              loadXLSX().then(XLSX=>{
+                const reader=new FileReader();
+                reader.onload=ev=>{
+                  try{
+                    const wb=XLSX.read(ev.target.result,{type:"array",cellDates:false});
+                    const ws=wb.Sheets[wb.SheetNames[0]];
+                    const jsonRows=XLSX.utils.sheet_to_json(ws,{defval:""});
+                    processRows(jsonRows);
+                  }catch(err){
+                    setImportResult({ok:false,msg:"XLSX parse error: "+err.message});
+                    setImporting(false);
+                  }
+                };
+                reader.onerror=()=>{setImportResult({ok:false,msg:"Could not read file."});setImporting(false);};
+                reader.readAsArrayBuffer(fileObj);
+              }).catch(err=>{
+                setImportResult({ok:false,msg:err.message});
+                setImporting(false);
+              });
+            } else {
+              // CSV path
+              const reader=new FileReader();
+              reader.onload=ev=>{
+                try{
+                  const text=ev.target.result;
+                  const lines=text.split(/\r?\n/).filter(l=>l.trim());
+                  if(lines.length<2){setImportResult({ok:false,msg:"File is empty."});setImporting(false);return;}
+                  const headers=lines[0].split(",").map(h=>h.replace(/^"|"$/g,"").trim());
+                  const jsonRows=[];
+                  for(let i=1;i<lines.length;i++){
+                    const cells=lines[i].match(/"[^"]*"|[^,]*/g)||[];
+                    const obj={};
+                    headers.forEach((h,j)=>{obj[h]=(cells[j]||"").replace(/^"|"$/g,"").trim();});
+                    jsonRows.push(obj);
+                  }
+                  processRows(jsonRows);
+                }catch(err){
+                  setImportResult({ok:false,msg:"CSV parse error: "+err.message});
+                  setImporting(false);
+                }
+              };
+              reader.onerror=()=>{setImportResult({ok:false,msg:"Could not read file."});setImporting(false);};
+              reader.readAsText(fileObj);
+            }
           }}
           style={{padding:"12px 0",borderRadius:11,border:"none",
             background:fileObj&&!importing?shop.accent:"#e2e8f0",
