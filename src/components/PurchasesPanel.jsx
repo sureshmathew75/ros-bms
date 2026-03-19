@@ -6,32 +6,35 @@ import { useState, useMemo } from "react";
    ───────────────────────────────────────────────────────────────────────── */
 
 /* ── Date / FY helpers ──────────────────────────────────────────────────── */
+/* ── safeParseDate: handle yyyy-mm-dd, dd-mm-yyyy, dd-mm-yy ──────── */
+function safeParseDate(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(s);
+  const dmy4 = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+  if (dmy4) return new Date(`${dmy4[3]}-${dmy4[2].padStart(2,"0")}-${dmy4[1].padStart(2,"0")}`);
+  const dmy2 = s.match(/^(\d{1,2})-(\d{1,2})-(\d{2})$/);
+  if (dmy2) return new Date(`20${dmy2[3]}-${dmy2[2].padStart(2,"0")}-${dmy2[1].padStart(2,"0")}`);
+  return null;
+}
+
 function monthKey(dateStr) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
+  const d = safeParseDate(dateStr);
+  if (!d || isNaN(d.getTime())) return "";
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
-
 function monthLabel(dateStr) {
-  if (!dateStr) return "";
-  const d = new Date(dateStr);
+  const d = safeParseDate(dateStr);
+  if (!d || isNaN(d.getTime())) return "";
   return d.toLocaleString("default", { month: "long", year: "numeric" });
 }
-
-/** Returns the FY start year for a date string.
- *  Jan–Mar belong to the *previous* FY start year.
- *  e.g. 2025-02-10 → FY 2024-25 → 2024
- *       2025-04-01 → FY 2025-26 → 2025
- */
 function fyStartYear(dateStr) {
-  if (!dateStr) return null;
-  const d = new Date(dateStr);
-  const m = d.getMonth(); // 0-based; April = 3
-  const y = d.getFullYear();
-  return m < 3 ? y - 1 : y;
+  const d = safeParseDate(dateStr);
+  if (!d || isNaN(d.getTime())) return null;
+  return d.getMonth() < 3 ? d.getFullYear() - 1 : d.getFullYear();
 }
-
 function fyLabel(startYear) {
+  if (startYear === null || isNaN(startYear)) return "";
   return `FY ${startYear}–${String(startYear + 1).slice(-2)}`;
 }
 
@@ -39,14 +42,9 @@ function fyLabel(startYear) {
    Stored as ISO (yyyy-mm-dd) from Supabase.
    Also handles dd-mm-yyyy, dd/mm/yyyy, dd-mm-yy display formats. ── */
 function toSortableDate(raw) {
-  if (!raw) return "0000-00-00";
-  const s = String(raw).trim();
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-  const dmy4 = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
-  if (dmy4) return `${dmy4[3]}-${dmy4[2].padStart(2,"0")}-${dmy4[1].padStart(2,"0")}`;
-  const dmy2 = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2})$/);
-  if (dmy2) return `20${dmy2[3]}-${dmy2[2].padStart(2,"0")}-${dmy2[1].padStart(2,"0")}`;
-  return "0000-00-00";
+  const d = safeParseDate(raw);
+  if (!d || isNaN(d.getTime())) return "0000-00-00";
+  return d.toISOString().slice(0, 10);
 }
 
 
@@ -57,6 +55,21 @@ function toSortableDate(raw) {
  *
  * Both can fire together (e.g. crossing March → April); FY bar appears first.
  */
+
+/* ── fmtDate: yyyy-mm-dd → DD-MM-YYYY for display ──────────────────
+   Supabase stores dates as yyyy-mm-dd (ISO).
+   This always produces DD-MM-YYYY regardless of what formatDate does. */
+function fmtDate(raw) {
+  if (!raw) return "—";
+  const s = String(raw).trim();
+  // Already yyyy-mm-dd → convert to DD-MM-YYYY
+  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (iso) return `${iso[3]}-${iso[2]}-${iso[1].slice(2)}`; // DD-MM-YY
+  // Already dd-mm-yyyy or dd-mm-yy → return as-is
+  if (/^\d{2}-\d{2}-\d{2,4}$/.test(s)) return s;
+  return s;
+}
+
 function buildRowsWithSeparators(sortedRows) {
   const result = [];
   for (let i = 0; i < sortedRows.length; i++) {
@@ -372,7 +385,7 @@ export default function PurchasesPanel({
                     {/* Date */}
                     <td style={{ padding: "12px 16px" }}>
                       <span style={{ fontSize: 12, color: "#64748b", whiteSpace: "nowrap" }}>
-                        {p.date || "—"}
+                        {fmtDate(p.date)}
                       </span>
                     </td>
                     {/* Supplier */}
