@@ -128,7 +128,9 @@ const SHOPS = [
 
 /* ─── seed data ─────────────────────────────────────── */
 const CUSTOMERS = [];
-const AGENTS=[];
+const PRODUCTS  = [];
+const SUPPLIERS = [];
+const AGENTS    = [];
 /* Data now loaded from Supabase per shop */
 const MONTHLY=[];
 const PIE_D=[];
