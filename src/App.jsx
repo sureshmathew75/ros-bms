@@ -3136,57 +3136,84 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImport})=>{
             const processRows=(jsonRows)=>{
               try{
                 if(!jsonRows||jsonRows.length<1){setImportResult({ok:false,msg:"File is empty or has no data rows."});setImporting(false);return;}
-                // normalise header keys — strip numbers, lowercase, trim
-                const normKey=k=>String(k).replace(/^\d+\.\s*/,"").trim().toLowerCase();
+
+                // Build a fully normalised lookup: strip leading "N. ", spaces, lowercase
+                const norm=k=>String(k).replace(/^\d+[.)\s]+/,"").replace(/\s+/g,"").toLowerCase();
+
+                // Show detected headers in error if we fail — helps debug
+                const detectedHeaders=Object.keys(jsonRows[0]||{}).map(k=>`"${k}"`).join(", ");
+
                 const rows=[];
                 jsonRows.forEach((rawRow,i)=>{
-                  // build a normalised key→value map
+                  // Build normalised map
                   const row={};
-                  Object.keys(rawRow).forEach(k=>{row[normKey(k)]=rawRow[k];});
-                  // helper: try multiple possible column names
-                  const g=(...names)=>{for(const n of names){const v=row[n.toLowerCase()];if(v!==undefined&&v!=="")return String(v).trim();}return "";};
-                  // date handling — Excel serial numbers or strings
-                  let dateVal=g("date","2. date");
-                  if(dateVal&&!isNaN(Number(dateVal))){
-                    // Excel serial date → JS date
-                    const d=new Date(Math.round((Number(dateVal)-25569)*86400*1000));
-                    dateVal=d.toISOString().slice(0,10);
-                  } else if(dateVal&&dateVal.includes("/")){
-                    // DD/MM/YYYY or MM/DD/YYYY
-                    const parts=dateVal.split("/");
-                    if(parts.length===3){
-                      // assume DD/MM/YYYY
-                      dateVal=parts[2]+"-"+parts[1].padStart(2,"0")+"-"+parts[0].padStart(2,"0");
+                  Object.keys(rawRow).forEach(k=>{
+                    const nk=norm(k);
+                    row[nk]=rawRow[k];
+                    // also store original key lowercased for fallback
+                    row[String(k).toLowerCase().trim()]=rawRow[k];
+                  });
+
+                  // Flexible getter — tries every alias, normalised and original
+                  const g=(...aliases)=>{
+                    for(const a of aliases){
+                      const v=row[norm(a)]??row[a.toLowerCase().trim()];
+                      if(v!==undefined&&v!==null&&String(v).trim()!=="") return String(v).trim();
+                    }
+                    return "";
+                  };
+
+                  // Date — handle Excel serial, DD/MM/YYYY, YYYY-MM-DD, DD-MM-YYYY
+                  let dateVal=g("date","Date");
+                  if(dateVal){
+                    if(!isNaN(Number(dateVal))&&Number(dateVal)>1000){
+                      const d=new Date(Math.round((Number(dateVal)-25569)*86400*1000));
+                      dateVal=d.toISOString().slice(0,10);
+                    } else {
+                      // try DD/MM/YYYY, DD-MM-YYYY
+                      const m=dateVal.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
+                      if(m){
+                        const yr=m[3].length===2?"20"+m[3]:m[3];
+                        dateVal=yr+"-"+m[2].padStart(2,"0")+"-"+m[1].padStart(2,"0");
+                      }
                     }
                   }
-                  const id=g("saleid","sale id","1. sale id")||("IMP-"+Date.now()+"-"+i);
-                  const totalRaw=parseFloat(g("total","13. total","price","price (excl. tax)"))||0;
-                  const statusRaw=g("status","fulfillment","ful","delivery status")||"PENDING";
+
+                  const id=g("saleid","SaleID","sale id","Sale ID","1. Sale ID")||("IMP-"+Date.now()+"-"+i);
+                  const totalRaw=parseFloat(g("total","Total","13. Total","price","Price"))||0;
+                  const statusRaw=(g("status","Status","fulfillment","ful","delivery status")||"PENDING").toUpperCase();
+                  const payRaw=g("paymentmethod","payment method","Payment Method","payment","Payment","pay","14. Payment Method")||"SHOP";
+
                   const mapped={
                     id,
                     date:dateVal,
-                    invoiceNo:g("invoice no.","invoice no","3. invoice no.","shop inv.","4. shop inv.")||id,
-                    customer:g("customer name","5. customer name","customer","customername"),
-                    addressee:g("addressee","6. addressee"),
-                    address:g("address","7. address"),
-                    phone:g("contact no.","8. contact no.","contact","phone"),
-                    contact:g("contact no.","8. contact no.","contact","phone"),
-                    item:g("item","9. item"),
-                    qty:g("quantity","10. quantity","qty")||"1",
+                    invoiceNo:g("invoiceno","invoice no","Invoice No","3. Invoice No","shopinv","shop inv","Shop Inv","4. Shop Inv")||id,
+                    customer:g("customername","customer name","Customer Name","CustomerName","5. Customer Name","customer","Customer"),
+                    addressee:g("addressee","Addressee","6. Addressee"),
+                    address:g("address","Address","7. Address"),
+                    phone:g("contactno","contact no","Contact No","8. Contact No","contact","Contact","phone"),
+                    contact:g("contactno","contact no","Contact No","8. Contact No","contact","Contact","phone"),
+                    item:g("item","Item","9. Item"),
+                    qty:g("quantity","Quantity","10. Quantity","qty","Qty")||"1",
                     amount:totalRaw,
-                    pay:g("payment method","14. payment method","payment","pay")||"SHOP",
-                    ful:statusRaw.toUpperCase(),
-                    status:statusRaw.toUpperCase(),
-                    rem:g("remarks","21. remarks"),
-                    remarks:g("remarks","21. remarks"),
-                    tag:g("tag","20. tag"),
-                    sentDate:g("dispatch date","15. dispatch date","dispatch"),
+                    pay:payRaw,
+                    ful:statusRaw,
+                    status:statusRaw,
+                    rem:g("remarks","Remarks","21. Remarks"),
+                    remarks:g("remarks","Remarks","21. Remarks"),
+                    tag:g("tag","Tag","20. Tag"),
+                    sentDate:g("dispatchdate","dispatch date","Dispatch Date","15. Dispatch Date"),
                     taxInclusive:false,
                     taxRate:(shopId==="ros-india"?18:20),
                   };
-                  if(mapped.customer||mapped.item||mapped.amount) rows.push(mapped);
+                  if(mapped.customer||mapped.item||mapped.amount>0) rows.push(mapped);
                 });
-                if(rows.length===0){setImportResult({ok:false,msg:"No valid rows found. Make sure your file has Customer, Item or Amount data."});setImporting(false);return;}
+
+                if(rows.length===0){
+                  setImportResult({ok:false,msg:"No valid rows found. Detected columns: "+detectedHeaders});
+                  setImporting(false);
+                  return;
+                }
                 onImport(rows);
                 setImportResult({ok:true,msg:rows.length+" record"+(rows.length!==1?"s":"")+" imported successfully!"});
                 setImporting(false);
