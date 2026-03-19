@@ -2,18 +2,18 @@ import { createClient } from '@supabase/supabase-js';
 
 const url = process.env.REACT_APP_SUPABASE_URL;
 const key = process.env.REACT_APP_SUPABASE_ANON_KEY;
-
 const sb = (url && key) ? createClient(url, key) : null;
 
+/* ─── helpers ─────────────────────────────────────────────── */
+const today = () => new Date().toISOString().split('T')[0];
+
+/* ═══════════════════════════════════════════════════════════
+   SALES  (shop-isolated via shop_id)
+   ═══════════════════════════════════════════════════════════ */
 export const dbSaveSale = async (shopId, sale) => {
   if (!sb) return;
-
-  // Step 1: Check if this ID already exists (edit vs new)
-  const { data: existing } = await sb
-    .from('sales')
-    .select('id')
-    .eq('id', sale.id)
-    .maybeSingle();
+  const { data: existing } = await sb.from('sales').select('id')
+    .eq('id', sale.id).eq('shop_id', shopId).maybeSingle();
 
   const payload = {
     id:            sale.id,
@@ -23,7 +23,7 @@ export const dbSaveSale = async (shopId, sale) => {
     status:        sale.status || '',
     pay:           sale.pay || '',
     ful:           sale.ful || '',
-    date:          sale.date || new Date().toISOString().split('T')[0],
+    date:          sale.date || today(),
     item:          sale.item || '',
     qty:           sale.qty || '1',
     contact:       sale.contact || '',
@@ -35,31 +35,19 @@ export const dbSaveSale = async (shopId, sale) => {
     invoice_no:    sale.invoiceNo || sale.id,
   };
 
-  let error;
-
-  if (existing) {
-    // Row exists → UPDATE it
-    console.log('🔄 Updating existing sale:', sale.id);
-    ({ error } = await sb.from('sales').update(payload).eq('id', sale.id));
-  } else {
-    // New row → INSERT it (never overwrites anything)
-    console.log('➕ Inserting new sale:', sale.id, 'amount:', sale.amount);
-    ({ error } = await sb.from('sales').insert(payload));
-  }
+  const { error } = existing
+    ? await sb.from('sales').update(payload).eq('id', sale.id).eq('shop_id', shopId)
+    : await sb.from('sales').insert(payload);
 
   if (error) console.error('❌ Save sale error:', error);
-  else console.log('✅ Sale saved successfully, id:', sale.id, 'amount:', sale.amount);
+  else console.log('✅ Sale saved:', sale.id);
 };
 
 export const dbLoadSales = async (shopId) => {
   if (!sb) return null;
-  const { data, error } = await sb
-    .from('sales')
-    .select('*')
-    .eq('shop_id', shopId)
-    .order('created_at', { ascending: false });
+  const { data, error } = await sb.from('sales').select('*')
+    .eq('shop_id', shopId).order('date', { ascending: false });
   if (error) { console.error('Load sales error:', error); return null; }
-  console.log(`📦 Loaded ${data.length} sales for ${shopId}`);
   return data.map(r => ({
     id:           r.id,
     customer:     r.customer || '',
@@ -80,24 +68,203 @@ export const dbLoadSales = async (shopId) => {
   }));
 };
 
-export const dbDeleteSale = async (id) => {
+export const dbDeleteSale = async (id, shopId) => {
   if (!sb) return;
-  const { error } = await sb.from('sales').delete().eq('id', id);
+  const q = shopId
+    ? sb.from('sales').delete().eq('id', id).eq('shop_id', shopId)
+    : sb.from('sales').delete().eq('id', id);
+  const { error } = await q;
   if (error) console.error('Delete sale error:', error);
-  else console.log('Sale deleted ✅');
+  else console.log('✅ Sale deleted:', id);
 };
 
-export const dbSaveCustomer = async (customer) => {
+/* ═══════════════════════════════════════════════════════════
+   PURCHASES  (shop-isolated via shop_id)
+   ═══════════════════════════════════════════════════════════ */
+export const dbSavePurchase = async (shopId, p) => {
+  if (!sb) return;
+  const { data: existing } = await sb.from('purchases').select('id')
+    .eq('id', p.id).eq('shop_id', shopId).maybeSingle();
+
+  const payload = {
+    id:             p.id,
+    shop_id:        shopId,
+    date:           p.date || today(),
+    supplier:       p.supplier || p.sup || '',
+    invoice_no:     p.invoiceNo || '',
+    batch:          p.batch || '',
+    item:           p.item || p.itemCustom || '',
+    qty:            p.qty || '',
+    total:          Number(p.total) || 0,
+    gst:            Number(p.gst) || 0,
+    pay_by:         p.payBy || '',
+    pay_date:       p.payDate || '',
+    logistic_by:    p.logisticBy || '',
+    logistic_ref:   p.logisticRef || '',
+    received_date:  p.receivedDate || '',
+    remarks:        p.remarks || '',
+    status:         p.status || 'PENDING',
+  };
+
+  const { error } = existing
+    ? await sb.from('purchases').update(payload).eq('id', p.id).eq('shop_id', shopId)
+    : await sb.from('purchases').insert(payload);
+
+  if (error) console.error('❌ Save purchase error:', error);
+  else console.log('✅ Purchase saved:', p.id);
+};
+
+export const dbLoadPurchases = async (shopId) => {
+  if (!sb) return null;
+  const { data, error } = await sb.from('purchases').select('*')
+    .eq('shop_id', shopId).order('date', { ascending: false });
+  if (error) { console.error('Load purchases error:', error); return null; }
+  return data.map(r => ({
+    id:           r.id,
+    date:         r.date || '',
+    sup:          r.supplier || '',
+    supplier:     r.supplier || '',
+    invoiceNo:    r.invoice_no || '',
+    batch:        r.batch || '',
+    item:         r.item || '',
+    qty:          r.qty || '',
+    total:        Number(r.total) || 0,
+    gst:          Number(r.gst) || 0,
+    payBy:        r.pay_by || '',
+    payDate:      r.pay_date || '',
+    logisticBy:   r.logistic_by || '',
+    logisticRef:  r.logistic_ref || '',
+    receivedDate: r.received_date || '',
+    remarks:      r.remarks || '',
+    status:       r.status || 'PENDING',
+  }));
+};
+
+export const dbDeletePurchase = async (id, shopId) => {
+  if (!sb) return;
+  const { error } = await sb.from('purchases').delete()
+    .eq('id', id).eq('shop_id', shopId);
+  if (error) console.error('Delete purchase error:', error);
+  else console.log('✅ Purchase deleted:', id);
+};
+
+/* ═══════════════════════════════════════════════════════════
+   EXPENSES  (shop-isolated via shop_id)
+   ═══════════════════════════════════════════════════════════ */
+export const dbSaveExpense = async (shopId, e) => {
+  if (!sb) return;
+  const { data: existing } = await sb.from('expenses').select('id')
+    .eq('id', e.id).eq('shop_id', shopId).maybeSingle();
+
+  const payload = {
+    id:       e.id,
+    shop_id:  shopId,
+    date:     e.date || today(),
+    cat:      e.cat || '',
+    desc:     e.desc || '',
+    amount:   Number(e.amount) || 0,
+    method:   e.method || '',
+    notes:    e.notes || '',
+  };
+
+  const { error } = existing
+    ? await sb.from('expenses').update(payload).eq('id', e.id).eq('shop_id', shopId)
+    : await sb.from('expenses').insert(payload);
+
+  if (error) console.error('❌ Save expense error:', error);
+  else console.log('✅ Expense saved:', e.id);
+};
+
+export const dbLoadExpenses = async (shopId) => {
+  if (!sb) return null;
+  const { data, error } = await sb.from('expenses').select('*')
+    .eq('shop_id', shopId).order('date', { ascending: false });
+  if (error) { console.error('Load expenses error:', error); return null; }
+  return data.map(r => ({
+    id:     r.id,
+    date:   r.date || '',
+    cat:    r.cat || '',
+    desc:   r.desc || '',
+    amount: Number(r.amount) || 0,
+    method: r.method || '',
+    notes:  r.notes || '',
+  }));
+};
+
+export const dbDeleteExpense = async (id, shopId) => {
+  if (!sb) return;
+  const { error } = await sb.from('expenses').delete()
+    .eq('id', id).eq('shop_id', shopId);
+  if (error) console.error('Delete expense error:', error);
+  else console.log('✅ Expense deleted:', id);
+};
+
+/* ═══════════════════════════════════════════════════════════
+   LOGISTICS  (shop-isolated via shop_id)
+   ═══════════════════════════════════════════════════════════ */
+export const dbSaveLogistic = async (shopId, l) => {
+  if (!sb) return;
+  const { data: existing } = await sb.from('logistics').select('id')
+    .eq('id', l.id).eq('shop_id', shopId).maybeSingle();
+
+  const payload = {
+    id:         l.id,
+    shop_id:    shopId,
+    order_ref:  l.order || l.order_ref || '',
+    agent:      l.agent || '',
+    tracking:   l.track || l.tracking || '',
+    status:     l.status || 'PENDING',
+    dispatched: l.disp || l.dispatched || '',
+    eta:        l.eta || '',
+    notes:      l.notes || '',
+  };
+
+  const { error } = existing
+    ? await sb.from('logistics').update(payload).eq('id', l.id).eq('shop_id', shopId)
+    : await sb.from('logistics').insert(payload);
+
+  if (error) console.error('❌ Save logistic error:', error);
+  else console.log('✅ Logistic saved:', l.id);
+};
+
+export const dbLoadLogistics = async (shopId) => {
+  if (!sb) return null;
+  const { data, error } = await sb.from('logistics').select('*')
+    .eq('shop_id', shopId).order('created_at', { ascending: false });
+  if (error) { console.error('Load logistics error:', error); return null; }
+  return data.map(r => ({
+    id:     r.id,
+    order:  r.order_ref || '',
+    agent:  r.agent || '',
+    track:  r.tracking || '',
+    status: r.status || '',
+    disp:   r.dispatched || '',
+    eta:    r.eta || '',
+    notes:  r.notes || '',
+  }));
+};
+
+export const dbDeleteLogistic = async (id, shopId) => {
+  if (!sb) return;
+  const { error } = await sb.from('logistics').delete()
+    .eq('id', id).eq('shop_id', shopId);
+  if (error) console.error('Delete logistic error:', error);
+  else console.log('✅ Logistic deleted:', id);
+};
+
+/* ═══════════════════════════════════════════════════════════
+   CUSTOMERS  (shop-isolated via shop_id)
+   ═══════════════════════════════════════════════════════════ */
+export const dbSaveCustomer = async (shopId, customer) => {
   if (!sb) return;
 
-  const { data: existing } = await sb
-    .from('customers')
-    .select('id')
-    .eq('id', customer.id)
-    .maybeSingle();
+  /* Unique key is (id, shop_id) — same person can be customer in multiple shops */
+  const { data: existing } = await sb.from('customers').select('id')
+    .eq('id', customer.id).eq('shop_id', shopId).maybeSingle();
 
   const payload = {
     id:        customer.id,
+    shop_id:   shopId,
     name:      customer.name || '',
     phone:     customer.phone || '',
     whatsapp:  customer.whatsapp || '',
@@ -109,23 +276,20 @@ export const dbSaveCustomer = async (customer) => {
     last:      customer.last || '',
   };
 
-  let error;
-  if (existing) {
-    ({ error } = await sb.from('customers').update(payload).eq('id', customer.id));
-  } else {
-    ({ error } = await sb.from('customers').insert(payload));
-  }
+  const { error } = existing
+    ? await sb.from('customers').update(payload).eq('id', customer.id).eq('shop_id', shopId)
+    : await sb.from('customers').insert(payload);
 
   if (error) console.error('Save customer error:', error);
-  else console.log('Customer saved ✅');
+  else console.log('✅ Customer saved:', customer.id);
 };
 
-export const dbLoadCustomers = async () => {
+export const dbLoadCustomers = async (shopId) => {
   if (!sb) return null;
-  const { data, error } = await sb
-    .from('customers')
-    .select('*')
-    .order('name', { ascending: true });
+  const q = shopId
+    ? sb.from('customers').select('*').eq('shop_id', shopId).order('name', { ascending: true })
+    : sb.from('customers').select('*').order('name', { ascending: true });
+  const { data, error } = await q;
   if (error) { console.error('Load customers error:', error); return null; }
   return data.map(r => ({
     id:        r.id,
@@ -141,9 +305,120 @@ export const dbLoadCustomers = async () => {
   }));
 };
 
-export const dbDeleteCustomer = async (id) => {
+export const dbDeleteCustomer = async (id, shopId) => {
   if (!sb) return;
-  const { error } = await sb.from('customers').delete().eq('id', id);
+  const q = shopId
+    ? sb.from('customers').delete().eq('id', id).eq('shop_id', shopId)
+    : sb.from('customers').delete().eq('id', id);
+  const { error } = await q;
   if (error) console.error('Delete customer error:', error);
-  else console.log('Customer deleted ✅');
+  else console.log('✅ Customer deleted:', id);
+};
+
+/* ═══════════════════════════════════════════════════════════
+   SUPPLIERS  (shop-isolated via shop_id)
+   ═══════════════════════════════════════════════════════════ */
+export const dbSaveSupplier = async (shopId, s) => {
+  if (!sb) return;
+  const { data: existing } = await sb.from('suppliers').select('id')
+    .eq('id', s.id).eq('shop_id', shopId).maybeSingle();
+
+  const payload = {
+    id:       s.id,
+    shop_id:  shopId,
+    name:     s.name || '',
+    contact:  s.contact || '',
+    phone:    s.phone || '',
+    email:    s.email || '',
+    category: s.category || '',
+    terms:    s.terms || '',
+    notes:    s.notes || '',
+  };
+
+  const { error } = existing
+    ? await sb.from('suppliers').update(payload).eq('id', s.id).eq('shop_id', shopId)
+    : await sb.from('suppliers').insert(payload);
+
+  if (error) console.error('Save supplier error:', error);
+  else console.log('✅ Supplier saved:', s.id);
+};
+
+export const dbLoadSuppliers = async (shopId) => {
+  if (!sb) return null;
+  const { data, error } = await sb.from('suppliers').select('*')
+    .eq('shop_id', shopId).order('name', { ascending: true });
+  if (error) { console.error('Load suppliers error:', error); return null; }
+  return data.map(r => ({
+    id:       r.id,
+    name:     r.name || '',
+    contact:  r.contact || '',
+    phone:    r.phone || '',
+    email:    r.email || '',
+    category: r.category || '',
+    terms:    r.terms || '',
+    notes:    r.notes || '',
+  }));
+};
+
+export const dbDeleteSupplier = async (id, shopId) => {
+  if (!sb) return;
+  const { error } = await sb.from('suppliers').delete()
+    .eq('id', id).eq('shop_id', shopId);
+  if (error) console.error('Delete supplier error:', error);
+  else console.log('✅ Supplier deleted:', id);
+};
+
+/* ═══════════════════════════════════════════════════════════
+   PRODUCTS  (shop-isolated via shop_id)
+   ═══════════════════════════════════════════════════════════ */
+export const dbSaveProduct = async (shopId, p) => {
+  if (!sb) return;
+  const { data: existing } = await sb.from('products').select('id')
+    .eq('id', p.id).eq('shop_id', shopId).maybeSingle();
+
+  const payload = {
+    id:       p.id,
+    shop_id:  shopId,
+    name:     p.name || '',
+    sku:      p.sku || '',
+    cat:      p.cat || '',
+    cost:     Number(p.cost) || 0,
+    sell:     Number(p.sell) || 0,
+    stock:    Number(p.stock) || 0,
+    min:      Number(p.min) || 0,
+    notes:    p.notes || '',
+  };
+
+  const { error } = existing
+    ? await sb.from('products').update(payload).eq('id', p.id).eq('shop_id', shopId)
+    : await sb.from('products').insert(payload);
+
+  if (error) console.error('Save product error:', error);
+  else console.log('✅ Product saved:', p.id);
+};
+
+export const dbLoadProducts = async (shopId) => {
+  if (!sb) return null;
+  const { data, error } = await sb.from('products').select('*')
+    .eq('shop_id', shopId).order('name', { ascending: true });
+  if (error) { console.error('Load products error:', error); return null; }
+  return data.map(r => ({
+    id:    r.id,
+    name:  r.name || '',
+    sku:   r.sku || '',
+    cat:   r.cat || '',
+    cost:  Number(r.cost) || 0,
+    sell:  Number(r.sell) || 0,
+    stock: Number(r.stock) || 0,
+    min:   Number(r.min) || 0,
+    notes: r.notes || '',
+  }));
+};
+
+export const dbDeleteProduct = async (id, shopId) => {
+  if (!sb) return;
+  const { error } = await sb.from('products').delete()
+    .eq('id', id).eq('shop_id', shopId);
+  if (error) console.error('Delete product error:', error);
+  else console.log('✅ Product deleted:', id);
 };

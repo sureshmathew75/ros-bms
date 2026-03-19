@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import * as XLSX from "xlsx";
 import CommandPalette from "./components/CommandPalette";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import DocumentsPanel from "./components/DocumentsPanel";
@@ -21,7 +22,15 @@ import {
   STAGE_THEME
 } from "./constants";
 import { formatCurrency, formatDate, formatNumber } from "./utils";
-import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer } from "./db";
+import {
+  dbLoadSales, dbSaveSale, dbDeleteSale,
+  dbLoadPurchases, dbSavePurchase, dbDeletePurchase,
+  dbLoadExpenses, dbSaveExpense, dbDeleteExpense,
+  dbLoadLogistics, dbSaveLogistic, dbDeleteLogistic,
+  dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer,
+  dbLoadSuppliers, dbSaveSupplier, dbDeleteSupplier,
+  dbLoadProducts, dbSaveProduct, dbDeleteProduct,
+} from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -119,13 +128,8 @@ const SHOPS = [
 
 /* ─── seed data ─────────────────────────────────────── */
 const CUSTOMERS = [];
-const SUPPLIERS=[];
-const PRODUCTS=[];
 const AGENTS=[];
-const SALES_SEED={"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
-const PURCH_SEED={"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
-const EXP_SEED={"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
-const LOG_SEED={"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
+/* Data now loaded from Supabase per shop */
 const MONTHLY=[];
 const PIE_D=[];
 
@@ -241,18 +245,14 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
 
   // Calculate stats directly from salesData prop (always up to date)
   const today=new Date().toISOString().split('T')[0];
-  const currentMonth=today.slice(0,7); // "YYYY-MM"
   const shopStats={};
   SHOPS.forEach(shop=>{
     const data=salesData[shop.id]||[];
     const todayRev=data.filter(s=>s.date===today).reduce((a,s)=>a+(s.amount||0),0);
     const totalRev=data.reduce((a,s)=>a+(s.amount||0),0);
-    const monthRev=data.filter(s=>s.date&&s.date.startsWith(currentMonth)).reduce((a,s)=>a+(s.amount||0),0);
-    const DONE_STATUSES=["FULFILLED","EXCHANGED","REFUNDED","GOOD FEEDBACK"];
-    const pending=data.filter(s=>!DONE_STATUSES.includes((s.status||"").toUpperCase())).length;
+    const pending=data.filter(s=>s.pay==="Pending"||s.pay==="PENDING").length;
     const orders=data.length;
-    const monthOrders=data.filter(s=>s.date&&s.date.startsWith(currentMonth)).length;
-    shopStats[shop.id]={todaySales:todayRev,totalRev,monthRevenue:monthRev,pendingOrders:pending,orders,monthOrders};
+    shopStats[shop.id]={todaySales:todayRev,totalRev,pendingOrders:pending,orders};
   });
 
   useEffect(()=>{
@@ -418,34 +418,14 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
                     <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.65)",fontStyle:"italic"}}>{shop.tagline}</p>
                   </div>
 
-                  {/* revenue — hidden for staff */}
+                  {/* revenue — hidden for staff on non-India shops */}
                   <div style={{position:"relative",zIndex:1}}>
+                    <p style={{margin:"0 0 2px",fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Today\'s Revenue</p>
                     {staffLocked
                       ? <p style={{margin:0,fontSize:22,fontWeight:700,color:"rgba(255,255,255,0.30)",letterSpacing:2,fontFamily:"'Arimo',Arial,sans-serif"}}>● ● ● ●</p>
-                      : (
-                        <div style={{display:"flex",alignItems:"stretch",gap:0}}>
-                          {/* Today */}
-                          <div style={{flex:1}}>
-                            <p style={{margin:"0 0 3px",fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Today's</p>
-                            <p style={{margin:0,fontSize:22,fontWeight:800,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif",lineHeight:1.1}}>
-                              {shop.id==="ros-india"
-                                ? formatCurrency(shopStats[shop.id]?.todaySales||0)
-                                : "£"+formatNumber(shopStats[shop.id]?.todaySales||0)}
-                            </p>
-                          </div>
-                          {/* Divider */}
-                          <div style={{width:1,background:"rgba(255,255,255,0.25)",margin:"0 14px",borderRadius:1}}/>
-                          {/* Month */}
-                          <div style={{flex:1}}>
-                            <p style={{margin:"0 0 3px",fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Month</p>
-                            <p style={{margin:0,fontSize:22,fontWeight:800,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif",lineHeight:1.1}}>
-                              {shop.id==="ros-india"
-                                ? formatCurrency(shopStats[shop.id]?.monthRevenue||0)
-                                : "£"+formatNumber(shopStats[shop.id]?.monthRevenue||0)}
-                            </p>
-                          </div>
-                        </div>
-                      )
+                      : <p style={{margin:0,fontSize:34,fontWeight:700,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif"}}>{shop.id==="ros-india"
+                          ? formatCurrency(shopStats[shop.id]?.todaySales||0)
+                          : "£"+formatNumber(shopStats[shop.id]?.todaySales||0)}</p>
                     }
                   </div>
                 </div>
@@ -459,7 +439,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
                     </div>
                   ):(
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
-                      {[{l:"Orders",v:shopStats[shop.id]?.monthOrders||0},{l:"Pending",v:shopStats[shop.id]?.pendingOrders||0},{l:"Stock",v:shop.stockValue}].map((s,i)=>(
+                      {[{l:"Orders",v:shopStats[shop.id]?.pendingOrders||0},{l:"Pending",v:shopStats[shop.id]?.pendingOrders||0},{l:"Stock",v:shop.stockValue}].map((s,i)=>(
                         <div key={i} style={{textAlign:"center",background:shop.accentBg,borderRadius:10,padding:"9px 5px",border:"1px solid "+shop.accent+"18"}}>
                           <p style={{margin:0,fontWeight:900,fontSize:16,color:shop.accentText}}>{s.v}</p>
                           <p style={{margin:"2px 0 0",fontSize:10,color:shop.accent,fontWeight:700}}>{s.l}</p>
@@ -475,7 +455,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
                     fontWeight:800,fontSize:14,transition:"all 0.2s",fontFamily:"inherit",
                     boxShadow:(!staffLocked&&h)?"0 4px 14px "+shop.accent+"44":"none",
                   }}>
-                    {staffLocked?"🔒 Restricted":"Enter the Shop →"}
+                    {staffLocked?"🔒 Restricted":"Enter Workspace →"}
                   </button>
                 </div>
               </div>
@@ -640,168 +620,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
 </div>
 );
 };
-/* ══════════════════════════════════════════════════════
-   PURCHASE EDIT FORM  — status + remarks quick-edit
-══════════════════════════════════════════════════════ */
-const PurchEditForm=({purchase,shop,onSave,onClose})=>{
-  const [status,setStatus]=useState(purchase.purchStatus||"PAID");
-  const [remarks,setRemarks]=useState(purchase.remarks||"");
-  const [payBy,setPayBy]=useState(purchase.payBy||"");
-  const [payDate,setPayDate]=useState(purchase.payDate||"");
-  const [receivedDate,setReceivedDate]=useState(purchase.receivedDate||"");
-  const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white",transition:"border-color 0.15s"};
-  const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
-  const SC={PAID:"#15803d",DISPATCHED:"#1d4ed8",RECEIVED:"#065f46",PENDING:"#a16207"};
-  return(
-    <div style={{padding:"20px 22px",display:"flex",flexDirection:"column",gap:14}}>
-      <div>
-        <label style={lbl}>Purchase Status</label>
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          {["PAID","DISPATCHED","RECEIVED","PENDING"].map(s=>(
-            <button key={s} onClick={()=>setStatus(s)}
-              style={{padding:"8px 18px",borderRadius:999,border:"2px solid "+(status===s?SC[s]:"#e2e8f0"),
-                background:status===s?SC[s]+"18":"white",
-                color:status===s?SC[s]:"#64748b",
-                fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>
-              {s}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-        <div>
-          <label style={lbl}>Payment By</label>
-          <input value={payBy} onChange={e=>setPayBy(e.target.value)} style={inp}
-            onFocus={e=>e.target.style.borderColor=shop.accent} onBlur={e=>e.target.style.borderColor="#e2e8f0"}/>
-        </div>
-        <div>
-          <label style={lbl}>Payment Date</label>
-          <input type="date" value={payDate} onChange={e=>setPayDate(e.target.value)} style={inp}
-            onFocus={e=>e.target.style.borderColor=shop.accent} onBlur={e=>e.target.style.borderColor="#e2e8f0"}/>
-        </div>
-      </div>
-      <div>
-        <label style={lbl}>Received Date</label>
-        <input type="date" value={receivedDate} onChange={e=>setReceivedDate(e.target.value)} style={inp}
-          onFocus={e=>e.target.style.borderColor=shop.accent} onBlur={e=>e.target.style.borderColor="#e2e8f0"}/>
-      </div>
-      <div>
-        <label style={lbl}>Remarks</label>
-        <textarea value={remarks} onChange={e=>setRemarks(e.target.value)} rows={3}
-          style={{...inp,resize:"vertical"}}
-          onFocus={e=>e.target.style.borderColor=shop.accent} onBlur={e=>e.target.style.borderColor="#e2e8f0"}/>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingTop:4}}>
-        <button onClick={()=>onSave({...purchase,purchStatus:status,remarks,payBy,payDate,receivedDate})}
-          style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
-          ✅ Save Changes
-        </button>
-        <button onClick={onClose}
-          style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-};
-
-/* ══════════════════════════════════════════════════════
-   PURCHASE DOCUMENTS  — upload & view invoice / receipt
-══════════════════════════════════════════════════════ */
-const PurchaseDocuments=({purchase,shop,onUpdate})=>{
-  const docs=purchase.documents||[];
-  const handleUpload=(type,e)=>{
-    const file=e.target.files?.[0];
-    if(!file) return;
-    if(file.size>5*1024*1024){alert("File too large — max 5 MB");return;}
-    const reader=new FileReader();
-    reader.onload=ev=>{
-      const newDoc={id:Date.now(),type,name:file.name,mime:file.type,data:ev.target.result,uploadedAt:new Date().toISOString()};
-      onUpdate({...purchase,documents:[...docs,newDoc]});
-    };
-    reader.readAsDataURL(file);
-  };
-  const removeDoc=(id)=>onUpdate({...purchase,documents:docs.filter(d=>d.id!==id)});
-  const openDoc=(doc)=>{
-    const win=window.open();
-    if(doc.mime&&doc.mime.startsWith("image/")){
-      win.document.write(`<img src="${doc.data}" style="max-width:100%;"/>`);
-    } else {
-      const a=win.document.createElement("a");
-      a.href=doc.data; a.download=doc.name; a.click();
-    }
-  };
-  const docTypes=[
-    {key:"invoice", label:"Purchase Invoice", icon:"🧾", color:"#2563eb", bg:"#eff6ff", border:"#bfdbfe"},
-    {key:"receipt", label:"Payment Receipt",  icon:"💳", color:"#059669", bg:"#ecfdf5", border:"#a7f3d0"},
-    {key:"other",   label:"Other Document",   icon:"📄", color:"#7c3aed", bg:"#f5f3ff", border:"#ddd6fe"},
-  ];
-  return(
-    <div style={{border:"1px solid #e2e8f0",borderRadius:14,overflow:"hidden",marginBottom:4}}>
-      <div style={{padding:"12px 16px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <span style={{fontWeight:800,fontSize:13,color:"#0f172a"}}>📎 Documents</span>
-        <span style={{fontSize:11,color:"#94a3b8"}}>{docs.length} file{docs.length!==1?"s":""} attached</span>
-      </div>
-      <div style={{padding:"14px 16px"}}>
-        {/* upload buttons */}
-        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:docs.length>0?14:0}}>
-          {docTypes.map(dt=>(
-            <label key={dt.key} style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:9,
-              border:"1px dashed "+dt.border,background:dt.bg,color:dt.color,
-              fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}
-              onMouseEnter={e=>e.currentTarget.style.opacity="0.8"}
-              onMouseLeave={e=>e.currentTarget.style.opacity="1"}>
-              {dt.icon} Upload {dt.label}
-              <input type="file" accept="image/*,.pdf" style={{display:"none"}} onChange={e=>handleUpload(dt.key,e)}/>
-            </label>
-          ))}
-        </div>
-        {/* attached files */}
-        {docs.length>0&&(
-          <div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {docs.map(doc=>{
-              const dt=docTypes.find(d=>d.key===doc.type)||docTypes[2];
-              const isImg=doc.mime&&doc.mime.startsWith("image/");
-              return(
-                <div key={doc.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",
-                  background:"white",border:"1px solid "+dt.border,borderRadius:10}}>
-                  {isImg
-                    ? <img src={doc.data} alt={doc.name} style={{width:40,height:40,objectFit:"cover",borderRadius:6,border:"1px solid #e2e8f0",flexShrink:0}}/>
-                    : <div style={{width:40,height:40,borderRadius:8,background:dt.bg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:20,flexShrink:0}}>{dt.icon}</div>
-                  }
-                  <div style={{flex:1,minWidth:0}}>
-                    <p style={{margin:0,fontWeight:700,fontSize:13,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{doc.name}</p>
-                    <p style={{margin:"2px 0 0",fontSize:11,color:dt.color,fontWeight:600}}>{dt.label}</p>
-                  </div>
-                  <div style={{display:"flex",gap:6,flexShrink:0}}>
-                    <button onClick={()=>openDoc(doc)}
-                      style={{padding:"5px 10px",borderRadius:8,border:"1px solid "+dt.border,background:dt.bg,color:dt.color,fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
-                      👁 Open
-                    </button>
-                    <button onClick={()=>removeDoc(doc.id)}
-                      style={{padding:"5px 8px",borderRadius:8,border:"1px solid #fee2e2",background:"#fff1f2",color:"#ef4444",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
-                      ✕
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
-
-const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData:_setSalesData,customers,setCustomers,shopItems={},saveShopItems})=>{
-  // Wrap setSalesData so every update is persisted to localStorage
-  const setSalesData=(updater)=>{
-    _setSalesData(prev=>{
-      const next=typeof updater==="function"?updater(prev):updater;
-      try{localStorage.setItem("ros_salesData",JSON.stringify(next));}catch{}
-      return next;
-    });
-  };
+const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,purchData={},setPurchData,expData={},setExpData,logData={},setLogData,suppData={},setSuppData,prodData={},setProdData})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":"dashboard");
   const [hov,setHov]=useState(null);
   const [search,setSearch]=useState("");
@@ -818,37 +637,8 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData:_setSal
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
   const [pdfMode,setPdfMode]=useState(false);
   const [salesPeriod,setSalesPeriodRaw]=useState("month");
-  const [salesPage,setSalesPage]=useState(1);
   const [pdfInv,setPdfInv]=useState(null);
   const invoicePrintRef=useRef(null);
-  const [purchasesData,setPurchasesData]=useState(()=>{
-    try{const s=localStorage.getItem("ros_purchases");return s?JSON.parse(s):{"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
-    catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
-  });
-  const [selPurch,setSelPurch]=useState(null);
-  const [editPurchId,setEditPurchId]=useState(null);
-  const savePurchase=(sid,newPurch)=>{
-    setPurchasesData(prev=>{
-      const updated={...prev,[sid]:[newPurch,...(prev[sid]||[])]};
-      try{localStorage.setItem("ros_purchases",JSON.stringify(updated));}catch{}
-      return updated;
-    });
-  };
-  const deletePurchase=(sid,id)=>{
-    setPurchasesData(prev=>{
-      const updated={...prev,[sid]:(prev[sid]||[]).filter(p=>p.id!==id)};
-      try{localStorage.setItem("ros_purchases",JSON.stringify(updated));}catch{}
-      return updated;
-    });
-  };
-  const updatePurchase=(sid,updated)=>{
-    setPurchasesData(prev=>{
-      const list=(prev[sid]||[]).map(p=>p.id===updated.id?updated:p);
-      const next={...prev,[sid]:list};
-      try{localStorage.setItem("ros_purchases",JSON.stringify(next));}catch{}
-      return next;
-    });
-  };
 
   useEffect(()=>{
     const h=()=>setIsMobile(window.innerWidth<768);
@@ -868,10 +658,12 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData:_setSal
 
   const shop=SHOPS.find(s=>s.id===shopId);
   const sales=salesData[shopId]||[];
-  const purch=purchasesData[shopId]||[];
-  const exps=EXP_SEED[shopId]||[];
-  const logs=LOG_SEED[shopId]||[];
-  const lowStk=PRODUCTS.filter(p=>p.stock<=p.min);
+  const purch=(purchData[shopId]||[]);
+  const exps=(expData[shopId]||[]);
+  const logs=(logData[shopId]||[]);
+  const suppliers=(suppData[shopId]||[]);
+  const products=(prodData[shopId]||[]);
+  const lowStk=products.filter(p=>p.stock<=p.min);
   const totRev=sales.filter(s=>s.pay==="Paid").reduce((a,s)=>a+s.amount,0);
   const pendAmt=sales.filter(s=>s.pay==="Pending").reduce((a,s)=>a+s.amount,0);
   const totExp=exps.reduce((a,e)=>a+e.amount,0);
@@ -945,7 +737,7 @@ const addSale = async (form) => {
       if(idx>=0){const n=[...prev];n[idx]=updatedCust;return n;}
       return [...prev,updatedCust];
     });
-    dbSaveCustomer(updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
+    dbSaveCustomer(shopId,updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
   }
 };
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
@@ -1715,296 +1507,46 @@ return(
           })()}
 
           {/* ─── SALES ─── */}
-          {tab==="sales"&&(()=>{
-            const PAGE_SIZE=100;
-            // Financial year helper — April 1 to March 31
-            const getFY=(dateStr)=>{
-              if(!dateStr) return "Unknown";
-              const d=new Date(dateStr);
-              const m=d.getMonth(); // 0=Jan
-              const y=d.getFullYear();
-              // FY starts April 1 (month index 3)
-              return m>=3 ? y+"–"+(y+1) : (y-1)+"–"+y;
-            };
-            const getMonthKey=(dateStr)=>{
-              if(!dateStr) return "Unknown";
-              const d=new Date(dateStr);
-              return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0");
-            };
-            const getMonthLabel=(mk)=>{
-              if(!mk||mk==="Unknown") return "Unknown";
-              const [y,m]=mk.split("-");
-              const dt=new Date(parseInt(y),parseInt(m)-1,1);
-              return dt.toLocaleString("default",{month:"long",year:"numeric"});
-            };
-            const netSale=(s)=>{
-              const amt=Number(s.amount)||0;
-              const refund=Number(s.refundAmt)||0;
-              return amt-refund;
-            };
-
-            // Sort by date desc
-            const sorted=[...filtSales].sort((a,b)=>new Date(b.date)-new Date(a.date));
-
-            // Paginate
-            const totalPages=Math.max(1,Math.ceil(sorted.length/PAGE_SIZE));
-            const safePage=Math.min(salesPage,totalPages);
-            const paged=sorted.slice((safePage-1)*PAGE_SIZE, safePage*PAGE_SIZE);
-
-            // Group paged rows by FY then month, track boundaries
-            const rows=[];
-            let lastFY=null, lastMonth=null;
-            paged.forEach((s,idx)=>{
-              const fy=getFY(s.date);
-              const mk=getMonthKey(s.date);
-              const fyChange=fy!==lastFY;
-              const monthChange=mk!==lastMonth||fyChange;
-              if(fyChange){ lastFY=fy; lastMonth=null; }
-              if(monthChange){ lastMonth=mk; }
-              rows.push({s, fy, mk, fyChange, monthChange});
-            });
-
-            return(
-              <div>
-                <SalesPanel
-                  Badge={Badge}
-                  customers={customers}
-                  filtSales={filtSales}
-                  fmt={fmt}
-                  formatDate={formatDate}
-                  openMenu={openMenu}
-                  search={search}
-                  sales={sales}
-                  salesPeriod={salesPeriod}
-                  setEditRow={setEditRow}
-                  setInvoiceRow={setInvoiceRow}
-                  setModal={setModal}
-                  setOpenMenu={setOpenMenu}
-                  setSalesData={setSalesData}
-                  setSearch={setSearch}
-                  setSelCustomer={setSelCustomer}
-                  setSelRow={setSelRow}
-                  setSalesPeriod={setSalesPeriod}
-                  shop={shop}
-                  shopId={shopId}
-                  TD={TD}
-                  user={user}
-                  isStaff={user?.role==="staff"}
-                  salesPage={safePage}
-                  setSalesPage={setSalesPage}
-                  totalPages={totalPages}
-                  PAGE_SIZE={PAGE_SIZE}
-                  pagedSales={paged}
-                  groupedRows={rows}
-                  getFY={getFY}
-                  getMonthLabel={getMonthLabel}
-                  netSale={netSale}
-                />
-                {/* ── FY / Month grouped sales table — always shown ── */}
-                {(()=>{
-                  return <div style={{marginTop:24,background:"white",borderRadius:16,border:"1px solid #e2e8f0",overflow:"hidden",boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
-                    <div style={{padding:"14px 20px",background:"#f8fafc",borderBottom:"2px solid #e2e8f0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                      <span style={{fontWeight:800,fontSize:15,color:"#0f172a"}}>
-                        {salesPeriod==="year"||salesPeriod==="lifetime"?"📅 Sales by Financial Year":"📅 Sales — "+{day:"Today",week:"This Week",month:"This Month"}[salesPeriod]}
-                      </span>
-                      <span style={{fontSize:12,color:"#64748b"}}>{sorted.length} records · Page {safePage} of {totalPages} · 100 per page</span>
-                    </div>
-                    <div style={{overflowX:"auto"}}>
-                      <table style={{width:"100%",borderCollapse:"collapse",minWidth:700}}>
-                        <thead>
-                          <tr style={{background:"#0f172a"}}>
-                            {["Date","Invoice","Customer","Item","Qty","Amount","Refund","Net Sale","Status","Payment"].map((h,i)=>(
-                              <th key={h} style={{padding:"10px 14px",textAlign:i>=4?"right":"left",fontSize:11,fontWeight:800,color:"white",textTransform:"uppercase",letterSpacing:"0.05em",whiteSpace:"nowrap"}}>{h}</th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {rows.map(({s,fy,mk,fyChange,monthChange},idx)=>{
-                            const net=netSale(s);
-                            const refund=Number(s.refundAmt)||0;
-                            return(
-                              <>
-                                {fyChange&&(salesPeriod==="year"||salesPeriod==="lifetime")&&(
-                                  <tr key={"fy-"+fy}>
-                                    <td colSpan={10} style={{
-                                      padding:"10px 16px",
-                                      background:"#0f172a",
-                                      borderTop:"4px solid #334155",
-                                      borderBottom:"4px solid #334155",
-                                    }}>
-                                      <span style={{fontWeight:900,fontSize:13,color:"white",letterSpacing:"0.08em",textTransform:"uppercase"}}>
-                                        📊 Financial Year {fy} &nbsp;·&nbsp;
-                                        {shop.symbol}{sorted.filter(x=>getFY(x.date)===fy).reduce((a,x)=>a+(Number(x.amount)||0),0).toLocaleString("en-GB",{minimumFractionDigits:2})} gross
-                                      </span>
-                                    </td>
-                                  </tr>
-                                )}
-                                {monthChange&&(
-                                  <tr key={"mo-"+mk+"-"+idx}>
-                                    <td colSpan={10} style={{
-                                      padding:"8px 16px",
-                                      background:"#f1f5f9",
-                                      borderTop:"2px solid #94a3b8",
-                                      borderBottom:"2px solid #94a3b8",
-                                    }}>
-                                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                                        <span style={{fontWeight:800,fontSize:12,color:"#334155",textTransform:"uppercase",letterSpacing:"0.07em"}}>
-                                          📆 {getMonthLabel(mk)}
-                                        </span>
-                                        <span style={{fontWeight:700,fontSize:12,color:shop.accent,fontFamily:"DM Mono,monospace"}}>
-                                          {shop.symbol}{paged.filter(x=>getMonthKey(x.date)===mk).reduce((a,x)=>a+(Number(x.amount)||0),0).toLocaleString("en-GB",{minimumFractionDigits:2})} &nbsp;|&nbsp; {paged.filter(x=>getMonthKey(x.date)===mk).length} orders
-                                        </span>
-                                      </div>
-                                    </td>
-                                  </tr>
-                                )}
-                                <tr key={s.id||idx}
-                                  onClick={()=>setSelRow(s)}
-                                  style={{borderBottom:"1px solid #f1f5f9",cursor:"pointer",transition:"background 0.1s"}}
-                                  onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
-                                  onMouseLeave={e=>e.currentTarget.style.background="white"}>
-                                  <td style={{padding:"11px 14px",fontSize:12,color:"#64748b",whiteSpace:"nowrap"}}>{formatDate(s.date)||"—"}</td>
-                                  <td style={{padding:"11px 14px",fontSize:12,fontFamily:"DM Mono,monospace",color:shop.accent,fontWeight:700}}>{s.id}</td>
-                                  <td style={{padding:"11px 14px",fontSize:13,fontWeight:600,color:"#0f172a",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.customer||"—"}</td>
-                                  <td style={{padding:"11px 14px",fontSize:12,color:"#374151",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.item||"—"}</td>
-                                  <td style={{padding:"11px 14px",fontSize:12,textAlign:"right",color:"#64748b"}}>{s.qty||1}</td>
-                                  <td style={{padding:"11px 14px",fontSize:13,textAlign:"right",fontWeight:700,color:"#374151",fontFamily:"DM Mono,monospace"}}>{shop.symbol}{(Number(s.amount)||0).toLocaleString("en-GB",{minimumFractionDigits:2})}</td>
-                                  <td style={{padding:"11px 14px",fontSize:12,textAlign:"right",color:refund>0?"#ef4444":"#94a3b8",fontFamily:"DM Mono,monospace"}}>{refund>0?"-"+shop.symbol+refund.toLocaleString("en-GB",{minimumFractionDigits:2}):"—"}</td>
-                                  <td style={{padding:"11px 14px",fontSize:13,textAlign:"right",fontWeight:800,color:net<0?"#ef4444":shop.accent,fontFamily:"DM Mono,monospace"}}>{shop.symbol}{net.toLocaleString("en-GB",{minimumFractionDigits:2})}</td>
-                                  <td style={{padding:"11px 14px"}}><Badge l={s.ful||s.status||"PENDING"}/></td>
-                                  <td style={{padding:"11px 14px",fontSize:12,color:"#64748b"}}>{s.pay||"—"}</td>
-                                </tr>
-                              </>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
-                    {/* pagination */}
-                    {totalPages>1&&(
-                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 20px",borderTop:"1px solid #e2e8f0",background:"#f8fafc"}}>
-                        <span style={{fontSize:12,color:"#64748b"}}>
-                          Showing {((safePage-1)*PAGE_SIZE)+1}–{Math.min(safePage*PAGE_SIZE,sorted.length)} of {sorted.length} records
-                        </span>
-                        <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                          <button onClick={()=>setSalesPage(p=>Math.max(1,p-1))} disabled={safePage===1}
-                            style={{padding:"6px 14px",borderRadius:8,border:"1px solid #e2e8f0",background:safePage===1?"#f8fafc":"white",color:safePage===1?"#cbd5e1":"#374151",fontWeight:700,fontSize:12,cursor:safePage===1?"not-allowed":"pointer",fontFamily:"inherit"}}>
-                            ← Prev
-                          </button>
-                          {Array.from({length:Math.min(totalPages,7)},(_,i)=>{
-                            const pg=totalPages<=7?i+1:(safePage<=4?i+1:safePage-3+i);
-                            if(pg<1||pg>totalPages) return null;
-                            return(
-                              <button key={pg} onClick={()=>setSalesPage(pg)}
-                                style={{width:32,height:32,borderRadius:8,border:"1px solid "+(pg===safePage?shop.accent:"#e2e8f0"),background:pg===safePage?shop.accent:"white",color:pg===safePage?"white":"#374151",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
-                                {pg}
-                              </button>
-                            );
-                          })}
-                          <button onClick={()=>setSalesPage(p=>Math.min(totalPages,p+1))} disabled={safePage===totalPages}
-                            style={{padding:"6px 14px",borderRadius:8,border:"1px solid #e2e8f0",background:safePage===totalPages?"#f8fafc":"white",color:safePage===totalPages?"#cbd5e1":"#374151",fontWeight:700,fontSize:12,cursor:safePage===totalPages?"not-allowed":"pointer",fontFamily:"inherit"}}>
-                            Next →
-                          </button>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                })()}
-              </div>
-            );
-          })()}
+          {tab==="sales"&&(
+            <SalesPanel
+              Badge={Badge}
+              customers={customers}
+              filtSales={filtSales}
+              fmt={fmt}
+              formatDate={formatDate}
+              openMenu={openMenu}
+              search={search}
+              sales={sales}
+              salesPeriod={salesPeriod}
+              setEditRow={setEditRow}
+              setInvoiceRow={setInvoiceRow}
+              setModal={setModal}
+              setOpenMenu={setOpenMenu}
+              setSalesData={setSalesData}
+              setSearch={setSearch}
+              setSelCustomer={setSelCustomer}
+              setSelRow={setSelRow}
+              setSalesPeriod={setSalesPeriod}
+              shop={shop}
+              shopId={shopId}
+              TD={TD}
+              user={user}
+              isStaff={user?.role==="staff"}
+            />
+          )}
 
           {/* ─── PURCHASES ─── */}
           {tab==="purchases"&&(
-            <div style={{fontFamily:"'DM Sans',system-ui,sans-serif"}}>
-              {/* toolbar */}
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18,flexWrap:"wrap",gap:10}}>
-                <div>
-                  <h2 style={{margin:0,fontSize:20,fontWeight:900,color:"#0f172a"}}>📦 Purchases</h2>
-                  <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>{purch.length} record{purch.length!==1?"s":""}</p>
-                </div>
-                <div style={{display:"flex",gap:8}}>
-                  <button onClick={()=>setModal("new-purchase")}
-                    style={{padding:"10px 20px",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px "+shop.accent+"44"}}>
-                    ＋ New Purchase
-                  </button>
-                </div>
-              </div>
-              {/* table */}
-              {purch.length===0?(
-                <div style={{textAlign:"center",padding:"60px 20px",background:"white",borderRadius:16,border:"1px solid #e2e8f0"}}>
-                  <p style={{fontSize:32,margin:"0 0 10px"}}>📦</p>
-                  <p style={{margin:0,fontWeight:700,color:"#64748b"}}>No purchases yet</p>
-                  <p style={{margin:"4px 0 0",fontSize:13,color:"#94a3b8"}}>Click "New Purchase" to add your first record</p>
-                </div>
-              ):(
-                <div style={{background:"white",borderRadius:16,border:"1px solid #e2e8f0",overflow:"hidden",boxShadow:"0 1px 6px rgba(0,0,0,0.05)"}}>
-                  <div style={{overflowX:"auto"}}>
-                    <table style={{width:"100%",borderCollapse:"collapse",minWidth:820}}>
-                      <thead>
-                        <tr style={{background:"#f8fafc",borderBottom:"2px solid #e2e8f0"}}>
-                          {["Date","Batch No.","Supplier","Total Qty","GST Paid","Net Total","Status","Remarks",""].map((h,i)=>(
-                            <th key={i} style={{padding:"11px 14px",textAlign:i>=3&&i<=5?"right":"left",fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em",whiteSpace:"nowrap"}}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {purch.map((p,idx)=>{
-                          const totalQty=(p.lines||[]).reduce((a,l)=>a+(parseFloat(l.qty)||0),0);
-                          const net=Number(p.netTotal||p.total)||0;
-                          const gst=Number(p.gstAmt||p.gst)||0;
-                          const statusColors={
-                            "PAID":{bg:"#dcfce7",c:"#15803d",b:"#bbf7d0"},
-                            "DISPATCHED":{bg:"#dbeafe",c:"#1d4ed8",b:"#bfdbfe"},
-                            "RECEIVED":{bg:"#d1fae5",c:"#065f46",b:"#6ee7b7"},
-                            "PENDING":{bg:"#fef9c3",c:"#a16207",b:"#fde047"},
-                          };
-                          const sc=statusColors[p.purchStatus||"PAID"]||statusColors["PAID"];
-                          return(
-                            <tr key={p.id||idx}
-                              style={{borderBottom:"1px solid #f1f5f9",transition:"background 0.12s",cursor:"pointer"}}
-                              onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
-                              onMouseLeave={e=>e.currentTarget.style.background="white"}>
-                              <td style={{padding:"12px 14px",fontSize:13,color:"#374151",whiteSpace:"nowrap"}}>{formatDate(p.date)||"—"}</td>
-                              <td style={{padding:"12px 14px",fontSize:13,fontFamily:"DM Mono,monospace",color:"#64748b"}}>{p.batch||"—"}</td>
-                              <td style={{padding:"12px 14px",fontSize:13,fontWeight:600,color:"#0f172a"}}>{p.supplier||"—"}</td>
-                              <td style={{padding:"12px 14px",fontSize:13,textAlign:"right",fontWeight:700,color:"#374151"}}>{totalQty||"—"}</td>
-                              <td style={{padding:"12px 14px",fontSize:13,textAlign:"right",color:"#64748b",fontFamily:"DM Mono,monospace"}}>{shop.symbol}{gst.toLocaleString("en-GB",{minimumFractionDigits:2})}</td>
-                              <td style={{padding:"12px 14px",fontSize:13,textAlign:"right",fontWeight:800,color:shop.accent,fontFamily:"DM Mono,monospace"}}>{shop.symbol}{net.toLocaleString("en-GB",{minimumFractionDigits:2})}</td>
-                              <td style={{padding:"12px 14px"}}>
-                                <span style={{display:"inline-flex",alignItems:"center",padding:"3px 10px",borderRadius:999,fontSize:11,fontWeight:700,background:sc.bg,color:sc.c,border:"1px solid "+sc.b,whiteSpace:"nowrap"}}>
-                                  {p.purchStatus||"PAID"}
-                                </span>
-                              </td>
-                              <td style={{padding:"12px 14px",fontSize:12,color:"#94a3b8",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.remarks||"—"}</td>
-                              <td style={{padding:"12px 10px",whiteSpace:"nowrap"}}>
-                                <div style={{display:"flex",gap:5}}>
-                                  <button onClick={e=>{e.stopPropagation();setSelPurch(p);}}
-                                    title="View details"
-                                    style={{padding:"5px 10px",borderRadius:8,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
-                                    👁 View
-                                  </button>
-                                  <button onClick={e=>{e.stopPropagation();setEditPurchId(p.id);}}
-                                    title="Edit status"
-                                    style={{padding:"5px 10px",borderRadius:8,border:"1px solid "+shop.accent+"55",background:shop.accentBg,color:shop.accentText,fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
-                                    ✏️ Edit
-                                  </button>
-                                  <button onClick={e=>{e.stopPropagation();if(window.confirm("Delete purchase "+(p.purchaseId||p.id)+"?"))deletePurchase(shopId,p.id);}}
-                                    title="Delete"
-                                    style={{padding:"5px 8px",borderRadius:8,border:"1px solid #fee2e2",background:"#fff1f2",color:"#ef4444",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
-                                    🗑️
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              )}
-            </div>
+            <PurchasesPanel
+              Badge={Badge}
+              fmt={fmt}
+              onExport={()=>setModal("export-purchases")}
+              onImport={()=>setModal("import-purchases")}
+              onNewPurchase={()=>setModal("new-purchase")}
+              purch={purch}
+              shop={shop}
+              shopId={shopId}
+            />
           )}
 
           {/* ─── CUSTOMERS ─── */}
@@ -2014,17 +1556,21 @@ return(
 
           {/* ─── SUPPLIERS ─── */}
           {tab==="suppliers"&&(
-            <SuppliersPanel shop={shop} suppliers={SUPPLIERS}/>
+            <SuppliersPanel shop={shop} shopId={shopId} suppliers={suppliers}
+            onSaveSupplier={async(s)=>{ setSuppData(prev=>({...prev,[shopId]:[s,...(prev[shopId]||[]).filter(x=>x.id!==s.id)]})); await dbSaveSupplier(shopId,s).catch(e=>console.error(e)); }}
+            onDeleteSupplier={async(id)=>{ setSuppData(prev=>({...prev,[shopId]:(prev[shopId]||[]).filter(x=>x.id!==id)})); await dbDeleteSupplier(id,shopId).catch(e=>console.error(e)); }}/>
           )}
 
           {/* ─── PRODUCTS ─── */}
           {tab==="products"&&(
-            <ProductsPanel lowStk={lowStk} products={PRODUCTS} shop={shop}/>
+            <ProductsPanel lowStk={lowStk} products={products} shop={shop} shopId={shopId}
+            onSaveProduct={async(p)=>{ setProdData(prev=>({...prev,[shopId]:[p,...(prev[shopId]||[]).filter(x=>x.id!==p.id)]})); await dbSaveProduct(shopId,p).catch(e=>console.error(e)); }}
+            onDeleteProduct={async(id)=>{ setProdData(prev=>({...prev,[shopId]:(prev[shopId]||[]).filter(x=>x.id!==id)})); await dbDeleteProduct(id,shopId).catch(e=>console.error(e)); }}/>
           )}
 
           {/* ─── LOGISTICS ─── */}
           {tab==="logistics"&&(
-            <LogisticsPanel logs={logs} onNewShipment={()=>setModal("new-shipment")} shop={shop}/>
+            <LogisticsPanel logs={logs} onNewShipment={()=>setModal("new-shipment")} shop={shop} shopId={shopId}/>
           )}
 
           {/* ─── AGENTS ─── */}
@@ -2034,7 +1580,9 @@ return(
 
           {/* ─── EXPENSES ─── */}
           {tab==="expenses"&&(
-            <ExpensesPanel exps={exps} fmt={fmt} shop={shop} shopId={shopId} totExp={totExp}/>
+            <ExpensesPanel exps={exps} fmt={fmt} shop={shop} shopId={shopId} totExp={totExp}
+            onSaveExpense={async(e)=>{ setExpData(prev=>({...prev,[shopId]:[e,...(prev[shopId]||[]).filter(x=>x.id!==e.id)]})); await dbSaveExpense(shopId,e).catch(err=>console.error(err)); }}
+            onDeleteExpense={async(id)=>{ setExpData(prev=>({...prev,[shopId]:(prev[shopId]||[]).filter(x=>x.id!==id)})); await dbDeleteExpense(id,shopId).catch(e=>console.error(e)); }}/>
           )}
 
           {/* ─── DOCUMENTS ─── */}
@@ -2086,56 +1634,7 @@ return(
       {/* ── IMPORT MODAL — SALES ── */}
       {modal==="import-sales"&&user?.role!=="staff"&&(
         <Modal title="⬇ Import Sales" onClose={()=>setModal(null)} accent={shop.accent}>
-          <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}
-            onImport={(rows)=>{
-              // 1. Update sales state instantly (localStorage persisted via wrapped setSalesData)
-              setSalesData(prev=>{
-                const existing=prev[shopId]||[];
-                const existingIds=new Set(existing.map(s=>s.id));
-                const fresh=rows.filter(r=>r.id&&!existingIds.has(r.id));
-                return {...prev,[shopId]:[...fresh,...existing]};
-              });
-              // 2. Auto-update customer database from imported rows
-              setCustomers(prev=>{
-                const updated=[...prev];
-                rows.forEach(row=>{
-                  if(!row.customer) return;
-                  const idx=updated.findIndex(c=>c.name===row.customer);
-                  if(idx>=0){
-                    // update existing customer
-                    updated[idx]={
-                      ...updated[idx],
-                      phone: updated[idx].phone||row.phone||row.contact||"",
-                      whatsapp: updated[idx].whatsapp||row.phone||row.contact||"",
-                      address: updated[idx].address||row.address||"",
-                      purchases: (updated[idx].purchases||0)+1,
-                      spend: (updated[idx].spend||0)+(Number(row.amount)||0),
-                      last: row.date||updated[idx].last||"",
-                    };
-                  } else {
-                    // create new customer
-                    updated.push({
-                      id:"CUST-"+Date.now()+"-"+Math.random().toString(36).slice(2,6),
-                      name: row.customer,
-                      phone: row.phone||row.contact||"",
-                      whatsapp: row.phone||row.contact||"",
-                      address: row.address||"",
-                      tag: "New Customer",
-                      notes: "",
-                      purchases: 1,
-                      spend: Number(row.amount)||0,
-                      last: row.date||"",
-                    });
-                  }
-                });
-                return updated;
-              });
-              // 3. Persist to Supabase (best-effort)
-              rows.forEach(row=>{
-                dbSaveSale(shopId, row).catch(()=>{});
-              });
-            }}
-          />
+          <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)} onImported={(rows)=>{rows.forEach(s=>{setSalesData(d=>({...d,[shopId]:[s,...(d[shopId]||[])]}));dbSaveSale(shopId,s).catch(()=>{});});dbLoadSales(shopId).then(data=>{if(data)setSalesData(prev=>({...prev,[shopId]:data}));}).catch(()=>{});setModal(null);}}/>
         </Modal>
       )}
 
@@ -2231,21 +1730,28 @@ return(
       {/* ── NEW SHIPMENT MODAL ── */}
       {modal==="new-shipment"&&(
         <Modal title="🚚 New Shipment" onClose={()=>setModal(null)} accent={shop.accent}>
-          <NewShipmentForm shopId={shopId} shop={shop} purch={purch} onSave={()=>setModal(null)} onClose={()=>setModal(null)}/>
+          <NewShipmentForm shopId={shopId} shop={shop} purch={purch}
+            onSave={async(form)=>{
+              const newL={...form,id:form.shipId||("SHP-"+Date.now())};
+              setLogData(prev=>({...prev,[shopId]:[newL,...(prev[shopId]||[])]}));
+              setModal(null);
+              await dbSaveLogistic(shopId,newL).catch(e=>console.error(e));
+              dbLoadLogistics(shopId).then(data=>{if(data) setLogData(prev=>({...prev,[shopId]:data}));}).catch(()=>{});
+            }}
+            onClose={()=>setModal(null)}/>
         </Modal>
       )}
 
       {/* ── NEW PURCHASE MODAL ── */}
       {modal==="new-purchase"&&(
         <Modal title="📦 New Purchase" onClose={()=>setModal(null)} accent={shop.accent}>
-          <NewPurchaseForm shopId={shopId} shop={shop} lastPurchNum={purch.length>0?parseInt((purch[0].id||"0").replace(/[^0-9]/g,""))||700:700}
-            shopItems={(shopItems||{})[shopId]||[]}
-            onAddShopItem={(item)=>{
-              const current=(shopItems||{})[shopId]||[];
-              const updated={...(shopItems||{}),[shopId]:[...new Set([...current,item])]};
-              if(saveShopItems) saveShopItems(updated);
-            }}
-            onSave={(form)=>{savePurchase(shopId,{...form,id:form.purchaseId||("PO-"+Date.now()),savedAt:new Date().toISOString()});setModal(null);}} onClose={()=>setModal(null)}/>
+          <NewPurchaseForm shopId={shopId} shop={shop} lastPurchNum={purch.length>0?parseInt((purch[0].id||"0").replace(/[^0-9]/g,""))||700:700} onSave={async(form)=>{
+            const newP={...form,id:form.purchaseId||form.id};
+            setPurchData(prev=>({...prev,[shopId]:[newP,...(prev[shopId]||[])]}));
+            setModal(null);
+            await dbSavePurchase(shopId,newP).catch(e=>console.error(e));
+            dbLoadPurchases(shopId).then(data=>{if(data) setPurchData(prev=>({...prev,[shopId]:data}));}).catch(()=>{});
+          }} onClose={()=>setModal(null)}/>
         </Modal>
       )}
 
@@ -2795,15 +2301,11 @@ return(
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
                 <button onClick={()=>{setInvoiceRow(selRow);setSelRow(null);}}
                   style={{padding:"7px 16px",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
-                  📄 Invoice
+                  👁 View Invoice
                 </button>
                 <button onClick={()=>{setEditRow(selRow);setSelRow(null);setModal("edit-sale");}}
                   style={{padding:"7px 16px",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6,boxShadow:"0 3px 10px "+shop.accent+"44"}}>
                   ✏️ Edit
-                </button>
-                <button onClick={()=>{if(window.confirm("Delete sale "+selRow.id+"? This cannot be undone.")){setSalesData(d=>({...d,[shopId]:d[shopId].filter(s=>s.id!==selRow.id)}));setSelRow(null);}}}
-                  style={{padding:"7px 14px",borderRadius:9,border:"1px solid #fee2e2",background:"#fff1f2",color:"#ef4444",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
-                  🗑️
                 </button>
                 <button onClick={()=>setSelRow(null)}
                   style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
@@ -2936,154 +2438,6 @@ return(
         </div>
       )}
 
-      {/* ── PURCHASE EDIT MODAL ── */}
-      {editPurchId&&(()=>{
-        const ep=purch.find(p=>p.id===editPurchId);
-        if(!ep) return null;
-        const SC={PAID:"#15803d",DISPATCHED:"#1d4ed8",RECEIVED:"#065f46",PENDING:"#a16207"};
-        return(
-          <div style={{position:"fixed",inset:0,zIndex:70,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
-            onClick={()=>setEditPurchId(null)}>
-            <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.50)",backdropFilter:"blur(6px)"}}/>
-            <div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.25)",width:"100%",maxWidth:480,zIndex:71,overflow:"hidden"}}
-              onClick={e=>e.stopPropagation()}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 22px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"10",borderRadius:"20px 20px 0 0"}}>
-                <div>
-                  <h3 style={{margin:0,fontSize:16,fontWeight:800,color:"#0f172a"}}>✏️ Edit Purchase</h3>
-                  <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b",fontFamily:"DM Mono,monospace"}}>{ep.purchaseId||ep.id}</p>
-                </div>
-                <button onClick={()=>setEditPurchId(null)} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
-              </div>
-              <PurchEditForm
-                purchase={ep}
-                shop={shop}
-                onSave={(updated)=>{updatePurchase(shopId,updated);setEditPurchId(null);if(selPurch?.id===updated.id)setSelPurch(updated);}}
-                onClose={()=>setEditPurchId(null)}
-              />
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ── PURCHASE DETAIL MODAL ── */}
-      {selPurch&&(
-        <div style={{position:"fixed",inset:0,zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
-          onClick={()=>setSelPurch(null)}>
-          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(4px)"}}/>
-          <div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.22)",width:"100%",maxWidth:720,maxHeight:"90vh",overflowY:"auto",zIndex:61}}
-            onClick={e=>e.stopPropagation()}>
-            {/* header */}
-            <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",padding:"18px 24px 14px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"08",borderRadius:"20px 20px 0 0"}}>
-              <div>
-                <h2 style={{margin:0,fontSize:18,fontWeight:900,color:"#0f172a"}}>📦 Purchase Details</h2>
-                <div style={{display:"flex",alignItems:"center",gap:10,marginTop:5}}>
-                  <span style={{fontSize:12,color:"#64748b",fontFamily:"DM Mono,monospace",fontWeight:600}}>{selPurch.purchaseId||selPurch.id}</span>
-                  <span style={{fontSize:12,color:"#94a3b8"}}>·</span>
-                  <span style={{fontSize:12,color:"#64748b"}}>📅 {formatDate(selPurch.date)}</span>
-                  {selPurch.batch&&<><span style={{fontSize:12,color:"#94a3b8"}}>·</span><span style={{fontSize:12,color:"#64748b"}}>Batch: {selPurch.batch}</span></>}
-                </div>
-              </div>
-              <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                <button onClick={()=>setEditPurchId(selPurch.id)}
-                  style={{padding:"7px 14px",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px "+shop.accent+"44"}}>
-                  ✏️ Edit
-                </button>
-                <button onClick={()=>{if(window.confirm("Delete purchase "+(selPurch.purchaseId||selPurch.id)+"? This cannot be undone.")){deletePurchase(shopId,selPurch.id);setSelPurch(null);}}}
-                  style={{padding:"7px 14px",borderRadius:9,border:"1px solid #fee2e2",background:"#fff1f2",color:"#ef4444",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-                  🗑️
-                </button>
-                <button onClick={()=>setSelPurch(null)}
-                  style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
-              </div>
-            </div>
-            <div style={{padding:"20px 24px"}}>
-              {/* top cards */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:20}}>
-                <div style={{border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 16px"}}>
-                  <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🏭 Supplier</p>
-                  <p style={{margin:"0 0 4px",fontWeight:800,fontSize:14,color:"#0f172a"}}>{selPurch.supplier||"—"}</p>
-                  <p style={{margin:0,fontSize:12,color:"#64748b"}}>Invoice: {selPurch.invoiceNo||"—"}</p>
-                </div>
-                <div style={{border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 16px"}}>
-                  <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>💳 Payment</p>
-                  <p style={{margin:"0 0 4px",fontWeight:700,fontSize:13,color:"#0f172a"}}>{selPurch.payBy||"—"}</p>
-                  <p style={{margin:0,fontSize:12,color:"#64748b"}}>Date: {formatDate(selPurch.payDate)||"—"}</p>
-                </div>
-                <div style={{border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 16px"}}>
-                  <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🚚 Logistics</p>
-                  <p style={{margin:"0 0 4px",fontWeight:700,fontSize:13,color:"#0f172a"}}>{selPurch.logisticBy||"—"}</p>
-                  <p style={{margin:0,fontSize:12,color:"#64748b",fontFamily:"DM Mono,monospace"}}>{selPurch.logisticRef||"—"}</p>
-                  {selPurch.receivedDate&&<p style={{margin:"4px 0 0",fontSize:11,color:"#64748b"}}>Received: {formatDate(selPurch.receivedDate)}</p>}
-                </div>
-              </div>
-              {/* line items */}
-              {selPurch.lines&&selPurch.lines.length>0&&(
-                <div style={{border:"1px solid #e2e8f0",borderRadius:14,overflow:"hidden",marginBottom:20}}>
-                  <div style={{padding:"11px 16px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <span style={{fontWeight:800,fontSize:13,color:"#0f172a"}}>Line Items</span>
-                    <span style={{fontSize:12,color:"#94a3b8"}}>{selPurch.lines.length} item(s)</span>
-                  </div>
-                  <table style={{width:"100%",borderCollapse:"collapse"}}>
-                    <thead>
-                      <tr style={{background:"#f8fafc"}}>
-                        {["Item","Qty","Unit Price","Total"].map((h,i)=>(
-                          <th key={h} style={{padding:"9px 14px",textAlign:i===0?"left":"right",fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em",borderBottom:"1px solid #e2e8f0"}}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {selPurch.lines.map((l,i)=>{
-                        const qty=parseFloat(l.qty)||0;
-                        const tot=parseFloat(l.lineTotal)||0;
-                        const unit=qty>0&&tot>0?(tot/qty).toFixed(2):"—";
-                        return(
-                          <tr key={i} style={{borderBottom:"1px solid #f1f5f9"}}>
-                            <td style={{padding:"11px 14px",fontWeight:700,fontSize:13,color:"#1e293b"}}>{l.item||"—"}</td>
-                            <td style={{padding:"11px 14px",textAlign:"right",fontWeight:700,color:"#374151"}}>{l.qty||"—"}</td>
-                            <td style={{padding:"11px 14px",textAlign:"right",color:"#64748b",fontFamily:"DM Mono,monospace"}}>{unit!=="—"?shop.symbol+unit:"—"}</td>
-                            <td style={{padding:"11px 14px",textAlign:"right",fontWeight:800,color:shop.accent,fontFamily:"DM Mono,monospace"}}>{shop.symbol}{tot.toLocaleString("en-GB",{minimumFractionDigits:2})}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-              {/* totals + remarks */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
-                <div style={{border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 16px"}}>
-                  <p style={{margin:"0 0 8px",fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>Remarks</p>
-                  <p style={{margin:0,fontSize:13,color:"#64748b",fontStyle:selPurch.remarks?"normal":"italic"}}>{selPurch.remarks||"—"}</p>
-                </div>
-                <div style={{border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 16px"}}>
-                  {[["Gross Total",selPurch.grossTotal],["GST / VAT",selPurch.gstAmt],["Adjustment",selPurch.adjAmt]].map(([l,v])=>(
-                    <div key={l} style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                      <span style={{fontSize:12,color:"#64748b"}}>{l}</span>
-                      <span style={{fontSize:12,fontWeight:700,color:"#374151",fontFamily:"DM Mono,monospace"}}>{shop.symbol}{(Number(v)||0).toLocaleString("en-GB",{minimumFractionDigits:2})}</span>
-                    </div>
-                  ))}
-                  <div style={{display:"flex",justifyContent:"space-between",borderTop:"2px solid #0f172a",paddingTop:8,marginTop:4}}>
-                    <span style={{fontSize:14,fontWeight:800,color:"#0f172a"}}>Net Total</span>
-                    <span style={{fontSize:16,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace"}}>{shop.symbol}{(Number(selPurch.netTotal||selPurch.total)||0).toLocaleString("en-GB",{minimumFractionDigits:2})}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* ── DOCUMENTS ── */}
-              <PurchaseDocuments
-                purchase={selPurch}
-                shop={shop}
-                onUpdate={(updated)=>{updatePurchase(shopId,updated);setSelPurch(updated);}}
-              />
-
-              <div style={{display:"flex",justifyContent:"flex-end",marginTop:16}}>
-                <button onClick={()=>setSelPurch(null)} style={{padding:"10px 28px",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Close</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
     </div>
   );
 };
@@ -3092,12 +2446,10 @@ return(
 /* ══════════════════════════════════════════════════════
    IMPORT / EXPORT PANEL
 ══════════════════════════════════════════════════════ */
-const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImport})=>{
+const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImported})=>{
   const [dragOver,setDragOver]=useState(false);
   const [fileName,setFileName]=useState(null);
   const [fileObj,setFileObj]=useState(null);
-  const [importing,setImporting]=useState(false);
-  const [importResult,setImportResult]=useState(null);
   const [fileFmt,setFileFmt]=useState("CSV");
 
   // All 22 export columns — all ON by default
@@ -3188,6 +2540,70 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImport})=>{
     a.click();
     URL.revokeObjectURL(url);
     onClose();
+  };
+
+  /* ── processRows: map imported rows → sale objects → call onImported ── */
+  const processRows=(rows)=>{
+    if(!rows||rows.length===0){alert("No data rows found in file.");return;}
+    const pfx={["ros-selections"]:"SI",["ros-hairlines"]:"SH",["ros-india"]:"IN"}[shopId]||"SI";
+    const colMap={
+      // CSV export header → sale field
+      "sale id":"id","date":"date","invoice no.":"id","invoice no":"id",
+      "customer name":"customer","customer":"customer",
+      "addressee":"addressee","address":"address","contact no.":"phone","contact no":"phone",
+      "item":"item","quantity":"qty","qty":"qty",
+      "price (excl. tax)":"price","price":"price",
+      "tax":"taxAmt","total":"amount",
+      "payment method":"pay","payment":"pay",
+      "dispatch date":"sentDate",
+      "return request":"returnReq","return received":"returnRcvd",
+      "exchange":"exchange","refund":"refundAmt",
+      "tag":"tag","remarks":"rem","re":"re",
+      "status":"ful","shop inv.":"shopInv",
+    };
+    const get=(row,keys)=>{
+      for(const k of keys){
+        const v=row[k]||row[k.toLowerCase()]||row[k.toUpperCase()]||"";
+        if(v) return String(v).trim();
+      }
+      return "";
+    };
+    const sales=rows.map((row,i)=>{
+      const lrow={};
+      Object.keys(row).forEach(k=>lrow[k.toLowerCase().trim()]=row[k]);
+      const id=get(lrow,["sale id","sale_id","id","invoice no.","invoice no","invoice_no"])||`${pfx}-IMP-${Date.now()}-${i}`;
+      const rawStatus=(get(lrow,["status","ful"])||"PENDING").toUpperCase();
+      const validStatuses=["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"];
+      const ful=validStatuses.includes(rawStatus)?"PENDING":rawStatus; // keep or fallback
+      const validFul=validStatuses.includes(rawStatus)?rawStatus:"PENDING";
+      return {
+        id,
+        date:       get(lrow,["date"])||new Date().toISOString().slice(0,10),
+        customer:   get(lrow,["customer name","customer"])||"Unknown",
+        addressee:  get(lrow,["addressee"])||"",
+        address:    get(lrow,["address"])||"",
+        phone:      get(lrow,["contact no.","contact no","contact","phone"])||"",
+        contact:    get(lrow,["contact no.","contact no","contact","phone"])||"",
+        item:       get(lrow,["item"])||"",
+        qty:        get(lrow,["quantity","qty"])||"1",
+        amount:     Number(get(lrow,["total","amount"])||0)||0,
+        pay:        get(lrow,["payment method","payment","pay"])||"SHOP",
+        ful:        validFul,
+        status:     validFul,
+        sentDate:   get(lrow,["dispatch date","sentdate","sent date"])||"",
+        returnRcvd: get(lrow,["return received","return_rcvd"])||"",
+        refundAmt:  get(lrow,["refund","refundamt"])||"",
+        tag:        get(lrow,["tag"])||"",
+        rem:        get(lrow,["remarks","rem"])||"",
+        re:         get(lrow,["re"])||"",
+        taxRate:    shopId==="ros-india"?18:20,
+        taxInclusive:true,
+      };
+    }).filter(s=>s.customer&&s.customer!=="Unknown"||s.amount>0);
+
+    if(sales.length===0){alert("No valid sales rows found. Check your column headers match the template.");return;}
+    if(onImported){onImported(sales);}
+    else{alert(`Imported ${sales.length} records.`);}
   };
 
   if(type==="export") return(
@@ -3313,7 +2729,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImport})=>{
       <div
         onDragOver={e=>{e.preventDefault();setDragOver(true);}}
         onDragLeave={()=>setDragOver(false)}
-        onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f){setFileName(f.name);setFileObj(f);setImportResult(null);}}}
+        onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f){setFileName(f.name);setFileObj(f);}}}
         style={{
           border:"2px dashed "+(dragOver?shop.accent:"#cbd5e1"),
           borderRadius:14,padding:"40px 24px",textAlign:"center",
@@ -3321,192 +2737,66 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImport})=>{
           transition:"all 0.18s",cursor:"pointer",
         }}
         onClick={()=>document.getElementById("imp-file-"+entity).click()}>
-        <input id={"imp-file-"+entity} type="file" accept=".csv,.xlsx,.xls"
+        <input id={"imp-file-"+entity} type="file" accept=".csv,.xlsx"
           style={{display:"none"}}
-          onChange={e=>{const f=e.target.files[0];if(f){setFileName(f.name);setFileObj(f);setImportResult(null);}}}/>
+          onChange={e=>{const f=e.target.files[0];if(f){setFileName(f.name);setFileObj(f);}}}/>
         <div style={{fontSize:40,marginBottom:10}}>{fileName?"✅":"📂"}</div>
         <p style={{margin:0,fontWeight:800,fontSize:15,color:fileName?shop.accent:"#374151"}}>
-          {fileName||"Drop your file here"}
+          {fileName||"Drop your CSV file here"}
         </p>
         <p style={{margin:"4px 0 0",fontSize:12,color:"#94a3b8"}}>
-          {fileName?"File ready to import":"or click to browse · CSV or Excel (.xlsx) accepted"}
+          {fileName?"File ready to import":"or click to browse · CSV accepted"}
         </p>
       </div>
-
-      {/* result feedback */}
-      {importResult&&(
-        <div style={{padding:"10px 14px",borderRadius:10,
-          background:importResult.ok?"#dcfce7":"#fee2e2",
-          border:"1px solid "+(importResult.ok?"#bbf7d0":"#fca5a5"),
-          color:importResult.ok?"#15803d":"#991b1b",
-          fontWeight:700,fontSize:13,textAlign:"center"}}>
-          {importResult.ok?"✅ ":"⚠️ "}{importResult.msg}
-        </div>
-      )}
 
       {/* actions */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
         <button
-          disabled={!fileObj||importing}
           onClick={()=>{
-            if(!fileObj||!onImport){return;}
-            setImporting(true);
-            setImportResult(null);
-
-            const processRows=(jsonRows)=>{
-              try{
-                if(!jsonRows||jsonRows.length<1){setImportResult({ok:false,msg:"File is empty or has no data rows."});setImporting(false);return;}
-
-                // Build a fully normalised lookup: strip leading "N. ", spaces, lowercase
-                const norm=k=>String(k).replace(/^\d+[.)\s]+/,"").replace(/\s+/g,"").toLowerCase();
-
-                // Show detected headers in error if we fail — helps debug
-                const detectedHeaders=Object.keys(jsonRows[0]||{}).map(k=>`"${k}"`).join(", ");
-
-                const rows=[];
-                jsonRows.forEach((rawRow,i)=>{
-                  // Build normalised map
-                  const row={};
-                  Object.keys(rawRow).forEach(k=>{
-                    const nk=norm(k);
-                    row[nk]=rawRow[k];
-                    // also store original key lowercased for fallback
-                    row[String(k).toLowerCase().trim()]=rawRow[k];
-                  });
-
-                  // Flexible getter — tries every alias, normalised and original
-                  const g=(...aliases)=>{
-                    for(const a of aliases){
-                      const v=row[norm(a)]??row[a.toLowerCase().trim()];
-                      if(v!==undefined&&v!==null&&String(v).trim()!=="") return String(v).trim();
-                    }
-                    return "";
-                  };
-
-                  // Date — handle Excel serial, DD/MM/YYYY, YYYY-MM-DD, DD-MM-YYYY
-                  let dateVal=g("date","Date");
-                  if(dateVal){
-                    if(!isNaN(Number(dateVal))&&Number(dateVal)>1000){
-                      const d=new Date(Math.round((Number(dateVal)-25569)*86400*1000));
-                      dateVal=d.toISOString().slice(0,10);
-                    } else {
-                      // try DD/MM/YYYY, DD-MM-YYYY
-                      const m=dateVal.match(/^(\d{1,2})[\/-](\d{1,2})[\/-](\d{2,4})$/);
-                      if(m){
-                        const yr=m[3].length===2?"20"+m[3]:m[3];
-                        dateVal=yr+"-"+m[2].padStart(2,"0")+"-"+m[1].padStart(2,"0");
-                      }
-                    }
-                  }
-
-                  const id=g("saleid","SaleID","sale id","Sale ID","1. Sale ID")||("IMP-"+Date.now()+"-"+i);
-                  const totalRaw=parseFloat(g("total","Total","13. Total","price","Price"))||0;
-                  const statusRaw=(g("status","Status","fulfillment","ful","delivery status")||"PENDING").toUpperCase();
-                  const payRaw=g("paymentmethod","payment method","Payment Method","payment","Payment","pay","14. Payment Method")||"SHOP";
-
-                  const mapped={
-                    id,
-                    date:dateVal,
-                    invoiceNo:g("invoiceno","invoice no","Invoice No","3. Invoice No","shopinv","shop inv","Shop Inv","4. Shop Inv")||id,
-                    customer:g("customername","customer name","Customer Name","CustomerName","5. Customer Name","customer","Customer"),
-                    addressee:g("addressee","Addressee","6. Addressee"),
-                    address:g("address","Address","7. Address"),
-                    phone:g("contactno","contact no","Contact No","8. Contact No","contact","Contact","phone"),
-                    contact:g("contactno","contact no","Contact No","8. Contact No","contact","Contact","phone"),
-                    item:g("item","Item","9. Item"),
-                    qty:g("quantity","Quantity","10. Quantity","qty","Qty")||"1",
-                    amount:totalRaw,
-                    pay:payRaw,
-                    ful:statusRaw,
-                    status:statusRaw,
-                    rem:g("remarks","Remarks","21. Remarks"),
-                    remarks:g("remarks","Remarks","21. Remarks"),
-                    tag:g("tag","Tag","20. Tag"),
-                    sentDate:g("dispatchdate","dispatch date","Dispatch Date","15. Dispatch Date"),
-                    taxInclusive:false,
-                    taxRate:(shopId==="ros-india"?18:20),
-                  };
-                  if(mapped.customer||mapped.item||mapped.amount>0) rows.push(mapped);
-                });
-
-                if(rows.length===0){
-                  setImportResult({ok:false,msg:"No valid rows found. Detected columns: "+detectedHeaders});
-                  setImporting(false);
-                  return;
-                }
-                onImport(rows);
-                setImportResult({ok:true,msg:rows.length+" record"+(rows.length!==1?"s":"")+" imported successfully!"});
-                setImporting(false);
-                setTimeout(()=>onClose(),1400);
-              }catch(err){
-                setImportResult({ok:false,msg:"Parse error: "+err.message});
-                setImporting(false);
-              }
-            };
-
-            const isXlsx=fileObj.name.match(/\.xlsx?$/i);
-            if(isXlsx){
-              // load SheetJS from CDN if not already loaded
-              const loadXLSX=()=>new Promise((resolve,reject)=>{
-                if(window.XLSX){resolve(window.XLSX);return;}
-                const s=document.createElement("script");
-                s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
-                s.onload=()=>resolve(window.XLSX);
-                s.onerror=()=>reject(new Error("Failed to load XLSX library"));
-                document.head.appendChild(s);
-              });
-              loadXLSX().then(XLSX=>{
-                const reader=new FileReader();
-                reader.onload=ev=>{
-                  try{
-                    const wb=XLSX.read(ev.target.result,{type:"array",cellDates:false});
-                    const ws=wb.Sheets[wb.SheetNames[0]];
-                    const jsonRows=XLSX.utils.sheet_to_json(ws,{defval:""});
-                    processRows(jsonRows);
-                  }catch(err){
-                    setImportResult({ok:false,msg:"XLSX parse error: "+err.message});
-                    setImporting(false);
-                  }
-                };
-                reader.onerror=()=>{setImportResult({ok:false,msg:"Could not read file."});setImporting(false);};
-                reader.readAsArrayBuffer(fileObj);
-              }).catch(err=>{
-                setImportResult({ok:false,msg:err.message});
-                setImporting(false);
-              });
-            } else {
-              // CSV path
+            if(!fileObj){alert("Please select a file first.");return;}
+            const name=(fileObj.name||"").toLowerCase();
+            /* ── XLSX ── */
+            if(name.endsWith(".xlsx")||name.endsWith(".xls")){
               const reader=new FileReader();
-              reader.onload=ev=>{
+              reader.onload=e=>{
                 try{
-                  const text=ev.target.result;
-                  const lines=text.split(/\r?\n/).filter(l=>l.trim());
-                  if(lines.length<2){setImportResult({ok:false,msg:"File is empty."});setImporting(false);return;}
-                  const headers=lines[0].split(",").map(h=>h.replace(/^"|"$/g,"").trim());
-                  const jsonRows=[];
-                  for(let i=1;i<lines.length;i++){
-                    const cells=lines[i].match(/"[^"]*"|[^,]*/g)||[];
-                    const obj={};
-                    headers.forEach((h,j)=>{obj[h]=(cells[j]||"").replace(/^"|"$/g,"").trim();});
-                    jsonRows.push(obj);
-                  }
-                  processRows(jsonRows);
-                }catch(err){
-                  setImportResult({ok:false,msg:"CSV parse error: "+err.message});
-                  setImporting(false);
-                }
+                  // XLSX imported at top of file
+                  const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"});
+                  const ws=wb.Sheets[wb.SheetNames[0]];
+                  const rows=XLSX.utils.sheet_to_json(ws,{defval:""});
+                  processRows(rows);
+                }catch(err){alert("Failed to parse XLSX: "+err.message);}
               };
-              reader.onerror=()=>{setImportResult({ok:false,msg:"Could not read file."});setImporting(false);};
+              reader.readAsArrayBuffer(fileObj);
+            } else {
+              /* ── CSV ── */
+              const reader=new FileReader();
+              reader.onload=e=>{
+                try{
+                  const text=e.target.result;
+                  const lines=text.split(/\r?\n/).filter(l=>l.trim());
+                  if(lines.length<2){alert("File appears empty.");return;}
+                  const headers=lines[0].split(",").map(h=>h.replace(/^"|"$/g,"").trim().toLowerCase());
+                  const rows=lines.slice(1).map(line=>{
+                    const vals=[];let cur="",inQ=false;
+                    for(const ch of line){if(ch==="\""&&!inQ)inQ=true;else if(ch==="\""&&inQ)inQ=false;else if(ch===","&&!inQ){vals.push(cur);cur="";}else cur+=ch;}
+                    vals.push(cur);
+                    const obj={};headers.forEach((h,i)=>obj[h]=(vals[i]||"").replace(/^"|"$/g,"").trim());
+                    return obj;
+                  }).filter(r=>Object.values(r).some(v=>v));
+                  processRows(rows);
+                }catch(err){alert("Failed to parse CSV: "+err.message);}
+              };
               reader.readAsText(fileObj);
             }
           }}
           style={{padding:"12px 0",borderRadius:11,border:"none",
-            background:fileObj&&!importing?shop.accent:"#e2e8f0",
-            color:fileObj&&!importing?"white":"#94a3b8",fontWeight:800,fontSize:14,
-            cursor:fileObj&&!importing?"pointer":"not-allowed",fontFamily:"inherit",
-            boxShadow:fileObj&&!importing?"0 4px 14px "+shop.accent+"44":"none",
+            background:fileObj?shop.accent:"#e2e8f0",
+            color:fileObj?"white":"#94a3b8",fontWeight:800,fontSize:14,
+            cursor:fileObj?"pointer":"not-allowed",fontFamily:"inherit",
+            boxShadow:fileObj?"0 4px 14px "+shop.accent+"44":"none",
             transition:"all 0.2s"}}>
-          {importing?"⏳ Importing…":"⬆ Import Now"}
+          ⬆ Import Now
         </button>
         <button onClick={onClose}
           style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",
@@ -3971,12 +3261,10 @@ const NewSupplierForm=({shop,onSave,onClose})=>{
   );
 };
 
-const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,shopItems=[],onAddShopItem})=>{
+const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
   const nextNum=(lastPurchNum||700)+1;
   const pfx={["ros-selections"]:"PO",["ros-hairlines"]:"PH",["ros-india"]:"PI"}[shopId]||"PO";
   const autoId=`${pfx}-${String(nextNum).padStart(4,"0")}`;
-
-  const blankLine=()=>({id:Date.now()+Math.random(),item:"",qty:"",lineTotal:""});
 
   const [form,setForm]=useState({
     date:        new Date().toISOString().slice(0,10),
@@ -3985,33 +3273,33 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,shopItems=[],onA
     supplier:    "",
     invoiceNo:   "",
     batch:       "",
+    item:        "",
+    itemCustom:  "",
+    qty:         "",
+    total:       "",
     gst:         "",
-    adjustment:  "",
     payBy:       "HDFC SURESH",
     payDate:     new Date().toISOString().slice(0,10),
-    purchStatus:  "PAID",
     logisticBy:  "",
     logisticRef: "",
     receivedDate:"",
     remarks:     "",
   });
-  const [lines,setLines]=useState([blankLine()]);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
-  const setLine=(id,k,v)=>setLines(ls=>ls.map(l=>l.id===id?{...l,[k]:v}:l));
-  const addLine=()=>setLines(ls=>[...ls,blankLine()]);
-  const removeLine=(id)=>setLines(ls=>ls.length>1?ls.filter(l=>l.id!==id):ls);
-
-  /* totals */
-  const grossTotal=lines.reduce((a,l)=>a+(parseFloat(l.lineTotal)||0),0);
-  const gstAmt=parseFloat(form.gst)||0;
-  const adjAmt=parseFloat(form.adjustment)||0;
-  const netTotal=grossTotal+gstAmt+adjAmt;
+  /* unit cost = total / qty — read-only, auto-calc */
+  const unitCost=(()=>{
+    const q=parseFloat(form.qty);
+    const t=parseFloat(form.total);
+    if(q>0&&t>0) return (t/q).toFixed(2);
+    return "";
+  })();
 
   const [supplierList,setSupplierList]=useState([...SUPPLIERS]);
   const [showNewSup,setShowNewSup]=useState(false);
 
   const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white",transition:"border-color 0.15s"};
+  const inpGray={...inp,background:"#f1f5f9",color:"#64748b",cursor:"not-allowed"};
   const fo=e=>e.target.style.borderColor=shop.accent;
   const bl=e=>e.target.style.borderColor="#e2e8f0";
   const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
@@ -4023,6 +3311,8 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,shopItems=[],onA
       <div style={{height:1,flex:1,background:"#f1f5f9"}}/>
     </div>
   );
+
+  const useCustomItem=form.item==="__custom__";
 
   const handleAddSupplier=(newSup)=>{
     setSupplierList(l=>[newSup,...l]);
@@ -4098,125 +3388,39 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,shopItems=[],onA
         </div>
       </div>
 
-      {/* ITEMS */}
-      <Divider title="Items"/>
-      <div style={{marginBottom:4}}>
-        {/* column headers */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 72px 100px 90px 32px",gap:8,marginBottom:6,paddingRight:2}}>
-          <span style={{...lbl,marginBottom:0}}>Item Name</span>
-          <span style={{...lbl,marginBottom:0,textAlign:"right"}}>Qty</span>
-          <span style={{...lbl,marginBottom:0,textAlign:"right"}}>Total ({shop.symbol})</span>
-          <span style={{...lbl,marginBottom:0,textAlign:"right",color:"#94a3b8"}}>Unit (auto)</span>
-          <span/>
+      {/* ITEM */}
+      <Divider title="Item / Product"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={lbl}>Item</label>
+          <select value={form.item} onChange={e=>set("item",e.target.value)} style={inp}>
+            <option value="">Select product…</option>
+            <option value="__custom__">✏️ Enter manually…</option>
+            {PRODUCTS.map(p=><option key={p.id} value={p.name}>{p.name}</option>)}
+          </select>
+          {useCustomItem&&<input value={form.itemCustom} onChange={e=>set("itemCustom",e.target.value)} placeholder="Type item name" style={{...inp,marginTop:8,border:"1px solid "+shop.accent}} autoFocus onFocus={fo} onBlur={bl}/>}
         </div>
-        {lines.map((l,i)=>{
-          const lineUnit=(parseFloat(l.qty)>0&&parseFloat(l.lineTotal)>0)
-            ?(parseFloat(l.lineTotal)/parseFloat(l.qty)).toFixed(2):"";
-          return(
-            <div key={l.id} style={{marginBottom:12}}>
-              {/* item picker tabs */}
-              {shopItems.length>0&&(
-                <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:6}}>
-                  {shopItems.map(itm=>(
-                    <button key={itm} type="button"
-                      onClick={()=>setLine(l.id,"item",itm)}
-                      style={{padding:"4px 12px",borderRadius:999,fontSize:11,fontWeight:700,
-                        cursor:"pointer",fontFamily:"inherit",border:"1px solid",transition:"all 0.15s",
-                        background:l.item===itm?shop.accent:"white",
-                        color:l.item===itm?"white":shop.accentText,
-                        borderColor:l.item===itm?shop.accent:shop.accent+"55"}}>
-                      {itm}
-                    </button>
-                  ))}
-                </div>
-              )}
-              {/* row inputs */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 72px 100px 90px 32px",gap:8,alignItems:"center"}}>
-                <div style={{display:"flex",gap:6}}>
-                  <input
-                    value={l.item}
-                    onChange={e=>setLine(l.id,"item",e.target.value)}
-                    placeholder={"Item "+(i+1)+"…"}
-                    style={{...inp,flex:1}} onFocus={fo} onBlur={bl}/>
-                  <button type="button"
-                    title="Save item as quick-select tab"
-                    onClick={()=>{if(l.item.trim()&&onAddShopItem)onAddShopItem(l.item.trim());}}
-                    style={{flexShrink:0,padding:"0 10px",height:36,borderRadius:9,border:"1px solid "+shop.accent+"66",
-                      background:shop.accentBg,color:shop.accentText,fontSize:11,fontWeight:700,
-                      cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
-                    +Tab
-                  </button>
-                </div>
-                <input type="number" min="0" value={l.qty}
-                  onChange={e=>setLine(l.id,"qty",e.target.value)}
-                  placeholder="0" style={{...inp,textAlign:"right"}} onFocus={fo} onBlur={bl}/>
-                <input type="number" min="0" value={l.lineTotal}
-                  onChange={e=>setLine(l.id,"lineTotal",e.target.value)}
-                  placeholder="0.00" style={{...inp,textAlign:"right"}} onFocus={fo} onBlur={bl}/>
-                <input readOnly value={lineUnit}
-                  placeholder="—"
-                  style={{...inp,textAlign:"right",background:"#f8fafc",color:"#64748b",cursor:"default",fontSize:12}}/>
-                <button onClick={()=>removeLine(l.id)} title="Remove"
-                  style={{width:32,height:32,borderRadius:8,border:"1px solid #fee2e2",background:"#fff1f2",color:"#ef4444",fontWeight:900,fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.15s"}}
-                  onMouseEnter={e=>e.currentTarget.style.background="#fee2e2"}
-                  onMouseLeave={e=>e.currentTarget.style.background="#fff1f2"}>
-                  ×
-                </button>
-              </div>
-            </div>
-          );
-        })}
-        <button onClick={addLine}
-          style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:9,border:"1px dashed "+shop.accent,background:shop.accent+"0d",color:shop.accent,fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",marginBottom:16}}
-          onMouseEnter={e=>e.currentTarget.style.background=shop.accent+"1a"}
-          onMouseLeave={e=>e.currentTarget.style.background=shop.accent+"0d"}>
-          + Add Another Item
-        </button>
-      </div>
-
-      {/* INVOICE TOTALS */}
-      <Divider title="Invoice Totals"/>
-      <div style={{background:"#f8fafc",borderRadius:12,padding:"14px 16px",marginBottom:16,border:"1px solid #e2e8f0"}}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-          <div>
-            <label style={lbl}>GST / VAT Amount ({shop.symbol})</label>
-            <input type="number" value={form.gst} onChange={e=>set("gst",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
-          </div>
-          <div>
-            <label style={lbl}>Adjustment ({shop.symbol})</label>
-            <input type="number" value={form.adjustment} onChange={e=>set("adjustment",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
-          </div>
+        <div>
+          <label style={lbl}>Total Quantity</label>
+          <input type="number" min="1" value={form.qty} onChange={e=>set("qty",e.target.value)} placeholder="0" style={inp} onFocus={fo} onBlur={bl}/>
         </div>
-        <div style={{borderTop:"1px solid #e2e8f0",paddingTop:10,display:"flex",flexDirection:"column",gap:6}}>
-          {[
-            {l:"Gross Total",v:grossTotal,muted:true},
-            {l:"GST / VAT",v:gstAmt,muted:true},
-            {l:"Adjustment",v:adjAmt,muted:true},
-          ].map(r=>(
-            <div key={r.l} style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-              <span style={{fontSize:12,color:"#64748b",fontWeight:600}}>{r.l}</span>
-              <span style={{fontSize:13,color:"#374151",fontWeight:700,fontFamily:"DM Mono,monospace"}}>{shop.symbol}{r.v.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-            </div>
-          ))}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",borderTop:"2px solid #0f172a",paddingTop:8,marginTop:2}}>
-            <span style={{fontSize:14,color:"#0f172a",fontWeight:800}}>Net Invoice Total</span>
-            <span style={{fontSize:18,color:shop.accent,fontWeight:900,fontFamily:"DM Mono,monospace"}}>{shop.symbol}{netTotal.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
-          </div>
+        <div>
+          <label style={lbl}>Total Amount ({shop.symbol})</label>
+          <input type="number" value={form.total} onChange={e=>set("total",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+        <div>
+          <label style={{...lbl,color:"#94a3b8"}}>Unit Cost ({shop.symbol}) <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0}}>— auto</span></label>
+          <input readOnly value={unitCost} placeholder="Auto-calculated" style={inpGray}/>
+        </div>
+        <div>
+          <label style={lbl}>GST / VAT ({shop.currency==="INR"?"%":"£"})</label>
+          <input type="number" value={form.gst} onChange={e=>set("gst",e.target.value)} placeholder="0" style={inp} onFocus={fo} onBlur={bl}/>
         </div>
       </div>
 
       {/* PAYMENT */}
       <Divider title="Payment"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Purchase Status</label>
-          <select value={form.purchStatus} onChange={e=>set("purchStatus",e.target.value)}
-            style={{...inp,fontWeight:700,color:{PAID:"#15803d",DISPATCHED:"#1d4ed8",RECEIVED:"#065f46",PENDING:"#a16207"}[form.purchStatus]||"#374151"}}>
-            {["PAID","DISPATCHED","RECEIVED","PENDING"].map(o=>(
-              <option key={o} value={o}>{o}</option>
-            ))}
-          </select>
-        </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         <div>
           <label style={lbl}>Payment By</label>
           <select value={form.payBy==="OTHER"||!["REMITLY SURESH","REMITLY BINITHA","HDFC SURESH","HDFC BINITHA","ROS INDIA","OTHER"].includes(form.payBy)?"OTHER":form.payBy}
@@ -4264,7 +3468,7 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,shopItems=[],onA
 
       {/* ACTIONS */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...form,lines,grossTotal,gstAmt,adjAmt,netTotal,total:netTotal})}
+        <button onClick={()=>onSave(form)}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Purchase
         </button>
@@ -4698,7 +3902,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
       <div style={{marginBottom:16}}>
         <label style={lbl}>Payment By</label>
         <select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>
-          {["PAID","SHOP","BANK","EXCHANGE","GIFT","PROMOTION","DISPATCHED","RECEIVED"].map(o=><option key={o}>{o}</option>)}
+          {["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"].map(o=><option key={o}>{o}</option>)}
         </select>
       </div>
 
@@ -5638,14 +4842,13 @@ export default function App(){
   });
   const [users,setUsers]=useState(INITIAL_USERS);
   const [settingsOpen,setSettingsOpen]=useState(false);
-  const [salesData,setSalesData]=useState(()=>{
-    // Load from localStorage immediately — instant, survives refresh
-    try{
-      const s=localStorage.getItem("ros_salesData");
-      return s?JSON.parse(s):{"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
-    }catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
-  });
-  const [customers,setCustomers]=useState([]);
+  const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
+  const [purchData,setPurchData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
+  const [expData,setExpData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
+  const [logData,setLogData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
+  const [suppData,setSuppData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
+  const [prodData,setProdData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
+  const [customers,setCustomers]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
   const [shopItems,setShopItems]=useState(()=>{
     try{const s=localStorage.getItem("ros_shopItems");return s?JSON.parse(s):{"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
     catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
@@ -5655,36 +4858,36 @@ export default function App(){
     try{localStorage.setItem("ros_shopItems",JSON.stringify(updated));}catch{}
   };
 
-  // Always persist salesData to localStorage whenever it changes
-  const updateSalesData=(updater)=>{
-    setSalesData(prev=>{
-      const next=typeof updater==="function"?updater(prev):updater;
-      try{localStorage.setItem("ros_salesData",JSON.stringify(next));}catch{}
-      return next;
-    });
-  };
+  const updateSalesData=setSalesData;
 
-  // Sync with Supabase on mount — MERGE, never overwrite local data
+  // Load from Supabase on mount - Supabase is single source of truth
   useEffect(()=>{
+    const FULFILLED_CUTOFF="2026-02-20";
     const shops=["ros-selections","ros-hairlines","ros-india"];
     shops.forEach(sid=>{
-      dbLoadSales(sid).then(dbData=>{
-        if(!dbData||dbData.length===0) return;
-        setSalesData(prev=>{
-          const existing=prev[sid]||[];
-          const existingIds=new Set(existing.map(s=>s.id));
-          // add any rows from Supabase not already in local
-          const fromDb=dbData.filter(s=>!existingIds.has(s.id));
-          const merged=[...existing,...fromDb];
-          const next={...prev,[sid]:merged};
-          try{localStorage.setItem("ros_salesData",JSON.stringify(next));}catch{}
-          return next;
+      dbLoadSales(sid).then(data=>{
+        if(!data) return;
+        // Auto-mark PENDING sales on or before 20 Feb 2026 as FULFILLED
+        const updated=data.map(s=>{
+          const isPending=(s.ful||s.status||"PENDING")==="PENDING";
+          const isOld=(s.date||"")<=FULFILLED_CUTOFF;
+          if(isPending&&isOld){
+            const patched={...s,ful:"FULFILLED",status:"FULFILLED"};
+            // Persist the change back to Supabase silently
+            dbSaveSale(sid,patched).catch(()=>{});
+            return patched;
+          }
+          return s;
         });
+        setSalesData(prev=>({...prev,[sid]:updated}));
       }).catch(()=>{});
     });
-    dbLoadCustomers().then(data=>{
-      if(data&&data.length>0) setCustomers(data);
-    }).catch(()=>{});
+    dbLoadPurchases(sid).then(data=>{ if(data) setPurchData(prev=>({...prev,[sid]:data})); }).catch(()=>{});
+      dbLoadExpenses(sid).then(data=>{ if(data) setExpData(prev=>({...prev,[sid]:data})); }).catch(()=>{});
+      dbLoadLogistics(sid).then(data=>{ if(data) setLogData(prev=>({...prev,[sid]:data})); }).catch(()=>{});
+      dbLoadCustomers(sid).then(data=>{ if(data) setCustomers(prev=>({...prev,[sid]:data})); }).catch(()=>{});
+      dbLoadSuppliers(sid).then(data=>{ if(data) setSuppData(prev=>({...prev,[sid]:data})); }).catch(()=>{});
+      dbLoadProducts(sid).then(data=>{ if(data) setProdData(prev=>({...prev,[sid]:data})); }).catch(()=>{}));
   },[]);
 
   const handleLogin=u=>{
@@ -5711,7 +4914,19 @@ export default function App(){
   const activeShop = shop || (user.role==="staff" && allowedShops.length===1 ? allowedShops[0] : null);
 
   if(activeShop&&allowedShops.includes(activeShop))
-    return <ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={updateSalesData} customers={customers} setCustomers={setCustomers} shopItems={shopItems} saveShopItems={saveShopItems}/>;
+    return <ShopDashboard
+    shopId={activeShop}
+    onBack={()=>{if(user.role!=="staff"){setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}}}
+    user={user} onLogout={handleLogout}
+    salesData={salesData} setSalesData={updateSalesData}
+    customers={customers[activeShop]||[]} setCustomers={(d)=>setCustomers(prev=>({...prev,[activeShop]:d}))}
+    shopItems={shopItems} saveShopItems={saveShopItems}
+    purchData={purchData} setPurchData={setPurchData}
+    expData={expData} setExpData={setExpData}
+    logData={logData} setLogData={setLogData}
+    suppData={suppData} setSuppData={setSuppData}
+    prodData={prodData} setProdData={setProdData}
+  />;
 
   return(
     <>
