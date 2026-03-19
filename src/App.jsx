@@ -2599,7 +2599,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImported})=>{
         taxRate:    shopId==="ros-india"?18:20,
         taxInclusive:true,
       };
-    }).filter(s=>s.customer&&s.customer!=="Unknown"||s.amount>0);
+    }).filter(s=>(s.customer&&s.customer!=="Unknown")||(s.amount>0));
 
     if(sales.length===0){alert("No valid sales rows found. Check your column headers match the template.");return;}
     if(onImported){onImported(sales);}
