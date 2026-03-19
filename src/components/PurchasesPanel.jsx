@@ -35,6 +35,21 @@ function fyLabel(startYear) {
   return `FY ${startYear}–${String(startYear + 1).slice(-2)}`;
 }
 
+/* ── toSortableDate: normalise any date format to yyyy-mm-dd for sorting ──
+   Stored as ISO (yyyy-mm-dd) from Supabase.
+   Also handles dd-mm-yyyy, dd/mm/yyyy, dd-mm-yy display formats. ── */
+function toSortableDate(raw) {
+  if (!raw) return "0000-00-00";
+  const s = String(raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const dmy4 = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+  if (dmy4) return `${dmy4[3]}-${dmy4[2].padStart(2,"0")}-${dmy4[1].padStart(2,"0")}`;
+  const dmy2 = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2})$/);
+  if (dmy2) return `20${dmy2[3]}-${dmy2[2].padStart(2,"0")}-${dmy2[1].padStart(2,"0")}`;
+  return "0000-00-00";
+}
+
+
 /**
  * Injects separator objects into a descending-date-sorted list.
  *   { _type: "fy",    _fyStart, _label }   — at every 1-April FY boundary
@@ -99,7 +114,7 @@ export default function PurchasesPanel({
 
   /* ── Sort descending by date ─────────────────────────────────────────── */
   const sorted = useMemo(
-    () => [...filtered].sort((a, b) => (b.date || "").localeCompare(a.date || "")),
+    () => [...filtered].sort((a, b) => toSortableDate(b.date).localeCompare(toSortableDate(a.date))),
     [filtered]
   );
 

@@ -4,11 +4,10 @@ const url = process.env.REACT_APP_SUPABASE_URL;
 const key = process.env.REACT_APP_SUPABASE_ANON_KEY;
 const sb = (url && key) ? createClient(url, key) : null;
 
-/* ─── helpers ─────────────────────────────────────────────── */
 const today = () => new Date().toISOString().split('T')[0];
 
 /* ═══════════════════════════════════════════════════════════
-   SALES  (shop-isolated via shop_id)
+   SALES
    ═══════════════════════════════════════════════════════════ */
 export const dbSaveSale = async (shopId, sale) => {
   if (!sb) return;
@@ -46,7 +45,8 @@ export const dbSaveSale = async (shopId, sale) => {
 export const dbLoadSales = async (shopId) => {
   if (!sb) return null;
   const { data, error } = await sb.from('sales').select('*')
-    .eq('shop_id', shopId).order('date', { ascending: false });
+    .eq('shop_id', shopId)
+    .order('date', { ascending: false });         // ← sort by actual date
   if (error) { console.error('Load sales error:', error); return null; }
   return data.map(r => ({
     id:           r.id,
@@ -55,7 +55,7 @@ export const dbLoadSales = async (shopId) => {
     status:       r.status || '',
     pay:          r.pay || '',
     ful:          r.ful || '',
-    date:         r.date || r.created_at?.split('T')[0] || '',
+    date:         r.date || '',
     item:         r.item || '',
     qty:          r.qty || '1',
     contact:      r.contact || '',
@@ -79,7 +79,7 @@ export const dbDeleteSale = async (id, shopId) => {
 };
 
 /* ═══════════════════════════════════════════════════════════
-   PURCHASES  (shop-isolated via shop_id)
+   PURCHASES
    ═══════════════════════════════════════════════════════════ */
 export const dbSavePurchase = async (shopId, p) => {
   if (!sb) return;
@@ -87,23 +87,23 @@ export const dbSavePurchase = async (shopId, p) => {
     .eq('id', p.id).eq('shop_id', shopId).maybeSingle();
 
   const payload = {
-    id:             p.id,
-    shop_id:        shopId,
-    date:           p.date || today(),
-    supplier:       p.supplier || p.sup || '',
-    invoice_no:     p.invoiceNo || '',
-    batch:          p.batch || '',
-    item:           p.item || p.itemCustom || '',
-    qty:            p.qty || '',
-    total:          Number(p.total) || 0,
-    gst:            Number(p.gst) || 0,
-    pay_by:         p.payBy || '',
-    pay_date:       p.payDate || '',
-    logistic_by:    p.logisticBy || '',
-    logistic_ref:   p.logisticRef || '',
-    received_date:  p.receivedDate || '',
-    remarks:        p.remarks || '',
-    status:         p.status || 'PENDING',
+    id:            p.id,
+    shop_id:       shopId,
+    date:          p.date || today(),
+    supplier:      p.supplier || p.sup || '',
+    invoice_no:    p.invoiceNo || '',
+    batch:         p.batch || '',
+    item:          p.item || p.itemCustom || '',
+    qty:           p.qty || '',
+    total:         Number(p.total) || 0,
+    gst:           Number(p.gst) || 0,
+    pay_by:        p.payBy || '',
+    pay_date:      p.payDate || null,
+    logistic_by:   p.logisticBy || '',
+    logistic_ref:  p.logisticRef || '',
+    received_date: p.receivedDate || null,
+    remarks:       p.remarks || '',
+    status:        p.status || 'PENDING',
   };
 
   const { error } = existing
@@ -117,7 +117,8 @@ export const dbSavePurchase = async (shopId, p) => {
 export const dbLoadPurchases = async (shopId) => {
   if (!sb) return null;
   const { data, error } = await sb.from('purchases').select('*')
-    .eq('shop_id', shopId).order('date', { ascending: false });
+    .eq('shop_id', shopId)
+    .order('date', { ascending: false });         // ← sort by actual date
   if (error) { console.error('Load purchases error:', error); return null; }
   return data.map(r => ({
     id:           r.id,
@@ -149,7 +150,7 @@ export const dbDeletePurchase = async (id, shopId) => {
 };
 
 /* ═══════════════════════════════════════════════════════════
-   EXPENSES  (shop-isolated via shop_id)
+   EXPENSES
    ═══════════════════════════════════════════════════════════ */
 export const dbSaveExpense = async (shopId, e) => {
   if (!sb) return;
@@ -157,14 +158,14 @@ export const dbSaveExpense = async (shopId, e) => {
     .eq('id', e.id).eq('shop_id', shopId).maybeSingle();
 
   const payload = {
-    id:       e.id,
-    shop_id:  shopId,
-    date:     e.date || today(),
-    cat:      e.cat || '',
-    desc:     e.desc || '',
-    amount:   Number(e.amount) || 0,
-    method:   e.method || '',
-    notes:    e.notes || '',
+    id:      e.id,
+    shop_id: shopId,
+    date:    e.date || today(),
+    cat:     e.cat || '',
+    "desc":  e.desc || '',
+    amount:  Number(e.amount) || 0,
+    method:  e.method || '',
+    notes:   e.notes || '',
   };
 
   const { error } = existing
@@ -178,7 +179,8 @@ export const dbSaveExpense = async (shopId, e) => {
 export const dbLoadExpenses = async (shopId) => {
   if (!sb) return null;
   const { data, error } = await sb.from('expenses').select('*')
-    .eq('shop_id', shopId).order('date', { ascending: false });
+    .eq('shop_id', shopId)
+    .order('date', { ascending: false });         // ← sort by actual date
   if (error) { console.error('Load expenses error:', error); return null; }
   return data.map(r => ({
     id:     r.id,
@@ -200,7 +202,7 @@ export const dbDeleteExpense = async (id, shopId) => {
 };
 
 /* ═══════════════════════════════════════════════════════════
-   LOGISTICS  (shop-isolated via shop_id)
+   LOGISTICS
    ═══════════════════════════════════════════════════════════ */
 export const dbSaveLogistic = async (shopId, l) => {
   if (!sb) return;
@@ -230,7 +232,8 @@ export const dbSaveLogistic = async (shopId, l) => {
 export const dbLoadLogistics = async (shopId) => {
   if (!sb) return null;
   const { data, error } = await sb.from('logistics').select('*')
-    .eq('shop_id', shopId).order('created_at', { ascending: false });
+    .eq('shop_id', shopId)
+    .order('created_at', { ascending: false });   // logistics has no date field
   if (error) { console.error('Load logistics error:', error); return null; }
   return data.map(r => ({
     id:     r.id,
@@ -253,12 +256,10 @@ export const dbDeleteLogistic = async (id, shopId) => {
 };
 
 /* ═══════════════════════════════════════════════════════════
-   CUSTOMERS  (shop-isolated via shop_id)
+   CUSTOMERS  (shop-isolated)
    ═══════════════════════════════════════════════════════════ */
 export const dbSaveCustomer = async (shopId, customer) => {
   if (!sb) return;
-
-  /* Unique key is (id, shop_id) — same person can be customer in multiple shops */
   const { data: existing } = await sb.from('customers').select('id')
     .eq('id', customer.id).eq('shop_id', shopId).maybeSingle();
 
@@ -316,7 +317,7 @@ export const dbDeleteCustomer = async (id, shopId) => {
 };
 
 /* ═══════════════════════════════════════════════════════════
-   SUPPLIERS  (shop-isolated via shop_id)
+   SUPPLIERS  (shop-isolated)
    ═══════════════════════════════════════════════════════════ */
 export const dbSaveSupplier = async (shopId, s) => {
   if (!sb) return;
@@ -369,7 +370,7 @@ export const dbDeleteSupplier = async (id, shopId) => {
 };
 
 /* ═══════════════════════════════════════════════════════════
-   PRODUCTS  (shop-isolated via shop_id)
+   PRODUCTS  (shop-isolated)
    ═══════════════════════════════════════════════════════════ */
 export const dbSaveProduct = async (shopId, p) => {
   if (!sb) return;
@@ -377,16 +378,16 @@ export const dbSaveProduct = async (shopId, p) => {
     .eq('id', p.id).eq('shop_id', shopId).maybeSingle();
 
   const payload = {
-    id:       p.id,
-    shop_id:  shopId,
-    name:     p.name || '',
-    sku:      p.sku || '',
-    cat:      p.cat || '',
-    cost:     Number(p.cost) || 0,
-    sell:     Number(p.sell) || 0,
-    stock:    Number(p.stock) || 0,
-    min:      Number(p.min) || 0,
-    notes:    p.notes || '',
+    id:      p.id,
+    shop_id: shopId,
+    name:    p.name || '',
+    sku:     p.sku || '',
+    cat:     p.cat || '',
+    cost:    Number(p.cost) || 0,
+    sell:    Number(p.sell) || 0,
+    stock:   Number(p.stock) || 0,
+    min:     Number(p.min) || 0,
+    notes:   p.notes || '',
   };
 
   const { error } = existing

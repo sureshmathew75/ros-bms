@@ -50,25 +50,35 @@ function filterByPeriod(sales, period) {
 function monthKey(dateStr) {
   if (!dateStr) return "";
   const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return "";
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 function monthLabel(dateStr) {
   if (!dateStr) return "";
-  const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return "";
-  return d.toLocaleString("default", { month: "long", year: "numeric" });
+  return new Date(dateStr).toLocaleString("default", { month: "long", year: "numeric" });
 }
 function fyStartYear(dateStr) {
   if (!dateStr) return null;
   const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return null;
   return d.getMonth() < 3 ? d.getFullYear() - 1 : d.getFullYear();
 }
 function fyLabel(startYear) {
-  if (startYear === null || isNaN(startYear)) return "";
   return `FY ${startYear}–${String(startYear + 1).slice(-2)}`;
 }
+
+/* ── toSortableDate: normalise any date format to yyyy-mm-dd for sorting ──
+   Stored as ISO (yyyy-mm-dd) from Supabase.
+   Also handles dd-mm-yyyy, dd/mm/yyyy, dd-mm-yy display formats. ── */
+function toSortableDate(raw) {
+  if (!raw) return "0000-00-00";
+  const s = String(raw).trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  const dmy4 = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{4})$/);
+  if (dmy4) return `${dmy4[3]}-${dmy4[2].padStart(2,"0")}-${dmy4[1].padStart(2,"0")}`;
+  const dmy2 = s.match(/^(\d{1,2})[-\/](\d{1,2})[-\/](\d{2})$/);
+  if (dmy2) return `20${dmy2[3]}-${dmy2[2].padStart(2,"0")}-${dmy2[1].padStart(2,"0")}`;
+  return "0000-00-00";
+}
+
 
 function buildRowsWithSeparators(sortedRows) {
   const result = [];
@@ -78,10 +88,9 @@ function buildRowsWithSeparators(sortedRows) {
     if (prev) {
       const prevFY = fyStartYear(prev.date), currFY = fyStartYear(curr.date);
       const prevMK = monthKey(prev.date),    currMK = monthKey(curr.date);
-      /* Guard: only insert separators when dates are valid and values differ */
-      if (prevFY !== null && currFY !== null && !isNaN(prevFY) && !isNaN(currFY) && prevFY !== currFY)
+      if (prevFY !== currFY)
         result.push({ _type: "fy", _fyStart: currFY, _label: fyLabel(currFY) });
-      if (prevMK && currMK && prevMK !== currMK)
+      if (prevMK !== currMK)
         result.push({ _type: "month", _monthKey: currMK, _label: monthLabel(curr.date) });
     }
     result.push(curr);
@@ -186,7 +195,7 @@ export default function SalesPanel({
 
   /* ── Sort descending by date ─────────────────────────────────────────── */
   const sortedSales = useMemo(
-    () => [...statusFiltered].sort((a, b) => (b.date || "").localeCompare(a.date || "")),
+    () => [...statusFiltered].sort((a, b) => toSortableDate(b.date).localeCompare(toSortableDate(a.date))),
     [statusFiltered]
   );
 
