@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import * as XLSX from "xlsx";
 import CommandPalette from "./components/CommandPalette";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import DocumentsPanel from "./components/DocumentsPanel";
@@ -22,15 +21,7 @@ import {
   STAGE_THEME
 } from "./constants";
 import { formatCurrency, formatDate, formatNumber } from "./utils";
-import {
-  dbLoadSales, dbSaveSale, dbDeleteSale,
-  dbLoadPurchases, dbSavePurchase, dbDeletePurchase,
-  dbLoadExpenses, dbSaveExpense, dbDeleteExpense,
-  dbLoadLogistics, dbSaveLogistic, dbDeleteLogistic,
-  dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer,
-  dbLoadSuppliers, dbSaveSupplier, dbDeleteSupplier,
-  dbLoadProducts, dbSaveProduct, dbDeleteProduct,
-} from "./db";
+import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -128,10 +119,13 @@ const SHOPS = [
 
 /* ─── seed data ─────────────────────────────────────── */
 const CUSTOMERS = [];
-const PRODUCTS  = [];
-const SUPPLIERS = [];
-const AGENTS    = [];
-/* Data now loaded from Supabase per shop */
+const SUPPLIERS=[];
+const PRODUCTS=[];
+const AGENTS=[];
+const SALES_SEED={"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
+const PURCH_SEED={"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
+const EXP_SEED={"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
+const LOG_SEED={"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
 const MONTHLY=[];
 const PIE_D=[];
 
@@ -247,14 +241,22 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
 
   // Calculate stats directly from salesData prop (always up to date)
   const today=new Date().toISOString().split('T')[0];
+  const thisMonth=today.slice(0,7); // "YYYY-MM"
   const shopStats={};
   SHOPS.forEach(shop=>{
     const data=salesData[shop.id]||[];
     const todayRev=data.filter(s=>s.date===today).reduce((a,s)=>a+(s.amount||0),0);
     const totalRev=data.reduce((a,s)=>a+(s.amount||0),0);
-    const pending=data.filter(s=>s.pay==="Pending"||s.pay==="PENDING").length;
-    const orders=data.length;
-    shopStats[shop.id]={todaySales:todayRev,totalRev,pendingOrders:pending,orders};
+    const monthData=data.filter(s=>s.date&&s.date.startsWith(thisMonth));
+    const monthRevenue=monthData.reduce((a,s)=>a+(s.amount||0),0);
+    const monthOrders=monthData.length;
+    const FULFILLED_STATUSES=["fulfilled","exchanged","refunded"];
+    const pending=monthData.filter(s=>{
+      const st=(s.status||s.deliveryStatus||"").toLowerCase().trim();
+      return !FULFILLED_STATUSES.includes(st);
+    }).length;
+    const orders=monthOrders;
+    shopStats[shop.id]={todaySales:todayRev,totalRev,monthRevenue,pendingOrders:pending,orders};
   });
 
   useEffect(()=>{
@@ -420,15 +422,30 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
                     <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.65)",fontStyle:"italic"}}>{shop.tagline}</p>
                   </div>
 
-                  {/* revenue — hidden for staff on non-India shops */}
-                  <div style={{position:"relative",zIndex:1}}>
-                    <p style={{margin:"0 0 2px",fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Today\'s Revenue</p>
-                    {staffLocked
-                      ? <p style={{margin:0,fontSize:22,fontWeight:700,color:"rgba(255,255,255,0.30)",letterSpacing:2,fontFamily:"'Arimo',Arial,sans-serif"}}>● ● ● ●</p>
-                      : <p style={{margin:0,fontSize:34,fontWeight:700,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif"}}>{shop.id==="ros-india"
-                          ? formatCurrency(shopStats[shop.id]?.todaySales||0)
-                          : "£"+formatNumber(shopStats[shop.id]?.todaySales||0)}</p>
-                    }
+                  {/* revenue — split Today / Month */}
+                  <div style={{position:"relative",zIndex:1,display:"flex",gap:0}}>
+                    {/* Today */}
+                    <div style={{flex:1,paddingRight:10}}>
+                      <p style={{margin:"0 0 2px",fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Today's</p>
+                      {staffLocked
+                        ? <p style={{margin:0,fontSize:18,fontWeight:700,color:"rgba(255,255,255,0.30)",letterSpacing:2,fontFamily:"'Arimo',Arial,sans-serif"}}>●●●</p>
+                        : <p style={{margin:0,fontSize:22,fontWeight:700,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif"}}>{shop.id==="ros-india"
+                            ? formatCurrency(shopStats[shop.id]?.todaySales||0)
+                            : "£"+formatNumber(shopStats[shop.id]?.todaySales||0)}</p>
+                      }
+                    </div>
+                    {/* Divider */}
+                    <div style={{width:1,background:"rgba(255,255,255,0.25)",margin:"0 2px",alignSelf:"stretch"}}/>
+                    {/* Month */}
+                    <div style={{flex:1,paddingLeft:10}}>
+                      <p style={{margin:"0 0 2px",fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Month</p>
+                      {staffLocked
+                        ? <p style={{margin:0,fontSize:18,fontWeight:700,color:"rgba(255,255,255,0.30)",letterSpacing:2,fontFamily:"'Arimo',Arial,sans-serif"}}>●●●</p>
+                        : <p style={{margin:0,fontSize:22,fontWeight:700,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif"}}>{shop.id==="ros-india"
+                            ? formatCurrency(shopStats[shop.id]?.monthRevenue||0)
+                            : "£"+formatNumber(shopStats[shop.id]?.monthRevenue||0)}</p>
+                      }
+                    </div>
                   </div>
                 </div>
 
@@ -441,7 +458,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
                     </div>
                   ):(
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
-                      {[{l:"Orders",v:shopStats[shop.id]?.pendingOrders||0},{l:"Pending",v:shopStats[shop.id]?.pendingOrders||0},{l:"Stock",v:shop.stockValue}].map((s,i)=>(
+                      {[{l:"Orders",v:shopStats[shop.id]?.orders||0},{l:"Pending",v:shopStats[shop.id]?.pendingOrders||0},{l:"Stock",v:shop.stockValue}].map((s,i)=>(
                         <div key={i} style={{textAlign:"center",background:shop.accentBg,borderRadius:10,padding:"9px 5px",border:"1px solid "+shop.accent+"18"}}>
                           <p style={{margin:0,fontWeight:900,fontSize:16,color:shop.accentText}}>{s.v}</p>
                           <p style={{margin:"2px 0 0",fontSize:10,color:shop.accent,fontWeight:700}}>{s.l}</p>
@@ -457,7 +474,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
                     fontWeight:800,fontSize:14,transition:"all 0.2s",fontFamily:"inherit",
                     boxShadow:(!staffLocked&&h)?"0 4px 14px "+shop.accent+"44":"none",
                   }}>
-                    {staffLocked?"🔒 Restricted":"Enter Workspace →"}
+                    {staffLocked?"🔒 Restricted":"Enter the Shop →"}
                   </button>
                 </div>
               </div>
@@ -622,7 +639,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
 </div>
 );
 };
-const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,purchData={},setPurchData,expData={},setExpData,logData={},setLogData,suppData={},setSuppData,prodData={},setProdData})=>{
+const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":"dashboard");
   const [hov,setHov]=useState(null);
   const [search,setSearch]=useState("");
@@ -660,12 +677,10 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
 
   const shop=SHOPS.find(s=>s.id===shopId);
   const sales=salesData[shopId]||[];
-  const purch=(purchData[shopId]||[]);
-  const exps=(expData[shopId]||[]);
-  const logs=(logData[shopId]||[]);
-  const suppliers=(suppData[shopId]||[]);
-  const products=(prodData[shopId]||[]);
-  const lowStk=products.filter(p=>p.stock<=p.min);
+  const purch=PURCH_SEED[shopId]||[];
+  const exps=EXP_SEED[shopId]||[];
+  const logs=LOG_SEED[shopId]||[];
+  const lowStk=PRODUCTS.filter(p=>p.stock<=p.min);
   const totRev=sales.filter(s=>s.pay==="Paid").reduce((a,s)=>a+s.amount,0);
   const pendAmt=sales.filter(s=>s.pay==="Pending").reduce((a,s)=>a+s.amount,0);
   const totExp=exps.reduce((a,e)=>a+e.amount,0);
@@ -739,7 +754,7 @@ const addSale = async (form) => {
       if(idx>=0){const n=[...prev];n[idx]=updatedCust;return n;}
       return [...prev,updatedCust];
     });
-    dbSaveCustomer(shopId,updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
+    dbSaveCustomer(updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
   }
 };
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
@@ -1558,21 +1573,17 @@ return(
 
           {/* ─── SUPPLIERS ─── */}
           {tab==="suppliers"&&(
-            <SuppliersPanel shop={shop} shopId={shopId} suppliers={suppliers}
-            onSaveSupplier={async(s)=>{ setSuppData(prev=>({...prev,[shopId]:[s,...(prev[shopId]||[]).filter(x=>x.id!==s.id)]})); await dbSaveSupplier(shopId,s).catch(e=>console.error(e)); }}
-            onDeleteSupplier={async(id)=>{ setSuppData(prev=>({...prev,[shopId]:(prev[shopId]||[]).filter(x=>x.id!==id)})); await dbDeleteSupplier(id,shopId).catch(e=>console.error(e)); }}/>
+            <SuppliersPanel shop={shop} suppliers={SUPPLIERS}/>
           )}
 
           {/* ─── PRODUCTS ─── */}
           {tab==="products"&&(
-            <ProductsPanel lowStk={lowStk} products={products} shop={shop} shopId={shopId}
-            onSaveProduct={async(p)=>{ setProdData(prev=>({...prev,[shopId]:[p,...(prev[shopId]||[]).filter(x=>x.id!==p.id)]})); await dbSaveProduct(shopId,p).catch(e=>console.error(e)); }}
-            onDeleteProduct={async(id)=>{ setProdData(prev=>({...prev,[shopId]:(prev[shopId]||[]).filter(x=>x.id!==id)})); await dbDeleteProduct(id,shopId).catch(e=>console.error(e)); }}/>
+            <ProductsPanel lowStk={lowStk} products={PRODUCTS} shop={shop}/>
           )}
 
           {/* ─── LOGISTICS ─── */}
           {tab==="logistics"&&(
-            <LogisticsPanel logs={logs} onNewShipment={()=>setModal("new-shipment")} shop={shop} shopId={shopId}/>
+            <LogisticsPanel logs={logs} onNewShipment={()=>setModal("new-shipment")} shop={shop}/>
           )}
 
           {/* ─── AGENTS ─── */}
@@ -1582,9 +1593,7 @@ return(
 
           {/* ─── EXPENSES ─── */}
           {tab==="expenses"&&(
-            <ExpensesPanel exps={exps} fmt={fmt} shop={shop} shopId={shopId} totExp={totExp}
-            onSaveExpense={async(e)=>{ setExpData(prev=>({...prev,[shopId]:[e,...(prev[shopId]||[]).filter(x=>x.id!==e.id)]})); await dbSaveExpense(shopId,e).catch(err=>console.error(err)); }}
-            onDeleteExpense={async(id)=>{ setExpData(prev=>({...prev,[shopId]:(prev[shopId]||[]).filter(x=>x.id!==id)})); await dbDeleteExpense(id,shopId).catch(e=>console.error(e)); }}/>
+            <ExpensesPanel exps={exps} fmt={fmt} shop={shop} shopId={shopId} totExp={totExp}/>
           )}
 
           {/* ─── DOCUMENTS ─── */}
@@ -1636,7 +1645,7 @@ return(
       {/* ── IMPORT MODAL — SALES ── */}
       {modal==="import-sales"&&user?.role!=="staff"&&(
         <Modal title="⬇ Import Sales" onClose={()=>setModal(null)} accent={shop.accent}>
-          <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)} onImported={(rows)=>{rows.forEach(s=>{setSalesData(d=>({...d,[shopId]:[s,...(d[shopId]||[])]}));dbSaveSale(shopId,s).catch(()=>{});});dbLoadSales(shopId).then(data=>{if(data)setSalesData(prev=>({...prev,[shopId]:data}));}).catch(()=>{});setModal(null);}}/>
+          <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}/>
         </Modal>
       )}
 
@@ -1732,28 +1741,14 @@ return(
       {/* ── NEW SHIPMENT MODAL ── */}
       {modal==="new-shipment"&&(
         <Modal title="🚚 New Shipment" onClose={()=>setModal(null)} accent={shop.accent}>
-          <NewShipmentForm shopId={shopId} shop={shop} purch={purch}
-            onSave={async(form)=>{
-              const newL={...form,id:form.shipId||("SHP-"+Date.now())};
-              setLogData(prev=>({...prev,[shopId]:[newL,...(prev[shopId]||[])]}));
-              setModal(null);
-              await dbSaveLogistic(shopId,newL).catch(e=>console.error(e));
-              dbLoadLogistics(shopId).then(data=>{if(data) setLogData(prev=>({...prev,[shopId]:data}));}).catch(()=>{});
-            }}
-            onClose={()=>setModal(null)}/>
+          <NewShipmentForm shopId={shopId} shop={shop} purch={purch} onSave={()=>setModal(null)} onClose={()=>setModal(null)}/>
         </Modal>
       )}
 
       {/* ── NEW PURCHASE MODAL ── */}
       {modal==="new-purchase"&&(
         <Modal title="📦 New Purchase" onClose={()=>setModal(null)} accent={shop.accent}>
-          <NewPurchaseForm shopId={shopId} shop={shop} lastPurchNum={purch.length>0?parseInt((purch[0].id||"0").replace(/[^0-9]/g,""))||700:700} onSave={async(form)=>{
-            const newP={...form,id:form.purchaseId||form.id};
-            setPurchData(prev=>({...prev,[shopId]:[newP,...(prev[shopId]||[])]}));
-            setModal(null);
-            await dbSavePurchase(shopId,newP).catch(e=>console.error(e));
-            dbLoadPurchases(shopId).then(data=>{if(data) setPurchData(prev=>({...prev,[shopId]:data}));}).catch(()=>{});
-          }} onClose={()=>setModal(null)}/>
+          <NewPurchaseForm shopId={shopId} shop={shop} lastPurchNum={purch.length>0?parseInt((purch[0].id||"0").replace(/[^0-9]/g,""))||700:700} onSave={(form)=>{setModal(null);}} onClose={()=>setModal(null)}/>
         </Modal>
       )}
 
@@ -2448,10 +2443,9 @@ return(
 /* ══════════════════════════════════════════════════════
    IMPORT / EXPORT PANEL
 ══════════════════════════════════════════════════════ */
-const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImported})=>{
+const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
   const [dragOver,setDragOver]=useState(false);
   const [fileName,setFileName]=useState(null);
-  const [fileObj,setFileObj]=useState(null);
   const [fileFmt,setFileFmt]=useState("CSV");
 
   // All 22 export columns — all ON by default
@@ -2542,70 +2536,6 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImported})=>{
     a.click();
     URL.revokeObjectURL(url);
     onClose();
-  };
-
-  /* ── processRows: map imported rows → sale objects → call onImported ── */
-  const processRows=(rows)=>{
-    if(!rows||rows.length===0){alert("No data rows found in file.");return;}
-    const pfx={["ros-selections"]:"SI",["ros-hairlines"]:"SH",["ros-india"]:"IN"}[shopId]||"SI";
-    const colMap={
-      // CSV export header → sale field
-      "sale id":"id","date":"date","invoice no.":"id","invoice no":"id",
-      "customer name":"customer","customer":"customer",
-      "addressee":"addressee","address":"address","contact no.":"phone","contact no":"phone",
-      "item":"item","quantity":"qty","qty":"qty",
-      "price (excl. tax)":"price","price":"price",
-      "tax":"taxAmt","total":"amount",
-      "payment method":"pay","payment":"pay",
-      "dispatch date":"sentDate",
-      "return request":"returnReq","return received":"returnRcvd",
-      "exchange":"exchange","refund":"refundAmt",
-      "tag":"tag","remarks":"rem","re":"re",
-      "status":"ful","shop inv.":"shopInv",
-    };
-    const get=(row,keys)=>{
-      for(const k of keys){
-        const v=row[k]||row[k.toLowerCase()]||row[k.toUpperCase()]||"";
-        if(v) return String(v).trim();
-      }
-      return "";
-    };
-    const sales=rows.map((row,i)=>{
-      const lrow={};
-      Object.keys(row).forEach(k=>lrow[k.toLowerCase().trim()]=row[k]);
-      const id=get(lrow,["sale id","sale_id","id","invoice no.","invoice no","invoice_no"])||`${pfx}-IMP-${Date.now()}-${i}`;
-      const rawStatus=(get(lrow,["status","ful"])||"PENDING").toUpperCase();
-      const validStatuses=["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"];
-      const ful=validStatuses.includes(rawStatus)?"PENDING":rawStatus; // keep or fallback
-      const validFul=validStatuses.includes(rawStatus)?rawStatus:"PENDING";
-      return {
-        id,
-        date:       get(lrow,["date"])||new Date().toISOString().slice(0,10),
-        customer:   get(lrow,["customer name","customer"])||"Unknown",
-        addressee:  get(lrow,["addressee"])||"",
-        address:    get(lrow,["address"])||"",
-        phone:      get(lrow,["contact no.","contact no","contact","phone"])||"",
-        contact:    get(lrow,["contact no.","contact no","contact","phone"])||"",
-        item:       get(lrow,["item"])||"",
-        qty:        get(lrow,["quantity","qty"])||"1",
-        amount:     Number(get(lrow,["total","amount"])||0)||0,
-        pay:        get(lrow,["payment method","payment","pay"])||"SHOP",
-        ful:        validFul,
-        status:     validFul,
-        sentDate:   get(lrow,["dispatch date","sentdate","sent date"])||"",
-        returnRcvd: get(lrow,["return received","return_rcvd"])||"",
-        refundAmt:  get(lrow,["refund","refundamt"])||"",
-        tag:        get(lrow,["tag"])||"",
-        rem:        get(lrow,["remarks","rem"])||"",
-        re:         get(lrow,["re"])||"",
-        taxRate:    shopId==="ros-india"?18:20,
-        taxInclusive:true,
-      };
-    }).filter(s=>(s.customer&&s.customer!=="Unknown")||(s.amount>0));
-
-    if(sales.length===0){alert("No valid sales rows found. Check your column headers match the template.");return;}
-    if(onImported){onImported(sales);}
-    else{alert(`Imported ${sales.length} records.`);}
   };
 
   if(type==="export") return(
@@ -2731,7 +2661,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImported})=>{
       <div
         onDragOver={e=>{e.preventDefault();setDragOver(true);}}
         onDragLeave={()=>setDragOver(false)}
-        onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f){setFileName(f.name);setFileObj(f);}}}
+        onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f)setFileName(f.name);}}
         style={{
           border:"2px dashed "+(dragOver?shop.accent:"#cbd5e1"),
           borderRadius:14,padding:"40px 24px",textAlign:"center",
@@ -2741,7 +2671,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImported})=>{
         onClick={()=>document.getElementById("imp-file-"+entity).click()}>
         <input id={"imp-file-"+entity} type="file" accept=".csv,.xlsx"
           style={{display:"none"}}
-          onChange={e=>{const f=e.target.files[0];if(f){setFileName(f.name);setFileObj(f);}}}/>
+          onChange={e=>setFileName(e.target.files[0]?.name||null)}/>
         <div style={{fontSize:40,marginBottom:10}}>{fileName?"✅":"📂"}</div>
         <p style={{margin:0,fontWeight:800,fontSize:15,color:fileName?shop.accent:"#374151"}}>
           {fileName||"Drop your CSV file here"}
@@ -2754,49 +2684,12 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImported})=>{
       {/* actions */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
         <button
-          onClick={()=>{
-            if(!fileObj){alert("Please select a file first.");return;}
-            const name=(fileObj.name||"").toLowerCase();
-            /* ── XLSX ── */
-            if(name.endsWith(".xlsx")||name.endsWith(".xls")){
-              const reader=new FileReader();
-              reader.onload=e=>{
-                try{
-                  // XLSX imported at top of file
-                  const wb=XLSX.read(new Uint8Array(e.target.result),{type:"array"});
-                  const ws=wb.Sheets[wb.SheetNames[0]];
-                  const rows=XLSX.utils.sheet_to_json(ws,{defval:""});
-                  processRows(rows);
-                }catch(err){alert("Failed to parse XLSX: "+err.message);}
-              };
-              reader.readAsArrayBuffer(fileObj);
-            } else {
-              /* ── CSV ── */
-              const reader=new FileReader();
-              reader.onload=e=>{
-                try{
-                  const text=e.target.result;
-                  const lines=text.split(/\r?\n/).filter(l=>l.trim());
-                  if(lines.length<2){alert("File appears empty.");return;}
-                  const headers=lines[0].split(",").map(h=>h.replace(/^"|"$/g,"").trim().toLowerCase());
-                  const rows=lines.slice(1).map(line=>{
-                    const vals=[];let cur="",inQ=false;
-                    for(const ch of line){if(ch==="\""&&!inQ)inQ=true;else if(ch==="\""&&inQ)inQ=false;else if(ch===","&&!inQ){vals.push(cur);cur="";}else cur+=ch;}
-                    vals.push(cur);
-                    const obj={};headers.forEach((h,i)=>obj[h]=(vals[i]||"").replace(/^"|"$/g,"").trim());
-                    return obj;
-                  }).filter(r=>Object.values(r).some(v=>v));
-                  processRows(rows);
-                }catch(err){alert("Failed to parse CSV: "+err.message);}
-              };
-              reader.readAsText(fileObj);
-            }
-          }}
+          onClick={()=>{if(!fileName){alert("Please select a file first.");}else{alert("Import started! "+fileName+" is being processed.");onClose();}}}
           style={{padding:"12px 0",borderRadius:11,border:"none",
-            background:fileObj?shop.accent:"#e2e8f0",
-            color:fileObj?"white":"#94a3b8",fontWeight:800,fontSize:14,
-            cursor:fileObj?"pointer":"not-allowed",fontFamily:"inherit",
-            boxShadow:fileObj?"0 4px 14px "+shop.accent+"44":"none",
+            background:fileName?shop.accent:"#e2e8f0",
+            color:fileName?"white":"#94a3b8",fontWeight:800,fontSize:14,
+            cursor:fileName?"pointer":"not-allowed",fontFamily:"inherit",
+            boxShadow:fileName?"0 4px 14px "+shop.accent+"44":"none",
             transition:"all 0.2s"}}>
           ⬆ Import Now
         </button>
@@ -4845,12 +4738,7 @@ export default function App(){
   const [users,setUsers]=useState(INITIAL_USERS);
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
-  const [purchData,setPurchData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
-  const [expData,setExpData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
-  const [logData,setLogData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
-  const [suppData,setSuppData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
-  const [prodData,setProdData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
-  const [customers,setCustomers]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
+  const [customers,setCustomers]=useState([]);
   const [shopItems,setShopItems]=useState(()=>{
     try{const s=localStorage.getItem("ros_shopItems");return s?JSON.parse(s):{"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
     catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
@@ -4864,32 +4752,16 @@ export default function App(){
 
   // Load from Supabase on mount - Supabase is single source of truth
   useEffect(()=>{
-    const FULFILLED_CUTOFF="2026-02-20";
     const shops=["ros-selections","ros-hairlines","ros-india"];
     shops.forEach(sid=>{
       dbLoadSales(sid).then(data=>{
         if(!data) return;
-        // Auto-mark PENDING sales on or before 20 Feb 2026 as FULFILLED
-        const updated=data.map(s=>{
-          const isPending=(s.ful||s.status||"PENDING")==="PENDING";
-          const isOld=(s.date||"")<=FULFILLED_CUTOFF;
-          if(isPending&&isOld){
-            const patched={...s,ful:"FULFILLED",status:"FULFILLED"};
-            // Persist the change back to Supabase silently
-            dbSaveSale(sid,patched).catch(()=>{});
-            return patched;
-          }
-          return s;
-        });
-        setSalesData(prev=>({...prev,[sid]:updated}));
+        setSalesData(prev=>({...prev,[sid]:data}));
       }).catch(()=>{});
-      dbLoadPurchases(sid).then(data=>{ if(data) setPurchData(prev=>({...prev,[sid]:data})); }).catch(()=>{});
-      dbLoadExpenses(sid).then(data=>{ if(data) setExpData(prev=>({...prev,[sid]:data})); }).catch(()=>{});
-      dbLoadLogistics(sid).then(data=>{ if(data) setLogData(prev=>({...prev,[sid]:data})); }).catch(()=>{});
-      dbLoadCustomers(sid).then(data=>{ if(data) setCustomers(prev=>({...prev,[sid]:data})); }).catch(()=>{});
-      dbLoadSuppliers(sid).then(data=>{ if(data) setSuppData(prev=>({...prev,[sid]:data})); }).catch(()=>{});
-      dbLoadProducts(sid).then(data=>{ if(data) setProdData(prev=>({...prev,[sid]:data})); }).catch(()=>{});
     });
+    dbLoadCustomers().then(data=>{
+      if(data&&data.length>0) setCustomers(data);
+    }).catch(()=>{});
   },[]);
 
   const handleLogin=u=>{
@@ -4916,19 +4788,7 @@ export default function App(){
   const activeShop = shop || (user.role==="staff" && allowedShops.length===1 ? allowedShops[0] : null);
 
   if(activeShop&&allowedShops.includes(activeShop))
-    return <ShopDashboard
-    shopId={activeShop}
-    onBack={()=>{if(user.role!=="staff"){setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}}}
-    user={user} onLogout={handleLogout}
-    salesData={salesData} setSalesData={updateSalesData}
-    customers={customers[activeShop]||[]} setCustomers={(d)=>setCustomers(prev=>({...prev,[activeShop]:d}))}
-    shopItems={shopItems} saveShopItems={saveShopItems}
-    purchData={purchData} setPurchData={setPurchData}
-    expData={expData} setExpData={setExpData}
-    logData={logData} setLogData={setLogData}
-    suppData={suppData} setSuppData={setSuppData}
-    prodData={prodData} setProdData={setProdData}
-  />;
+    return <ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={updateSalesData} customers={customers} setCustomers={setCustomers} shopItems={shopItems} saveShopItems={saveShopItems}/>;
 
   return(
     <>
