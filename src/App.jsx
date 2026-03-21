@@ -3681,8 +3681,8 @@ const CustomerTypeahead=({value,customerList,shop,inp,lbl,fo,bl,onChange,onAddNe
                 const match=customerList.find(c=>c.name.toLowerCase()===v.toLowerCase());
                 onChange(v, match?match.phone||"":undefined);
               }}
-              onFocus={()=>setOpen(true)}
-              onBlur={()=>setTimeout(()=>setOpen(false),160)}
+              onFocus={e=>{fo(e);setOpen(true);}}
+              onBlur={e=>{bl(e);setTimeout(()=>setOpen(false),160);}}
               onKeyDown={e=>{
                 if(e.key==="Escape"){setOpen(false);}
                 if(e.key==="Enter"&&suggestions.length===1){
@@ -3699,8 +3699,6 @@ const CustomerTypeahead=({value,customerList,shop,inp,lbl,fo,bl,onChange,onAddNe
                 background:  exactMatch ? shop.accentBg : "white",
                 paddingRight: exactMatch ? 60 : undefined,
               }}
-              onFocus={e=>{fo(e);setOpen(true);}}
-              onBlur={e=>{bl(e);setTimeout(()=>setOpen(false),160);}}
             />
             {/* ✓ found badge */}
             {exactMatch&&(
