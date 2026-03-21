@@ -1606,7 +1606,7 @@ return(
 
           {/* ─── CUSTOMERS ─── */}
           {tab==="customers"&&(
-            <CustomersPanel Badge={Badge} customers={customers} search={search} shop={shop} setCustomers={setCustomers} user={user} dbDeleteCustomer={dbDeleteCustomer}/>
+            <CustomersPanel Badge={Badge} customers={customers} search={search} shop={shop} shopId={shopId} setCustomers={setCustomers} user={user} dbDeleteCustomer={dbDeleteCustomer}/>
           )}
 
           {/* ─── SUPPLIERS ─── */}
@@ -4136,9 +4136,13 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
    ========================================================= */
 
 /* ── CustomersPanel ── */
-const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCustomer})=>{
+const CustomersPanel=({customers,search,shop,shopId,Badge,setCustomers,user,dbDeleteCustomer})=>{
   const [sel,setSel]=useState(null);
   const [hovR,setHovR]=useState(null);
+  const [editCust,setEditCust]=useState(null); // customer being edited
+  const [editForm,setEditForm]=useState({});
+  const [saving,setSaving]=useState(false);
+
   const filtered=(customers||[]).filter(c=>
     !search||c.name.toLowerCase().includes(search.toLowerCase())||
     c.phone.includes(search)||c.tag.toLowerCase().includes(search.toLowerCase())
@@ -4150,6 +4154,23 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
     "New Customer": {bg:"#dbeafe",color:"#1e40af",border:"#bfdbfe"},
   };
   const tc=t=>tagColor[t]||{bg:"#f1f5f9",color:"#475569",border:"#e2e8f0"};
+
+  const openEdit=c=>{
+    setEditForm({
+      name:     c.name||"",
+      phone:    c.phone||"",
+      whatsapp: c.whatsapp||"",
+      address:  c.address||"",
+      tag:      c.tag||"Regular",
+      notes:    c.notes||"",
+    });
+    setEditCust(c);
+    setSel(null);
+  };
+
+  const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",
+    fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",
+    color:"#374151",background:"white"};
 
   return(
     <div style={{padding:0}}>
@@ -4175,7 +4196,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
         <table style={{width:"100%",borderCollapse:"collapse"}}>
           <thead>
             <tr style={{background:"#f8fafc",borderBottom:"1px solid #f1f5f9"}}>
-              {["Customer","Contact","Address","Purchases","Total Spend","Last Order","Tag"].map(h=>(
+              {["Customer","Contact","Address","Purchases","Total Spend","Last Order","Tag",""].map(h=>(
                 <th key={h} style={{padding:"11px 16px",fontSize:10,fontWeight:800,color:"#64748b",
                   textTransform:"uppercase",letterSpacing:"0.06em",textAlign:"left",whiteSpace:"nowrap"}}>
                   {h}
@@ -4185,7 +4206,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
           </thead>
           <tbody>
             {filtered.length===0&&(
-              <tr><td colSpan={7} style={{padding:40,textAlign:"center",color:"#94a3b8",fontSize:13}}>No customers found</td></tr>
+              <tr><td colSpan={8} style={{padding:40,textAlign:"center",color:"#94a3b8",fontSize:13}}>No customers found</td></tr>
             )}
             {filtered.map((c,i)=>{
               const isH=hovR===c.id;
@@ -4239,6 +4260,18 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                       </span>
                     )}
                   </td>
+                  <td style={{padding:"13px 12px"}} onClick={e=>e.stopPropagation()}>
+                    <button onClick={()=>openEdit(c)}
+                      title="Edit customer"
+                      style={{padding:"6px 12px",borderRadius:8,border:"1px solid "+shop.accent+"44",
+                        background:shop.accentBg,color:shop.accentText,fontSize:12,fontWeight:700,
+                        cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",
+                        transition:"all 0.15s"}}
+                      onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.color="white";}}
+                      onMouseLeave={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accentText;}}>
+                      ✏️ Edit
+                    </button>
+                  </td>
                 </tr>
               );
             })}
@@ -4246,6 +4279,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
         </table>
       </div>
 
+      {/* ── EXPANDED ROW DETAIL ── */}
       {sel&&(()=>{
         const c=(customers||[]).find(x=>x.id===sel);
         if(!c)return null;
@@ -4287,7 +4321,14 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                 </div>
               </div>
             </div>
-          <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
+            <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:12}}>
+              <button onClick={()=>openEdit(c)}
+                style={{padding:"8px 20px",borderRadius:10,border:"none",
+                  background:shop.accent,color:"white",fontSize:13,fontWeight:700,
+                  cursor:"pointer",fontFamily:"inherit",
+                  boxShadow:"0 3px 10px "+shop.accent+"44"}}>
+                ✏️ Edit Customer
+              </button>
               {(user?.role==="superadmin"||user?.role==="admin")&&(
                 <button onClick={()=>{
                   if(window.confirm("Delete "+c.name+" from customer database?")){
@@ -4298,13 +4339,143 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                 }} style={{padding:"8px 20px",borderRadius:10,border:"1px solid #fca5a5",
                   background:"#fff5f5",color:"#dc2626",fontSize:13,fontWeight:700,
                   cursor:"pointer",fontFamily:"inherit"}}>
-                  🗑 Delete Customer
+                  🗑 Delete
                 </button>
               )}
             </div>
           </div>
         );
       })()}
+
+      {/* ── EDIT CUSTOMER MODAL ── */}
+      {editCust&&(
+        <div style={{position:"fixed",inset:0,zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(6px)"}}
+            onClick={()=>setEditCust(null)}/>
+          <div style={{position:"relative",background:"white",borderRadius:20,
+            boxShadow:"0 32px 64px rgba(0,0,0,0.20)",width:"100%",maxWidth:520,
+            maxHeight:"90vh",overflowY:"auto"}}>
+            {/* Header */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+              padding:"18px 24px",borderBottom:"1px solid #f1f5f9",
+              background:shop.accent+"12",borderRadius:"20px 20px 0 0"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{width:36,height:36,borderRadius:10,background:shop.sb,
+                  display:"flex",alignItems:"center",justifyContent:"center",
+                  color:"white",fontWeight:800,fontSize:14}}>
+                  {editCust.name.charAt(0)}
+                </div>
+                <div>
+                  <h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>Edit Customer</h3>
+                  <p style={{margin:0,fontSize:11,color:"#64748b"}}>{editCust.name}</p>
+                </div>
+              </div>
+              <button onClick={()=>setEditCust(null)}
+                style={{width:32,height:32,borderRadius:"50%",border:"none",
+                  background:"#f1f5f9",cursor:"pointer",fontSize:20,color:"#64748b",
+                  display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+            </div>
+
+            {/* Form */}
+            <div style={{padding:24,display:"flex",flexDirection:"column",gap:14}}>
+              {/* Name */}
+              <div>
+                <label style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",
+                  letterSpacing:"0.05em",display:"block",marginBottom:5}}>Full Name *</label>
+                <input value={editForm.name}
+                  onChange={e=>setEditForm(f=>({...f,name:e.target.value}))}
+                  style={inp} placeholder="Customer name"/>
+              </div>
+
+              {/* Phone + WhatsApp */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <div>
+                  <label style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",
+                    letterSpacing:"0.05em",display:"block",marginBottom:5}}>📞 Phone</label>
+                  <input value={editForm.phone}
+                    onChange={e=>setEditForm(f=>({...f,phone:e.target.value}))}
+                    style={inp} placeholder="+44 7700 000000"/>
+                </div>
+                <div>
+                  <label style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",
+                    letterSpacing:"0.05em",display:"block",marginBottom:5}}>💬 WhatsApp</label>
+                  <input value={editForm.whatsapp}
+                    onChange={e=>setEditForm(f=>({...f,whatsapp:e.target.value}))}
+                    style={inp} placeholder="+44 7700 000000"/>
+                </div>
+              </div>
+
+              {/* Address */}
+              <div>
+                <label style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",
+                  letterSpacing:"0.05em",display:"block",marginBottom:5}}>📍 Address</label>
+                <textarea value={editForm.address}
+                  onChange={e=>setEditForm(f=>({...f,address:e.target.value}))}
+                  rows={2} style={{...inp,resize:"vertical"}} placeholder="Delivery address"/>
+              </div>
+
+              {/* Tag */}
+              <div>
+                <label style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",
+                  letterSpacing:"0.05em",display:"block",marginBottom:8}}>Customer Tag</label>
+                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+                  {["New Customer","Regular","VIP","Wholesale"].map(tag=>{
+                    const t=tc(tag);
+                    const isActive=editForm.tag===tag;
+                    return(
+                      <button key={tag} onClick={()=>setEditForm(f=>({...f,tag}))}
+                        style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:700,
+                          cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",
+                          background:isActive?t.color:"white",
+                          color:isActive?"white":t.color,
+                          border:"1.5px solid "+(isActive?t.color:t.border)}}>
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",
+                  letterSpacing:"0.05em",display:"block",marginBottom:5}}>📝 Notes</label>
+                <textarea value={editForm.notes}
+                  onChange={e=>setEditForm(f=>({...f,notes:e.target.value}))}
+                  rows={2} style={{...inp,resize:"vertical"}} placeholder="Any notes about this customer…"/>
+              </div>
+
+              {/* Actions */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingTop:4}}>
+                <button onClick={async()=>{
+                    if(!editForm.name.trim())return;
+                    setSaving(true);
+                    const updated={...editCust,...editForm,name:editForm.name.trim()};
+                    setCustomers(prev=>prev.map(x=>x.id===updated.id?updated:x));
+                    try{await dbSaveCustomer(shopId,updated);}catch(e){console.error("Save customer:",e);}
+                    setSaving(false);
+                    setEditCust(null);
+                  }}
+                  disabled={saving||!editForm.name.trim()}
+                  style={{padding:"12px 0",borderRadius:11,border:"none",
+                    background:saving?"#e2e8f0":shop.accent,
+                    color:saving?"#94a3b8":"white",fontWeight:800,fontSize:14,
+                    cursor:saving?"not-allowed":"pointer",fontFamily:"inherit",
+                    boxShadow:saving?"none":"0 4px 14px "+shop.accent+"44",
+                    transition:"all 0.2s"}}>
+                  {saving?"⏳ Saving…":"✓ Save Changes"}
+                </button>
+                <button onClick={()=>setEditCust(null)}
+                  style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",
+                    background:"white",color:"#374151",fontWeight:700,fontSize:14,
+                    cursor:"pointer",fontFamily:"inherit"}}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
