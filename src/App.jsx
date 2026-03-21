@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import * as XLSX from "xlsx";
 import CommandPalette from "./components/CommandPalette";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import DocumentsPanel from "./components/DocumentsPanel";
@@ -2737,17 +2738,6 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,setSalesData,cust
             setImporting(true);
             setImportResult(null);
             try{
-              // ── Load SheetJS from CDN if not already loaded ───────────────
-              if(!window.XLSX){
-                await new Promise((res,rej)=>{
-                  const s=document.createElement("script");
-                  s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
-                  s.onload=res; s.onerror=rej;
-                  document.head.appendChild(s);
-                });
-              }
-              const XLSX=window.XLSX;
-
               // ── Read file as ArrayBuffer (works for both .xlsx and .csv) ──
               const buf=await fileObj.arrayBuffer();
               const wb=XLSX.read(buf,{type:"array",cellDates:true});
@@ -2953,7 +2943,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,setSalesData,cust
           {importing?"⏳ Importing…":"⬆ Import Now"}
         </button>
         <button onClick={onClose}
-          style={{padding:"12px 0",borderRadius:11,border:"none",
+          style={{padding:"12px 0",borderRadius:11,
             background:importResult?.ok?shop.accent:"white",
             color:importResult?.ok?"white":"#374151",
             border:importResult?.ok?"none":"1px solid #e2e8f0",
