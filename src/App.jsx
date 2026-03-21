@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import * as XLSX from "xlsx";
 import CommandPalette from "./components/CommandPalette";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import DocumentsPanel from "./components/DocumentsPanel";
@@ -241,42 +240,15 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
   // shopStats computed directly from salesData prop
 
   // Calculate stats directly from salesData prop (always up to date)
-  const today=new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-  const thisMonth=today.slice(0,7); // "YYYY-MM"
-
-  // Normalise any date format to YYYY-MM-DD for comparison
-  const toISO=raw=>{
-    if(!raw)return"";
-    const s=String(raw).trim();
-    // Already YYYY-MM-DD
-    if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
-    // DD-MM-YYYY
-    const a=s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-    if(a)return`${a[3]}-${a[2].padStart(2,"0")}-${a[1].padStart(2,"0")}`;
-    // DD-MM-YY (2-digit year)
-    const b=s.match(/^(\d{1,2})-(\d{1,2})-(\d{2})$/);
-    if(b)return`20${b[3]}-${b[2].padStart(2,"0")}-${b[1].padStart(2,"0")}`;
-    // DD/MM/YYYY
-    const c=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-    if(c)return`${c[3]}-${c[2].padStart(2,"0")}-${c[1].padStart(2,"0")}`;
-    return s;
-  };
-
+  const today=new Date().toISOString().split('T')[0];
   const shopStats={};
   SHOPS.forEach(shop=>{
     const data=salesData[shop.id]||[];
-    const todayRev=data.filter(s=>toISO(s.date)===today).reduce((a,s)=>a+(s.amount||0),0);
+    const todayRev=data.filter(s=>s.date===today).reduce((a,s)=>a+(s.amount||0),0);
     const totalRev=data.reduce((a,s)=>a+(s.amount||0),0);
-    const monthData=data.filter(s=>toISO(s.date).startsWith(thisMonth));
-    const monthRevenue=monthData.reduce((a,s)=>a+(s.amount||0),0);
-    const monthOrders=monthData.length;
-    const FULFILLED_STATUSES=["fulfilled","exchanged","refunded"];
-    const pending=monthData.filter(s=>{
-      const st=(s.status||s.ful||s.deliveryStatus||"").toLowerCase().trim();
-      return !FULFILLED_STATUSES.includes(st);
-    }).length;
-    const orders=monthOrders;
-    shopStats[shop.id]={todaySales:todayRev,totalRev,monthRevenue,pendingOrders:pending,orders};
+    const pending=data.filter(s=>s.pay==="Pending"||s.pay==="PENDING").length;
+    const orders=data.length;
+    shopStats[shop.id]={todaySales:todayRev,totalRev,pendingOrders:pending,orders};
   });
 
   useEffect(()=>{
@@ -442,30 +414,15 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
                     <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.65)",fontStyle:"italic"}}>{shop.tagline}</p>
                   </div>
 
-                  {/* revenue — split Today / Month */}
-                  <div style={{position:"relative",zIndex:1,display:"flex",gap:0}}>
-                    {/* Today */}
-                    <div style={{flex:1,paddingRight:10}}>
-                      <p style={{margin:"0 0 2px",fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Today's</p>
-                      {staffLocked
-                        ? <p style={{margin:0,fontSize:18,fontWeight:700,color:"rgba(255,255,255,0.30)",letterSpacing:2,fontFamily:"'Arimo',Arial,sans-serif"}}>●●●</p>
-                        : <p style={{margin:0,fontSize:22,fontWeight:700,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif"}}>{shop.id==="ros-india"
-                            ? formatCurrency(shopStats[shop.id]?.todaySales||0)
-                            : "£"+formatNumber(shopStats[shop.id]?.todaySales||0)}</p>
-                      }
-                    </div>
-                    {/* Divider */}
-                    <div style={{width:1,background:"rgba(255,255,255,0.25)",margin:"0 2px",alignSelf:"stretch"}}/>
-                    {/* Month */}
-                    <div style={{flex:1,paddingLeft:10}}>
-                      <p style={{margin:"0 0 2px",fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Month</p>
-                      {staffLocked
-                        ? <p style={{margin:0,fontSize:18,fontWeight:700,color:"rgba(255,255,255,0.30)",letterSpacing:2,fontFamily:"'Arimo',Arial,sans-serif"}}>●●●</p>
-                        : <p style={{margin:0,fontSize:22,fontWeight:700,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif"}}>{shop.id==="ros-india"
-                            ? formatCurrency(shopStats[shop.id]?.monthRevenue||0)
-                            : "£"+formatNumber(shopStats[shop.id]?.monthRevenue||0)}</p>
-                      }
-                    </div>
+                  {/* revenue — hidden for staff on non-India shops */}
+                  <div style={{position:"relative",zIndex:1}}>
+                    <p style={{margin:"0 0 2px",fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Today\'s Revenue</p>
+                    {staffLocked
+                      ? <p style={{margin:0,fontSize:22,fontWeight:700,color:"rgba(255,255,255,0.30)",letterSpacing:2,fontFamily:"'Arimo',Arial,sans-serif"}}>● ● ● ●</p>
+                      : <p style={{margin:0,fontSize:34,fontWeight:700,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif"}}>{shop.id==="ros-india"
+                          ? formatCurrency(shopStats[shop.id]?.todaySales||0)
+                          : "£"+formatNumber(shopStats[shop.id]?.todaySales||0)}</p>
+                    }
                   </div>
                 </div>
 
@@ -478,7 +435,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
                     </div>
                   ):(
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
-                      {[{l:"Orders",v:shopStats[shop.id]?.orders||0},{l:"Pending",v:shopStats[shop.id]?.pendingOrders||0},{l:"Stock",v:shop.stockValue}].map((s,i)=>(
+                      {[{l:"Orders",v:shopStats[shop.id]?.pendingOrders||0},{l:"Pending",v:shopStats[shop.id]?.pendingOrders||0},{l:"Stock",v:shop.stockValue}].map((s,i)=>(
                         <div key={i} style={{textAlign:"center",background:shop.accentBg,borderRadius:10,padding:"9px 5px",border:"1px solid "+shop.accent+"18"}}>
                           <p style={{margin:0,fontWeight:900,fontSize:16,color:shop.accentText}}>{s.v}</p>
                           <p style={{margin:"2px 0 0",fontSize:10,color:shop.accent,fontWeight:700}}>{s.l}</p>
@@ -494,7 +451,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
                     fontWeight:800,fontSize:14,transition:"all 0.2s",fontFamily:"inherit",
                     boxShadow:(!staffLocked&&h)?"0 4px 14px "+shop.accent+"44":"none",
                   }}>
-                    {staffLocked?"🔒 Restricted":"Enter the Shop →"}
+                    {staffLocked?"🔒 Restricted":"Enter Workspace →"}
                   </button>
                 </div>
               </div>
@@ -670,31 +627,14 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [openMenu,setOpenMenu]=useState(null);
   const [invoiceRow,setInvoiceRow]=useState(null);
   const [printMode,setPrintMode]=useState(false);
+  // salesData, setSalesData, customers, setCustomers all received as props from App
   const [coll,setColl]=useState(false);
   const [mobileOpen,setMobileOpen]=useState(false);
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
   const [pdfMode,setPdfMode]=useState(false);
-  const [salesPeriod,setSalesPeriodRaw]=useState("lifetime");
+  const [salesPeriod,setSalesPeriodRaw]=useState("month");
   const [pdfInv,setPdfInv]=useState(null);
-  const [dbStatus,setDbStatus]=useState(null);
   const invoicePrintRef=useRef(null);
-
-  // Reload this shop's sales from Supabase whenever shopId changes
-  useEffect(()=>{
-    dbLoadSales(shopId).then(data=>{
-      if(data===null){
-        console.warn(`⚠️ dbLoadSales returned null for ${shopId}`);
-        setDbStatus({ok:false,msg:"⚠️ Could not load sales — check Supabase env vars or RLS policy."});
-      } else {
-        console.log(`✅ Loaded ${data.length} sales for ${shopId}`);
-        setSalesData(prev=>({...prev,[shopId]:data}));
-        setDbStatus({ok:true,count:data.length});
-      }
-    }).catch(err=>{
-      console.error("❌ Load sales error:",err);
-      setDbStatus({ok:false,msg:"❌ Supabase error: "+err.message});
-    });
-  },[shopId]);
 
   useEffect(()=>{
     const h=()=>setIsMobile(window.innerWidth<768);
@@ -759,6 +699,14 @@ const addSale = async (form) => {
     ful:      form.status || "PENDING",
     pay:      form.payBy || "SHOP",
     rem:      form.remarks || "",
+    // ROS India fields
+    purchasesInv:     form.purchasesInv     || "",
+    purchasesInvDate: form.purchasesInvDate || "",
+    invAmount:        form.invAmount     ? Number(form.invAmount)     : "",
+    shippingCharge:   form.shippingCharge? Number(form.shippingCharge): "",
+    otherAmount:      form.otherAmount   ? Number(form.otherAmount)   : "",
+    pl:               (()=>{ const s=Number(form.amount)||0; const costs=(Number(form.invAmount)||0)+(Number(form.shippingCharge)||0)+(Number(form.otherAmount)||0); return s&&costs?s-costs:""; })(),
+    paymentStatus:    form.paymentStatus || "Pending to pay",
   };
   // Update UI instantly
   setSalesData(d => ({...d, [shopId]: [newSale, ...d[shopId]]}));
@@ -791,7 +739,7 @@ const addSale = async (form) => {
       if(idx>=0){const n=[...prev];n[idx]=updatedCust;return n;}
       return [...prev,updatedCust];
     });
-    dbSaveCustomer(shopId,updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
+    dbSaveCustomer(updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
   }
 };
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
@@ -1568,7 +1516,6 @@ return(
               filtSales={filtSales}
               fmt={fmt}
               formatDate={formatDate}
-              onReload={()=>dbLoadSales(shopId).then(data=>{if(data)setSalesData(prev=>({...prev,[shopId]:data}));})}
               openMenu={openMenu}
               search={search}
               sales={sales}
@@ -1606,7 +1553,7 @@ return(
 
           {/* ─── CUSTOMERS ─── */}
           {tab==="customers"&&(
-            <CustomersPanel Badge={Badge} customers={customers} search={search} shop={shop} shopId={shopId} setCustomers={setCustomers} user={user} dbDeleteCustomer={dbDeleteCustomer}/>
+            <CustomersPanel Badge={Badge} customers={customers} search={search} shop={shop} setCustomers={setCustomers} user={user} dbDeleteCustomer={dbDeleteCustomer}/>
           )}
 
           {/* ─── SUPPLIERS ─── */}
@@ -1683,7 +1630,7 @@ return(
       {/* ── IMPORT MODAL — SALES ── */}
       {modal==="import-sales"&&user?.role!=="staff"&&(
         <Modal title="⬇ Import Sales" onClose={()=>setModal(null)} accent={shop.accent}>
-          <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)} setSalesData={setSalesData} customers={customers} setCustomers={setCustomers}/>
+          <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}/>
         </Modal>
       )}
 
@@ -2481,13 +2428,10 @@ return(
 /* ══════════════════════════════════════════════════════
    IMPORT / EXPORT PANEL
 ══════════════════════════════════════════════════════ */
-const ImportExportPanel=({type,entity,shop,data,onClose,shopId,setSalesData,customers=[],setCustomers})=>{
+const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
   const [dragOver,setDragOver]=useState(false);
   const [fileName,setFileName]=useState(null);
-  const [fileObj,setFileObj]=useState(null);
   const [fileFmt,setFileFmt]=useState("CSV");
-  const [importing,setImporting]=useState(false);
-  const [importResult,setImportResult]=useState(null);
 
   // All 22 export columns — all ON by default
   const ALL_COLS=[
@@ -2702,7 +2646,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,setSalesData,cust
       <div
         onDragOver={e=>{e.preventDefault();setDragOver(true);}}
         onDragLeave={()=>setDragOver(false)}
-        onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f){setFileName(f.name);setFileObj(f);}}}
+        onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f)setFileName(f.name);}}
         style={{
           border:"2px dashed "+(dragOver?shop.accent:"#cbd5e1"),
           borderRadius:14,padding:"40px 24px",textAlign:"center",
@@ -2712,7 +2656,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,setSalesData,cust
         onClick={()=>document.getElementById("imp-file-"+entity).click()}>
         <input id={"imp-file-"+entity} type="file" accept=".csv,.xlsx"
           style={{display:"none"}}
-          onChange={e=>{const f=e.target.files[0];if(f){setFileName(f.name);setFileObj(f);}else{setFileName(null);setFileObj(null);}setImportResult(null);}}/>
+          onChange={e=>setFileName(e.target.files[0]?.name||null)}/>
         <div style={{fontSize:40,marginBottom:10}}>{fileName?"✅":"📂"}</div>
         <p style={{margin:0,fontWeight:800,fontSize:15,color:fileName?shop.accent:"#374151"}}>
           {fileName||"Drop your CSV file here"}
@@ -2722,235 +2666,23 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,setSalesData,cust
         </p>
       </div>
 
-      {/* import result */}
-      {importResult&&(
-        <div style={{background:importResult.ok?"#f0fdf4":"#fef2f2",border:"1px solid "+(importResult.ok?"#bbf7d0":"#fecaca"),borderRadius:10,padding:"12px 16px"}}>
-          <p style={{margin:0,fontWeight:800,fontSize:13,color:importResult.ok?"#15803d":"#dc2626"}}>{importResult.msg}</p>
-        </div>
-      )}
-
       {/* actions */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
         <button
-          disabled={!fileName||importing}
-          onClick={async()=>{
-            if(!fileObj)return;
-            setImporting(true);
-            setImportResult(null);
-            try{
-              // ── Read file as ArrayBuffer (works for both .xlsx and .csv) ──
-              const buf=await fileObj.arrayBuffer();
-              const wb=XLSX.read(buf,{type:"array",cellDates:true});
-              const ws=wb.Sheets[wb.SheetNames[0]];
-              // Convert to array of arrays (raw values)
-              const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
-              if(rows.length<2){setImportResult({ok:false,msg:"File is empty or has no data rows."});setImporting(false);return;}
-
-              // ── Clean headers ─────────────────────────────────────────────
-              const headers=rows[0].map(h=>String(h).replace(/[^\x20-\x7E]/g,"").toLowerCase().trim());
-              console.log("📋 Headers:", headers);
-
-              // ── Column finder ─────────────────────────────────────────────
-              const col=(...names)=>{
-                for(const n of names){
-                  const i=headers.findIndex(h=>h===n.toLowerCase()||h.includes(n.toLowerCase()));
-                  if(i>=0)return i;
-                }
-                return -1;
-              };
-
-              // Name-based matching
-              let iId     =col("saleid","sale id");
-              let iDate   =col("date","sale date");
-              let iCust   =col("customer","customer name","client");
-              let iItem   =col("item","product","description");
-              let iQty    =col("quantity","qty");
-              let iAmount =col("total","amount","grand total","sale amount");
-              let iPay    =col("payment method","payment","pay method");
-              let iContact=col("contact","phone","mobile");
-              let iAddr   =col("address");
-              let iRem    =col("remarks","notes");
-              let iFul    =col("status","delivery status","fulfillment","fulfilment");
-              let iInv    =col("invoice no","shop inv");
-
-              // Positional fallback — exact positions from user's spreadsheet:
-              // Col: 0=SaleID 1=Date 2=InvoiceNo 3=ShopInv 4=Customer 5=Addressee
-              //      6=Address 7=Contact 8=Item 9=Quantity 10=Price 11=Total
-              //      12=PaymentMethod 13=Tag 14=ReturnReq 15=ReturnRcvd 16=Refund
-              //      17=Remarks 18=SentDate 19=Shipping 20=PurchaseInv 21=Amount
-              //      22=P/L 23=Status
-              if(iId<0)     iId=0;
-              if(iDate<0)   iDate=1;
-              if(iInv<0)    iInv=2;
-              if(iCust<0)   iCust=4;
-              if(iAddr<0)   iAddr=6;
-              if(iContact<0)iContact=7;
-              if(iItem<0)   iItem=8;
-              if(iQty<0)    iQty=9;
-              if(iAmount<0) iAmount=11;
-              if(iPay<0)    iPay=12;
-              if(iRem<0)    iRem=17;
-              if(iFul<0)    iFul=23;
-
-              console.log("📊 Cols — id:",iId,"date:",iDate,"cust:",iCust,"item:",iItem,"amt:",iAmount,"pay:",iPay,"status:",iFul);
-
-              // ── Status normaliser ─────────────────────────────────────────
-              const normStatus=s=>{
-                const u=String(s||"").toUpperCase().trim();
-                if(["FULFILLED","DELIVERED","COMPLETE","COMPLETED"].includes(u))return"FULFILLED";
-                if(u==="REFUNDED")return"REFUNDED";
-                if(u==="EXCHANGED")return"EXCHANGED";
-                if(u.includes("RETURN REQ")||u==="RTRN REQSTD")return"RTRN REQSTD";
-                if(u.includes("RETURN RCV")||u==="RETRN RCVD")return"RETRN RCVD";
-                if(u==="GOOD FEEDBACK")return"GOOD FEEDBACK";
-                return"PENDING";
-              };
-
-              // ── Format date → always YYYY-MM-DD for consistent storage ──────
-              const fmtDate=v=>{
-                if(!v)return"";
-                // SheetJS returns JS Date object when cellDates:true
-                if(v instanceof Date){
-                  const y=v.getFullYear(),m=String(v.getMonth()+1).padStart(2,"0"),d=String(v.getDate()).padStart(2,"0");
-                  return`${y}-${m}-${d}`;
-                }
-                const s=String(v).trim();
-                // Already YYYY-MM-DD
-                if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
-                // DD-MM-YYYY
-                const a=s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-                if(a)return`${a[3]}-${a[2].padStart(2,"0")}-${a[1].padStart(2,"0")}`;
-                // DD-MM-YY (e.g. 19-03-26 → 2026-03-19)
-                const b=s.match(/^(\d{1,2})-(\d{1,2})-(\d{2})$/);
-                if(b)return`20${b[3]}-${b[2].padStart(2,"0")}-${b[1].padStart(2,"0")}`;
-                // DD/MM/YYYY
-                const c=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-                if(c)return`${c[3]}-${c[2].padStart(2,"0")}-${c[1].padStart(2,"0")}`;
-                return s;
-              };
-
-              // ── Process rows ──────────────────────────────────────────────
-              const pfx={["ros-selections"]:"SI",["ros-hairlines"]:"SH",["ros-india"]:"IN"}[shopId]||"SA";
-              let saved=0,failed=0;
-              for(let i=1;i<rows.length;i++){
-                const r=rows[i];
-                if(!r||r.every(v=>v===""||v===null||v===undefined))continue;
-                const get=idx=>(idx>=0&&idx<r.length)?String(r[idx]??"").trim():"";
-                const rawId=get(iId);
-                const id=rawId||`${pfx}-${Date.now()}-${i}`;
-                const rawAmt=get(iAmount);
-                const parsedAmt=parseFloat(String(rawAmt).replace(/[£₹$€,\s]/g,""))||0;
-                const sale={
-                  id,
-                  customer: get(iCust),
-                  date:     fmtDate(r[iDate])||new Date().toISOString().slice(0,10),
-                  item:     get(iItem),
-                  qty:      get(iQty)||"1",
-                  amount:   parsedAmt,
-                  pay:      get(iPay),
-                  contact:  get(iContact),
-                  phone:    get(iContact),
-                  address:  get(iAddr),
-                  rem:      get(iRem),
-                  ful:      normStatus(get(iFul)),
-                  status:   normStatus(get(iFul)),
-                  invoiceNo:get(iInv)||id,
-                  taxRate:  shopId==="ros-india"?18:20,
-                  taxInclusive:true,
-                };
-                if(i<=3)console.log(`Row ${i}:`,{id:sale.id,customer:sale.customer,date:sale.date,amount:sale.amount,status:sale.ful});
-                try{await dbSaveSale(shopId,sale);saved++;}
-                catch(e){console.error("Row",i,"failed:",e);failed++;}
-              }
-
-              // ── Build customer records from imported sales ─────────────
-              if(setCustomers){
-                // Group all imported rows by customer name
-                const custMap={};
-                for(let i=1;i<rows.length;i++){
-                  const r=rows[i];
-                  if(!r||r.every(v=>v===""||v===null||v===undefined))continue;
-                  const get=idx=>(idx>=0&&idx<r.length)?String(r[idx]??"").trim():"";
-                  const name=get(iCust);
-                  if(!name)continue;
-                  const amt=parseFloat(String(get(iAmount)).replace(/[£₹$€,\s]/g,""))||0;
-                  const date=fmtDate(r[iDate])||"";
-                  if(!custMap[name]){
-                    custMap[name]={
-                      name,
-                      phone:    get(iContact),
-                      whatsapp: get(iContact),
-                      address:  get(iAddr),
-                      purchases:0,
-                      spend:    0,
-                      last:     date,
-                      tag:      "Regular",
-                      notes:    "",
-                    };
-                  }
-                  custMap[name].purchases+=1;
-                  custMap[name].spend+=amt;
-                  // Keep latest date
-                  if(date>custMap[name].last)custMap[name].last=date;
-                }
-
-                // Merge with existing customers and save
-                let custSaved=0;
-                for(const name of Object.keys(custMap)){
-                  const incoming=custMap[name];
-                  // Check if customer already exists (by name)
-                  const existing=customers.find(c=>c.name.toLowerCase()===name.toLowerCase());
-                  const custId=existing?.id||("CUST-"+name.replace(/\s+/g,"-").slice(0,10).toUpperCase()+"-"+Date.now().toString().slice(-4));
-                  const merged={
-                    id:        custId,
-                    name,
-                    phone:     incoming.phone||existing?.phone||"",
-                    whatsapp:  incoming.whatsapp||existing?.whatsapp||"",
-                    address:   incoming.address||existing?.address||"",
-                    tag:       existing?.tag||incoming.tag,
-                    notes:     existing?.notes||"",
-                    purchases: (existing?.purchases||0)+incoming.purchases,
-                    spend:     (existing?.spend||0)+incoming.spend,
-                    last:      incoming.last||existing?.last||"",
-                  };
-                  try{
-                    await dbSaveCustomer(shopId,merged);
-                    custSaved++;
-                  }catch(e){console.error("Customer save failed:",name,e);}
-                }
-
-                // Reload customers into state
-                const freshCust=await dbLoadCustomers(shopId);
-                if(freshCust)setCustomers(freshCust);
-                console.log(`✅ ${custSaved} customers updated`);
-              }
-              // Reload from Supabase so list is fresh
-              const fresh=await dbLoadSales(shopId);
-              if(fresh&&setSalesData)setSalesData(prev=>({...prev,[shopId]:fresh}));
-              setImportResult({ok:true,msg:`✅ Imported ${saved} sale${saved!==1?"s":""}${failed>0?` (${failed} failed)`:""}.`});
-              setFileName(null);setFileObj(null);
-            }catch(e){
-              setImportResult({ok:false,msg:"❌ Failed to parse file: "+e.message});
-            }
-            setImporting(false);
-          }}
+          onClick={()=>{if(!fileName){alert("Please select a file first.");}else{alert("Import started! "+fileName+" is being processed.");onClose();}}}
           style={{padding:"12px 0",borderRadius:11,border:"none",
-            background:(importResult?.ok||importing||!fileObj)?"#e2e8f0":shop.accent,
-            color:(importResult?.ok||importing||!fileObj)?"#94a3b8":"white",fontWeight:800,fontSize:14,
-            cursor:(importResult?.ok||importing||!fileObj)?"not-allowed":"pointer",fontFamily:"inherit",
-            boxShadow:(!importResult?.ok&&!importing&&fileObj)?"0 4px 14px "+shop.accent+"44":"none",
+            background:fileName?shop.accent:"#e2e8f0",
+            color:fileName?"white":"#94a3b8",fontWeight:800,fontSize:14,
+            cursor:fileName?"pointer":"not-allowed",fontFamily:"inherit",
+            boxShadow:fileName?"0 4px 14px "+shop.accent+"44":"none",
             transition:"all 0.2s"}}>
-          {importing?"⏳ Importing…":"⬆ Import Now"}
+          ⬆ Import Now
         </button>
         <button onClick={onClose}
-          style={{padding:"12px 0",borderRadius:11,
-            background:importResult?.ok?shop.accent:"white",
-            color:importResult?.ok?"white":"#374151",
-            border:importResult?.ok?"none":"1px solid #e2e8f0",
-            fontWeight:importResult?.ok?800:700,fontSize:14,
-            cursor:"pointer",fontFamily:"inherit",
-            boxShadow:importResult?.ok?"0 4px 14px "+shop.accent+"44":"none"}}>
-          {importResult?.ok?"✓ Done":"Cancel"}
+          style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",
+            background:"white",color:"#374151",fontWeight:700,fontSize:14,
+            cursor:"pointer",fontFamily:"inherit"}}>
+          Cancel
         </button>
       </div>
     </div>
@@ -2976,8 +2708,15 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     refundAmt:   sale.refundAmt||"",
     tag:         sale.tag||"",
     remarks:     sale.rem||sale.remarks||"",
-    taxInclusive: sale.taxInclusive !== false,
-    taxRate:      sale.taxRate !== undefined ? sale.taxRate : (shopId==="ros-india" ? 18 : 20),
+    taxInclusive:     sale.taxInclusive !== false,
+    taxRate:          sale.taxRate !== undefined ? sale.taxRate : (shopId==="ros-india" ? 18 : 20),
+    // ROS India only
+    purchasesInv:     sale.purchasesInv     || "",
+    purchasesInvDate: sale.purchasesInvDate || "",
+    invAmount:        sale.invAmount        || "",
+    shippingCharge:   sale.shippingCharge   || "",
+    otherAmount:      sale.otherAmount      || "",
+    paymentStatus:    sale.paymentStatus    || "Pending to pay",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -3159,6 +2898,166 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
         </>
       )}
 
+      {/* INDIA BILLING — only for ROS India */}
+      {shopId==="ros-india"&&(()=>{
+        const saleAmt  = Number(form.amount)        || 0;
+        const invAmt   = Number(form.invAmount)     || 0;
+        const shipAmt  = Number(form.shippingCharge)|| 0;
+        const otherAmt = Number(form.otherAmount)   || 0;
+        const totalCost = invAmt + shipAmt + otherAmt;
+        const plVal    = saleAmt && totalCost ? saleAmt - totalCost : "";
+        const plColor  = plVal===""?"#374151":plVal>0?"#15803d":"#dc2626";
+        const plBg     = plVal===""?"white":plVal>0?"#f0fdf4":"#fff5f5";
+        const plBorder = plVal===""?"#f9a8d4":plVal>0?"#bbf7d0":"#fca5a5";
+        return(
+          <>
+            <Divider title="India Billing"/>
+            <div style={{background:"linear-gradient(135deg,#fef0f7 0%,#fdf4ff 100%)",border:"1px solid #f9a8d4",borderRadius:12,padding:"14px",marginBottom:16}}>
+
+              {/* Row 1 — Inv. Number + Date */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+                <div>
+                  <label style={{...lbl,color:"#7d1047"}}>Purchase Inv. Number</label>
+                  <input
+                    value={form.purchasesInv}
+                    onChange={e=>set("purchasesInv",e.target.value)}
+                    placeholder="Purchase invoice no."
+                    style={{...inp,border:"1px solid #f9a8d4",fontFamily:"DM Mono,monospace",fontWeight:600}}
+                    onFocus={fo} onBlur={bl}/>
+                </div>
+                <div>
+                  <label style={{...lbl,color:"#7d1047"}}>Pur. Inv. Date</label>
+                  <input
+                    type="date"
+                    value={form.purchasesInvDate||""}
+                    onChange={e=>set("purchasesInvDate",e.target.value)}
+                    style={{...inp,border:"1px solid #f9a8d4"}}
+                    onFocus={fo} onBlur={bl}/>
+                </div>
+              </div>
+
+              {/* Row 2 — Inv. Amount + Shipping Charge */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+                <div>
+                  <label style={{...lbl,color:"#7d1047"}}>Inv. Amount (₹)</label>
+                  <input
+                    type="number"
+                    value={form.invAmount}
+                    onChange={e=>set("invAmount",e.target.value)}
+                    placeholder="0.00"
+                    style={{...inp,border:"1px solid #f9a8d4"}}
+                    onFocus={fo} onBlur={bl}/>
+                </div>
+                <div>
+                  <label style={{...lbl,color:"#7d1047"}}>Shipping Charge (₹)</label>
+                  <input
+                    type="number"
+                    value={form.shippingCharge}
+                    onChange={e=>set("shippingCharge",e.target.value)}
+                    placeholder="0.00"
+                    style={{...inp,border:"1px solid #f9a8d4"}}
+                    onFocus={fo} onBlur={bl}/>
+                </div>
+              </div>
+
+              {/* Row 3 — Other Amount + P/L (auto) */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+                <div>
+                  <label style={{...lbl,color:"#7d1047"}}>Other Amount (₹)</label>
+                  <input
+                    type="number"
+                    value={form.otherAmount}
+                    onChange={e=>set("otherAmount",e.target.value)}
+                    placeholder="0.00"
+                    style={{...inp,border:"1px solid #f9a8d4"}}
+                    onFocus={fo} onBlur={bl}/>
+                </div>
+                <div>
+                  <label style={{...lbl,color:"#7d1047"}}>
+                    P/L (₹)
+                    <span style={{fontSize:9,fontWeight:500,color:"#c084fc",marginLeft:6,textTransform:"none",letterSpacing:0}}>
+                      Sales − (Inv + Ship + Other) · auto
+                    </span>
+                  </label>
+                  <div style={{
+                    ...inp,
+                    border:"1px solid "+plBorder,
+                    background:plBg,
+                    color:plColor,
+                    fontWeight:700,
+                    fontFamily:"DM Mono,monospace",
+                    display:"flex",alignItems:"center",justifyContent:"space-between",
+                    userSelect:"none",cursor:"default",
+                  }}>
+                    <span>
+                      {plVal===""
+                        ? "— fill amounts above"
+                        : (plVal>0?"▲ Profit  ₹":"▼ Loss  ₹")+Math.abs(plVal).toLocaleString("en-IN")}
+                    </span>
+                    {plVal!==""&&(
+                      <span style={{fontSize:10,fontWeight:800,
+                        background:plVal>0?"#dcfce7":"#fee2e2",
+                        color:plColor,padding:"2px 8px",borderRadius:999}}>
+                        {plVal>0?"PROFIT":"LOSS"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 4 — Cost breakdown summary (only when values entered) */}
+              {(Number(form.invAmount)||Number(form.shippingCharge)||Number(form.otherAmount))>0&&(
+                <div style={{background:"rgba(255,255,255,0.70)",borderRadius:9,padding:"10px 12px",
+                  border:"1px solid #f9a8d4",marginBottom:12}}>
+                  <p style={{margin:"0 0 6px",fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>Cost Breakdown</p>
+                  <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                    {Number(form.invAmount)>0&&(
+                      <div style={{display:"flex",justifyContent:"space-between"}}>
+                        <span style={{fontSize:11,color:"#64748b"}}>Inv. Amount</span>
+                        <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>₹{Number(form.invAmount).toLocaleString("en-IN")}</span>
+                      </div>
+                    )}
+                    {Number(form.shippingCharge)>0&&(
+                      <div style={{display:"flex",justifyContent:"space-between"}}>
+                        <span style={{fontSize:11,color:"#64748b"}}>Shipping</span>
+                        <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>₹{Number(form.shippingCharge).toLocaleString("en-IN")}</span>
+                      </div>
+                    )}
+                    {Number(form.otherAmount)>0&&(
+                      <div style={{display:"flex",justifyContent:"space-between"}}>
+                        <span style={{fontSize:11,color:"#64748b"}}>Other</span>
+                        <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>₹{Number(form.otherAmount).toLocaleString("en-IN")}</span>
+                      </div>
+                    )}
+                    <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid #f9a8d4",paddingTop:4,marginTop:2}}>
+                      <span style={{fontSize:12,fontWeight:800,color:"#7d1047"}}>Total Cost</span>
+                      <span style={{fontSize:12,fontWeight:900,color:"#7d1047"}}>
+                        ₹{((Number(form.invAmount)||0)+(Number(form.shippingCharge)||0)+(Number(form.otherAmount)||0)).toLocaleString("en-IN")}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Row 5 — Payment Status */}
+              <div>
+                <label style={{...lbl,color:"#7d1047"}}>Payment Status</label>
+                <select
+                  value={form.paymentStatus}
+                  onChange={e=>set("paymentStatus",e.target.value)}
+                  style={{...inp,border:"1px solid #f9a8d4",fontWeight:700,
+                    color:form.paymentStatus==="Paid"?"#15803d":"#a16207",
+                    background:form.paymentStatus==="Paid"?"#f0fdf4":"#fefce8"}}>
+                  <option value="Pending to pay">⏳ Pending to pay</option>
+                  <option value="Paid">✅ Paid</option>
+                </select>
+              </div>
+            </div>
+          </>
+        );
+      })()}
+
+
       <div style={{marginBottom:12}}>
         <label style={lbl}>Sale Type / Tag</label>
         <select value={form.tag} onChange={e=>set("tag",e.target.value)} style={inp}>
@@ -3172,7 +3071,18 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...form,id:sale.id,ful:form.status,pay:form.payBy,rem:form.remarks,amount:parseFloat(form.amount)||0})}
+        <button onClick={()=>onSave({
+            ...form,
+            id:sale.id,ful:form.status,pay:form.payBy,rem:form.remarks,
+            amount:parseFloat(form.amount)||0,
+            purchasesInv:     form.purchasesInv     || "",
+            purchasesInvDate: form.purchasesInvDate || "",
+            invAmount:        form.invAmount     ? Number(form.invAmount)     : "",
+            shippingCharge:   form.shippingCharge? Number(form.shippingCharge): "",
+            otherAmount:      form.otherAmount   ? Number(form.otherAmount)   : "",
+            pl:               (()=>{ const s=Number(form.amount)||0; const costs=(Number(form.invAmount)||0)+(Number(form.shippingCharge)||0)+(Number(form.otherAmount)||0); return s&&costs?s-costs:""; })(),
+            paymentStatus:    form.paymentStatus || "Pending to pay",
+          })}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
@@ -3745,6 +3655,140 @@ const NewCustomerForm=({shop,onSave,onClose})=>{
 };
 
 /* ══════════════════════════════════════════════════════
+   CUSTOMER TYPEAHEAD
+══════════════════════════════════════════════════════ */
+const CustomerTypeahead=({value,customerList,shop,inp,lbl,fo,bl,onChange,onAddNew,contactValue,onContactChange})=>{
+  const [open,setOpen]=useState(false);
+  const typed=(value||"").toLowerCase();
+
+  // Names that START WITH what the user typed (primary), then names that CONTAIN it (secondary)
+  const startsWith = typed ? customerList.filter(c=>c.name.toLowerCase().startsWith(typed)) : [];
+  const contains   = typed ? customerList.filter(c=>!c.name.toLowerCase().startsWith(typed)&&c.name.toLowerCase().includes(typed)) : [];
+  const suggestions = [...startsWith,...contains].slice(0,10);
+  const exactMatch  = customerList.find(c=>c.name.toLowerCase()===typed);
+
+  return(
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+      <div>
+        <label style={lbl}>Customer Name</label>
+        <div style={{display:"flex",gap:6,alignItems:"center"}}>
+          <div style={{position:"relative",flex:1}}>
+            <input
+              value={value}
+              onChange={e=>{
+                const v=e.target.value;
+                setOpen(true);
+                const match=customerList.find(c=>c.name.toLowerCase()===v.toLowerCase());
+                onChange(v, match?match.phone||"":undefined);
+              }}
+              onFocus={()=>setOpen(true)}
+              onBlur={()=>setTimeout(()=>setOpen(false),160)}
+              onKeyDown={e=>{
+                if(e.key==="Escape"){setOpen(false);}
+                if(e.key==="Enter"&&suggestions.length===1){
+                  onChange(suggestions[0].name,suggestions[0].phone||"");
+                  setOpen(false);
+                }
+              }}
+              placeholder="Type customer name…"
+              autoComplete="off"
+              style={{
+                ...inp,
+                width:"100%",
+                borderColor: exactMatch ? shop.accent : undefined,
+                background:  exactMatch ? shop.accentBg : "white",
+                paddingRight: exactMatch ? 60 : undefined,
+              }}
+              onFocus={e=>{fo(e);setOpen(true);}}
+              onBlur={e=>{bl(e);setTimeout(()=>setOpen(false),160);}}
+            />
+            {/* ✓ found badge */}
+            {exactMatch&&(
+              <span style={{
+                position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",
+                fontSize:10,fontWeight:700,color:shop.accent,pointerEvents:"none",
+                background:shop.accentBg,padding:"1px 6px",borderRadius:999,
+              }}>✓ found</span>
+            )}
+            {/* Suggestions dropdown */}
+            {open&&suggestions.length>0&&!exactMatch&&(
+              <div style={{
+                position:"absolute",top:"calc(100% + 3px)",left:0,right:0,
+                background:"white",
+                border:"1px solid "+shop.accent+"55",
+                borderRadius:10,
+                boxShadow:"0 10px 28px rgba(0,0,0,0.13)",
+                zIndex:120,maxHeight:220,overflowY:"auto",
+              }}>
+                {suggestions.map((c,idx)=>{
+                  const name=c.name;
+                  const hi=name.slice(0,value.length);
+                  const rest=name.slice(value.length);
+                  return(
+                    <div key={c.id||idx}
+                      onMouseDown={()=>{
+                        onChange(c.name,c.phone||"");
+                        setOpen(false);
+                      }}
+                      style={{
+                        padding:"9px 14px",cursor:"pointer",
+                        borderBottom:idx<suggestions.length-1?"1px solid #f8fafc":"none",
+                        display:"flex",alignItems:"center",gap:10,
+                      }}
+                      onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg}
+                      onMouseLeave={e=>e.currentTarget.style.background="white"}>
+                      <div style={{
+                        width:30,height:30,borderRadius:8,flexShrink:0,
+                        background:shop.sb,display:"flex",alignItems:"center",
+                        justifyContent:"center",color:"white",fontWeight:800,fontSize:12,
+                      }}>
+                        {c.name.charAt(0).toUpperCase()}
+                      </div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <p style={{margin:0,fontWeight:600,fontSize:13,color:"#0f172a"}}>
+                          <span style={{fontWeight:800,color:shop.accent}}>{hi}</span>
+                          <span>{rest}</span>
+                        </p>
+                        {c.phone&&<p style={{margin:0,fontSize:10,color:"#94a3b8"}}>{c.phone}</p>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          {/* + add new customer button */}
+          <button onClick={onAddNew}
+            title="Add new customer"
+            style={{
+              flexShrink:0,width:34,height:34,borderRadius:8,cursor:"pointer",
+              border:"1px solid "+shop.accent,
+              background:shop.accent,color:"white",
+              fontSize:18,fontWeight:900,
+              display:"flex",alignItems:"center",justifyContent:"center",
+              boxShadow:"0 2px 8px "+shop.accent+"44",
+              transition:"all 0.15s",
+            }}
+            onMouseEnter={e=>e.currentTarget.style.transform="scale(1.08)"}
+            onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
+            +
+          </button>
+        </div>
+      </div>
+      <div>
+        <label style={lbl}>Contact Number</label>
+        <input
+          value={contactValue}
+          onChange={onContactChange}
+          placeholder="+44 7700 000000"
+          style={inp}
+          onFocus={fo} onBlur={bl}/>
+      </div>
+    </div>
+  );
+};
+
+/* ══════════════════════════════════════════════════════
    NEW SALE FORM
 ══════════════════════════════════════════════════════ */
 const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem})=>{
@@ -3778,6 +3822,13 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     refundAmt:   "",
     tag:         "",
     remarks:     "",
+    // ROS India only
+    purchasesInv:     "",
+    purchasesInvDate: "",
+    invAmount:        "",
+    shippingCharge:   "",
+    otherAmount:      "",
+    paymentStatus:    "Pending to pay",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -3894,40 +3945,16 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
 
       {/* CUSTOMER */}
       <Divider title="Customer"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Customer Name</label>
-          <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            <select value={form.customer} onChange={e=>{
-                set("customer",e.target.value);
-                const c=customerList.find(x=>x.name===e.target.value);
-                if(c)set("contact",c.phone||"");
-              }} style={{...inp,flex:1}}>
-              <option value="">Select customer…</option>
-              {customerList.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
-            </select>
-            {/* + add new customer */}
-            <button onClick={()=>setShowNewCust(true)}
-              title="Add new customer"
-              style={{flexShrink:0,width:34,height:34,borderRadius:8,cursor:"pointer",
-                border:"1px solid "+shop.accent,
-                background:shop.accent,color:"white",
-                fontSize:18,fontWeight:900,
-                display:"flex",alignItems:"center",justifyContent:"center",
-                boxShadow:"0 2px 8px "+shop.accent+"44",
-                transition:"all 0.15s",}}
-              onMouseEnter={e=>e.currentTarget.style.transform="scale(1.08)"}
-              onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
-              +
-            </button>
-          </div>
-        </div>
-        <div>
-          <label style={lbl}>Contact Number</label>
-          <input value={form.contact} onChange={e=>set("contact",e.target.value)}
-            placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-      </div>
+      <CustomerTypeahead
+        value={form.customer}
+        customerList={customerList}
+        shop={shop}
+        inp={inp} lbl={lbl} fo={fo} bl={bl}
+        onChange={(name,phone)=>{set("customer",name);if(phone!==undefined)set("contact",phone);}}
+        onAddNew={()=>setShowNewCust(true)}
+        contactValue={form.contact}
+        onContactChange={e=>set("contact",e.target.value)}
+      />
 
       {/* ORDER DETAILS */}
       <Divider title="Order Details"/>
@@ -4093,6 +4120,166 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
         </>
       )}
 
+      {/* INDIA BILLING — only for ROS India */}
+      {shopId==="ros-india"&&(()=>{
+        const saleAmt  = Number(form.amount)        || 0;
+        const invAmt   = Number(form.invAmount)     || 0;
+        const shipAmt  = Number(form.shippingCharge)|| 0;
+        const otherAmt = Number(form.otherAmount)   || 0;
+        const totalCost = invAmt + shipAmt + otherAmt;
+        const plVal    = saleAmt && totalCost ? saleAmt - totalCost : "";
+        const plColor  = plVal===""?"#374151":plVal>0?"#15803d":"#dc2626";
+        const plBg     = plVal===""?"white":plVal>0?"#f0fdf4":"#fff5f5";
+        const plBorder = plVal===""?"#f9a8d4":plVal>0?"#bbf7d0":"#fca5a5";
+        return(
+          <>
+            <Divider title="India Billing"/>
+            <div style={{background:"linear-gradient(135deg,#fef0f7 0%,#fdf4ff 100%)",border:"1px solid #f9a8d4",borderRadius:12,padding:"14px",marginBottom:16}}>
+
+              {/* Row 1 — Inv. Number + Date */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+                <div>
+                  <label style={{...lbl,color:"#7d1047"}}>Purchase Inv. Number</label>
+                  <input
+                    value={form.purchasesInv}
+                    onChange={e=>set("purchasesInv",e.target.value)}
+                    placeholder="Purchase invoice no."
+                    style={{...inp,border:"1px solid #f9a8d4",fontFamily:"DM Mono,monospace",fontWeight:600}}
+                    onFocus={fo} onBlur={bl}/>
+                </div>
+                <div>
+                  <label style={{...lbl,color:"#7d1047"}}>Pur. Inv. Date</label>
+                  <input
+                    type="date"
+                    value={form.purchasesInvDate||""}
+                    onChange={e=>set("purchasesInvDate",e.target.value)}
+                    style={{...inp,border:"1px solid #f9a8d4"}}
+                    onFocus={fo} onBlur={bl}/>
+                </div>
+              </div>
+
+              {/* Row 2 — Inv. Amount + Shipping Charge */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+                <div>
+                  <label style={{...lbl,color:"#7d1047"}}>Inv. Amount (₹)</label>
+                  <input
+                    type="number"
+                    value={form.invAmount}
+                    onChange={e=>set("invAmount",e.target.value)}
+                    placeholder="0.00"
+                    style={{...inp,border:"1px solid #f9a8d4"}}
+                    onFocus={fo} onBlur={bl}/>
+                </div>
+                <div>
+                  <label style={{...lbl,color:"#7d1047"}}>Shipping Charge (₹)</label>
+                  <input
+                    type="number"
+                    value={form.shippingCharge}
+                    onChange={e=>set("shippingCharge",e.target.value)}
+                    placeholder="0.00"
+                    style={{...inp,border:"1px solid #f9a8d4"}}
+                    onFocus={fo} onBlur={bl}/>
+                </div>
+              </div>
+
+              {/* Row 3 — Other Amount + P/L (auto) */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+                <div>
+                  <label style={{...lbl,color:"#7d1047"}}>Other Amount (₹)</label>
+                  <input
+                    type="number"
+                    value={form.otherAmount}
+                    onChange={e=>set("otherAmount",e.target.value)}
+                    placeholder="0.00"
+                    style={{...inp,border:"1px solid #f9a8d4"}}
+                    onFocus={fo} onBlur={bl}/>
+                </div>
+                <div>
+                  <label style={{...lbl,color:"#7d1047"}}>
+                    P/L (₹)
+                    <span style={{fontSize:9,fontWeight:500,color:"#c084fc",marginLeft:6,textTransform:"none",letterSpacing:0}}>
+                      Sales − (Inv + Ship + Other) · auto
+                    </span>
+                  </label>
+                  <div style={{
+                    ...inp,
+                    border:"1px solid "+plBorder,
+                    background:plBg,
+                    color:plColor,
+                    fontWeight:700,
+                    fontFamily:"DM Mono,monospace",
+                    display:"flex",alignItems:"center",justifyContent:"space-between",
+                    userSelect:"none",cursor:"default",
+                  }}>
+                    <span>
+                      {plVal===""
+                        ? "— fill amounts above"
+                        : (plVal>0?"▲ Profit  ₹":"▼ Loss  ₹")+Math.abs(plVal).toLocaleString("en-IN")}
+                    </span>
+                    {plVal!==""&&(
+                      <span style={{fontSize:10,fontWeight:800,
+                        background:plVal>0?"#dcfce7":"#fee2e2",
+                        color:plColor,padding:"2px 8px",borderRadius:999}}>
+                        {plVal>0?"PROFIT":"LOSS"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Row 4 — Cost breakdown summary (only when values entered) */}
+              {(Number(form.invAmount)||Number(form.shippingCharge)||Number(form.otherAmount))>0&&(
+                <div style={{background:"rgba(255,255,255,0.70)",borderRadius:9,padding:"10px 12px",
+                  border:"1px solid #f9a8d4",marginBottom:12}}>
+                  <p style={{margin:"0 0 6px",fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>Cost Breakdown</p>
+                  <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                    {Number(form.invAmount)>0&&(
+                      <div style={{display:"flex",justifyContent:"space-between"}}>
+                        <span style={{fontSize:11,color:"#64748b"}}>Inv. Amount</span>
+                        <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>₹{Number(form.invAmount).toLocaleString("en-IN")}</span>
+                      </div>
+                    )}
+                    {Number(form.shippingCharge)>0&&(
+                      <div style={{display:"flex",justifyContent:"space-between"}}>
+                        <span style={{fontSize:11,color:"#64748b"}}>Shipping</span>
+                        <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>₹{Number(form.shippingCharge).toLocaleString("en-IN")}</span>
+                      </div>
+                    )}
+                    {Number(form.otherAmount)>0&&(
+                      <div style={{display:"flex",justifyContent:"space-between"}}>
+                        <span style={{fontSize:11,color:"#64748b"}}>Other</span>
+                        <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>₹{Number(form.otherAmount).toLocaleString("en-IN")}</span>
+                      </div>
+                    )}
+                    <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid #f9a8d4",paddingTop:4,marginTop:2}}>
+                      <span style={{fontSize:12,fontWeight:800,color:"#7d1047"}}>Total Cost</span>
+                      <span style={{fontSize:12,fontWeight:900,color:"#7d1047"}}>
+                        ₹{((Number(form.invAmount)||0)+(Number(form.shippingCharge)||0)+(Number(form.otherAmount)||0)).toLocaleString("en-IN")}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Row 5 — Payment Status */}
+              <div>
+                <label style={{...lbl,color:"#7d1047"}}>Payment Status</label>
+                <select
+                  value={form.paymentStatus}
+                  onChange={e=>set("paymentStatus",e.target.value)}
+                  style={{...inp,border:"1px solid #f9a8d4",fontWeight:700,
+                    color:form.paymentStatus==="Paid"?"#15803d":"#a16207",
+                    background:form.paymentStatus==="Paid"?"#f0fdf4":"#fefce8"}}>
+                  <option value="Pending to pay">⏳ Pending to pay</option>
+                  <option value="Paid">✅ Paid</option>
+                </select>
+              </div>
+            </div>
+          </>
+        );
+      })()}
+
+
       {/* TAG + REMARKS */}
       <div style={{marginBottom:12}}>
         <label style={lbl}>Sale Type / Tag</label>
@@ -4135,14 +4322,92 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
    INLINE PANEL COMPONENTS
    ========================================================= */
 
+/* ── EditCustomerForm ── */
+const EditCustomerForm=({shop,customer,onSave,onClose})=>{
+  const [cf,setCf]=useState({
+    name:       customer.name       ||"",
+    phone:      customer.phone      ||"",
+    email:      customer.email      ||"",
+    phoneSavedOn: customer.phoneSavedOn||"UK 888",
+    addressee:  customer.addressee  ||"",
+    address:    customer.address    ||"",
+    tag:        customer.tag        ||"",
+    remarks:    customer.notes      ||"",
+  });
+  const sc=(k,v)=>setCf(f=>({...f,[k]:v}));
+  const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white"};
+  const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
+  const fo=e=>e.target.style.borderColor=shop.accent;
+  const bl=e=>e.target.style.borderColor="#e2e8f0";
+  const handleSave=()=>{
+    if(!cf.name.trim()){alert("Customer name is required.");return;}
+    onSave({
+      ...customer,
+      name:cf.name,phone:cf.phone,whatsapp:cf.phone,
+      address:cf.address,notes:cf.remarks,
+      tag:cf.tag,email:cf.email,
+      addressee:cf.addressee,phoneSavedOn:cf.phoneSavedOn,
+    });
+  };
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:14}}>
+      <div>
+        <label style={lbl}>Customer Name *</label>
+        <input value={cf.name} onChange={e=>sc("name",e.target.value)} placeholder="Full name" style={inp} onFocus={fo} onBlur={bl}/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div>
+          <label style={lbl}>Phone Number</label>
+          <input value={cf.phone} onChange={e=>sc("phone",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+        <div>
+          <label style={lbl}>Email</label>
+          <input type="email" value={cf.email} onChange={e=>sc("email",e.target.value)} placeholder="email@example.com" style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+      </div>
+      <div>
+        <label style={lbl}>Phone Number Saved On</label>
+        <select value={cf.phoneSavedOn} onChange={e=>sc("phoneSavedOn",e.target.value)} style={inp}>
+          {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
+        </select>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+        <div>
+          <label style={lbl}>Addressee</label>
+          <input value={cf.addressee} onChange={e=>sc("addressee",e.target.value)} placeholder="Name on delivery label" style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+        <div>
+          <label style={lbl}>Tag</label>
+          <select value={cf.tag} onChange={e=>sc("tag",e.target.value)} style={inp}>
+            {["","VIP","Wholesale","New Customer","Regular","Not Good","Regular Return","Banned"].map(o=><option key={o} value={o}>{o||"None"}</option>)}
+          </select>
+        </div>
+      </div>
+      <div>
+        <label style={lbl}>Address</label>
+        <textarea value={cf.address} onChange={e=>sc("address",e.target.value)} rows={2} placeholder="Full delivery address" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
+      </div>
+      <div>
+        <label style={lbl}>Remarks</label>
+        <textarea value={cf.remarks} onChange={e=>sc("remarks",e.target.value)} rows={2} placeholder="Any notes about this customer" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingTop:4}}>
+        <button onClick={handleSave} style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
+          💾 Save Changes
+        </button>
+        <button onClick={onClose} style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+};
+
 /* ── CustomersPanel ── */
-const CustomersPanel=({customers,search,shop,shopId,Badge,setCustomers,user,dbDeleteCustomer})=>{
+const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCustomer})=>{
   const [sel,setSel]=useState(null);
   const [hovR,setHovR]=useState(null);
-  const [editCust,setEditCust]=useState(null); // customer being edited
-  const [editForm,setEditForm]=useState({});
-  const [saving,setSaving]=useState(false);
-
+  const [editCust,setEditCust]=useState(null);
   const filtered=(customers||[]).filter(c=>
     !search||c.name.toLowerCase().includes(search.toLowerCase())||
     c.phone.includes(search)||c.tag.toLowerCase().includes(search.toLowerCase())
@@ -4155,31 +4420,39 @@ const CustomersPanel=({customers,search,shop,shopId,Badge,setCustomers,user,dbDe
   };
   const tc=t=>tagColor[t]||{bg:"#f1f5f9",color:"#475569",border:"#e2e8f0"};
 
-  const openEdit=c=>{
-    setEditForm({
-      name:        c.name||"",
-      phone:       c.phone||"",
-      email:       c.email||"",
-      phoneSavedOn:c.phoneSavedOn||"UK 888",
-      addressee:   c.addressee||"",
-      tag:         c.tag||"",
-      address:     c.address||"",
-      remarks:     c.notes||c.remarks||"",
-    });
-    setEditCust(c);
-    setSel(null);
-  };
-
-  const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",
-    fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",
-    color:"#374151",background:"white"};
-  const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,
-    textTransform:"uppercase",letterSpacing:"0.05em"};
-  const fo=e=>e.target.style.borderColor=shop.accent;
-  const bl=e=>e.target.style.borderColor="#e2e8f0";
-
   return(
     <div style={{padding:0}}>
+      {/* ── EDIT CUSTOMER MODAL ── */}
+      {editCust&&(
+        <div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
+          onClick={()=>setEditCust(null)}>
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(6px)"}}/>
+          <div style={{position:"relative",background:"white",borderRadius:20,
+            boxShadow:"0 32px 64px rgba(0,0,0,0.22)",width:"100%",maxWidth:500,
+            maxHeight:"90vh",overflowY:"auto",zIndex:81}}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+              padding:"16px 22px",borderBottom:"1px solid #f1f5f9",
+              background:shop.accent+"12",borderRadius:"20px 20px 0 0"}}>
+              <h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>✏️ Edit Customer — {editCust.name}</h3>
+              <button onClick={()=>setEditCust(null)}
+                style={{width:30,height:30,borderRadius:"50%",border:"none",
+                  background:"#f1f5f9",cursor:"pointer",fontSize:18,
+                  color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+            </div>
+            <div style={{padding:22}}>
+              <EditCustomerForm
+                shop={shop}
+                customer={editCust}
+                onSave={updated=>{
+                  setCustomers(prev=>prev.map(c=>c.id===updated.id?updated:c));
+                  setEditCust(null);
+                }}
+                onClose={()=>setEditCust(null)}/>
+            </div>
+          </div>
+        </div>
+      )}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
         <div>
           <h2 style={{margin:"0 0 2px",fontSize:20,fontWeight:800,color:"#0f172a"}}>Customers</h2>
@@ -4266,13 +4539,19 @@ const CustomersPanel=({customers,search,shop,shopId,Badge,setCustomers,user,dbDe
                       </span>
                     )}
                   </td>
-                  <td style={{padding:"13px 12px"}} onClick={e=>e.stopPropagation()}>
-                    <button onClick={()=>openEdit(c)}
+                  <td style={{padding:"8px 12px"}} onClick={e=>e.stopPropagation()}>
+                    <button
+                      onClick={()=>setEditCust(c)}
                       title="Edit customer"
-                      style={{padding:"6px 12px",borderRadius:8,border:"1px solid "+shop.accent+"44",
-                        background:shop.accentBg,color:shop.accentText,fontSize:12,fontWeight:700,
-                        cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",
-                        transition:"all 0.15s"}}
+                      style={{
+                        display:"flex",alignItems:"center",gap:5,
+                        padding:"6px 12px",borderRadius:8,
+                        border:"1px solid "+shop.accent+"44",
+                        background:shop.accentBg,color:shop.accentText,
+                        fontSize:12,fontWeight:700,cursor:"pointer",
+                        fontFamily:"inherit",whiteSpace:"nowrap",
+                        transition:"all 0.15s",
+                      }}
                       onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.color="white";}}
                       onMouseLeave={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accentText;}}>
                       ✏️ Edit
@@ -4285,7 +4564,6 @@ const CustomersPanel=({customers,search,shop,shopId,Badge,setCustomers,user,dbDe
         </table>
       </div>
 
-      {/* ── EXPANDED ROW DETAIL ── */}
       {sel&&(()=>{
         const c=(customers||[]).find(x=>x.id===sel);
         if(!c)return null;
@@ -4327,12 +4605,11 @@ const CustomersPanel=({customers,search,shop,shopId,Badge,setCustomers,user,dbDe
                 </div>
               </div>
             </div>
-            <div style={{display:"flex",justifyContent:"flex-end",gap:8,marginTop:12}}>
-              <button onClick={()=>openEdit(c)}
-                style={{padding:"8px 20px",borderRadius:10,border:"none",
-                  background:shop.accent,color:"white",fontSize:13,fontWeight:700,
-                  cursor:"pointer",fontFamily:"inherit",
-                  boxShadow:"0 3px 10px "+shop.accent+"44"}}>
+          <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:12}}>
+              <button onClick={()=>setEditCust(c)}
+                style={{padding:"8px 20px",borderRadius:10,border:"1px solid "+shop.accent+"55",
+                  background:shop.accentBg,color:shop.accentText,fontSize:13,fontWeight:700,
+                  cursor:"pointer",fontFamily:"inherit"}}>
                 ✏️ Edit Customer
               </button>
               {(user?.role==="superadmin"||user?.role==="admin")&&(
@@ -4345,161 +4622,13 @@ const CustomersPanel=({customers,search,shop,shopId,Badge,setCustomers,user,dbDe
                 }} style={{padding:"8px 20px",borderRadius:10,border:"1px solid #fca5a5",
                   background:"#fff5f5",color:"#dc2626",fontSize:13,fontWeight:700,
                   cursor:"pointer",fontFamily:"inherit"}}>
-                  🗑 Delete
+                  🗑 Delete Customer
                 </button>
               )}
             </div>
           </div>
         );
       })()}
-
-      {/* ── EDIT CUSTOMER MODAL ── */}
-      {editCust&&(
-        <div style={{position:"fixed",inset:0,zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(6px)"}}
-            onClick={()=>setEditCust(null)}/>
-          <div style={{position:"relative",background:"white",borderRadius:20,
-            boxShadow:"0 32px 64px rgba(0,0,0,0.20)",width:"100%",maxWidth:520,
-            maxHeight:"90vh",overflowY:"auto"}}>
-            {/* Header */}
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-              padding:"18px 24px",borderBottom:"1px solid #f1f5f9",
-              background:shop.accent+"12",borderRadius:"20px 20px 0 0"}}>
-              <div style={{display:"flex",alignItems:"center",gap:10}}>
-                <div style={{width:36,height:36,borderRadius:10,background:shop.sb,
-                  display:"flex",alignItems:"center",justifyContent:"center",
-                  color:"white",fontWeight:800,fontSize:14}}>
-                  {editCust.name.charAt(0)}
-                </div>
-                <div>
-                  <h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>Edit Customer</h3>
-                  <p style={{margin:0,fontSize:11,color:"#64748b"}}>{editCust.name}</p>
-                </div>
-              </div>
-              <button onClick={()=>setEditCust(null)}
-                style={{width:32,height:32,borderRadius:"50%",border:"none",
-                  background:"#f1f5f9",cursor:"pointer",fontSize:20,color:"#64748b",
-                  display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
-            </div>
-
-            {/* Form */}
-            <div style={{padding:24,display:"flex",flexDirection:"column",gap:14}}>
-              {/* Name */}
-              <div>
-                <label style={lbl}>Customer Name *</label>
-                <input value={editForm.name}
-                  onChange={e=>setEditForm(f=>({...f,name:e.target.value}))}
-                  style={inp} placeholder="Full name" onFocus={fo} onBlur={bl}/>
-              </div>
-
-              {/* Phone + Email */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                <div>
-                  <label style={lbl}>Phone Number</label>
-                  <input value={editForm.phone}
-                    onChange={e=>setEditForm(f=>({...f,phone:e.target.value}))}
-                    style={inp} placeholder="+44 7700 000000" onFocus={fo} onBlur={bl}/>
-                </div>
-                <div>
-                  <label style={lbl}>Email</label>
-                  <input type="email" value={editForm.email}
-                    onChange={e=>setEditForm(f=>({...f,email:e.target.value}))}
-                    style={inp} placeholder="email@example.com" onFocus={fo} onBlur={bl}/>
-                </div>
-              </div>
-
-              {/* Phone Saved On */}
-              <div>
-                <label style={lbl}>Phone Number Saved On</label>
-                <select value={editForm.phoneSavedOn}
-                  onChange={e=>setEditForm(f=>({...f,phoneSavedOn:e.target.value}))}
-                  style={inp}>
-                  {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
-                </select>
-              </div>
-
-              {/* Addressee + Tag */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-                <div>
-                  <label style={lbl}>Addressee</label>
-                  <input value={editForm.addressee}
-                    onChange={e=>setEditForm(f=>({...f,addressee:e.target.value}))}
-                    style={inp} placeholder="Name on delivery label" onFocus={fo} onBlur={bl}/>
-                </div>
-                <div>
-                  <label style={lbl}>Tag</label>
-                  <select value={editForm.tag}
-                    onChange={e=>setEditForm(f=>({...f,tag:e.target.value}))}
-                    style={inp}>
-                    {["","VIP","Wholesale","New Customer","Regular","Not Good","Regular Return","Banned"].map(o=>(
-                      <option key={o} value={o}>{o||"None"}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {/* Address */}
-              <div>
-                <label style={lbl}>Address</label>
-                <textarea value={editForm.address}
-                  onChange={e=>setEditForm(f=>({...f,address:e.target.value}))}
-                  rows={2} style={{...inp,resize:"vertical"}}
-                  placeholder="Full delivery address" onFocus={fo} onBlur={bl}/>
-              </div>
-
-              {/* Remarks */}
-              <div>
-                <label style={lbl}>Remarks</label>
-                <textarea value={editForm.remarks}
-                  onChange={e=>setEditForm(f=>({...f,remarks:e.target.value}))}
-                  rows={2} style={{...inp,resize:"vertical"}}
-                  placeholder="Any notes about this customer" onFocus={fo} onBlur={bl}/>
-              </div>
-
-              {/* Actions */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingTop:4}}>
-                <button onClick={async()=>{
-                    if(!editForm.name.trim())return;
-                    setSaving(true);
-                    const updated={
-                      ...editCust,
-                      name:        editForm.name.trim(),
-                      phone:       editForm.phone,
-                      whatsapp:    editForm.phone,
-                      email:       editForm.email,
-                      phoneSavedOn:editForm.phoneSavedOn,
-                      addressee:   editForm.addressee,
-                      tag:         editForm.tag,
-                      address:     editForm.address,
-                      notes:       editForm.remarks,
-                      remarks:     editForm.remarks,
-                    };
-                    setCustomers(prev=>prev.map(x=>x.id===updated.id?updated:x));
-                    try{await dbSaveCustomer(shopId,updated);}
-                    catch(e){console.error("Save customer:",e);}
-                    setSaving(false);
-                    setEditCust(null);
-                  }}
-                  disabled={saving||!editForm.name.trim()}
-                  style={{padding:"12px 0",borderRadius:11,border:"none",
-                    background:saving?"#e2e8f0":shop.accent,
-                    color:saving?"#94a3b8":"white",fontWeight:800,fontSize:14,
-                    cursor:saving?"not-allowed":"pointer",fontFamily:"inherit",
-                    boxShadow:saving?"none":"0 4px 14px "+shop.accent+"44",
-                    transition:"all 0.2s"}}>
-                  {saving?"⏳ Saving…":"✓ Save Changes"}
-                </button>
-                <button onClick={()=>setEditCust(null)}
-                  style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",
-                    background:"white",color:"#374151",fontWeight:700,fontSize:14,
-                    cursor:"pointer",fontFamily:"inherit"}}>
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };
@@ -5203,14 +5332,13 @@ export default function App(){
     const shops=["ros-selections","ros-hairlines","ros-india"];
     shops.forEach(sid=>{
       dbLoadSales(sid).then(data=>{
-        if(!data){console.warn("⚠️ dbLoadSales returned null for",sid);return;}
-        console.log(`✅ App mount: loaded ${data.length} sales for ${sid}`);
+        if(!data) return;
         setSalesData(prev=>({...prev,[sid]:data}));
-      }).catch(err=>console.error("❌ dbLoadSales failed for",sid,err));
+      }).catch(()=>{});
     });
     dbLoadCustomers().then(data=>{
       if(data&&data.length>0) setCustomers(data);
-    }).catch(err=>console.error("❌ dbLoadCustomers failed:",err));
+    }).catch(()=>{});
   },[]);
 
   const handleLogin=u=>{
