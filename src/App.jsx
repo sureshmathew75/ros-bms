@@ -4157,12 +4157,14 @@ const CustomersPanel=({customers,search,shop,shopId,Badge,setCustomers,user,dbDe
 
   const openEdit=c=>{
     setEditForm({
-      name:     c.name||"",
-      phone:    c.phone||"",
-      whatsapp: c.whatsapp||"",
-      address:  c.address||"",
-      tag:      c.tag||"Regular",
-      notes:    c.notes||"",
+      name:        c.name||"",
+      phone:       c.phone||"",
+      email:       c.email||"",
+      phoneSavedOn:c.phoneSavedOn||"UK 888",
+      addressee:   c.addressee||"",
+      tag:         c.tag||"",
+      address:     c.address||"",
+      remarks:     c.notes||c.remarks||"",
     });
     setEditCust(c);
     setSel(null);
@@ -4171,6 +4173,10 @@ const CustomersPanel=({customers,search,shop,shopId,Badge,setCustomers,user,dbDe
   const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",
     fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",
     color:"#374151",background:"white"};
+  const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,
+    textTransform:"uppercase",letterSpacing:"0.05em"};
+  const fo=e=>e.target.style.borderColor=shop.accent;
+  const bl=e=>e.target.style.borderColor="#e2e8f0";
 
   return(
     <div style={{padding:0}}>
@@ -4380,69 +4386,74 @@ const CustomersPanel=({customers,search,shop,shopId,Badge,setCustomers,user,dbDe
             <div style={{padding:24,display:"flex",flexDirection:"column",gap:14}}>
               {/* Name */}
               <div>
-                <label style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",
-                  letterSpacing:"0.05em",display:"block",marginBottom:5}}>Full Name *</label>
+                <label style={lbl}>Customer Name *</label>
                 <input value={editForm.name}
                   onChange={e=>setEditForm(f=>({...f,name:e.target.value}))}
-                  style={inp} placeholder="Customer name"/>
+                  style={inp} placeholder="Full name" onFocus={fo} onBlur={bl}/>
               </div>
 
-              {/* Phone + WhatsApp */}
+              {/* Phone + Email */}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
                 <div>
-                  <label style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",
-                    letterSpacing:"0.05em",display:"block",marginBottom:5}}>📞 Phone</label>
+                  <label style={lbl}>Phone Number</label>
                   <input value={editForm.phone}
                     onChange={e=>setEditForm(f=>({...f,phone:e.target.value}))}
-                    style={inp} placeholder="+44 7700 000000"/>
+                    style={inp} placeholder="+44 7700 000000" onFocus={fo} onBlur={bl}/>
                 </div>
                 <div>
-                  <label style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",
-                    letterSpacing:"0.05em",display:"block",marginBottom:5}}>💬 WhatsApp</label>
-                  <input value={editForm.whatsapp}
-                    onChange={e=>setEditForm(f=>({...f,whatsapp:e.target.value}))}
-                    style={inp} placeholder="+44 7700 000000"/>
+                  <label style={lbl}>Email</label>
+                  <input type="email" value={editForm.email}
+                    onChange={e=>setEditForm(f=>({...f,email:e.target.value}))}
+                    style={inp} placeholder="email@example.com" onFocus={fo} onBlur={bl}/>
+                </div>
+              </div>
+
+              {/* Phone Saved On */}
+              <div>
+                <label style={lbl}>Phone Number Saved On</label>
+                <select value={editForm.phoneSavedOn}
+                  onChange={e=>setEditForm(f=>({...f,phoneSavedOn:e.target.value}))}
+                  style={inp}>
+                  {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
+                </select>
+              </div>
+
+              {/* Addressee + Tag */}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+                <div>
+                  <label style={lbl}>Addressee</label>
+                  <input value={editForm.addressee}
+                    onChange={e=>setEditForm(f=>({...f,addressee:e.target.value}))}
+                    style={inp} placeholder="Name on delivery label" onFocus={fo} onBlur={bl}/>
+                </div>
+                <div>
+                  <label style={lbl}>Tag</label>
+                  <select value={editForm.tag}
+                    onChange={e=>setEditForm(f=>({...f,tag:e.target.value}))}
+                    style={inp}>
+                    {["","VIP","Wholesale","New Customer","Regular","Not Good","Regular Return","Banned"].map(o=>(
+                      <option key={o} value={o}>{o||"None"}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
               {/* Address */}
               <div>
-                <label style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",
-                  letterSpacing:"0.05em",display:"block",marginBottom:5}}>📍 Address</label>
+                <label style={lbl}>Address</label>
                 <textarea value={editForm.address}
                   onChange={e=>setEditForm(f=>({...f,address:e.target.value}))}
-                  rows={2} style={{...inp,resize:"vertical"}} placeholder="Delivery address"/>
+                  rows={2} style={{...inp,resize:"vertical"}}
+                  placeholder="Full delivery address" onFocus={fo} onBlur={bl}/>
               </div>
 
-              {/* Tag */}
+              {/* Remarks */}
               <div>
-                <label style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",
-                  letterSpacing:"0.05em",display:"block",marginBottom:8}}>Customer Tag</label>
-                <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                  {["New Customer","Regular","VIP","Wholesale"].map(tag=>{
-                    const t=tc(tag);
-                    const isActive=editForm.tag===tag;
-                    return(
-                      <button key={tag} onClick={()=>setEditForm(f=>({...f,tag}))}
-                        style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:700,
-                          cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s",
-                          background:isActive?t.color:"white",
-                          color:isActive?"white":t.color,
-                          border:"1.5px solid "+(isActive?t.color:t.border)}}>
-                        {tag}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Notes */}
-              <div>
-                <label style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",
-                  letterSpacing:"0.05em",display:"block",marginBottom:5}}>📝 Notes</label>
-                <textarea value={editForm.notes}
-                  onChange={e=>setEditForm(f=>({...f,notes:e.target.value}))}
-                  rows={2} style={{...inp,resize:"vertical"}} placeholder="Any notes about this customer…"/>
+                <label style={lbl}>Remarks</label>
+                <textarea value={editForm.remarks}
+                  onChange={e=>setEditForm(f=>({...f,remarks:e.target.value}))}
+                  rows={2} style={{...inp,resize:"vertical"}}
+                  placeholder="Any notes about this customer" onFocus={fo} onBlur={bl}/>
               </div>
 
               {/* Actions */}
@@ -4450,9 +4461,22 @@ const CustomersPanel=({customers,search,shop,shopId,Badge,setCustomers,user,dbDe
                 <button onClick={async()=>{
                     if(!editForm.name.trim())return;
                     setSaving(true);
-                    const updated={...editCust,...editForm,name:editForm.name.trim()};
+                    const updated={
+                      ...editCust,
+                      name:        editForm.name.trim(),
+                      phone:       editForm.phone,
+                      whatsapp:    editForm.phone,
+                      email:       editForm.email,
+                      phoneSavedOn:editForm.phoneSavedOn,
+                      addressee:   editForm.addressee,
+                      tag:         editForm.tag,
+                      address:     editForm.address,
+                      notes:       editForm.remarks,
+                      remarks:     editForm.remarks,
+                    };
                     setCustomers(prev=>prev.map(x=>x.id===updated.id?updated:x));
-                    try{await dbSaveCustomer(shopId,updated);}catch(e){console.error("Save customer:",e);}
+                    try{await dbSaveCustomer(shopId,updated);}
+                    catch(e){console.error("Save customer:",e);}
                     setSaving(false);
                     setEditCust(null);
                   }}
