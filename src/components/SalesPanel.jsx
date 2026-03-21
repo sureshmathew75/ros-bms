@@ -168,6 +168,7 @@ export default function SalesPanel({
   filtSales,
   fmt,
   formatDate,
+  onReload,
   openMenu,
   search,
   sales,
@@ -190,6 +191,7 @@ export default function SalesPanel({
   const [hovR,    setHovR]    = useState(null);
   const [hovCard, setHovCard] = useState(null);
   const [hovTab,  setHovTab]  = useState(null);
+  const [reloading, setReloading] = useState(false);
   /* Default status filter = PENDING */
   const [statusTab, setStatusTab] = useState("PENDING");
 
@@ -356,6 +358,20 @@ export default function SalesPanel({
             }}>
             ⬆ Export
           </button>
+          {onReload && (
+            <button onClick={async () => { setReloading(true); await onReload(); setReloading(false); }}
+              disabled={reloading}
+              title="Refresh sales from database"
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "8px 12px", borderRadius: 9, border: "1px solid #e2e8f0",
+                background: "white", color: "#64748b", fontWeight: 700, fontSize: 13,
+                cursor: reloading ? "not-allowed" : "pointer", fontFamily: "inherit",
+                opacity: reloading ? 0.6 : 1,
+              }}>
+              {reloading ? "⏳" : "🔄"}
+            </button>
+          )}
           <button onClick={() => setModal("new-sale")}
             style={{
               display: "flex", alignItems: "center", gap: 6,

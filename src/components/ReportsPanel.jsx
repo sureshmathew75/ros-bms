@@ -15,7 +15,7 @@ export default function ReportsPanel({ shop, showPdf }) {
             <p style={{margin:"0 0 14px",fontSize:12,color:"#94a3b8"}}>{r.d}</p>
             <div style={{display:"flex",gap:8}}>
               <button style={{padding:"6px 14px",borderRadius:9,border:"1px solid "+shop.accent+"33",background:shop.accentBg,color:shop.accentText,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Preview</button>
-              <button onClick={()=>showPdf(row)} style={{padding:"6px 14px",borderRadius:9,border:"1px solid #e2e8f0",background:"#f8fafc",color:"#374151",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>⬇ PDF</button>
+              <button onClick={()=>showPdf(r)} style={{padding:"6px 14px",borderRadius:9,border:"1px solid #e2e8f0",background:"#f8fafc",color:"#374151",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>⬇ PDF</button>
             </div>
           </div>
         ))}

@@ -240,19 +240,38 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
   // shopStats computed directly from salesData prop
 
   // Calculate stats directly from salesData prop (always up to date)
-  const today=new Date().toISOString().split('T')[0];
+  const today=new Date().toISOString().split('T')[0]; // YYYY-MM-DD
   const thisMonth=today.slice(0,7); // "YYYY-MM"
+
+  // Normalise any date format to YYYY-MM-DD for comparison
+  const toISO=raw=>{
+    if(!raw)return"";
+    const s=String(raw).trim();
+    // Already YYYY-MM-DD
+    if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
+    // DD-MM-YYYY
+    const a=s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+    if(a)return`${a[3]}-${a[2].padStart(2,"0")}-${a[1].padStart(2,"0")}`;
+    // DD-MM-YY (2-digit year)
+    const b=s.match(/^(\d{1,2})-(\d{1,2})-(\d{2})$/);
+    if(b)return`20${b[3]}-${b[2].padStart(2,"0")}-${b[1].padStart(2,"0")}`;
+    // DD/MM/YYYY
+    const c=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if(c)return`${c[3]}-${c[2].padStart(2,"0")}-${c[1].padStart(2,"0")}`;
+    return s;
+  };
+
   const shopStats={};
   SHOPS.forEach(shop=>{
     const data=salesData[shop.id]||[];
-    const todayRev=data.filter(s=>s.date===today).reduce((a,s)=>a+(s.amount||0),0);
+    const todayRev=data.filter(s=>toISO(s.date)===today).reduce((a,s)=>a+(s.amount||0),0);
     const totalRev=data.reduce((a,s)=>a+(s.amount||0),0);
-    const monthData=data.filter(s=>s.date&&s.date.startsWith(thisMonth));
+    const monthData=data.filter(s=>toISO(s.date).startsWith(thisMonth));
     const monthRevenue=monthData.reduce((a,s)=>a+(s.amount||0),0);
     const monthOrders=monthData.length;
     const FULFILLED_STATUSES=["fulfilled","exchanged","refunded"];
     const pending=monthData.filter(s=>{
-      const st=(s.status||s.deliveryStatus||"").toLowerCase().trim();
+      const st=(s.status||s.ful||s.deliveryStatus||"").toLowerCase().trim();
       return !FULFILLED_STATUSES.includes(st);
     }).length;
     const orders=monthOrders;
@@ -650,14 +669,31 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [openMenu,setOpenMenu]=useState(null);
   const [invoiceRow,setInvoiceRow]=useState(null);
   const [printMode,setPrintMode]=useState(false);
-  // salesData, setSalesData, customers, setCustomers all received as props from App
   const [coll,setColl]=useState(false);
   const [mobileOpen,setMobileOpen]=useState(false);
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
   const [pdfMode,setPdfMode]=useState(false);
-  const [salesPeriod,setSalesPeriodRaw]=useState("month");
+  const [salesPeriod,setSalesPeriodRaw]=useState("lifetime");
   const [pdfInv,setPdfInv]=useState(null);
+  const [dbStatus,setDbStatus]=useState(null);
   const invoicePrintRef=useRef(null);
+
+  // Reload this shop's sales from Supabase whenever shopId changes
+  useEffect(()=>{
+    dbLoadSales(shopId).then(data=>{
+      if(data===null){
+        console.warn(`⚠️ dbLoadSales returned null for ${shopId}`);
+        setDbStatus({ok:false,msg:"⚠️ Could not load sales — check Supabase env vars or RLS policy."});
+      } else {
+        console.log(`✅ Loaded ${data.length} sales for ${shopId}`);
+        setSalesData(prev=>({...prev,[shopId]:data}));
+        setDbStatus({ok:true,count:data.length});
+      }
+    }).catch(err=>{
+      console.error("❌ Load sales error:",err);
+      setDbStatus({ok:false,msg:"❌ Supabase error: "+err.message});
+    });
+  },[shopId]);
 
   useEffect(()=>{
     const h=()=>setIsMobile(window.innerWidth<768);
@@ -754,7 +790,7 @@ const addSale = async (form) => {
       if(idx>=0){const n=[...prev];n[idx]=updatedCust;return n;}
       return [...prev,updatedCust];
     });
-    dbSaveCustomer(updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
+    dbSaveCustomer(shopId,updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
   }
 };
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
@@ -1531,6 +1567,7 @@ return(
               filtSales={filtSales}
               fmt={fmt}
               formatDate={formatDate}
+              onReload={()=>dbLoadSales(shopId).then(data=>{if(data)setSalesData(prev=>({...prev,[shopId]:data}));})}
               openMenu={openMenu}
               search={search}
               sales={sales}
@@ -1645,7 +1682,7 @@ return(
       {/* ── IMPORT MODAL — SALES ── */}
       {modal==="import-sales"&&user?.role!=="staff"&&(
         <Modal title="⬇ Import Sales" onClose={()=>setModal(null)} accent={shop.accent}>
-          <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}/>
+          <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)} setSalesData={setSalesData} customers={customers} setCustomers={setCustomers}/>
         </Modal>
       )}
 
@@ -2443,10 +2480,13 @@ return(
 /* ══════════════════════════════════════════════════════
    IMPORT / EXPORT PANEL
 ══════════════════════════════════════════════════════ */
-const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
+const ImportExportPanel=({type,entity,shop,data,onClose,shopId,setSalesData,customers=[],setCustomers})=>{
   const [dragOver,setDragOver]=useState(false);
   const [fileName,setFileName]=useState(null);
+  const [fileObj,setFileObj]=useState(null);
   const [fileFmt,setFileFmt]=useState("CSV");
+  const [importing,setImporting]=useState(false);
+  const [importResult,setImportResult]=useState(null);
 
   // All 22 export columns — all ON by default
   const ALL_COLS=[
@@ -2661,7 +2701,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
       <div
         onDragOver={e=>{e.preventDefault();setDragOver(true);}}
         onDragLeave={()=>setDragOver(false)}
-        onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f)setFileName(f.name);}}
+        onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f){setFileName(f.name);setFileObj(f);}}}
         style={{
           border:"2px dashed "+(dragOver?shop.accent:"#cbd5e1"),
           borderRadius:14,padding:"40px 24px",textAlign:"center",
@@ -2671,7 +2711,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
         onClick={()=>document.getElementById("imp-file-"+entity).click()}>
         <input id={"imp-file-"+entity} type="file" accept=".csv,.xlsx"
           style={{display:"none"}}
-          onChange={e=>setFileName(e.target.files[0]?.name||null)}/>
+          onChange={e=>{const f=e.target.files[0];if(f){setFileName(f.name);setFileObj(f);}else{setFileName(null);setFileObj(null);}setImportResult(null);}}/>
         <div style={{fontSize:40,marginBottom:10}}>{fileName?"✅":"📂"}</div>
         <p style={{margin:0,fontWeight:800,fontSize:15,color:fileName?shop.accent:"#374151"}}>
           {fileName||"Drop your CSV file here"}
@@ -2681,23 +2721,246 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
         </p>
       </div>
 
+      {/* import result */}
+      {importResult&&(
+        <div style={{background:importResult.ok?"#f0fdf4":"#fef2f2",border:"1px solid "+(importResult.ok?"#bbf7d0":"#fecaca"),borderRadius:10,padding:"12px 16px"}}>
+          <p style={{margin:0,fontWeight:800,fontSize:13,color:importResult.ok?"#15803d":"#dc2626"}}>{importResult.msg}</p>
+        </div>
+      )}
+
       {/* actions */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
         <button
-          onClick={()=>{if(!fileName){alert("Please select a file first.");}else{alert("Import started! "+fileName+" is being processed.");onClose();}}}
+          disabled={!fileName||importing}
+          onClick={async()=>{
+            if(!fileObj)return;
+            setImporting(true);
+            setImportResult(null);
+            try{
+              // ── Load SheetJS from CDN if not already loaded ───────────────
+              if(!window.XLSX){
+                await new Promise((res,rej)=>{
+                  const s=document.createElement("script");
+                  s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+                  s.onload=res; s.onerror=rej;
+                  document.head.appendChild(s);
+                });
+              }
+              const XLSX=window.XLSX;
+
+              // ── Read file as ArrayBuffer (works for both .xlsx and .csv) ──
+              const buf=await fileObj.arrayBuffer();
+              const wb=XLSX.read(buf,{type:"array",cellDates:true});
+              const ws=wb.Sheets[wb.SheetNames[0]];
+              // Convert to array of arrays (raw values)
+              const rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
+              if(rows.length<2){setImportResult({ok:false,msg:"File is empty or has no data rows."});setImporting(false);return;}
+
+              // ── Clean headers ─────────────────────────────────────────────
+              const headers=rows[0].map(h=>String(h).replace(/[^\x20-\x7E]/g,"").toLowerCase().trim());
+              console.log("📋 Headers:", headers);
+
+              // ── Column finder ─────────────────────────────────────────────
+              const col=(...names)=>{
+                for(const n of names){
+                  const i=headers.findIndex(h=>h===n.toLowerCase()||h.includes(n.toLowerCase()));
+                  if(i>=0)return i;
+                }
+                return -1;
+              };
+
+              // Name-based matching
+              let iId     =col("saleid","sale id");
+              let iDate   =col("date","sale date");
+              let iCust   =col("customer","customer name","client");
+              let iItem   =col("item","product","description");
+              let iQty    =col("quantity","qty");
+              let iAmount =col("total","amount","grand total","sale amount");
+              let iPay    =col("payment method","payment","pay method");
+              let iContact=col("contact","phone","mobile");
+              let iAddr   =col("address");
+              let iRem    =col("remarks","notes");
+              let iFul    =col("status","delivery status","fulfillment","fulfilment");
+              let iInv    =col("invoice no","shop inv");
+
+              // Positional fallback — exact positions from user's spreadsheet:
+              // Col: 0=SaleID 1=Date 2=InvoiceNo 3=ShopInv 4=Customer 5=Addressee
+              //      6=Address 7=Contact 8=Item 9=Quantity 10=Price 11=Total
+              //      12=PaymentMethod 13=Tag 14=ReturnReq 15=ReturnRcvd 16=Refund
+              //      17=Remarks 18=SentDate 19=Shipping 20=PurchaseInv 21=Amount
+              //      22=P/L 23=Status
+              if(iId<0)     iId=0;
+              if(iDate<0)   iDate=1;
+              if(iInv<0)    iInv=2;
+              if(iCust<0)   iCust=4;
+              if(iAddr<0)   iAddr=6;
+              if(iContact<0)iContact=7;
+              if(iItem<0)   iItem=8;
+              if(iQty<0)    iQty=9;
+              if(iAmount<0) iAmount=11;
+              if(iPay<0)    iPay=12;
+              if(iRem<0)    iRem=17;
+              if(iFul<0)    iFul=23;
+
+              console.log("📊 Cols — id:",iId,"date:",iDate,"cust:",iCust,"item:",iItem,"amt:",iAmount,"pay:",iPay,"status:",iFul);
+
+              // ── Status normaliser ─────────────────────────────────────────
+              const normStatus=s=>{
+                const u=String(s||"").toUpperCase().trim();
+                if(["FULFILLED","DELIVERED","COMPLETE","COMPLETED"].includes(u))return"FULFILLED";
+                if(u==="REFUNDED")return"REFUNDED";
+                if(u==="EXCHANGED")return"EXCHANGED";
+                if(u.includes("RETURN REQ")||u==="RTRN REQSTD")return"RTRN REQSTD";
+                if(u.includes("RETURN RCV")||u==="RETRN RCVD")return"RETRN RCVD";
+                if(u==="GOOD FEEDBACK")return"GOOD FEEDBACK";
+                return"PENDING";
+              };
+
+              // ── Format date → always YYYY-MM-DD for consistent storage ──────
+              const fmtDate=v=>{
+                if(!v)return"";
+                // SheetJS returns JS Date object when cellDates:true
+                if(v instanceof Date){
+                  const y=v.getFullYear(),m=String(v.getMonth()+1).padStart(2,"0"),d=String(v.getDate()).padStart(2,"0");
+                  return`${y}-${m}-${d}`;
+                }
+                const s=String(v).trim();
+                // Already YYYY-MM-DD
+                if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
+                // DD-MM-YYYY
+                const a=s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
+                if(a)return`${a[3]}-${a[2].padStart(2,"0")}-${a[1].padStart(2,"0")}`;
+                // DD-MM-YY (e.g. 19-03-26 → 2026-03-19)
+                const b=s.match(/^(\d{1,2})-(\d{1,2})-(\d{2})$/);
+                if(b)return`20${b[3]}-${b[2].padStart(2,"0")}-${b[1].padStart(2,"0")}`;
+                // DD/MM/YYYY
+                const c=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                if(c)return`${c[3]}-${c[2].padStart(2,"0")}-${c[1].padStart(2,"0")}`;
+                return s;
+              };
+
+              // ── Process rows ──────────────────────────────────────────────
+              const pfx={["ros-selections"]:"SI",["ros-hairlines"]:"SH",["ros-india"]:"IN"}[shopId]||"SA";
+              let saved=0,failed=0;
+              for(let i=1;i<rows.length;i++){
+                const r=rows[i];
+                if(!r||r.every(v=>v===""||v===null||v===undefined))continue;
+                const get=idx=>(idx>=0&&idx<r.length)?String(r[idx]??"").trim():"";
+                const rawId=get(iId);
+                const id=rawId||`${pfx}-${Date.now()}-${i}`;
+                const rawAmt=get(iAmount);
+                const parsedAmt=parseFloat(String(rawAmt).replace(/[£₹$€,\s]/g,""))||0;
+                const sale={
+                  id,
+                  customer: get(iCust),
+                  date:     fmtDate(r[iDate])||new Date().toISOString().slice(0,10),
+                  item:     get(iItem),
+                  qty:      get(iQty)||"1",
+                  amount:   parsedAmt,
+                  pay:      get(iPay),
+                  contact:  get(iContact),
+                  phone:    get(iContact),
+                  address:  get(iAddr),
+                  rem:      get(iRem),
+                  ful:      normStatus(get(iFul)),
+                  status:   normStatus(get(iFul)),
+                  invoiceNo:get(iInv)||id,
+                  taxRate:  shopId==="ros-india"?18:20,
+                  taxInclusive:true,
+                };
+                if(i<=3)console.log(`Row ${i}:`,{id:sale.id,customer:sale.customer,date:sale.date,amount:sale.amount,status:sale.ful});
+                try{await dbSaveSale(shopId,sale);saved++;}
+                catch(e){console.error("Row",i,"failed:",e);failed++;}
+              }
+
+              // ── Build customer records from imported sales ─────────────
+              if(setCustomers){
+                // Group all imported rows by customer name
+                const custMap={};
+                for(let i=1;i<rows.length;i++){
+                  const r=rows[i];
+                  if(!r||r.every(v=>v===""||v===null||v===undefined))continue;
+                  const get=idx=>(idx>=0&&idx<r.length)?String(r[idx]??"").trim():"";
+                  const name=get(iCust);
+                  if(!name)continue;
+                  const amt=parseFloat(String(get(iAmount)).replace(/[£₹$€,\s]/g,""))||0;
+                  const date=fmtDate(r[iDate])||"";
+                  if(!custMap[name]){
+                    custMap[name]={
+                      name,
+                      phone:    get(iContact),
+                      whatsapp: get(iContact),
+                      address:  get(iAddr),
+                      purchases:0,
+                      spend:    0,
+                      last:     date,
+                      tag:      "Regular",
+                      notes:    "",
+                    };
+                  }
+                  custMap[name].purchases+=1;
+                  custMap[name].spend+=amt;
+                  // Keep latest date
+                  if(date>custMap[name].last)custMap[name].last=date;
+                }
+
+                // Merge with existing customers and save
+                let custSaved=0;
+                for(const name of Object.keys(custMap)){
+                  const incoming=custMap[name];
+                  // Check if customer already exists (by name)
+                  const existing=customers.find(c=>c.name.toLowerCase()===name.toLowerCase());
+                  const custId=existing?.id||("CUST-"+name.replace(/\s+/g,"-").slice(0,10).toUpperCase()+"-"+Date.now().toString().slice(-4));
+                  const merged={
+                    id:        custId,
+                    name,
+                    phone:     incoming.phone||existing?.phone||"",
+                    whatsapp:  incoming.whatsapp||existing?.whatsapp||"",
+                    address:   incoming.address||existing?.address||"",
+                    tag:       existing?.tag||incoming.tag,
+                    notes:     existing?.notes||"",
+                    purchases: (existing?.purchases||0)+incoming.purchases,
+                    spend:     (existing?.spend||0)+incoming.spend,
+                    last:      incoming.last||existing?.last||"",
+                  };
+                  try{
+                    await dbSaveCustomer(shopId,merged);
+                    custSaved++;
+                  }catch(e){console.error("Customer save failed:",name,e);}
+                }
+
+                // Reload customers into state
+                const freshCust=await dbLoadCustomers(shopId);
+                if(freshCust)setCustomers(freshCust);
+                console.log(`✅ ${custSaved} customers updated`);
+              }
+              // Reload from Supabase so list is fresh
+              const fresh=await dbLoadSales(shopId);
+              if(fresh&&setSalesData)setSalesData(prev=>({...prev,[shopId]:fresh}));
+              setImportResult({ok:true,msg:`✅ Imported ${saved} sale${saved!==1?"s":""}${failed>0?` (${failed} failed)`:""}.`});
+              setFileName(null);setFileObj(null);
+            }catch(e){
+              setImportResult({ok:false,msg:"❌ Failed to parse file: "+e.message});
+            }
+            setImporting(false);
+          }}
           style={{padding:"12px 0",borderRadius:11,border:"none",
-            background:fileName?shop.accent:"#e2e8f0",
-            color:fileName?"white":"#94a3b8",fontWeight:800,fontSize:14,
-            cursor:fileName?"pointer":"not-allowed",fontFamily:"inherit",
-            boxShadow:fileName?"0 4px 14px "+shop.accent+"44":"none",
+            background:(importResult?.ok||importing||!fileObj)?"#e2e8f0":shop.accent,
+            color:(importResult?.ok||importing||!fileObj)?"#94a3b8":"white",fontWeight:800,fontSize:14,
+            cursor:(importResult?.ok||importing||!fileObj)?"not-allowed":"pointer",fontFamily:"inherit",
+            boxShadow:(!importResult?.ok&&!importing&&fileObj)?"0 4px 14px "+shop.accent+"44":"none",
             transition:"all 0.2s"}}>
-          ⬆ Import Now
+          {importing?"⏳ Importing…":"⬆ Import Now"}
         </button>
         <button onClick={onClose}
-          style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",
-            background:"white",color:"#374151",fontWeight:700,fontSize:14,
-            cursor:"pointer",fontFamily:"inherit"}}>
-          Cancel
+          style={{padding:"12px 0",borderRadius:11,border:"none",
+            background:importResult?.ok?shop.accent:"white",
+            color:importResult?.ok?"white":"#374151",
+            border:importResult?.ok?"none":"1px solid #e2e8f0",
+            fontWeight:importResult?.ok?800:700,fontSize:14,
+            cursor:"pointer",fontFamily:"inherit",
+            boxShadow:importResult?.ok?"0 4px 14px "+shop.accent+"44":"none"}}>
+          {importResult?.ok?"✓ Done":"Cancel"}
         </button>
       </div>
     </div>
@@ -4755,13 +5018,14 @@ export default function App(){
     const shops=["ros-selections","ros-hairlines","ros-india"];
     shops.forEach(sid=>{
       dbLoadSales(sid).then(data=>{
-        if(!data) return;
+        if(!data){console.warn("⚠️ dbLoadSales returned null for",sid);return;}
+        console.log(`✅ App mount: loaded ${data.length} sales for ${sid}`);
         setSalesData(prev=>({...prev,[sid]:data}));
-      }).catch(()=>{});
+      }).catch(err=>console.error("❌ dbLoadSales failed for",sid,err));
     });
     dbLoadCustomers().then(data=>{
       if(data&&data.length>0) setCustomers(data);
-    }).catch(()=>{});
+    }).catch(err=>console.error("❌ dbLoadCustomers failed:",err));
   },[]);
 
   const handleLogin=u=>{
