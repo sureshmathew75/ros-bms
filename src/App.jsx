@@ -140,13 +140,22 @@ const fmt=(sid,n)=>{
 
 const BSTYLE={
   // ── Delivery statuses ──
-  "PENDING":        {bg:"#fef9c3",c:"#a16207",b:"#fde047"},
-  "FULFILLED":      {bg:"#dcfce7",c:"#15803d",b:"#bbf7d0"},
-  "GOOD FEEDBACK":  {bg:"#d1fae5",c:"#065f46",b:"#6ee7b7"},
-  "RTRN REQSTD":    {bg:"#ffedd5",c:"#c2410c",b:"#fed7aa"},
-  "RETRN RCVD":     {bg:"#fee2e2",c:"#991b1b",b:"#fca5a5"},
-  "EXCHANGED":      {bg:"#e0e7ff",c:"#4338ca",b:"#c7d2fe"},
-  "REFUNDED":       {bg:"#f3e4ff",c:"#7e22ce",b:"#d8b4fe"},
+  "PENDING":                  {bg:"#fef9c3",c:"#a16207",b:"#fde047"},
+  "FULFILLED":                {bg:"#dcfce7",c:"#15803d",b:"#bbf7d0"},
+  "GOOD FEEDBACK":            {bg:"#d1fae5",c:"#065f46",b:"#6ee7b7"},
+  "RTRN REQSTD":              {bg:"#ffedd5",c:"#c2410c",b:"#fed7aa"},
+  "RETRN RCVD":               {bg:"#fee2e2",c:"#991b1b",b:"#fca5a5"},
+  "EXCHANGED":                {bg:"#e0e7ff",c:"#4338ca",b:"#c7d2fe"},
+  "REFUNDED":                 {bg:"#f3e4ff",c:"#7e22ce",b:"#d8b4fe"},
+  // ── India-specific delivery statuses ──
+  "ORDER NOT PLACED":         {bg:"#fef9c3",c:"#a16207",b:"#fde047"},
+  "WORK IN PROGRESS":         {bg:"#dbeafe",c:"#1d4ed8",b:"#bfdbfe"},
+  "PHOTO GIVEN TO CUSTOMER":  {bg:"#e0f2fe",c:"#0369a1",b:"#bae6fd"},
+  "AWAITING TRACKING INFO.":  {bg:"#fef3c7",c:"#92400e",b:"#fcd34d"},
+  "RETURN REQUESTED":         {bg:"#ffedd5",c:"#c2410c",b:"#fed7aa"},
+  "RETURN RECEIVED":          {bg:"#fee2e2",c:"#991b1b",b:"#fca5a5"},
+  "GOOD FEEDBACK RECEIVED":   {bg:"#d1fae5",c:"#065f46",b:"#6ee7b7"},
+  "NEGATIVE FEEDBACK RECEIVED":{bg:"#ffe4e6",c:"#9f1239",b:"#fda4af"},
   // ── Legacy support ──
   "DISPATCHED":     {bg:"#e0e7ff",c:"#4338ca",b:"#c7d2fe"},
   "DELIVERED":      {bg:"#dcfce7",c:"#15803d",b:"#bbf7d0"},
@@ -164,13 +173,22 @@ const BSTYLE={
 
 // Row background colour per delivery status
 const STATUS_ROW_BG={
-  "PENDING":       "#fffbeb",
-  "FULFILLED":     "#f0fdf4",
-  "GOOD FEEDBACK": "#ecfdf5",
-  "RTRN REQSTD":   "#fff7ed",
-  "RETRN RCVD":    "#fef2f2",
-  "EXCHANGED":     "#eef2ff",
-  "REFUNDED":      "#faf5ff",
+  "PENDING":                   "#fffbeb",
+  "FULFILLED":                 "#f0fdf4",
+  "GOOD FEEDBACK":             "#ecfdf5",
+  "RTRN REQSTD":               "#fff7ed",
+  "RETRN RCVD":                "#fef2f2",
+  "EXCHANGED":                 "#eef2ff",
+  "REFUNDED":                  "#faf5ff",
+  // India-specific
+  "ORDER NOT PLACED":          "#fffbeb",
+  "WORK IN PROGRESS":          "#eff6ff",
+  "PHOTO GIVEN TO CUSTOMER":   "#f0f9ff",
+  "AWAITING TRACKING INFO.":   "#fffbeb",
+  "RETURN REQUESTED":          "#fff7ed",
+  "RETURN RECEIVED":           "#fef2f2",
+  "GOOD FEEDBACK RECEIVED":    "#ecfdf5",
+  "NEGATIVE FEEDBACK RECEIVED":"#fff1f2",
 };
 const Badge=({l})=>{
   const b=BSTYLE[l]||{bg:"#f1f5f9",c:"#475569",b:"#e2e8f0"};
@@ -699,14 +717,6 @@ const addSale = async (form) => {
     ful:      form.status || "PENDING",
     pay:      form.payBy || "SHOP",
     rem:      form.remarks || "",
-    // ROS India fields
-    purchasesInv:     form.purchasesInv     || "",
-    purchasesInvDate: form.purchasesInvDate || "",
-    invAmount:        form.invAmount     ? Number(form.invAmount)     : "",
-    shippingCharge:   form.shippingCharge? Number(form.shippingCharge): "",
-    otherAmount:      form.otherAmount   ? Number(form.otherAmount)   : "",
-    pl:               (()=>{ const s=Number(form.amount)||0; const costs=(Number(form.invAmount)||0)+(Number(form.shippingCharge)||0)+(Number(form.otherAmount)||0); return s&&costs?s-costs:""; })(),
-    paymentStatus:    form.paymentStatus || "Pending to pay",
   };
   // Update UI instantly
   setSalesData(d => ({...d, [shopId]: [newSale, ...d[shopId]]}));
@@ -2708,15 +2718,8 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     refundAmt:   sale.refundAmt||"",
     tag:         sale.tag||"",
     remarks:     sale.rem||sale.remarks||"",
-    taxInclusive:     sale.taxInclusive !== false,
-    taxRate:          sale.taxRate !== undefined ? sale.taxRate : (shopId==="ros-india" ? 18 : 20),
-    // ROS India only
-    purchasesInv:     sale.purchasesInv     || "",
-    purchasesInvDate: sale.purchasesInvDate || "",
-    invAmount:        sale.invAmount        || "",
-    shippingCharge:   sale.shippingCharge   || "",
-    otherAmount:      sale.otherAmount      || "",
-    paymentStatus:    sale.paymentStatus    || "Pending to pay",
+    taxInclusive: sale.taxInclusive !== false,
+    taxRate:      sale.taxRate !== undefined ? sale.taxRate : (shopId==="ros-india" ? 18 : 20),
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -2732,8 +2735,8 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     </div>
   );
 
-  const needReturn=["RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"].includes(form.status);
-  const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8"};
+  const needReturn=["RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED","RETURN REQUESTED","RETURN RECEIVED"].includes(form.status);
+  const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","WORK IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
   const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
   return(
@@ -2871,7 +2874,10 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
           <label style={lbl}>Delivery Status</label>
           <select value={form.status} onChange={e=>set("status",e.target.value)}
             style={{...inp,fontWeight:700,color:statusColor[form.status]||"#374151"}}>
-            {["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"].map(o=>(
+            {(shopId==="ros-india"
+              ? ["ORDER NOT PLACED","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]
+              : ["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]
+            ).map(o=>(
               <option key={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>
             ))}
           </select>
@@ -2898,166 +2904,6 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
         </>
       )}
 
-      {/* INDIA BILLING — only for ROS India */}
-      {shopId==="ros-india"&&(()=>{
-        const saleAmt  = Number(form.amount)        || 0;
-        const invAmt   = Number(form.invAmount)     || 0;
-        const shipAmt  = Number(form.shippingCharge)|| 0;
-        const otherAmt = Number(form.otherAmount)   || 0;
-        const totalCost = invAmt + shipAmt + otherAmt;
-        const plVal    = saleAmt && totalCost ? saleAmt - totalCost : "";
-        const plColor  = plVal===""?"#374151":plVal>0?"#15803d":"#dc2626";
-        const plBg     = plVal===""?"white":plVal>0?"#f0fdf4":"#fff5f5";
-        const plBorder = plVal===""?"#f9a8d4":plVal>0?"#bbf7d0":"#fca5a5";
-        return(
-          <>
-            <Divider title="India Billing"/>
-            <div style={{background:"linear-gradient(135deg,#fef0f7 0%,#fdf4ff 100%)",border:"1px solid #f9a8d4",borderRadius:12,padding:"14px",marginBottom:16}}>
-
-              {/* Row 1 — Inv. Number + Date */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-                <div>
-                  <label style={{...lbl,color:"#7d1047"}}>Purchase Inv. Number</label>
-                  <input
-                    value={form.purchasesInv}
-                    onChange={e=>set("purchasesInv",e.target.value)}
-                    placeholder="Purchase invoice no."
-                    style={{...inp,border:"1px solid #f9a8d4",fontFamily:"DM Mono,monospace",fontWeight:600}}
-                    onFocus={fo} onBlur={bl}/>
-                </div>
-                <div>
-                  <label style={{...lbl,color:"#7d1047"}}>Pur. Inv. Date</label>
-                  <input
-                    type="date"
-                    value={form.purchasesInvDate||""}
-                    onChange={e=>set("purchasesInvDate",e.target.value)}
-                    style={{...inp,border:"1px solid #f9a8d4"}}
-                    onFocus={fo} onBlur={bl}/>
-                </div>
-              </div>
-
-              {/* Row 2 — Inv. Amount + Shipping Charge */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-                <div>
-                  <label style={{...lbl,color:"#7d1047"}}>Inv. Amount (₹)</label>
-                  <input
-                    type="number"
-                    value={form.invAmount}
-                    onChange={e=>set("invAmount",e.target.value)}
-                    placeholder="0.00"
-                    style={{...inp,border:"1px solid #f9a8d4"}}
-                    onFocus={fo} onBlur={bl}/>
-                </div>
-                <div>
-                  <label style={{...lbl,color:"#7d1047"}}>Shipping Charge (₹)</label>
-                  <input
-                    type="number"
-                    value={form.shippingCharge}
-                    onChange={e=>set("shippingCharge",e.target.value)}
-                    placeholder="0.00"
-                    style={{...inp,border:"1px solid #f9a8d4"}}
-                    onFocus={fo} onBlur={bl}/>
-                </div>
-              </div>
-
-              {/* Row 3 — Other Amount + P/L (auto) */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-                <div>
-                  <label style={{...lbl,color:"#7d1047"}}>Other Amount (₹)</label>
-                  <input
-                    type="number"
-                    value={form.otherAmount}
-                    onChange={e=>set("otherAmount",e.target.value)}
-                    placeholder="0.00"
-                    style={{...inp,border:"1px solid #f9a8d4"}}
-                    onFocus={fo} onBlur={bl}/>
-                </div>
-                <div>
-                  <label style={{...lbl,color:"#7d1047"}}>
-                    P/L (₹)
-                    <span style={{fontSize:9,fontWeight:500,color:"#c084fc",marginLeft:6,textTransform:"none",letterSpacing:0}}>
-                      Sales − (Inv + Ship + Other) · auto
-                    </span>
-                  </label>
-                  <div style={{
-                    ...inp,
-                    border:"1px solid "+plBorder,
-                    background:plBg,
-                    color:plColor,
-                    fontWeight:700,
-                    fontFamily:"DM Mono,monospace",
-                    display:"flex",alignItems:"center",justifyContent:"space-between",
-                    userSelect:"none",cursor:"default",
-                  }}>
-                    <span>
-                      {plVal===""
-                        ? "— fill amounts above"
-                        : (plVal>0?"▲ Profit  ₹":"▼ Loss  ₹")+Math.abs(plVal).toLocaleString("en-IN")}
-                    </span>
-                    {plVal!==""&&(
-                      <span style={{fontSize:10,fontWeight:800,
-                        background:plVal>0?"#dcfce7":"#fee2e2",
-                        color:plColor,padding:"2px 8px",borderRadius:999}}>
-                        {plVal>0?"PROFIT":"LOSS"}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Row 4 — Cost breakdown summary (only when values entered) */}
-              {(Number(form.invAmount)||Number(form.shippingCharge)||Number(form.otherAmount))>0&&(
-                <div style={{background:"rgba(255,255,255,0.70)",borderRadius:9,padding:"10px 12px",
-                  border:"1px solid #f9a8d4",marginBottom:12}}>
-                  <p style={{margin:"0 0 6px",fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>Cost Breakdown</p>
-                  <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                    {Number(form.invAmount)>0&&(
-                      <div style={{display:"flex",justifyContent:"space-between"}}>
-                        <span style={{fontSize:11,color:"#64748b"}}>Inv. Amount</span>
-                        <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>₹{Number(form.invAmount).toLocaleString("en-IN")}</span>
-                      </div>
-                    )}
-                    {Number(form.shippingCharge)>0&&(
-                      <div style={{display:"flex",justifyContent:"space-between"}}>
-                        <span style={{fontSize:11,color:"#64748b"}}>Shipping</span>
-                        <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>₹{Number(form.shippingCharge).toLocaleString("en-IN")}</span>
-                      </div>
-                    )}
-                    {Number(form.otherAmount)>0&&(
-                      <div style={{display:"flex",justifyContent:"space-between"}}>
-                        <span style={{fontSize:11,color:"#64748b"}}>Other</span>
-                        <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>₹{Number(form.otherAmount).toLocaleString("en-IN")}</span>
-                      </div>
-                    )}
-                    <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid #f9a8d4",paddingTop:4,marginTop:2}}>
-                      <span style={{fontSize:12,fontWeight:800,color:"#7d1047"}}>Total Cost</span>
-                      <span style={{fontSize:12,fontWeight:900,color:"#7d1047"}}>
-                        ₹{((Number(form.invAmount)||0)+(Number(form.shippingCharge)||0)+(Number(form.otherAmount)||0)).toLocaleString("en-IN")}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Row 5 — Payment Status */}
-              <div>
-                <label style={{...lbl,color:"#7d1047"}}>Payment Status</label>
-                <select
-                  value={form.paymentStatus}
-                  onChange={e=>set("paymentStatus",e.target.value)}
-                  style={{...inp,border:"1px solid #f9a8d4",fontWeight:700,
-                    color:form.paymentStatus==="Paid"?"#15803d":"#a16207",
-                    background:form.paymentStatus==="Paid"?"#f0fdf4":"#fefce8"}}>
-                  <option value="Pending to pay">⏳ Pending to pay</option>
-                  <option value="Paid">✅ Paid</option>
-                </select>
-              </div>
-            </div>
-          </>
-        );
-      })()}
-
-
       <div style={{marginBottom:12}}>
         <label style={lbl}>Sale Type / Tag</label>
         <select value={form.tag} onChange={e=>set("tag",e.target.value)} style={inp}>
@@ -3071,18 +2917,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({
-            ...form,
-            id:sale.id,ful:form.status,pay:form.payBy,rem:form.remarks,
-            amount:parseFloat(form.amount)||0,
-            purchasesInv:     form.purchasesInv     || "",
-            purchasesInvDate: form.purchasesInvDate || "",
-            invAmount:        form.invAmount     ? Number(form.invAmount)     : "",
-            shippingCharge:   form.shippingCharge? Number(form.shippingCharge): "",
-            otherAmount:      form.otherAmount   ? Number(form.otherAmount)   : "",
-            pl:               (()=>{ const s=Number(form.amount)||0; const costs=(Number(form.invAmount)||0)+(Number(form.shippingCharge)||0)+(Number(form.otherAmount)||0); return s&&costs?s-costs:""; })(),
-            paymentStatus:    form.paymentStatus || "Pending to pay",
-          })}
+        <button onClick={()=>onSave({...form,id:sale.id,ful:form.status,pay:form.payBy,rem:form.remarks,amount:parseFloat(form.amount)||0})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
@@ -3655,138 +3490,6 @@ const NewCustomerForm=({shop,onSave,onClose})=>{
 };
 
 /* ══════════════════════════════════════════════════════
-   CUSTOMER TYPEAHEAD
-══════════════════════════════════════════════════════ */
-const CustomerTypeahead=({value,customerList,shop,inp,lbl,fo,bl,onChange,onAddNew,contactValue,onContactChange})=>{
-  const [open,setOpen]=useState(false);
-  const typed=(value||"").toLowerCase();
-
-  // Names that START WITH what the user typed (primary), then names that CONTAIN it (secondary)
-  const startsWith = typed ? customerList.filter(c=>c.name.toLowerCase().startsWith(typed)) : [];
-  const contains   = typed ? customerList.filter(c=>!c.name.toLowerCase().startsWith(typed)&&c.name.toLowerCase().includes(typed)) : [];
-  const suggestions = [...startsWith,...contains].slice(0,10);
-  const exactMatch  = customerList.find(c=>c.name.toLowerCase()===typed);
-
-  return(
-    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-      <div>
-        <label style={lbl}>Customer Name</label>
-        <div style={{display:"flex",gap:6,alignItems:"center"}}>
-          <div style={{position:"relative",flex:1}}>
-            <input
-              value={value}
-              onChange={e=>{
-                const v=e.target.value;
-                setOpen(true);
-                const match=customerList.find(c=>c.name.toLowerCase()===v.toLowerCase());
-                onChange(v, match?match.phone||"":undefined);
-              }}
-              onFocus={e=>{fo(e);setOpen(true);}}
-              onBlur={e=>{bl(e);setTimeout(()=>setOpen(false),160);}}
-              onKeyDown={e=>{
-                if(e.key==="Escape"){setOpen(false);}
-                if(e.key==="Enter"&&suggestions.length===1){
-                  onChange(suggestions[0].name,suggestions[0].phone||"");
-                  setOpen(false);
-                }
-              }}
-              placeholder="Type customer name…"
-              autoComplete="off"
-              style={{
-                ...inp,
-                width:"100%",
-                borderColor: exactMatch ? shop.accent : undefined,
-                background:  exactMatch ? shop.accentBg : "white",
-                paddingRight: exactMatch ? 60 : undefined,
-              }}
-            />
-            {/* ✓ found badge */}
-            {exactMatch&&(
-              <span style={{
-                position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",
-                fontSize:10,fontWeight:700,color:shop.accent,pointerEvents:"none",
-                background:shop.accentBg,padding:"1px 6px",borderRadius:999,
-              }}>✓ found</span>
-            )}
-            {/* Suggestions dropdown */}
-            {open&&suggestions.length>0&&!exactMatch&&(
-              <div style={{
-                position:"absolute",top:"calc(100% + 3px)",left:0,right:0,
-                background:"white",
-                border:"1px solid "+shop.accent+"55",
-                borderRadius:10,
-                boxShadow:"0 10px 28px rgba(0,0,0,0.13)",
-                zIndex:120,maxHeight:220,overflowY:"auto",
-              }}>
-                {suggestions.map((c,idx)=>{
-                  const name=c.name;
-                  const hi=name.slice(0,value.length);
-                  const rest=name.slice(value.length);
-                  return(
-                    <div key={c.id||idx}
-                      onMouseDown={()=>{
-                        onChange(c.name,c.phone||"");
-                        setOpen(false);
-                      }}
-                      style={{
-                        padding:"9px 14px",cursor:"pointer",
-                        borderBottom:idx<suggestions.length-1?"1px solid #f8fafc":"none",
-                        display:"flex",alignItems:"center",gap:10,
-                      }}
-                      onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg}
-                      onMouseLeave={e=>e.currentTarget.style.background="white"}>
-                      <div style={{
-                        width:30,height:30,borderRadius:8,flexShrink:0,
-                        background:shop.sb,display:"flex",alignItems:"center",
-                        justifyContent:"center",color:"white",fontWeight:800,fontSize:12,
-                      }}>
-                        {c.name.charAt(0).toUpperCase()}
-                      </div>
-                      <div style={{flex:1,minWidth:0}}>
-                        <p style={{margin:0,fontWeight:600,fontSize:13,color:"#0f172a"}}>
-                          <span style={{fontWeight:800,color:shop.accent}}>{hi}</span>
-                          <span>{rest}</span>
-                        </p>
-                        {c.phone&&<p style={{margin:0,fontSize:10,color:"#94a3b8"}}>{c.phone}</p>}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-          {/* + add new customer button */}
-          <button onClick={onAddNew}
-            title="Add new customer"
-            style={{
-              flexShrink:0,width:34,height:34,borderRadius:8,cursor:"pointer",
-              border:"1px solid "+shop.accent,
-              background:shop.accent,color:"white",
-              fontSize:18,fontWeight:900,
-              display:"flex",alignItems:"center",justifyContent:"center",
-              boxShadow:"0 2px 8px "+shop.accent+"44",
-              transition:"all 0.15s",
-            }}
-            onMouseEnter={e=>e.currentTarget.style.transform="scale(1.08)"}
-            onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
-            +
-          </button>
-        </div>
-      </div>
-      <div>
-        <label style={lbl}>Contact Number</label>
-        <input
-          value={contactValue}
-          onChange={onContactChange}
-          placeholder="+44 7700 000000"
-          style={inp}
-          onFocus={fo} onBlur={bl}/>
-      </div>
-    </div>
-  );
-};
-
-/* ══════════════════════════════════════════════════════
    NEW SALE FORM
 ══════════════════════════════════════════════════════ */
 const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem})=>{
@@ -3814,19 +3517,12 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     taxInclusive: true,
     taxRate:     shopId==="ros-india" ? 18 : 20,
     payBy:       "SHOP",
-    status:      "PENDING",
+    status:      shopId==="ros-india" ? "ORDER NOT PLACED" : "PENDING",
     sentDate:    "",
     returnRcvd:  "",
     refundAmt:   "",
     tag:         "",
     remarks:     "",
-    // ROS India only
-    purchasesInv:     "",
-    purchasesInvDate: "",
-    invAmount:        "",
-    shippingCharge:   "",
-    otherAmount:      "",
-    paymentStatus:    "Pending to pay",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -3854,7 +3550,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     </div>
   );
 
-  const needReturn=["RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"].includes(form.status);
+  const needReturn=["RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED","RETURN REQUESTED","RETURN RECEIVED"].includes(form.status);
   const useCustomItem=form.item==="__custom__";
 
   const handleAddCustomer=(newCust)=>{
@@ -3869,6 +3565,10 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     "PENDING":"#a16207","FULFILLED":"#15803d",
     "RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412",
     "EXCHANGED":"#4338ca","REFUNDED":"#6b21a8",
+    "ORDER NOT PLACED":"#a16207","WORK IN PROGRESS":"#1d4ed8",
+    "PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e",
+    "RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46",
+    "NEGATIVE FEEDBACK RECEIVED":"#9f1239",
   };
 
 
@@ -3943,16 +3643,40 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
 
       {/* CUSTOMER */}
       <Divider title="Customer"/>
-      <CustomerTypeahead
-        value={form.customer}
-        customerList={customerList}
-        shop={shop}
-        inp={inp} lbl={lbl} fo={fo} bl={bl}
-        onChange={(name,phone)=>{set("customer",name);if(phone!==undefined)set("contact",phone);}}
-        onAddNew={()=>setShowNewCust(true)}
-        contactValue={form.contact}
-        onContactChange={e=>set("contact",e.target.value)}
-      />
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div>
+          <label style={lbl}>Customer Name</label>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <select value={form.customer} onChange={e=>{
+                set("customer",e.target.value);
+                const c=customerList.find(x=>x.name===e.target.value);
+                if(c)set("contact",c.phone||"");
+              }} style={{...inp,flex:1}}>
+              <option value="">Select customer…</option>
+              {customerList.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+            {/* + add new customer */}
+            <button onClick={()=>setShowNewCust(true)}
+              title="Add new customer"
+              style={{flexShrink:0,width:34,height:34,borderRadius:8,cursor:"pointer",
+                border:"1px solid "+shop.accent,
+                background:shop.accent,color:"white",
+                fontSize:18,fontWeight:900,
+                display:"flex",alignItems:"center",justifyContent:"center",
+                boxShadow:"0 2px 8px "+shop.accent+"44",
+                transition:"all 0.15s",}}
+              onMouseEnter={e=>e.currentTarget.style.transform="scale(1.08)"}
+              onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
+              +
+            </button>
+          </div>
+        </div>
+        <div>
+          <label style={lbl}>Contact Number</label>
+          <input value={form.contact} onChange={e=>set("contact",e.target.value)}
+            placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+      </div>
 
       {/* ORDER DETAILS */}
       <Divider title="Order Details"/>
@@ -4086,7 +3810,10 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
           <label style={lbl}>Delivery Status</label>
           <select value={form.status} onChange={e=>set("status",e.target.value)}
             style={{...inp,color:statusColor[form.status]||"#374151",fontWeight:700}}>
-            {["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"].map(o=>(
+            {(shopId==="ros-india"
+              ? ["ORDER NOT PLACED","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]
+              : ["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]
+            ).map(o=>(
               <option key={o} value={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>
             ))}
           </select>
@@ -4117,166 +3844,6 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
           </div>
         </>
       )}
-
-      {/* INDIA BILLING — only for ROS India */}
-      {shopId==="ros-india"&&(()=>{
-        const saleAmt  = Number(form.amount)        || 0;
-        const invAmt   = Number(form.invAmount)     || 0;
-        const shipAmt  = Number(form.shippingCharge)|| 0;
-        const otherAmt = Number(form.otherAmount)   || 0;
-        const totalCost = invAmt + shipAmt + otherAmt;
-        const plVal    = saleAmt && totalCost ? saleAmt - totalCost : "";
-        const plColor  = plVal===""?"#374151":plVal>0?"#15803d":"#dc2626";
-        const plBg     = plVal===""?"white":plVal>0?"#f0fdf4":"#fff5f5";
-        const plBorder = plVal===""?"#f9a8d4":plVal>0?"#bbf7d0":"#fca5a5";
-        return(
-          <>
-            <Divider title="India Billing"/>
-            <div style={{background:"linear-gradient(135deg,#fef0f7 0%,#fdf4ff 100%)",border:"1px solid #f9a8d4",borderRadius:12,padding:"14px",marginBottom:16}}>
-
-              {/* Row 1 — Inv. Number + Date */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-                <div>
-                  <label style={{...lbl,color:"#7d1047"}}>Purchase Inv. Number</label>
-                  <input
-                    value={form.purchasesInv}
-                    onChange={e=>set("purchasesInv",e.target.value)}
-                    placeholder="Purchase invoice no."
-                    style={{...inp,border:"1px solid #f9a8d4",fontFamily:"DM Mono,monospace",fontWeight:600}}
-                    onFocus={fo} onBlur={bl}/>
-                </div>
-                <div>
-                  <label style={{...lbl,color:"#7d1047"}}>Pur. Inv. Date</label>
-                  <input
-                    type="date"
-                    value={form.purchasesInvDate||""}
-                    onChange={e=>set("purchasesInvDate",e.target.value)}
-                    style={{...inp,border:"1px solid #f9a8d4"}}
-                    onFocus={fo} onBlur={bl}/>
-                </div>
-              </div>
-
-              {/* Row 2 — Inv. Amount + Shipping Charge */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-                <div>
-                  <label style={{...lbl,color:"#7d1047"}}>Inv. Amount (₹)</label>
-                  <input
-                    type="number"
-                    value={form.invAmount}
-                    onChange={e=>set("invAmount",e.target.value)}
-                    placeholder="0.00"
-                    style={{...inp,border:"1px solid #f9a8d4"}}
-                    onFocus={fo} onBlur={bl}/>
-                </div>
-                <div>
-                  <label style={{...lbl,color:"#7d1047"}}>Shipping Charge (₹)</label>
-                  <input
-                    type="number"
-                    value={form.shippingCharge}
-                    onChange={e=>set("shippingCharge",e.target.value)}
-                    placeholder="0.00"
-                    style={{...inp,border:"1px solid #f9a8d4"}}
-                    onFocus={fo} onBlur={bl}/>
-                </div>
-              </div>
-
-              {/* Row 3 — Other Amount + P/L (auto) */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-                <div>
-                  <label style={{...lbl,color:"#7d1047"}}>Other Amount (₹)</label>
-                  <input
-                    type="number"
-                    value={form.otherAmount}
-                    onChange={e=>set("otherAmount",e.target.value)}
-                    placeholder="0.00"
-                    style={{...inp,border:"1px solid #f9a8d4"}}
-                    onFocus={fo} onBlur={bl}/>
-                </div>
-                <div>
-                  <label style={{...lbl,color:"#7d1047"}}>
-                    P/L (₹)
-                    <span style={{fontSize:9,fontWeight:500,color:"#c084fc",marginLeft:6,textTransform:"none",letterSpacing:0}}>
-                      Sales − (Inv + Ship + Other) · auto
-                    </span>
-                  </label>
-                  <div style={{
-                    ...inp,
-                    border:"1px solid "+plBorder,
-                    background:plBg,
-                    color:plColor,
-                    fontWeight:700,
-                    fontFamily:"DM Mono,monospace",
-                    display:"flex",alignItems:"center",justifyContent:"space-between",
-                    userSelect:"none",cursor:"default",
-                  }}>
-                    <span>
-                      {plVal===""
-                        ? "— fill amounts above"
-                        : (plVal>0?"▲ Profit  ₹":"▼ Loss  ₹")+Math.abs(plVal).toLocaleString("en-IN")}
-                    </span>
-                    {plVal!==""&&(
-                      <span style={{fontSize:10,fontWeight:800,
-                        background:plVal>0?"#dcfce7":"#fee2e2",
-                        color:plColor,padding:"2px 8px",borderRadius:999}}>
-                        {plVal>0?"PROFIT":"LOSS"}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              {/* Row 4 — Cost breakdown summary (only when values entered) */}
-              {(Number(form.invAmount)||Number(form.shippingCharge)||Number(form.otherAmount))>0&&(
-                <div style={{background:"rgba(255,255,255,0.70)",borderRadius:9,padding:"10px 12px",
-                  border:"1px solid #f9a8d4",marginBottom:12}}>
-                  <p style={{margin:"0 0 6px",fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>Cost Breakdown</p>
-                  <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                    {Number(form.invAmount)>0&&(
-                      <div style={{display:"flex",justifyContent:"space-between"}}>
-                        <span style={{fontSize:11,color:"#64748b"}}>Inv. Amount</span>
-                        <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>₹{Number(form.invAmount).toLocaleString("en-IN")}</span>
-                      </div>
-                    )}
-                    {Number(form.shippingCharge)>0&&(
-                      <div style={{display:"flex",justifyContent:"space-between"}}>
-                        <span style={{fontSize:11,color:"#64748b"}}>Shipping</span>
-                        <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>₹{Number(form.shippingCharge).toLocaleString("en-IN")}</span>
-                      </div>
-                    )}
-                    {Number(form.otherAmount)>0&&(
-                      <div style={{display:"flex",justifyContent:"space-between"}}>
-                        <span style={{fontSize:11,color:"#64748b"}}>Other</span>
-                        <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>₹{Number(form.otherAmount).toLocaleString("en-IN")}</span>
-                      </div>
-                    )}
-                    <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid #f9a8d4",paddingTop:4,marginTop:2}}>
-                      <span style={{fontSize:12,fontWeight:800,color:"#7d1047"}}>Total Cost</span>
-                      <span style={{fontSize:12,fontWeight:900,color:"#7d1047"}}>
-                        ₹{((Number(form.invAmount)||0)+(Number(form.shippingCharge)||0)+(Number(form.otherAmount)||0)).toLocaleString("en-IN")}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Row 5 — Payment Status */}
-              <div>
-                <label style={{...lbl,color:"#7d1047"}}>Payment Status</label>
-                <select
-                  value={form.paymentStatus}
-                  onChange={e=>set("paymentStatus",e.target.value)}
-                  style={{...inp,border:"1px solid #f9a8d4",fontWeight:700,
-                    color:form.paymentStatus==="Paid"?"#15803d":"#a16207",
-                    background:form.paymentStatus==="Paid"?"#f0fdf4":"#fefce8"}}>
-                  <option value="Pending to pay">⏳ Pending to pay</option>
-                  <option value="Paid">✅ Paid</option>
-                </select>
-              </div>
-            </div>
-          </>
-        );
-      })()}
-
 
       {/* TAG + REMARKS */}
       <div style={{marginBottom:12}}>
@@ -4320,92 +3887,10 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
    INLINE PANEL COMPONENTS
    ========================================================= */
 
-/* ── EditCustomerForm ── */
-const EditCustomerForm=({shop,customer,onSave,onClose})=>{
-  const [cf,setCf]=useState({
-    name:       customer.name       ||"",
-    phone:      customer.phone      ||"",
-    email:      customer.email      ||"",
-    phoneSavedOn: customer.phoneSavedOn||"UK 888",
-    addressee:  customer.addressee  ||"",
-    address:    customer.address    ||"",
-    tag:        customer.tag        ||"",
-    remarks:    customer.notes      ||"",
-  });
-  const sc=(k,v)=>setCf(f=>({...f,[k]:v}));
-  const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white"};
-  const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
-  const fo=e=>e.target.style.borderColor=shop.accent;
-  const bl=e=>e.target.style.borderColor="#e2e8f0";
-  const handleSave=()=>{
-    if(!cf.name.trim()){alert("Customer name is required.");return;}
-    onSave({
-      ...customer,
-      name:cf.name,phone:cf.phone,whatsapp:cf.phone,
-      address:cf.address,notes:cf.remarks,
-      tag:cf.tag,email:cf.email,
-      addressee:cf.addressee,phoneSavedOn:cf.phoneSavedOn,
-    });
-  };
-  return(
-    <div style={{display:"flex",flexDirection:"column",gap:14}}>
-      <div>
-        <label style={lbl}>Customer Name *</label>
-        <input value={cf.name} onChange={e=>sc("name",e.target.value)} placeholder="Full name" style={inp} onFocus={fo} onBlur={bl}/>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-        <div>
-          <label style={lbl}>Phone Number</label>
-          <input value={cf.phone} onChange={e=>sc("phone",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Email</label>
-          <input type="email" value={cf.email} onChange={e=>sc("email",e.target.value)} placeholder="email@example.com" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-      </div>
-      <div>
-        <label style={lbl}>Phone Number Saved On</label>
-        <select value={cf.phoneSavedOn} onChange={e=>sc("phoneSavedOn",e.target.value)} style={inp}>
-          {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
-        </select>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-        <div>
-          <label style={lbl}>Addressee</label>
-          <input value={cf.addressee} onChange={e=>sc("addressee",e.target.value)} placeholder="Name on delivery label" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Tag</label>
-          <select value={cf.tag} onChange={e=>sc("tag",e.target.value)} style={inp}>
-            {["","VIP","Wholesale","New Customer","Regular","Not Good","Regular Return","Banned"].map(o=><option key={o} value={o}>{o||"None"}</option>)}
-          </select>
-        </div>
-      </div>
-      <div>
-        <label style={lbl}>Address</label>
-        <textarea value={cf.address} onChange={e=>sc("address",e.target.value)} rows={2} placeholder="Full delivery address" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
-      </div>
-      <div>
-        <label style={lbl}>Remarks</label>
-        <textarea value={cf.remarks} onChange={e=>sc("remarks",e.target.value)} rows={2} placeholder="Any notes about this customer" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingTop:4}}>
-        <button onClick={handleSave} style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
-          💾 Save Changes
-        </button>
-        <button onClick={onClose} style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-};
-
 /* ── CustomersPanel ── */
 const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCustomer})=>{
   const [sel,setSel]=useState(null);
   const [hovR,setHovR]=useState(null);
-  const [editCust,setEditCust]=useState(null);
   const filtered=(customers||[]).filter(c=>
     !search||c.name.toLowerCase().includes(search.toLowerCase())||
     c.phone.includes(search)||c.tag.toLowerCase().includes(search.toLowerCase())
@@ -4420,37 +3905,6 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
 
   return(
     <div style={{padding:0}}>
-      {/* ── EDIT CUSTOMER MODAL ── */}
-      {editCust&&(
-        <div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
-          onClick={()=>setEditCust(null)}>
-          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(6px)"}}/>
-          <div style={{position:"relative",background:"white",borderRadius:20,
-            boxShadow:"0 32px 64px rgba(0,0,0,0.22)",width:"100%",maxWidth:500,
-            maxHeight:"90vh",overflowY:"auto",zIndex:81}}
-            onClick={e=>e.stopPropagation()}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-              padding:"16px 22px",borderBottom:"1px solid #f1f5f9",
-              background:shop.accent+"12",borderRadius:"20px 20px 0 0"}}>
-              <h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>✏️ Edit Customer — {editCust.name}</h3>
-              <button onClick={()=>setEditCust(null)}
-                style={{width:30,height:30,borderRadius:"50%",border:"none",
-                  background:"#f1f5f9",cursor:"pointer",fontSize:18,
-                  color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
-            </div>
-            <div style={{padding:22}}>
-              <EditCustomerForm
-                shop={shop}
-                customer={editCust}
-                onSave={updated=>{
-                  setCustomers(prev=>prev.map(c=>c.id===updated.id?updated:c));
-                  setEditCust(null);
-                }}
-                onClose={()=>setEditCust(null)}/>
-            </div>
-          </div>
-        </div>
-      )}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
         <div>
           <h2 style={{margin:"0 0 2px",fontSize:20,fontWeight:800,color:"#0f172a"}}>Customers</h2>
@@ -4473,7 +3927,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
         <table style={{width:"100%",borderCollapse:"collapse"}}>
           <thead>
             <tr style={{background:"#f8fafc",borderBottom:"1px solid #f1f5f9"}}>
-              {["Customer","Contact","Address","Purchases","Total Spend","Last Order","Tag",""].map(h=>(
+              {["Customer","Contact","Address","Purchases","Total Spend","Last Order","Tag"].map(h=>(
                 <th key={h} style={{padding:"11px 16px",fontSize:10,fontWeight:800,color:"#64748b",
                   textTransform:"uppercase",letterSpacing:"0.06em",textAlign:"left",whiteSpace:"nowrap"}}>
                   {h}
@@ -4483,7 +3937,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
           </thead>
           <tbody>
             {filtered.length===0&&(
-              <tr><td colSpan={8} style={{padding:40,textAlign:"center",color:"#94a3b8",fontSize:13}}>No customers found</td></tr>
+              <tr><td colSpan={7} style={{padding:40,textAlign:"center",color:"#94a3b8",fontSize:13}}>No customers found</td></tr>
             )}
             {filtered.map((c,i)=>{
               const isH=hovR===c.id;
@@ -4537,24 +3991,6 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                       </span>
                     )}
                   </td>
-                  <td style={{padding:"8px 12px"}} onClick={e=>e.stopPropagation()}>
-                    <button
-                      onClick={()=>setEditCust(c)}
-                      title="Edit customer"
-                      style={{
-                        display:"flex",alignItems:"center",gap:5,
-                        padding:"6px 12px",borderRadius:8,
-                        border:"1px solid "+shop.accent+"44",
-                        background:shop.accentBg,color:shop.accentText,
-                        fontSize:12,fontWeight:700,cursor:"pointer",
-                        fontFamily:"inherit",whiteSpace:"nowrap",
-                        transition:"all 0.15s",
-                      }}
-                      onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.color="white";}}
-                      onMouseLeave={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accentText;}}>
-                      ✏️ Edit
-                    </button>
-                  </td>
                 </tr>
               );
             })}
@@ -4603,13 +4039,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                 </div>
               </div>
             </div>
-          <div style={{display:"flex",justifyContent:"flex-end",gap:10,marginTop:12}}>
-              <button onClick={()=>setEditCust(c)}
-                style={{padding:"8px 20px",borderRadius:10,border:"1px solid "+shop.accent+"55",
-                  background:shop.accentBg,color:shop.accentText,fontSize:13,fontWeight:700,
-                  cursor:"pointer",fontFamily:"inherit"}}>
-                ✏️ Edit Customer
-              </button>
+          <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
               {(user?.role==="superadmin"||user?.role==="admin")&&(
                 <button onClick={()=>{
                   if(window.confirm("Delete "+c.name+" from customer database?")){
