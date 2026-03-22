@@ -1491,11 +1491,11 @@ return(
                     </thead>
                     <tbody>
                       {sales.slice(0,5).map((s,i)=>(
-                        <tr key={s.id} style={{borderTop:"1px solid #f1f5f9",background:i%2===0?"white":"#fafafa"}}>
+                        <tr key={s.id} style={{borderTop:"1px solid #f1f5f9",background:STATUS_ROW_BG[s.ful||s.status]||(i%2===0?"white":"#fafafa")}}>
                           <td style={{padding:"11px 16px",fontSize:12,fontWeight:700,color:shop.accent}}>{s.id}</td>
                           <td style={{padding:"11px 16px",fontSize:13,color:"#374151",fontWeight:600}}>{s.customer}</td>
                           <td style={{padding:"11px 16px",fontSize:13,fontWeight:800,color:"#0f172a"}}>{fmt(shopId,s.amount)}</td>
-                          <td style={{padding:"11px 16px"}}><Badge l={s.pay}/></td>
+                          <td style={{padding:"11px 16px"}}><Badge l={s.ful||s.status||"PENDING"}/></td>
                           <td style={{padding:"11px 16px",fontSize:12,color:"#94a3b8"}}>{s.date}</td>
                         </tr>
                       ))}
@@ -1544,6 +1544,7 @@ return(
               TD={TD}
               user={user}
               isStaff={user?.role==="staff"}
+              statusRowBg={STATUS_ROW_BG}
             />
           )}
 
@@ -1725,8 +1726,15 @@ return(
           <EditSaleForm
             shopId={shopId} shop={shop} sale={editRow} customers={customers}
             onSave={(updated)=>{
+              // Update UI instantly so sales list reflects new status immediately
               setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>x.id===updated.id?{...x,...updated}:x)}));
               setModal(null);setEditRow(null);
+              // Persist to Supabase then reload to confirm sync
+              dbSaveSale(shopId,updated).then(()=>{
+                dbLoadSales(shopId).then(data=>{
+                  if(data) setSalesData(prev=>({...prev,[shopId]:data}));
+                }).catch(()=>{});
+              }).catch(err=>console.error("❌ Edit save failed:",err));
             }}
             onClose={()=>{setModal(null);setEditRow(null);}}
           />
