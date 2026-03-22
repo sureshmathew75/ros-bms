@@ -1548,92 +1548,35 @@ return(
             ];
             const statusTabs=shopId==="ros-india"?indiaStatuses:otherStatuses;
             return(
-              <div className="ros-sales-wrap">
-                {/* Global CSS: hide SalesPanel's built-in filter bar */}
-                <style>{`
-                  .ros-sales-wrap .ros-sp-filterbar,
-                  .ros-sales-wrap [data-filterbar],
-                  .ros-sales-wrap .sales-filter-bar { display: none !important; }
-                  .ros-status-bar { scrollbar-width: none; }
-                  .ros-status-bar::-webkit-scrollbar { display: none; }
-                  .ros-status-btn:hover { color: ${shop.accent} !important; background: ${shop.accentBg} !important; }
-                `}</style>
-
-                {/* ── New professional status tab bar ── */}
-                <div className="ros-status-bar" style={{
-                  background:"white",
-                  border:"1px solid #e2e8f0",
-                  borderRadius:14,
-                  marginBottom:12,
-                  overflowX:"auto",
-                  boxShadow:"0 1px 4px rgba(0,0,0,0.05)",
-                }}>
-                  <div style={{display:"flex",alignItems:"stretch",minWidth:"max-content",padding:"0 8px"}}>
-                    {statusTabs.map(({key:st,label,emoji})=>{
-                      const isActive=statusFilter===st;
-                      const count=st==="ALL"?sales.length:sales.filter(s=>(s.ful||s.status||"")===st).length;
-                      return(
-                        <button key={st} onClick={()=>setStatusFilter(st)}
-                          className="ros-status-btn"
-                          style={{
-                            display:"flex",alignItems:"center",gap:5,
-                            padding:"10px 12px",
-                            border:"none",
-                            borderBottom:isActive?"3px solid "+shop.accent:"3px solid transparent",
-                            borderTop:"3px solid transparent",
-                            background:isActive?shop.accentBg+"80":"transparent",
-                            cursor:"pointer",fontFamily:"inherit",
-                            fontWeight:isActive?800:500,
-                            fontSize:12,whiteSpace:"nowrap",
-                            color:isActive?shop.accent:"#64748b",
-                          }}>
-                          <span style={{fontSize:12}}>{emoji}</span>
-                          <span>{label}</span>
-                          {count>0&&(
-                            <span style={{
-                              background:isActive?shop.accent:"#e2e8f0",
-                              color:isActive?"white":"#64748b",
-                              borderRadius:999,padding:"1px 7px",
-                              fontSize:10,fontWeight:800,
-                              lineHeight:"16px",display:"inline-block",
-                            }}>{count}</span>
-                          )}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-
-                <SalesPanel
-                  Badge={Badge}
-                  customers={customers}
-                  filtSales={filtSales}
-                  fmt={fmt}
-                  formatDate={formatDate}
-                  openMenu={openMenu}
-                  search={search}
-                  sales={sales}
-                  salesPeriod={salesPeriod}
-                  setEditRow={setEditRow}
-                  setInvoiceRow={setInvoiceRow}
-                  setModal={setModal}
-                  setOpenMenu={setOpenMenu}
-                  setSalesData={setSalesData}
-                  setSearch={setSearch}
-                  setSelCustomer={setSelCustomer}
-                  setSelRow={setSelRow}
-                  setSalesPeriod={setSalesPeriod}
-                  shop={shop}
-                  shopId={shopId}
-                  TD={TD}
-                  user={user}
-                  isStaff={user?.role==="staff"}
-                  statusRowBg={STATUS_ROW_BG}
-                  statusFilter={statusFilter}
-                  setStatusFilter={setStatusFilter}
-                  statusTabs={statusTabs}
-                />
-              </div>
+              <SalesPanel
+                Badge={Badge}
+                customers={customers}
+                filtSales={filtSales}
+                fmt={fmt}
+                formatDate={formatDate}
+                openMenu={openMenu}
+                search={search}
+                sales={sales}
+                salesPeriod={salesPeriod}
+                setEditRow={setEditRow}
+                setInvoiceRow={setInvoiceRow}
+                setModal={setModal}
+                setOpenMenu={setOpenMenu}
+                setSalesData={setSalesData}
+                setSearch={setSearch}
+                setSelCustomer={setSelCustomer}
+                setSelRow={setSelRow}
+                setSalesPeriod={setSalesPeriod}
+                shop={shop}
+                shopId={shopId}
+                TD={TD}
+                user={user}
+                isStaff={user?.role==="staff"}
+                statusRowBg={STATUS_ROW_BG}
+                statusFilter={statusFilter}
+                setStatusFilter={setStatusFilter}
+                statusTabs={statusTabs}
+              />
             );
           })()}
 

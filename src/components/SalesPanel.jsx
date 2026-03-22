@@ -187,13 +187,19 @@ export default function SalesPanel({
   TD,
   user,
   isStaff,
+  statusFilter,
+  setStatusFilter,
+  statusTabs,
+  statusRowBg: statusRowBgProp,
 }) {
   const [hovR,    setHovR]    = useState(null);
   const [hovCard, setHovCard] = useState(null);
   const [hovTab,  setHovTab]  = useState(null);
   const [reloading, setReloading] = useState(false);
-  /* Default status filter = PENDING */
-  const [statusTab, setStatusTab] = useState("PENDING");
+  /* Use prop-driven status tab if provided, else fall back to local state */
+  const [statusTabLocal, setStatusTabLocal] = useState("ALL");
+  const statusTab    = statusFilter    ?? statusTabLocal;
+  const setStatusTab = setStatusFilter ?? setStatusTabLocal;
 
   const accent   = shop?.accent   || "#059669";
   const accentBg = shop?.accentBg || "#ecfdf5";
@@ -213,12 +219,13 @@ export default function SalesPanel({
   /* ── Status tab counts ───────────────────────────────────────────────── */
   const tabCounts = useMemo(() => {
     const c = { ALL: periodSales.length };
-    STATUS_TABS.forEach(t => {
-      if (t.key !== "ALL")
-        c[t.key] = periodSales.filter(s => (s.ful || s.status || "PENDING") === t.key).length;
+    (statusTabs || STATUS_TABS).forEach(t => {
+      const k = t.key ?? t;
+      if (k !== "ALL")
+        c[k] = periodSales.filter(s => (s.ful || s.status || "PENDING") === k).length;
     });
     return c;
-  }, [periodSales]);
+  }, [periodSales, statusTabs]);
 
   /* ── Status-filtered rows ────────────────────────────────────────────── */
   const statusFiltered = useMemo(() => {
@@ -248,6 +255,7 @@ export default function SalesPanel({
     ? ["day", "week", "month"]
     : ["day", "week", "month", "year", "lifetime"];
 
+  const resolvedTabs = statusTabs || STATUS_TABS;
   const activeTabCfg = STATUS_TABS.find(t => t.key === statusTab) || STATUS_TABS[0];
 
   /* ── KPI card config ────────────────────────────────────────────────── */
@@ -493,55 +501,64 @@ export default function SalesPanel({
           STATUS FILTER TABS + SEARCH
          ══════════════════════════════════════════════════════════ */}
       <div style={{
-        background: "white", borderRadius: 14, border: "1px solid #f1f5f9",
-        padding: "6px 8px", marginBottom: 12,
-        boxShadow: "0 2px 8px rgba(0,0,0,0.04)",
-        display: "flex", gap: 4, flexWrap: "wrap", alignItems: "center",
+        background: "white", borderRadius: 14, border: "1px solid #e2e8f0",
+        marginBottom: 12, boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
+        display: "flex", alignItems: "stretch", overflow: "hidden",
       }}>
-        {STATUS_TABS.map(tab => {
-          const isActive = statusTab === tab.key;
-          const count    = tabCounts[tab.key] || 0;
-          const isHov    = hovTab === tab.key;
-          return (
-            <button key={tab.key}
-              onClick={() => setStatusTab(tab.key)}
-              onMouseEnter={() => setHovTab(tab.key)}
-              onMouseLeave={() => setHovTab(null)}
-              style={{
-                display: "flex", alignItems: "center", gap: 6,
-                padding: "7px 13px", borderRadius: 10, border: "none",
-                background: isActive ? tab.bg : isHov ? "#f8fafc" : "transparent",
-                color: isActive ? tab.color : isHov ? "#374151" : "#64748b",
-                fontWeight: isActive ? 800 : 600, fontSize: 12,
-                cursor: "pointer", fontFamily: "inherit", transition: "all 0.14s",
-                outline: isActive ? `2px solid ${tab.color}33` : "none",
-                outlineOffset: 0,
-              }}>
-              {tab.label}
-              {count > 0 && (
-                <span style={{
-                  fontSize: 10, fontWeight: 800,
-                  background: isActive ? tab.color : "#e2e8f0",
-                  color: isActive ? "white" : "#64748b",
-                  borderRadius: 20, padding: "1px 6px",
-                  minWidth: 18, textAlign: "center",
-                  transition: "all 0.14s",
-                }}>
-                  {count}
-                </span>
-              )}
-            </button>
-          );
-        })}
-
-        {/* Spacer */}
-        <div style={{ flex: 1, minWidth: 12 }} />
-
-        {/* Inline search */}
+        {/* Scrollable tab strip */}
         <div style={{
-          display: "flex", alignItems: "center", gap: 8,
-          background: "#f8fafc", borderRadius: 9,
-          border: "1px solid #e2e8f0", padding: "6px 12px",
+          flex: 1, overflowX: "auto", scrollbarWidth: "none",
+          display: "flex", alignItems: "stretch",
+        }}>
+          <style>{`.ros-sp-tab::-webkit-scrollbar{display:none}.ros-sp-btn:hover{background:${accentBg}!important;color:${accent}!important}`}</style>
+          <div style={{ display: "flex", alignItems: "stretch", minWidth: "max-content", padding: "0 6px" }}>
+            {resolvedTabs.map(t => {
+              const key   = t.key   ?? t;
+              const label = t.label ?? t;
+              const emoji = t.emoji ?? "";
+              const isActive = statusTab === key;
+              const count = tabCounts[key] ?? 0;
+              return (
+                <button key={key}
+                  className="ros-sp-btn"
+                  onClick={() => setStatusTab(key)}
+                  onMouseEnter={() => setHovTab(key)}
+                  onMouseLeave={() => setHovTab(null)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 5,
+                    padding: "10px 13px",
+                    border: "none",
+                    borderBottom: isActive ? `3px solid ${accent}` : "3px solid transparent",
+                    borderTop: "3px solid transparent",
+                    background: isActive ? accentBg + "80" : "transparent",
+                    cursor: "pointer", fontFamily: "inherit",
+                    fontWeight: isActive ? 800 : 500,
+                    fontSize: 12, whiteSpace: "nowrap",
+                    color: isActive ? accent : "#64748b",
+                    transition: "all 0.14s",
+                  }}>
+                  {emoji && <span style={{ fontSize: 12 }}>{emoji}</span>}
+                  <span>{label}</span>
+                  {count > 0 && (
+                    <span style={{
+                      background: isActive ? accent : "#e2e8f0",
+                      color: isActive ? "white" : "#64748b",
+                      borderRadius: 999, padding: "1px 7px",
+                      fontSize: 10, fontWeight: 800,
+                      lineHeight: "16px", display: "inline-block",
+                    }}>{count}</span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Inline search — right side */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8, flexShrink: 0,
+          padding: "0 14px", borderLeft: "1px solid #f1f5f9",
+          background: "#f8fafc",
         }}>
           <span style={{ fontSize: 13, color: "#94a3b8" }}>🔍</span>
           <input
@@ -716,7 +733,8 @@ export default function SalesPanel({
                 const s   = row;
                 const ful = s.ful || s.status || "PENDING";
                 const isH = hovR === s.id;
-                const rowBg = isH ? `${accent}10` : (STATUS_ROW_BG[ful] || "white");
+                const mergedRowBg = { ...STATUS_ROW_BG, ...(statusRowBgProp || {}) };
+                const rowBg = isH ? `${accent}10` : (mergedRowBg[ful] || "white");
 
                 return (
                   <tr key={s.id}
