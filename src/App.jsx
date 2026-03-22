@@ -1548,54 +1548,62 @@ return(
             ];
             const statusTabs=shopId==="ros-india"?indiaStatuses:otherStatuses;
             return(
-              <>
-                {/* ── Professional Status Filter Bar ── */}
-                <div style={{
-                  background:"white",borderRadius:"14px 14px 0 0",
-                  borderBottom:"2px solid #f1f5f9",
-                  padding:"0 4px",
-                  boxShadow:"0 2px 8px rgba(0,0,0,0.04)",
-                  overflowX:"auto",WebkitOverflowScrolling:"touch",
-                  scrollbarWidth:"none",
+              <div className="ros-sales-wrap">
+                {/* Global CSS: hide SalesPanel's built-in filter bar */}
+                <style>{`
+                  .ros-sales-wrap .ros-sp-filterbar,
+                  .ros-sales-wrap [data-filterbar],
+                  .ros-sales-wrap .sales-filter-bar { display: none !important; }
+                  .ros-status-bar { scrollbar-width: none; }
+                  .ros-status-bar::-webkit-scrollbar { display: none; }
+                  .ros-status-btn:hover { color: ${shop.accent} !important; background: ${shop.accentBg} !important; }
+                `}</style>
+
+                {/* ── New professional status tab bar ── */}
+                <div className="ros-status-bar" style={{
+                  background:"white",
+                  border:"1px solid #e2e8f0",
+                  borderRadius:14,
+                  marginBottom:12,
+                  overflowX:"auto",
+                  boxShadow:"0 1px 4px rgba(0,0,0,0.05)",
                 }}>
-                  <style>{`.ros-status-scroll::-webkit-scrollbar{display:none}`}</style>
-                  <div className="ros-status-scroll" style={{
-                    display:"flex",alignItems:"stretch",gap:0,
-                    minWidth:"max-content",padding:"0 8px",
-                  }}>
+                  <div style={{display:"flex",alignItems:"stretch",minWidth:"max-content",padding:"0 8px"}}>
                     {statusTabs.map(({key:st,label,emoji})=>{
                       const isActive=statusFilter===st;
                       const count=st==="ALL"?sales.length:sales.filter(s=>(s.ful||s.status||"")===st).length;
-                      const bstyle=BSTYLE[st];
                       return(
                         <button key={st} onClick={()=>setStatusFilter(st)}
+                          className="ros-status-btn"
                           style={{
                             display:"flex",alignItems:"center",gap:5,
-                            padding:"11px 14px",
-                            border:"none",borderBottom:isActive?"3px solid "+shop.accent:"3px solid transparent",
-                            borderRadius:0,
+                            padding:"10px 12px",
+                            border:"none",
+                            borderBottom:isActive?"3px solid "+shop.accent:"3px solid transparent",
+                            borderTop:"3px solid transparent",
+                            background:isActive?shop.accentBg+"80":"transparent",
                             cursor:"pointer",fontFamily:"inherit",
                             fontWeight:isActive?800:500,
                             fontSize:12,whiteSpace:"nowrap",
-                            transition:"all 0.15s",
-                            background:"transparent",
                             color:isActive?shop.accent:"#64748b",
-                            marginBottom:"-2px",
                           }}>
-                          <span style={{fontSize:13}}>{emoji}</span>
+                          <span style={{fontSize:12}}>{emoji}</span>
                           <span>{label}</span>
-                          {count>0&&<span style={{
-                            background:isActive?shop.accent:"#e2e8f0",
-                            color:isActive?"white":"#64748b",
-                            borderRadius:999,padding:"1px 6px",
-                            fontSize:10,fontWeight:800,minWidth:18,textAlign:"center",
-                            lineHeight:"16px",display:"inline-block",
-                          }}>{count}</span>}
+                          {count>0&&(
+                            <span style={{
+                              background:isActive?shop.accent:"#e2e8f0",
+                              color:isActive?"white":"#64748b",
+                              borderRadius:999,padding:"1px 7px",
+                              fontSize:10,fontWeight:800,
+                              lineHeight:"16px",display:"inline-block",
+                            }}>{count}</span>
+                          )}
                         </button>
                       );
                     })}
                   </div>
                 </div>
+
                 <SalesPanel
                   Badge={Badge}
                   customers={customers}
@@ -1625,7 +1633,7 @@ return(
                   setStatusFilter={setStatusFilter}
                   statusTabs={statusTabs}
                 />
-              </>
+              </div>
             );
           })()}
 
