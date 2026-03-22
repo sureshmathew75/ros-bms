@@ -652,6 +652,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [pdfMode,setPdfMode]=useState(false);
   const [salesPeriod,setSalesPeriodRaw]=useState("month");
   const [pdfInv,setPdfInv]=useState(null);
+  const [statusFilter,setStatusFilter]=useState("ALL");
   const invoicePrintRef=useRef(null);
 
   useEffect(()=>{
@@ -696,10 +697,11 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"reports",  l:"Reports",  ic:"📋"},
   ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings");
 
-  const filtSales=sales.filter(s=>
-    s.id.toLowerCase().includes(search.toLowerCase())||
-    s.customer.toLowerCase().includes(search.toLowerCase())
-  );
+  const filtSales=sales.filter(s=>{
+    const matchSearch=s.id.toLowerCase().includes(search.toLowerCase())||s.customer.toLowerCase().includes(search.toLowerCase());
+    const matchStatus=statusFilter==="ALL"||(s.ful||s.status||"")===statusFilter;
+    return matchSearch&&matchStatus;
+  });
 
 const addSale = async (form) => {
   const pfx = {["ros-selections"]:"SI",["ros-hairlines"]:"SH",["ros-india"]:"IN"}[shopId];
@@ -1519,34 +1521,73 @@ return(
           })()}
 
           {/* ─── SALES ─── */}
-          {tab==="sales"&&(
-            <SalesPanel
-              Badge={Badge}
-              customers={customers}
-              filtSales={filtSales}
-              fmt={fmt}
-              formatDate={formatDate}
-              openMenu={openMenu}
-              search={search}
-              sales={sales}
-              salesPeriod={salesPeriod}
-              setEditRow={setEditRow}
-              setInvoiceRow={setInvoiceRow}
-              setModal={setModal}
-              setOpenMenu={setOpenMenu}
-              setSalesData={setSalesData}
-              setSearch={setSearch}
-              setSelCustomer={setSelCustomer}
-              setSelRow={setSelRow}
-              setSalesPeriod={setSalesPeriod}
-              shop={shop}
-              shopId={shopId}
-              TD={TD}
-              user={user}
-              isStaff={user?.role==="staff"}
-              statusRowBg={STATUS_ROW_BG}
-            />
-          )}
+          {tab==="sales"&&(()=>{
+            const indiaStatuses=["ALL","ORDER NOT PLACED","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"];
+            const otherStatuses=["ALL","PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"];
+            const statusTabs=shopId==="ros-india"?indiaStatuses:otherStatuses;
+            const statusEmoji={"ALL":"🗂️","PENDING":"⏳","ORDER NOT PLACED":"🕐","WORK IN PROGRESS":"🔧","PHOTO GIVEN TO CUSTOMER":"📸","AWAITING TRACKING INFO.":"📦","FULFILLED":"✅","RETURN REQUESTED":"↩️","RETURN RECEIVED":"📬","EXCHANGED":"🔄","REFUNDED":"💸","GOOD FEEDBACK":"🌟","GOOD FEEDBACK RECEIVED":"🌟","NEGATIVE FEEDBACK RECEIVED":"⚠️","RTRN REQSTD":"↩️","RETRN RCVD":"📬"};
+            return(
+              <>
+                {/* Status filter tab bar */}
+                <div style={{marginBottom:16,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+                  <div style={{display:"flex",gap:8,padding:"4px 2px",minWidth:"max-content"}}>
+                    {statusTabs.map(st=>{
+                      const isActive=statusFilter===st;
+                      const count=st==="ALL"?sales.length:sales.filter(s=>(s.ful||s.status||"")===st).length;
+                      const rowBg=STATUS_ROW_BG[st];
+                      return(
+                        <button key={st} onClick={()=>setStatusFilter(st)}
+                          style={{
+                            display:"flex",alignItems:"center",gap:6,
+                            padding:"7px 14px",borderRadius:10,border:"none",
+                            cursor:"pointer",fontFamily:"inherit",fontWeight:isActive?800:600,
+                            fontSize:12,whiteSpace:"nowrap",transition:"all 0.15s",
+                            background:isActive?shop.accent:rowBg||"#f1f5f9",
+                            color:isActive?"white":rowBg?"#374151":"#64748b",
+                            boxShadow:isActive?"0 2px 8px "+shop.accent+"55":"none",
+                            transform:isActive?"translateY(-1px)":"none",
+                          }}>
+                          <span>{statusEmoji[st]||"•"}</span>
+                          <span>{st==="ALL"?"All Sales":st}</span>
+                          <span style={{
+                            background:isActive?"rgba(255,255,255,0.25)":shop.accent+"18",
+                            color:isActive?"white":shop.accent,
+                            borderRadius:999,padding:"1px 7px",fontSize:11,fontWeight:700,
+                          }}>{count}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+                <SalesPanel
+                  Badge={Badge}
+                  customers={customers}
+                  filtSales={filtSales}
+                  fmt={fmt}
+                  formatDate={formatDate}
+                  openMenu={openMenu}
+                  search={search}
+                  sales={sales}
+                  salesPeriod={salesPeriod}
+                  setEditRow={setEditRow}
+                  setInvoiceRow={setInvoiceRow}
+                  setModal={setModal}
+                  setOpenMenu={setOpenMenu}
+                  setSalesData={setSalesData}
+                  setSearch={setSearch}
+                  setSelCustomer={setSelCustomer}
+                  setSelRow={setSelRow}
+                  setSalesPeriod={setSalesPeriod}
+                  shop={shop}
+                  shopId={shopId}
+                  TD={TD}
+                  user={user}
+                  isStaff={user?.role==="staff"}
+                  statusRowBg={STATUS_ROW_BG}
+                />
+              </>
+            );
+          })()}
 
           {/* ─── PURCHASES ─── */}
           {tab==="purchases"&&(
