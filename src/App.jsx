@@ -1522,38 +1522,75 @@ return(
 
           {/* ─── SALES ─── */}
           {tab==="sales"&&(()=>{
-            const indiaStatuses=["ALL","ORDER NOT PLACED","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"];
-            const otherStatuses=["ALL","PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"];
+            const indiaStatuses=[
+              {key:"ALL",                        label:"All",         emoji:"🗂️"},
+              {key:"ORDER NOT PLACED",           label:"Not Placed",  emoji:"🕐"},
+              {key:"WORK IN PROGRESS",           label:"In Progress", emoji:"🔧"},
+              {key:"PHOTO GIVEN TO CUSTOMER",    label:"Photo Sent",  emoji:"📸"},
+              {key:"AWAITING TRACKING INFO.",    label:"Awaiting",    emoji:"📦"},
+              {key:"FULFILLED",                  label:"Fulfilled",   emoji:"✅"},
+              {key:"RETURN REQUESTED",           label:"Rtn Req",     emoji:"↩️"},
+              {key:"RETURN RECEIVED",            label:"Rtn Rcvd",    emoji:"📬"},
+              {key:"EXCHANGED",                  label:"Exchanged",   emoji:"🔄"},
+              {key:"REFUNDED",                   label:"Refunded",    emoji:"💸"},
+              {key:"GOOD FEEDBACK RECEIVED",     label:"👍 Positive", emoji:"🌟"},
+              {key:"NEGATIVE FEEDBACK RECEIVED", label:"👎 Negative", emoji:"⚠️"},
+            ];
+            const otherStatuses=[
+              {key:"ALL",           label:"All",       emoji:"🗂️"},
+              {key:"PENDING",       label:"Pending",   emoji:"⏳"},
+              {key:"FULFILLED",     label:"Fulfilled", emoji:"✅"},
+              {key:"GOOD FEEDBACK", label:"Good FB",   emoji:"🌟"},
+              {key:"RTRN REQSTD",   label:"Rtn Req",   emoji:"↩️"},
+              {key:"RETRN RCVD",    label:"Rtn Rcvd",  emoji:"📬"},
+              {key:"EXCHANGED",     label:"Exchanged", emoji:"🔄"},
+              {key:"REFUNDED",      label:"Refunded",  emoji:"💸"},
+            ];
             const statusTabs=shopId==="ros-india"?indiaStatuses:otherStatuses;
-            const statusEmoji={"ALL":"🗂️","PENDING":"⏳","ORDER NOT PLACED":"🕐","WORK IN PROGRESS":"🔧","PHOTO GIVEN TO CUSTOMER":"📸","AWAITING TRACKING INFO.":"📦","FULFILLED":"✅","RETURN REQUESTED":"↩️","RETURN RECEIVED":"📬","EXCHANGED":"🔄","REFUNDED":"💸","GOOD FEEDBACK":"🌟","GOOD FEEDBACK RECEIVED":"🌟","NEGATIVE FEEDBACK RECEIVED":"⚠️","RTRN REQSTD":"↩️","RETRN RCVD":"📬"};
             return(
               <>
-                {/* Status filter tab bar */}
-                <div style={{marginBottom:16,overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-                  <div style={{display:"flex",gap:8,padding:"4px 2px",minWidth:"max-content"}}>
-                    {statusTabs.map(st=>{
+                {/* ── Professional Status Filter Bar ── */}
+                <div style={{
+                  background:"white",borderRadius:"14px 14px 0 0",
+                  borderBottom:"2px solid #f1f5f9",
+                  padding:"0 4px",
+                  boxShadow:"0 2px 8px rgba(0,0,0,0.04)",
+                  overflowX:"auto",WebkitOverflowScrolling:"touch",
+                  scrollbarWidth:"none",
+                }}>
+                  <style>{`.ros-status-scroll::-webkit-scrollbar{display:none}`}</style>
+                  <div className="ros-status-scroll" style={{
+                    display:"flex",alignItems:"stretch",gap:0,
+                    minWidth:"max-content",padding:"0 8px",
+                  }}>
+                    {statusTabs.map(({key:st,label,emoji})=>{
                       const isActive=statusFilter===st;
                       const count=st==="ALL"?sales.length:sales.filter(s=>(s.ful||s.status||"")===st).length;
-                      const rowBg=STATUS_ROW_BG[st];
+                      const bstyle=BSTYLE[st];
                       return(
                         <button key={st} onClick={()=>setStatusFilter(st)}
                           style={{
-                            display:"flex",alignItems:"center",gap:6,
-                            padding:"7px 14px",borderRadius:10,border:"none",
-                            cursor:"pointer",fontFamily:"inherit",fontWeight:isActive?800:600,
-                            fontSize:12,whiteSpace:"nowrap",transition:"all 0.15s",
-                            background:isActive?shop.accent:rowBg||"#f1f5f9",
-                            color:isActive?"white":rowBg?"#374151":"#64748b",
-                            boxShadow:isActive?"0 2px 8px "+shop.accent+"55":"none",
-                            transform:isActive?"translateY(-1px)":"none",
+                            display:"flex",alignItems:"center",gap:5,
+                            padding:"11px 14px",
+                            border:"none",borderBottom:isActive?"3px solid "+shop.accent:"3px solid transparent",
+                            borderRadius:0,
+                            cursor:"pointer",fontFamily:"inherit",
+                            fontWeight:isActive?800:500,
+                            fontSize:12,whiteSpace:"nowrap",
+                            transition:"all 0.15s",
+                            background:"transparent",
+                            color:isActive?shop.accent:"#64748b",
+                            marginBottom:"-2px",
                           }}>
-                          <span>{statusEmoji[st]||"•"}</span>
-                          <span>{st==="ALL"?"All Sales":st}</span>
-                          <span style={{
-                            background:isActive?"rgba(255,255,255,0.25)":shop.accent+"18",
-                            color:isActive?"white":shop.accent,
-                            borderRadius:999,padding:"1px 7px",fontSize:11,fontWeight:700,
-                          }}>{count}</span>
+                          <span style={{fontSize:13}}>{emoji}</span>
+                          <span>{label}</span>
+                          {count>0&&<span style={{
+                            background:isActive?shop.accent:"#e2e8f0",
+                            color:isActive?"white":"#64748b",
+                            borderRadius:999,padding:"1px 6px",
+                            fontSize:10,fontWeight:800,minWidth:18,textAlign:"center",
+                            lineHeight:"16px",display:"inline-block",
+                          }}>{count}</span>}
                         </button>
                       );
                     })}
@@ -1584,6 +1621,9 @@ return(
                   user={user}
                   isStaff={user?.role==="staff"}
                   statusRowBg={STATUS_ROW_BG}
+                  statusFilter={statusFilter}
+                  setStatusFilter={setStatusFilter}
+                  statusTabs={statusTabs}
                 />
               </>
             );
