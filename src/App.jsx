@@ -640,6 +640,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [search,setSearch]=useState("");
   const [modal,setModal]=useState(null);
   const [selRow,setSelRow]=useState(null);
+  const [confirmDelete,setConfirmDelete]=useState(false);
   const [editRow,setEditRow]=useState(null);
   const [selCustomer,setSelCustomer]=useState(null);
   const [openMenu,setOpenMenu]=useState(null);
@@ -2316,7 +2317,7 @@ return(
 
       {selRow&&(
         <div style={{position:"fixed",inset:0,zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
-          onClick={()=>setSelRow(null)}>
+          onClick={()=>{setSelRow(null);setConfirmDelete(false);}}>
           <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(4px)"}}/>
           <div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.22)",width:"100%",maxWidth:680,maxHeight:"90vh",overflowY:"auto",zIndex:61}}
             onClick={e=>e.stopPropagation()}>
@@ -2340,7 +2341,15 @@ return(
                   style={{padding:"7px 16px",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6,boxShadow:"0 3px 10px "+shop.accent+"44"}}>
                   ✏️ Edit
                 </button>
-                <button onClick={()=>setSelRow(null)}
+                {user?.role!=="staff"&&(
+                  <button onClick={()=>setConfirmDelete(true)}
+                    style={{padding:"7px 14px",borderRadius:9,border:"1px solid #fca5a5",
+                      background:"#fff5f5",color:"#dc2626",fontWeight:700,fontSize:13,
+                      cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
+                    🗑 Delete
+                  </button>
+                )}
+                <button onClick={()=>{setSelRow(null);setConfirmDelete(false);}}
                   style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
               </div>
             </div>
@@ -2465,12 +2474,56 @@ return(
               </div>
 
               {/* ── FOOTER ACTIONS ── */}
-              <div style={{display:"flex",justifyContent:"flex-end"}}>
-                <button onClick={()=>setSelRow(null)}
-                  style={{padding:"10px 28px",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
-                  Close
-                </button>
-              </div>
+              {confirmDelete?(
+                /* ── CONFIRM DELETE PANEL ── */
+                <div style={{
+                  background:"#fff5f5",border:"2px solid #fca5a5",borderRadius:14,
+                  padding:"18px 20px",display:"flex",flexDirection:"column",gap:14,
+                }}>
+                  <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+                    <span style={{fontSize:28,flexShrink:0}}>⚠️</span>
+                    <div>
+                      <p style={{margin:"0 0 4px",fontWeight:900,fontSize:15,color:"#991b1b"}}>
+                        Delete Sale {selRow.id}?
+                      </p>
+                      <p style={{margin:0,fontSize:13,color:"#dc2626"}}>
+                        This will permanently remove the sale for <strong>{selRow.customer}</strong> ({fmt(shopId,selRow.amount)}) from the database. This cannot be undone.
+                      </p>
+                    </div>
+                  </div>
+                  <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+                    <button onClick={()=>setConfirmDelete(false)}
+                      style={{padding:"10px 24px",borderRadius:10,border:"1px solid #e2e8f0",
+                        background:"white",color:"#374151",fontWeight:700,fontSize:14,
+                        cursor:"pointer",fontFamily:"inherit"}}>
+                      ← Cancel
+                    </button>
+                    <button onClick={()=>{
+                        const id=selRow.id;
+                        setSalesData(prev=>({
+                          ...prev,
+                          [shopId]:(prev[shopId]||[]).filter(x=>x.id!==id)
+                        }));
+                        dbDeleteSale(shopId,id).catch(()=>{});
+                        setSelRow(null);
+                        setConfirmDelete(false);
+                      }}
+                      style={{padding:"10px 24px",borderRadius:10,border:"none",
+                        background:"#dc2626",color:"white",fontWeight:800,fontSize:14,
+                        cursor:"pointer",fontFamily:"inherit",
+                        boxShadow:"0 4px 14px rgba(220,38,38,0.35)"}}>
+                      🗑 Yes, Delete Sale
+                    </button>
+                  </div>
+                </div>
+              ):(
+                <div style={{display:"flex",justifyContent:"flex-end"}}>
+                  <button onClick={()=>{setSelRow(null);setConfirmDelete(false);}}
+                    style={{padding:"10px 28px",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
+                    Close
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -4086,37 +4139,316 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
    INLINE PANEL COMPONENTS
    ========================================================= */
 
+/* ── CustomerEditModal — proper component so hooks are always called at top level ── */
+const CustomerEditModal=({customer,shop,onSave,onClose})=>{
+  const [ef,setEf]=useState({...customer});
+  const se=(k,v)=>setEf(f=>({...f,[k]:v}));
+  const einp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 12px",
+    fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",
+    color:"#374151",background:"white",transition:"border-color 0.15s"};
+  const elbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:4,
+    textTransform:"uppercase",letterSpacing:"0.05em"};
+  const fo=e=>e.target.style.borderColor=shop.accent;
+  const bl=e=>e.target.style.borderColor="#e2e8f0";
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:70,display:"flex",alignItems:"center",
+      justifyContent:"center",padding:16}} onClick={onClose}>
+      <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(5px)"}}/>
+      <div style={{position:"relative",background:"white",borderRadius:20,
+        boxShadow:"0 32px 64px rgba(0,0,0,0.22)",width:"100%",maxWidth:560,
+        maxHeight:"90vh",overflowY:"auto",zIndex:71}}
+        onClick={e=>e.stopPropagation()}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+          padding:"16px 24px",borderBottom:"1px solid #f1f5f9",
+          background:shop.accent+"10",borderRadius:"20px 20px 0 0"}}>
+          <p style={{margin:0,fontWeight:900,fontSize:16,color:"#0f172a"}}>✏️ Edit — {ef.name}</p>
+          <button onClick={onClose}
+            style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#f1f5f9",
+              cursor:"pointer",fontSize:20,color:"#64748b",display:"flex",alignItems:"center",
+              justifyContent:"center",lineHeight:1}}>×</button>
+        </div>
+        <div style={{padding:24,display:"flex",flexDirection:"column",gap:14}}>
+          <div>
+            <label style={elbl}>Customer Name *</label>
+            <input value={ef.name||""} onChange={e=>se("name",e.target.value)}
+              style={einp} onFocus={fo} onBlur={bl}/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <div>
+              <label style={elbl}>Phone Number</label>
+              <input value={ef.phone||""} onChange={e=>se("phone",e.target.value)}
+                style={einp} onFocus={fo} onBlur={bl}/>
+            </div>
+            <div>
+              <label style={elbl}>Email</label>
+              <input value={ef.email||""} onChange={e=>se("email",e.target.value)}
+                style={einp} onFocus={fo} onBlur={bl}/>
+            </div>
+          </div>
+          <div>
+            <label style={elbl}>Phone Number Saved On</label>
+            <select value={ef.phoneSavedOn||"UK 888"} onChange={e=>se("phoneSavedOn",e.target.value)} style={einp}>
+              {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
+            </select>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <div>
+              <label style={elbl}>Addressee</label>
+              <input value={ef.addressee||""} onChange={e=>se("addressee",e.target.value)}
+                placeholder="Name on delivery label" style={einp} onFocus={fo} onBlur={bl}/>
+            </div>
+            <div>
+              <label style={elbl}>Tag</label>
+              <select value={ef.tag||""} onChange={e=>se("tag",e.target.value)} style={einp}>
+                {["","VIP","Wholesale","New Customer","Regular","Not Good","Regular Return","Banned"].map(o=>(
+                  <option key={o} value={o}>{o||"None"}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style={elbl}>Address</label>
+            <textarea value={ef.address||""} onChange={e=>se("address",e.target.value)}
+              rows={2} style={{...einp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
+          </div>
+          <div>
+            <label style={elbl}>Notes / Remarks</label>
+            <textarea value={ef.notes||""} onChange={e=>se("notes",e.target.value)}
+              rows={2} style={{...einp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingTop:4}}>
+            <button onClick={()=>onSave(ef)}
+              style={{padding:"12px 0",borderRadius:11,border:"none",
+                background:shop.accent,color:"white",fontWeight:800,fontSize:14,
+                cursor:"pointer",fontFamily:"inherit",
+                boxShadow:"0 4px 14px "+shop.accent+"44"}}>
+              💾 Save Changes
+            </button>
+            <button onClick={onClose}
+              style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",
+                background:"white",color:"#374151",fontWeight:700,fontSize:14,
+                cursor:"pointer",fontFamily:"inherit"}}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 /* ── CustomersPanel ── */
 const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCustomer})=>{
-  const [sel,setSel]=useState(null);
+  const [viewCust,setViewCust]=useState(null);
+  const [editCust,setEditCust]=useState(null);
+  const [delCust,setDelCust]=useState(null);   // customer staged for deletion
   const [hovR,setHovR]=useState(null);
-  const filtered=(customers||[]).filter(c=>
-    !search||c.name.toLowerCase().includes(search.toLowerCase())||
-    c.phone.includes(search)||c.tag.toLowerCase().includes(search.toLowerCase())
-  );
+  const [tagFilter,setTagFilter]=useState(null); // must be declared before filtered
+  const ALL_TAGS=["VIP","Wholesale","New Customer","Regular","Not Good","Regular Return","Banned"];
+  const filtered=(customers||[]).filter(c=>{
+    const matchSearch=!search||c.name.toLowerCase().includes(search.toLowerCase())||
+      (c.phone||"").includes(search)||(c.tag||"").toLowerCase().includes(search.toLowerCase());
+    const matchTag=!tagFilter||(c.tag||"")===tagFilter;
+    return matchSearch&&matchTag;
+  });
   const tagColor={
-    "VIP":          {bg:"#fef9c3",color:"#854d0e",border:"#fde68a"},
-    "Wholesale":    {bg:"#ede9fe",color:"#5b21b6",border:"#ddd6fe"},
-    "Regular":      {bg:"#dcfce7",color:"#166534",border:"#bbf7d0"},
-    "New Customer": {bg:"#dbeafe",color:"#1e40af",border:"#bfdbfe"},
+    "VIP":            {bg:"#fef9c3",color:"#854d0e",border:"#fde047",ic:"⭐"},
+    "Wholesale":      {bg:"#ede9fe",color:"#5b21b6",border:"#c4b5fd",ic:"📦"},
+    "New Customer":   {bg:"#dbeafe",color:"#1e40af",border:"#93c5fd",ic:"🆕"},
+    "Regular":        {bg:"#dcfce7",color:"#166534",border:"#86efac",ic:"✅"},
+    "Not Good":       {bg:"#fff7ed",color:"#c2410c",border:"#fdba74",ic:"⚠️"},
+    "Regular Return": {bg:"#fef3c7",color:"#92400e",border:"#fcd34d",ic:"🔄"},
+    "Banned":         {bg:"#fee2e2",color:"#991b1b",border:"#f87171",ic:"🚫"},
   };
-  const tc=t=>tagColor[t]||{bg:"#f1f5f9",color:"#475569",border:"#e2e8f0"};
+  const tc=t=>tagColor[t]||{bg:"#f1f5f9",color:"#475569",border:"#e2e8f0",ic:"👤"};
+
+  /* ── shared input style for edit form ── */
+  const einp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 12px",
+    fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",
+    color:"#374151",background:"white",transition:"border-color 0.15s"};
+  const elbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:4,
+    textTransform:"uppercase",letterSpacing:"0.05em"};
 
   return(
     <div style={{padding:0}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
-        <div>
-          <h2 style={{margin:"0 0 2px",fontSize:20,fontWeight:800,color:"#0f172a"}}>Customers</h2>
-          <p style={{margin:0,fontSize:12,color:"#94a3b8"}}>{filtered.length} contact{filtered.length!==1?"s":""}</p>
+      {/* ══ VIEW MODAL ══ */}
+      {viewCust&&(
+        <div style={{position:"fixed",inset:0,zIndex:70,display:"flex",alignItems:"center",
+          justifyContent:"center",padding:16}} onClick={()=>setViewCust(null)}>
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(5px)"}}/>
+          <div style={{position:"relative",background:"white",borderRadius:20,
+            boxShadow:"0 32px 64px rgba(0,0,0,0.22)",width:"100%",maxWidth:560,
+            maxHeight:"90vh",overflowY:"auto",zIndex:71}}
+            onClick={e=>e.stopPropagation()}>
+            {/* header */}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+              padding:"18px 24px",borderBottom:"1px solid #f1f5f9",
+              background:shop.accent+"10",borderRadius:"20px 20px 0 0"}}>
+              <div style={{display:"flex",alignItems:"center",gap:12}}>
+                <div style={{width:44,height:44,borderRadius:13,background:shop.sb,
+                  display:"flex",alignItems:"center",justifyContent:"center",
+                  color:"white",fontWeight:900,fontSize:18,boxShadow:"0 4px 12px rgba(0,0,0,0.15)"}}>
+                  {viewCust.name.charAt(0)}
+                </div>
+                <div>
+                  <p style={{margin:0,fontWeight:900,fontSize:16,color:"#0f172a"}}>{viewCust.name}</p>
+                  {viewCust.tag&&(()=>{const t=tc(viewCust.tag);return(
+                    <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:999,
+                      background:t.bg,color:t.color,border:"1px solid "+t.border}}>{viewCust.tag}</span>
+                  );})()}
+                </div>
+              </div>
+              <button onClick={()=>setViewCust(null)}
+                style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#f1f5f9",
+                  cursor:"pointer",fontSize:20,color:"#64748b",display:"flex",alignItems:"center",
+                  justifyContent:"center",lineHeight:1}}>×</button>
+            </div>
+            {/* body */}
+            <div style={{padding:24}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+                {[
+                  {l:"Phone",         v:viewCust.phone||"—",         ic:"📞"},
+                  {l:"Phone Saved On",v:viewCust.phoneSavedOn||"—",  ic:"📱"},
+                  {l:"WhatsApp",      v:viewCust.whatsapp||"—",      ic:"💬"},
+                  {l:"Email",         v:viewCust.email||"—",         ic:"📧"},
+                  {l:"Purchases",     v:viewCust.purchases||0,        ic:"🛒"},
+                  {l:"Total Spend",   v:(viewCust.spend>=10000?"₹":"£")+(viewCust.spend||0).toLocaleString(), ic:"💰"},
+                  {l:"Last Order",    v:viewCust.last||"—",           ic:"📅"},
+                  {l:"Addressee",     v:viewCust.addressee||"—",      ic:"🏷"},
+                ].map((f,i)=>(
+                  <div key={i} style={{background:"#f8fafc",borderRadius:10,padding:"10px 14px",
+                    border:"1px solid #f1f5f9"}}>
+                    <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#94a3b8",
+                      textTransform:"uppercase",letterSpacing:"0.06em"}}>{f.ic} {f.l}</p>
+                    <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a",
+                      wordBreak:"break-word"}}>{String(f.v)}</p>
+                  </div>
+                ))}
+              </div>
+              {/* address full width */}
+              <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 14px",
+                border:"1px solid #f1f5f9",marginBottom:12}}>
+                <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#94a3b8",
+                  textTransform:"uppercase",letterSpacing:"0.06em"}}>📍 Address</p>
+                <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{viewCust.address||"—"}</p>
+              </div>
+              {viewCust.notes&&(
+                <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,
+                  padding:"10px 14px",marginBottom:12}}>
+                  <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#92400e",
+                    textTransform:"uppercase",letterSpacing:"0.06em"}}>📝 Notes</p>
+                  <p style={{margin:0,fontSize:13,color:"#92400e"}}>{viewCust.notes}</p>
+                </div>
+              )}
+              <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:4}}>
+                <button onClick={()=>{setEditCust(viewCust);setViewCust(null);}}
+                  style={{padding:"9px 20px",borderRadius:10,border:"none",
+                    background:shop.accent,color:"white",fontWeight:700,fontSize:13,
+                    cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px "+shop.accent+"44"}}>
+                  ✏️ Edit
+                </button>
+                <button onClick={()=>setViewCust(null)}
+                  style={{padding:"9px 20px",borderRadius:10,border:"1px solid #e2e8f0",
+                    background:"white",color:"#374151",fontWeight:700,fontSize:13,
+                    cursor:"pointer",fontFamily:"inherit"}}>
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
+      )}
+
+      {/* ══ EDIT MODAL ══ */}
+            {editCust&&<CustomerEditModal customer={editCust} shop={shop} onSave={(ef)=>{setCustomers(prev=>prev.map(x=>x.id===ef.id?{...x,...ef}:x));setEditCust(null);}} onClose={()=>setEditCust(null)}/>}
+
+      {/* ══ DELETE CONFIRM MODAL ══ */}
+      {delCust&&(
+        <div style={{position:"fixed",inset:0,zIndex:70,display:"flex",alignItems:"center",
+          justifyContent:"center",padding:16}} onClick={()=>setDelCust(null)}>
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(5px)"}}/>
+          <div style={{position:"relative",background:"white",borderRadius:20,
+            boxShadow:"0 32px 64px rgba(0,0,0,0.22)",width:"100%",maxWidth:420,zIndex:71}}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{padding:28,textAlign:"center"}}>
+              <div style={{fontSize:48,marginBottom:12}}>⚠️</div>
+              <p style={{margin:"0 0 6px",fontWeight:900,fontSize:17,color:"#991b1b"}}>
+                Delete Customer?
+              </p>
+              <p style={{margin:"0 0 20px",fontSize:13,color:"#64748b",lineHeight:1.6}}>
+                You are about to permanently delete <strong style={{color:"#0f172a"}}>{delCust.name}</strong> from the customer database.<br/>This action cannot be undone.
+              </p>
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={()=>setDelCust(null)}
+                  style={{flex:1,padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",
+                    background:"white",color:"#374151",fontWeight:700,fontSize:14,
+                    cursor:"pointer",fontFamily:"inherit"}}>
+                  ← Cancel
+                </button>
+                <button onClick={()=>{
+                    setCustomers(prev=>prev.filter(x=>x.id!==delCust.id));
+                    if(dbDeleteCustomer) dbDeleteCustomer(delCust.id);
+                    setDelCust(null);
+                  }}
+                  style={{flex:1,padding:"12px 0",borderRadius:11,border:"none",
+                    background:"#dc2626",color:"white",fontWeight:800,fontSize:14,
+                    cursor:"pointer",fontFamily:"inherit",
+                    boxShadow:"0 4px 14px rgba(220,38,38,0.35)"}}>
+                  🗑 Yes, Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ TABLE HEADER + TAG FILTERS ══ */}
+      <div style={{marginBottom:20}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+          <div>
+            <h2 style={{margin:"0 0 2px",fontSize:20,fontWeight:800,color:"#0f172a"}}>Customers</h2>
+            <p style={{margin:0,fontSize:12,color:"#94a3b8"}}>
+              {filtered.length} of {(customers||[]).length} customer{(customers||[]).length!==1?"s":""}
+              {tagFilter&&<span style={{color:"#64748b"}}> · filtered by <strong>{tagFilter}</strong></span>}
+            </p>
+          </div>
+          {tagFilter&&(
+            <button onClick={()=>setTagFilter(null)}
+              style={{fontSize:11,fontWeight:700,color:"#64748b",background:"#f1f5f9",
+                border:"1px solid #e2e8f0",borderRadius:999,padding:"4px 12px",
+                cursor:"pointer",fontFamily:"inherit"}}>
+              ✕ Clear filter
+            </button>
+          )}
+        </div>
+        {/* Tag filter pills */}
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          {["VIP","Wholesale","Regular","New Customer"].map(tag=>{
+          {ALL_TAGS.map(tag=>{
             const t=tc(tag);
+            const count=(customers||[]).filter(c=>c.tag===tag).length;
+            const isActive=tagFilter===tag;
             return(
-              <span key={tag} style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:999,
-                background:t.bg,color:t.color,border:"1px solid "+t.border}}>
-                {tag} · {(customers||[]).filter(c=>c.tag===tag).length}
-              </span>
+              <button key={tag}
+                onClick={()=>setTagFilter(isActive?null:tag)}
+                style={{
+                  display:"inline-flex",alignItems:"center",gap:5,
+                  fontSize:11,fontWeight:700,padding:"5px 12px",borderRadius:999,
+                  cursor:"pointer",fontFamily:"inherit",
+                  transition:"all 0.15s",
+                  background:isActive?t.color:t.bg,
+                  color:isActive?"white":t.color,
+                  border:"2px solid "+(isActive?t.color:t.border),
+                  boxShadow:isActive?"0 2px 8px "+t.color+"55":"none",
+                  transform:isActive?"scale(1.04)":"scale(1)",
+                }}>
+                <span>{t.ic}</span>
+                {tag}
+                <span style={{
+                  background:isActive?"rgba(255,255,255,0.25)":t.color+"22",
+                  color:isActive?"white":t.color,
+                  borderRadius:999,padding:"1px 7px",fontSize:10,fontWeight:800,
+                }}>{count}</span>
+              </button>
             );
           })}
         </div>
@@ -4126,7 +4458,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
         <table style={{width:"100%",borderCollapse:"collapse"}}>
           <thead>
             <tr style={{background:"#f8fafc",borderBottom:"1px solid #f1f5f9"}}>
-              {["Customer","Contact","Address","Purchases","Total Spend","Last Order","Tag"].map(h=>(
+              {["Customer","Contact","Address","Purchases","Total Spend","Last Order","Tag","Actions"].map(h=>(
                 <th key={h} style={{padding:"11px 16px",fontSize:10,fontWeight:800,color:"#64748b",
                   textTransform:"uppercase",letterSpacing:"0.06em",textAlign:"left",whiteSpace:"nowrap"}}>
                   {h}
@@ -4136,23 +4468,22 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
           </thead>
           <tbody>
             {filtered.length===0&&(
-              <tr><td colSpan={7} style={{padding:40,textAlign:"center",color:"#94a3b8",fontSize:13}}>No customers found</td></tr>
+              <tr><td colSpan={8} style={{padding:40,textAlign:"center",color:"#94a3b8",fontSize:13}}>No customers found</td></tr>
             )}
             {filtered.map((c,i)=>{
               const isH=hovR===c.id;
-              const isSel=sel===c.id;
               const t=tc(c.tag);
               return(
                 <tr key={c.id}
-                  onClick={()=>setSel(isSel?null:c.id)}
                   onMouseEnter={()=>setHovR(c.id)}
                   onMouseLeave={()=>setHovR(null)}
                   style={{
                     borderBottom:i<filtered.length-1?"1px solid #f8fafc":"none",
-                    background:isSel?shop.accentBg:isH?"#fafafa":"white",
-                    cursor:"pointer",transition:"background 0.12s",
+                    background:isH?"#fafafa":"white",
+                    transition:"background 0.12s",
                   }}>
-                  <td style={{padding:"13px 16px"}}>
+                  {/* Name — clickable to view */}
+                  <td style={{padding:"13px 16px",cursor:"pointer"}} onClick={()=>setViewCust(c)}>
                     <div style={{display:"flex",alignItems:"center",gap:10}}>
                       <div style={{width:34,height:34,borderRadius:10,flexShrink:0,
                         background:shop.sb,display:"flex",alignItems:"center",justifyContent:"center",
@@ -4161,7 +4492,9 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                         {c.name.charAt(0)}
                       </div>
                       <div>
-                        <p style={{margin:0,fontWeight:700,fontSize:13,color:"#0f172a"}}>{c.name}</p>
+                        <p style={{margin:0,fontWeight:700,fontSize:13,color:shop.accent,
+                          textDecoration:"underline",textDecorationStyle:"dotted",
+                          textUnderlineOffset:3}}>{c.name}</p>
                         {c.notes&&<p style={{margin:0,fontSize:10,color:"#94a3b8"}}>{c.notes}</p>}
                       </div>
                     </div>
@@ -4191,73 +4524,49 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                       </span>
                     )}
                   </td>
+                  {/* Actions */}
+                  <td style={{padding:"13px 16px"}}>
+                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                      <button onClick={()=>setViewCust(c)}
+                        title="View full details"
+                        style={{padding:"5px 10px",borderRadius:7,border:"1px solid #e2e8f0",
+                          background:"white",color:"#374151",fontSize:12,fontWeight:700,
+                          cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",
+                          transition:"all 0.13s"}}
+                        onMouseEnter={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accent;e.currentTarget.style.borderColor=shop.accent;}}
+                        onMouseLeave={e=>{e.currentTarget.style.background="white";e.currentTarget.style.color="#374151";e.currentTarget.style.borderColor="#e2e8f0";}}>
+                        👁 View
+                      </button>
+                      <button onClick={()=>setEditCust(c)}
+                        title="Edit customer"
+                        style={{padding:"5px 10px",borderRadius:7,border:"1px solid "+shop.accent,
+                          background:shop.accentBg,color:shop.accent,fontSize:12,fontWeight:700,
+                          cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",
+                          transition:"all 0.13s"}}
+                        onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.color="white";}}
+                        onMouseLeave={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accent;}}>
+                        ✏️ Edit
+                      </button>
+                      {(user?.role==="superadmin"||user?.role==="admin")&&(
+                        <button onClick={()=>setDelCust(c)}
+                          title="Delete customer"
+                          style={{padding:"5px 10px",borderRadius:7,border:"1px solid #fca5a5",
+                            background:"#fff5f5",color:"#dc2626",fontSize:12,fontWeight:700,
+                            cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",
+                            transition:"all 0.13s"}}
+                          onMouseEnter={e=>{e.currentTarget.style.background="#dc2626";e.currentTarget.style.color="white";}}
+                          onMouseLeave={e=>{e.currentTarget.style.background="#fff5f5";e.currentTarget.style.color="#dc2626";}}>
+                          🗑
+                        </button>
+                      )}
+                    </div>
+                  </td>
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
-
-      {sel&&(()=>{
-        const c=(customers||[]).find(x=>x.id===sel);
-        if(!c)return null;
-        const t=tc(c.tag);
-        return(
-          <div style={{marginTop:16,background:"white",borderRadius:16,border:"1px solid "+shop.accent+"33",
-            padding:20,boxShadow:"0 4px 20px "+shop.accent+"15"}}>
-            <div style={{display:"flex",alignItems:"flex-start",gap:16}}>
-              <div style={{width:52,height:52,borderRadius:14,background:shop.sb,
-                display:"flex",alignItems:"center",justifyContent:"center",
-                color:"white",fontWeight:900,fontSize:20,flexShrink:0,
-                boxShadow:"0 4px 12px rgba(0,0,0,0.15)"}}>
-                {c.name.charAt(0)}
-              </div>
-              <div style={{flex:1}}>
-                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
-                  <h3 style={{margin:0,fontSize:17,fontWeight:800,color:"#0f172a"}}>{c.name}</h3>
-                  {c.tag&&<span style={{fontSize:11,fontWeight:700,padding:"2px 10px",borderRadius:999,
-                    background:t.bg,color:t.color,border:"1px solid "+t.border}}>{c.tag}</span>}
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10}}>
-                  {[
-                    {l:"Phone",      v:c.phone,    ic:"📞"},
-                    {l:"Phone Saved On", v:c.phoneSavedOn||"—", ic:"📱"},
-                    {l:"WhatsApp",   v:c.whatsapp, ic:"💬"},
-                    {l:"Address",    v:c.address,  ic:"📍"},
-                    {l:"Notes",      v:c.notes||"—",ic:"📝"},
-                    {l:"Purchases",  v:c.purchases, ic:"🛒"},
-                    {l:"Total Spend",v:(c.spend>=10000?"₹":"£")+c.spend.toLocaleString(),ic:"💰"},
-                    {l:"Last Order", v:c.last,      ic:"📅"},
-                  ].map((f,i)=>(
-                    <div key={i} style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",
-                      border:"1px solid #f1f5f9"}}>
-                      <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#94a3b8",
-                        textTransform:"uppercase",letterSpacing:"0.06em"}}>{f.ic} {f.l}</p>
-                      <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a",
-                        wordBreak:"break-word"}}>{String(f.v)}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </div>
-          <div style={{display:"flex",justifyContent:"flex-end",marginTop:12}}>
-              {(user?.role==="superadmin"||user?.role==="admin")&&(
-                <button onClick={()=>{
-                  if(window.confirm("Delete "+c.name+" from customer database?")){
-                    setCustomers(prev=>prev.filter(x=>x.id!==c.id));
-                    if(dbDeleteCustomer) dbDeleteCustomer(c.id);
-                    setSel(null);
-                  }
-                }} style={{padding:"8px 20px",borderRadius:10,border:"1px solid #fca5a5",
-                  background:"#fff5f5",color:"#dc2626",fontSize:13,fontWeight:700,
-                  cursor:"pointer",fontFamily:"inherit"}}>
-                  🗑 Delete Customer
-                </button>
-              )}
-            </div>
-          </div>
-        );
-      })()}
     </div>
   );
 };
