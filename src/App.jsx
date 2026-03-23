@@ -3824,12 +3824,13 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
           {/* ── autocomplete dropdown ── */}
           {custAcOpen&&custAcMatches.length>0&&(
             <div style={{
-              position:"absolute",top:"100%",left:0,right:34+6,zIndex:200,
+              position:"absolute",top:"100%",left:0,zIndex:200,
+              minWidth:"100%",width:"max-content",maxWidth:420,
               background:"white",border:"1px solid "+shop.accent+"55",
-              borderRadius:"0 0 12px 12px",boxShadow:"0 8px 24px rgba(0,0,0,0.12)",
-              maxHeight:200,overflowY:"auto",marginTop:-1,
+              borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.16)",
+              maxHeight:260,overflowY:"auto",marginTop:4,
             }}>
-              <div style={{padding:"5px 12px",background:shop.accentBg,borderBottom:"1px solid "+shop.accent+"22"}}>
+              <div style={{padding:"6px 14px",background:shop.accentBg,borderBottom:"1px solid "+shop.accent+"22",borderRadius:"12px 12px 0 0"}}>
                 <span style={{fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.06em"}}>
                   {custAcMatches.length} match{custAcMatches.length!==1?"es":""} — click to select
                 </span>
@@ -3843,7 +3844,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                     setCustAcMatches([]);
                   }}
                   style={{
-                    padding:"9px 14px",cursor:"pointer",
+                    padding:"10px 14px",cursor:"pointer",
                     borderBottom:i<custAcMatches.length-1?"1px solid #f1f5f9":"none",
                     transition:"background 0.1s",
                   }}
@@ -3851,18 +3852,18 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                   onMouseLeave={e=>e.currentTarget.style.background="white"}>
                   <div style={{display:"flex",alignItems:"center",gap:10}}>
                     <div style={{
-                      width:30,height:30,borderRadius:8,flexShrink:0,
+                      width:32,height:32,borderRadius:9,flexShrink:0,
                       background:shop.sb,display:"flex",alignItems:"center",
-                      justifyContent:"center",color:"white",fontWeight:800,fontSize:12,
+                      justifyContent:"center",color:"white",fontWeight:800,fontSize:13,
                     }}>{c.name.charAt(0)}</div>
-                    <div style={{flex:1,minWidth:0}}>
+                    <div style={{flex:1}}>
                       <p style={{margin:0,fontWeight:700,fontSize:13,color:"#0f172a",
-                        overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</p>
-                      <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>{c.phone||"No phone"}{c.tag?" · "+c.tag:""}</p>
+                        whiteSpace:"nowrap"}}>{c.name}</p>
+                      <p style={{margin:0,fontSize:11,color:"#94a3b8",whiteSpace:"nowrap"}}>{c.phone||"No phone"}{c.tag?" · "+c.tag:""}</p>
                     </div>
                     <span style={{fontSize:10,fontWeight:700,color:shop.accent,
                       background:shop.accentBg,border:"1px solid "+shop.accent+"33",
-                      borderRadius:999,padding:"2px 8px",flexShrink:0}}>Select</span>
+                      borderRadius:999,padding:"2px 10px",flexShrink:0,marginLeft:8}}>Select</span>
                   </div>
                 </div>
               ))}
