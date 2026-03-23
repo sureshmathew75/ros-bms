@@ -1661,6 +1661,7 @@ return(
             lastInvoiceNum={sales.length>0
               ? parseInt((sales[0].id||"0").replace(/[^0-9]/g,""))||1022
               : 1022}
+            customers={customers}
             shopItems={(shopItems||{})[shopId]||[]}
             onAddShopItem={(item)=>{
               const current=(shopItems||{})[shopId]||[];
@@ -2355,8 +2356,13 @@ return(
                     👤 Customer
                   </p>
                   <p style={{margin:"0 0 4px",fontWeight:800,fontSize:14,color:"#0f172a"}}>{selRow.customer}</p>
-                  <p style={{margin:"0 0 3px",fontSize:12,color:"#64748b"}}>{selRow.phone||selRow.contact||"—"}</p>
-                  {selRow.phoneSavedOn&&<p style={{margin:"0 0 3px",fontSize:11,color:"#94a3b8"}}>Saved On: {selRow.phoneSavedOn}</p>}
+                  <p style={{margin:"0 0 4px",fontSize:12,color:"#64748b"}}>{selRow.phone||selRow.contact||"—"}</p>
+                  <span style={{display:"inline-flex",alignItems:"center",gap:4,
+                    background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:999,
+                    padding:"2px 10px",fontSize:10,fontWeight:700,color:"#1d4ed8",
+                    marginBottom:6,letterSpacing:"0.02em"}}>
+                    📱 {selRow.phoneSavedOn||"UK 888"}
+                  </span>
                   <p style={{margin:0,fontSize:12,color:"#64748b"}}>{selRow.address||"—"}</p>
                 </div>
 
@@ -2760,6 +2766,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     remarks:     sale.rem||sale.remarks||"",
     taxInclusive: sale.taxInclusive !== false,
     taxRate:      sale.taxRate !== undefined ? sale.taxRate : (shopId==="ros-india" ? 18 : 20),
+    phoneSavedOn: sale.phoneSavedOn||"UK 888",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -2816,6 +2823,12 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
         <div>
           <label style={lbl}>Contact Number</label>
           <input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={lbl}>Phone Number Saved On</label>
+          <select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>
+            {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
+          </select>
         </div>
       </div>
 
@@ -2957,7 +2970,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...form,id:sale.id,ful:form.status,pay:form.payBy,rem:form.remarks,amount:parseFloat(form.amount)||0})}
+        <button onClick={()=>onSave({...form,id:sale.id,ful:form.status,pay:form.payBy,rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
@@ -3416,13 +3429,45 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
 };
 
 
-const NewCustomerForm=({shop,onSave,onClose})=>{
+const NewCustomerForm=({shop,onSave,onClose,customers=[]})=>{
   const [cf,setCf]=useState({
     name:"",phone:"",email:"",
     phoneSavedOn:"UK 888",
     addressee:"",address:"",tag:"",remarks:"",
   });
   const sc=(k,v)=>setCf(f=>({...f,[k]:v}));
+
+  /* ── Autocomplete state ── */
+  const [acOpen,setAcOpen]=useState(false);
+  const [acMatches,setAcMatches]=useState([]);
+
+  const handleNameChange=(val)=>{
+    sc("name",val);
+    if(val.trim().length>=1){
+      const q=val.trim().toLowerCase();
+      const hits=(customers||[]).filter(c=>c.name.toLowerCase().includes(q));
+      setAcMatches(hits);
+      setAcOpen(hits.length>0);
+    } else {
+      setAcMatches([]);
+      setAcOpen(false);
+    }
+  };
+
+  const handlePickCustomer=(c)=>{
+    setCf(f=>({...f,
+      name:c.name,
+      phone:c.phone||f.phone,
+      email:c.email||f.email,
+      address:c.address||f.address,
+      addressee:c.addressee||f.addressee,
+      tag:c.tag||f.tag,
+      remarks:c.notes||f.remarks,
+      phoneSavedOn:c.phoneSavedOn||f.phoneSavedOn,
+    }));
+    setAcOpen(false);
+    setAcMatches([]);
+  };
 
   const inp={
     width:"100%",border:"1px solid #e2e8f0",borderRadius:9,
@@ -3447,11 +3492,59 @@ const NewCustomerForm=({shop,onSave,onClose})=>{
 
   return(
     <div style={{display:"flex",flexDirection:"column",gap:14}}>
-      {/* name */}
-      <div>
+      {/* name with autocomplete */}
+      <div style={{position:"relative"}}>
         <label style={lbl}>Customer Name *</label>
-        <input value={cf.name} onChange={e=>sc("name",e.target.value)}
-          placeholder="Full name" style={inp} onFocus={fo} onBlur={bl}/>
+        <input value={cf.name} onChange={e=>handleNameChange(e.target.value)}
+          placeholder="Type to search existing customers…" style={inp}
+          onFocus={e=>{fo(e);if(cf.name.trim()&&acMatches.length)setAcOpen(true);}}
+          onBlur={e=>{bl(e);setTimeout(()=>setAcOpen(false),180);}}
+          autoComplete="off"/>
+        {/* ── dropdown ── */}
+        {acOpen&&acMatches.length>0&&(
+          <div style={{
+            position:"absolute",top:"100%",left:0,right:0,zIndex:200,
+            background:"white",border:"1px solid "+shop.accent+"55",
+            borderRadius:"0 0 12px 12px",boxShadow:"0 8px 24px rgba(0,0,0,0.12)",
+            maxHeight:220,overflowY:"auto",marginTop:-1,
+          }}>
+            <div style={{padding:"6px 12px",background:shop.accentBg,borderBottom:"1px solid "+shop.accent+"22"}}>
+              <span style={{fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.06em"}}>
+                {acMatches.length} match{acMatches.length!==1?"es":""} in database — click to autofill
+              </span>
+            </div>
+            {acMatches.map((c,i)=>(
+              <div key={c.id||i}
+                onMouseDown={()=>handlePickCustomer(c)}
+                style={{
+                  padding:"10px 14px",cursor:"pointer",
+                  borderBottom:i<acMatches.length-1?"1px solid #f1f5f9":"none",
+                  transition:"background 0.1s",
+                }}
+                onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg}
+                onMouseLeave={e=>e.currentTarget.style.background="white"}>
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <div style={{
+                    width:32,height:32,borderRadius:9,flexShrink:0,
+                    background:shop.sb,display:"flex",alignItems:"center",
+                    justifyContent:"center",color:"white",fontWeight:800,fontSize:13,
+                  }}>{c.name.charAt(0)}</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <p style={{margin:0,fontWeight:700,fontSize:13,color:"#0f172a",
+                      overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</p>
+                    <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>{c.phone||"No phone"}{c.tag?" · "+c.tag:""}</p>
+                  </div>
+                  <span style={{fontSize:10,fontWeight:700,color:shop.accent,
+                    background:shop.accentBg,border:"1px solid "+shop.accent+"33",
+                    borderRadius:999,padding:"2px 8px",flexShrink:0}}>Select</span>
+                </div>
+              </div>
+            ))}
+            <div style={{padding:"8px 14px",background:"#f8fafc",borderTop:"1px solid #f1f5f9"}}>
+              <span style={{fontSize:10,color:"#94a3b8",fontWeight:600}}>↩ Or keep typing to create a new customer</span>
+            </div>
+          </div>
+        )}
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
@@ -3532,7 +3625,7 @@ const NewCustomerForm=({shop,onSave,onClose})=>{
 /* ══════════════════════════════════════════════════════
    NEW SALE FORM
 ══════════════════════════════════════════════════════ */
-const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem})=>{
+const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,customers=[]})=>{
   const nextNum=(lastInvoiceNum||1312)+1;
   /* Financial year suffix: Apr-Mar cycle
      e.g. sale in Jan 2026 → FY 2025-26 → suffix "6"
@@ -3566,11 +3659,14 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
-  /* local customer list — starts from shared CUSTOMERS, grows if new ones added */
-  const [customerList,setCustomerList]=useState([...CUSTOMERS]);
+  /* local customer list — seeded from live Supabase customers prop, grows if new ones added */
+  const [customerList,setCustomerList]=useState(customers.length>0?[...customers]:[...CUSTOMERS]);
   const [showNewCust,setShowNewCust]=useState(false);
   const [showAddItem,setShowAddItem]=useState(false);
   const [newItemInput,setNewItemInput]=useState("");
+  /* Customer autocomplete */
+  const [custAcOpen,setCustAcOpen]=useState(false);
+  const [custAcMatches,setCustAcMatches]=useState([]);
 
   const inp={
     width:"100%",border:"1px solid #e2e8f0",borderRadius:9,
@@ -3634,7 +3730,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
           </div>
           <div style={{padding:22}}>
-            <NewCustomerForm shop={shop} onSave={handleAddCustomer} onClose={()=>setShowNewCust(false)}/>
+            <NewCustomerForm shop={shop} onSave={handleAddCustomer} onClose={()=>setShowNewCust(false)} customers={customerList}/>
           </div>
         </div>
       </div>
@@ -3684,17 +3780,32 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
       {/* CUSTOMER */}
       <Divider title="Customer"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
+        <div style={{position:"relative"}}>
           <label style={lbl}>Customer Name</label>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            <select value={form.customer} onChange={e=>{
-                set("customer",e.target.value);
-                const c=customerList.find(x=>x.name===e.target.value);
-                if(c)set("contact",c.phone||"");
-              }} style={{...inp,flex:1}}>
-              <option value="">Select customer…</option>
-              {customerList.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
-            </select>
+            <input
+              value={form.customer}
+              onChange={e=>{
+                const val=e.target.value;
+                set("customer",val);
+                if(val.trim().length>=1){
+                  const q=val.trim().toLowerCase();
+                  const hits=customerList.filter(c=>c.name.toLowerCase().includes(q));
+                  setCustAcMatches(hits);
+                  setCustAcOpen(hits.length>0);
+                } else {
+                  setCustAcMatches([]);
+                  setCustAcOpen(false);
+                }
+              }}
+              placeholder="Type to search or enter new customer…"
+              style={{...inp,flex:1}}
+              onFocus={e=>{
+                fo(e);
+                if(form.customer.trim()&&custAcMatches.length) setCustAcOpen(true);
+              }}
+              onBlur={e=>{bl(e);setTimeout(()=>setCustAcOpen(false),180);}}
+              autoComplete="off"/>
             {/* + add new customer */}
             <button onClick={()=>setShowNewCust(true)}
               title="Add new customer"
@@ -3710,6 +3821,53 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               +
             </button>
           </div>
+          {/* ── autocomplete dropdown ── */}
+          {custAcOpen&&custAcMatches.length>0&&(
+            <div style={{
+              position:"absolute",top:"100%",left:0,right:34+6,zIndex:200,
+              background:"white",border:"1px solid "+shop.accent+"55",
+              borderRadius:"0 0 12px 12px",boxShadow:"0 8px 24px rgba(0,0,0,0.12)",
+              maxHeight:200,overflowY:"auto",marginTop:-1,
+            }}>
+              <div style={{padding:"5px 12px",background:shop.accentBg,borderBottom:"1px solid "+shop.accent+"22"}}>
+                <span style={{fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.06em"}}>
+                  {custAcMatches.length} match{custAcMatches.length!==1?"es":""} — click to select
+                </span>
+              </div>
+              {custAcMatches.map((c,i)=>(
+                <div key={c.id||i}
+                  onMouseDown={()=>{
+                    set("customer",c.name);
+                    set("contact",c.phone||"");
+                    setCustAcOpen(false);
+                    setCustAcMatches([]);
+                  }}
+                  style={{
+                    padding:"9px 14px",cursor:"pointer",
+                    borderBottom:i<custAcMatches.length-1?"1px solid #f1f5f9":"none",
+                    transition:"background 0.1s",
+                  }}
+                  onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg}
+                  onMouseLeave={e=>e.currentTarget.style.background="white"}>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <div style={{
+                      width:30,height:30,borderRadius:8,flexShrink:0,
+                      background:shop.sb,display:"flex",alignItems:"center",
+                      justifyContent:"center",color:"white",fontWeight:800,fontSize:12,
+                    }}>{c.name.charAt(0)}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <p style={{margin:0,fontWeight:700,fontSize:13,color:"#0f172a",
+                        overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</p>
+                      <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>{c.phone||"No phone"}{c.tag?" · "+c.tag:""}</p>
+                    </div>
+                    <span style={{fontSize:10,fontWeight:700,color:shop.accent,
+                      background:shop.accentBg,border:"1px solid "+shop.accent+"33",
+                      borderRadius:999,padding:"2px 8px",flexShrink:0}}>Select</span>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div>
           <label style={lbl}>Contact Number</label>
@@ -4010,6 +4168,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                   <td style={{padding:"13px 16px"}}>
                     <p style={{margin:"0 0 2px",fontSize:12,fontWeight:600,color:"#374151"}}>{c.phone}</p>
                     <p style={{margin:0,fontSize:10,color:"#22c55e",fontWeight:600}}>💬 {c.whatsapp}</p>
+                    {c.phoneSavedOn&&<p style={{margin:"2px 0 0",fontSize:10,fontWeight:700,color:"#6366f1"}}>📱 {c.phoneSavedOn}</p>}
                   </td>
                   <td style={{padding:"13px 16px",fontSize:12,color:"#64748b",maxWidth:160}}>
                     <span style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.address}</span>
@@ -4061,6 +4220,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(160px,1fr))",gap:10}}>
                   {[
                     {l:"Phone",      v:c.phone,    ic:"📞"},
+                    {l:"Phone Saved On", v:c.phoneSavedOn||"—", ic:"📱"},
                     {l:"WhatsApp",   v:c.whatsapp, ic:"💬"},
                     {l:"Address",    v:c.address,  ic:"📍"},
                     {l:"Notes",      v:c.notes||"—",ic:"📝"},
