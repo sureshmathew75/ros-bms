@@ -634,7 +634,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
 </div>
 );
 };
-const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,purchData={},savePurchData})=>{
+const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,purchData={},savePurchData,logData={},saveLogData})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":"dashboard");
   const [hov,setHov]=useState(null);
   const [search,setSearch]=useState("");
@@ -680,7 +680,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const sales=salesData[shopId]||[];
   const purch=(purchData||{})[shopId]||[];
   const exps=EXP_SEED[shopId]||[];
-  const logs=LOG_SEED[shopId]||[];
+  const logs=(logData||{})[shopId]||[];
   const lowStk=PRODUCTS.filter(p=>p.stock<=p.min);
   const totRev=sales.filter(s=>s.pay==="Paid").reduce((a,s)=>a+s.amount,0);
   const pendAmt=sales.filter(s=>s.pay==="Pending").reduce((a,s)=>a+s.amount,0);
@@ -1612,9 +1612,15 @@ return(
             <SuppliersPanel shop={shop} suppliers={SUPPLIERS}/>
           )}
 
-          {/* ─── PRODUCTS ─── */}
+          {/* ─── PRODUCTS / STOCK TRACKER ─── */}
           {tab==="products"&&(
-            <ProductsPanel lowStk={lowStk} products={PRODUCTS} shop={shop}/>
+            <StockTracker
+              shop={shop}
+              shopId={shopId}
+              shopItems={(shopItems||{})[shopId]||[]}
+              sales={sales}
+              purch={purch}
+            />
           )}
 
           {/* ─── LOGISTICS ─── */}
@@ -1788,7 +1794,12 @@ return(
       {/* ── NEW SHIPMENT MODAL ── */}
       {modal==="new-shipment"&&(
         <Modal title="🚚 New Shipment" onClose={()=>setModal(null)} accent={shop.accent}>
-          <NewShipmentForm shopId={shopId} shop={shop} purch={purch} onSave={()=>setModal(null)} onClose={()=>setModal(null)}/>
+          <NewShipmentForm shopId={shopId} shop={shop} purch={purch} onSave={(form)=>{
+            const newShipment={...form, id:form.shipmentId, savedAt:new Date().toISOString()};
+            const updated={...(logData||{}),[shopId]:[newShipment,...((logData||{})[shopId]||[])]};
+            if(saveLogData) saveLogData(updated);
+            setModal(null);
+          }} onClose={()=>setModal(null)}/>
         </Modal>
       )}
 
@@ -4777,6 +4788,180 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
    INLINE PANEL COMPONENTS
    ========================================================= */
 
+/* ══════════════════════════════════════════════════════
+   STOCK TRACKER
+══════════════════════════════════════════════════════ */
+const StockTracker=({shop,shopId,shopItems=[],sales=[],purch=[]})=>{
+  const [hovRow,setHovRow]=useState(null);
+
+  const stockRows=shopItems.map(itm=>{
+    const name=itm.name||itm;
+    const code=itm.code||(name.replace(/[^A-Za-z]/g,"").slice(0,5).toUpperCase());
+
+    // Purchased qty: sum across all purchase records
+    let purchQty=0;
+    purch.forEach(p=>{
+      if(p.items&&p.items.length>0){
+        p.items.forEach(pi=>{
+          const pname=(pi.itemCustom||pi.item||"").toLowerCase();
+          if(pname===name.toLowerCase()) purchQty+=Number(pi.qty)||0;
+        });
+      } else {
+        const pname=(p.item||p.itemCustom||"").toLowerCase();
+        if(pname===name.toLowerCase()) purchQty+=Number(p.qty)||0;
+      }
+    });
+
+    // Sold qty: sum across all sales records
+    let soldQty=0;
+    sales.forEach(s=>{
+      const sname=(s.item||s.itemCustom||"").toLowerCase();
+      if(sname===name.toLowerCase()) soldQty+=Number(s.qty)||0;
+    });
+
+    const inStock=purchQty-soldQty;
+    return {name,code,purchQty,soldQty,inStock};
+  });
+
+  const totalPurch=stockRows.reduce((a,r)=>a+r.purchQty,0);
+  const totalSold=stockRows.reduce((a,r)=>a+r.soldQty,0);
+  const totalStock=stockRows.reduce((a,r)=>a+r.inStock,0);
+  const outCount=stockRows.filter(r=>r.inStock<=0).length;
+  const lowCount=stockRows.filter(r=>r.inStock>0&&r.inStock<=5).length;
+
+  return(
+    <div>
+      {/* Header */}
+      <div style={{marginBottom:20}}>
+        <h2 style={{margin:"0 0 2px",fontSize:20,fontWeight:800,color:"#0f172a"}}>Stock Tracker</h2>
+        <p style={{margin:0,fontSize:12,color:"#94a3b8"}}>
+          Live stock: purchases minus sales · {shopItems.length} item{shopItems.length!==1?"s":""}
+        </p>
+      </div>
+
+      {/* Summary KPI row */}
+      {shopItems.length>0&&(
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
+          {[
+            {label:"Total Purchased",value:totalPurch,color:"#1d4ed8",bg:"#eff6ff",border:"#bfdbfe",icon:"📦"},
+            {label:"Total Sold",     value:totalSold, color:"#059669",bg:"#f0fdf4",border:"#bbf7d0",icon:"🛒"},
+            {label:"In Stock",       value:totalStock,color:"#0f172a",bg:"#f8fafc",border:"#e2e8f0",icon:"🏪"},
+            {label:"Alerts",         value:outCount+" out · "+lowCount+" low",color:outCount>0?"#dc2626":"#d97706",bg:outCount>0?"#fef2f2":"#fffbeb",border:outCount>0?"#fca5a5":"#fde68a",icon:"⚠️"},
+          ].map((k,i)=>(
+            <div key={i} style={{background:k.bg,border:"1px solid "+k.border,borderRadius:12,padding:"14px 16px"}}>
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+                <span style={{fontSize:18}}>{k.icon}</span>
+                <span style={{fontSize:11,fontWeight:700,color:k.color,textTransform:"uppercase",letterSpacing:"0.05em"}}>{k.label}</span>
+              </div>
+              <p style={{margin:0,fontSize:22,fontWeight:900,color:k.color,fontFamily:"DM Mono,monospace"}}>{k.value}</p>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {shopItems.length===0?(
+        <div style={{background:"white",borderRadius:16,border:"1px solid #f1f5f9",padding:"48px 24px",textAlign:"center",boxShadow:"0 2px 12px rgba(0,0,0,0.04)"}}>
+          <div style={{fontSize:40,marginBottom:12}}>🏷️</div>
+          <p style={{margin:"0 0 6px",fontWeight:800,fontSize:15,color:"#374151"}}>No items set up yet</p>
+          <p style={{margin:0,fontSize:13,color:"#94a3b8"}}>
+            Add items via <strong>New Sale</strong> or <strong>New Purchase</strong> using the <strong>＋ Add Item</strong> button. Items are shared across both forms.
+          </p>
+        </div>
+      ):(
+        <div style={{background:"white",borderRadius:16,border:"1px solid #f1f5f9",overflow:"hidden",boxShadow:"0 2px 12px rgba(0,0,0,0.04)"}}>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead>
+              <tr style={{background:"#f8fafc"}}>
+                {["Code","Item Name","Purchased","Sold","In Stock","Status"].map((h,i)=>(
+                  <th key={h} style={{
+                    padding:"11px 16px",
+                    textAlign:i>=2?"center":"left",
+                    fontSize:11,fontWeight:800,color:"#94a3b8",
+                    textTransform:"uppercase",letterSpacing:"0.06em",
+                    borderBottom:"1px solid #f1f5f9",whiteSpace:"nowrap",
+                  }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {stockRows.map((row,i)=>{
+                const isH=hovRow===row.code;
+                const outOfStock=row.inStock<=0;
+                const stockLow=row.inStock>0&&row.inStock<=5;
+                const statusBg=outOfStock?"#fef2f2":stockLow?"#fffbeb":"#f0fdf4";
+                const statusColor=outOfStock?"#dc2626":stockLow?"#d97706":"#15803d";
+                const statusLabel=outOfStock?"Out of Stock":stockLow?"Low Stock":"In Stock";
+                const statusIcon=outOfStock?"🔴":stockLow?"🟡":"🟢";
+                return(
+                  <tr key={row.code}
+                    onMouseEnter={()=>setHovRow(row.code)}
+                    onMouseLeave={()=>setHovRow(null)}
+                    style={{
+                      borderBottom:i<stockRows.length-1?"1px solid #f8fafc":"none",
+                      background:outOfStock?"#fff5f5":isH?"#fafafa":"white",
+                      transition:"background 0.12s",
+                    }}>
+                    <td style={{padding:"14px 16px"}}>
+                      <span style={{
+                        display:"inline-block",
+                        background:shop.accent+"18",color:shop.accent,
+                        fontFamily:"DM Mono,monospace",fontWeight:900,fontSize:12,
+                        padding:"3px 10px",borderRadius:6,letterSpacing:"0.06em",
+                      }}>{row.code}</span>
+                    </td>
+                    <td style={{padding:"14px 16px",fontWeight:700,fontSize:14,color:"#0f172a"}}>{row.name}</td>
+                    <td style={{padding:"14px 16px",textAlign:"center"}}>
+                      <div style={{display:"inline-flex",flexDirection:"column",alignItems:"center",gap:1}}>
+                        <span style={{fontSize:20,fontWeight:900,color:"#1d4ed8",fontFamily:"DM Mono,monospace",lineHeight:1}}>{row.purchQty}</span>
+                        <span style={{fontSize:9,fontWeight:700,color:"#93c5fd",textTransform:"uppercase",letterSpacing:"0.05em"}}>purchased</span>
+                      </div>
+                    </td>
+                    <td style={{padding:"14px 16px",textAlign:"center"}}>
+                      <div style={{display:"inline-flex",flexDirection:"column",alignItems:"center",gap:1}}>
+                        <span style={{fontSize:20,fontWeight:900,color:"#059669",fontFamily:"DM Mono,monospace",lineHeight:1}}>{row.soldQty}</span>
+                        <span style={{fontSize:9,fontWeight:700,color:"#6ee7b7",textTransform:"uppercase",letterSpacing:"0.05em"}}>sold</span>
+                      </div>
+                    </td>
+                    <td style={{padding:"14px 16px",textAlign:"center"}}>
+                      <div style={{display:"inline-flex",flexDirection:"column",alignItems:"center",gap:1}}>
+                        <span style={{fontSize:24,fontWeight:900,color:statusColor,fontFamily:"DM Mono,monospace",lineHeight:1}}>{row.inStock}</span>
+                        <span style={{fontSize:9,fontWeight:700,color:statusColor+"99",textTransform:"uppercase",letterSpacing:"0.05em"}}>remaining</span>
+                      </div>
+                    </td>
+                    <td style={{padding:"14px 16px",textAlign:"center"}}>
+                      <span style={{
+                        display:"inline-flex",alignItems:"center",gap:5,
+                        background:statusBg,color:statusColor,fontWeight:700,fontSize:11,
+                        padding:"4px 12px",borderRadius:999,border:"1px solid "+statusColor+"33",
+                      }}>
+                        {statusIcon} {statusLabel}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+          {/* Footer totals */}
+          <div style={{
+            display:"flex",gap:24,padding:"12px 20px",
+            borderTop:"1px solid #f1f5f9",background:"#f8fafc",flexWrap:"wrap",
+          }}>
+            <span style={{fontSize:12,color:"#64748b"}}><strong style={{color:"#1d4ed8"}}>{totalPurch}</strong> total purchased</span>
+            <span style={{fontSize:12,color:"#64748b"}}><strong style={{color:"#059669"}}>{totalSold}</strong> total sold</span>
+            <span style={{fontSize:12,color:"#64748b"}}><strong style={{color:"#0f172a"}}>{totalStock}</strong> total in stock</span>
+            {(outCount>0||lowCount>0)&&(
+              <span style={{fontSize:12,color:"#dc2626",marginLeft:"auto"}}>
+                ⚠️ {outCount>0?outCount+" out of stock":""}{outCount>0&&lowCount>0?" · ":""}{lowCount>0?lowCount+" low":""}
+              </span>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 /* ── CustomerEditModal — proper component so hooks are always called at top level ── */
 const CustomerEditModal=({customer,shop,onSave,onClose})=>{
   const [ef,setEf]=useState({...customer});
@@ -5895,6 +6080,10 @@ export default function App(){
     try{const s=localStorage.getItem("ros_purchData");return s?JSON.parse(s):{"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
     catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
   });
+  const [logData,setLogData]=useState(()=>{
+    try{const s=localStorage.getItem("ros_logData");return s?JSON.parse(s):{"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
+    catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
+  });
   const [customers,setCustomers]=useState([]);
   const [shopItems,setShopItems]=useState(()=>{
     try{
@@ -5921,6 +6110,11 @@ export default function App(){
   const savePurchData=(updated)=>{
     setPurchData(updated);
     try{localStorage.setItem("ros_purchData",JSON.stringify(updated));}catch{}
+  };
+
+  const saveLogData=(updated)=>{
+    setLogData(updated);
+    try{localStorage.setItem("ros_logData",JSON.stringify(updated));}catch{}
   };
 
   // Load from Supabase on mount - Supabase is single source of truth
@@ -5961,7 +6155,7 @@ export default function App(){
   const activeShop = shop || (user.role==="staff" && allowedShops.length===1 ? allowedShops[0] : null);
 
   if(activeShop&&allowedShops.includes(activeShop))
-    return <ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={updateSalesData} customers={customers} setCustomers={setCustomers} shopItems={shopItems} saveShopItems={saveShopItems} purchData={purchData} savePurchData={savePurchData}/>;
+    return <ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={updateSalesData} customers={customers} setCustomers={setCustomers} shopItems={shopItems} saveShopItems={saveShopItems} purchData={purchData} savePurchData={savePurchData} logData={logData} saveLogData={saveLogData}/>;
 
   return(
     <>
