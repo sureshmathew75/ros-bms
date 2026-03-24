@@ -1717,7 +1717,35 @@ return(
       {/* ── IMPORT MODAL — SALES ── */}
       {modal==="import-sales"&&user?.role!=="staff"&&(
         <Modal title="⬇ Import Sales" onClose={()=>setModal(null)} accent={shop.accent}>
-          <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}/>
+          <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}
+            onImport={rows=>{
+              setSalesData(prev=>({...prev,[shopId]:[...rows,...(prev[shopId]||[])]}));
+              rows.forEach(r=>dbSaveSale(shopId,r).catch(()=>{}));
+              /* ── upsert customers from imported rows ── */
+              rows.forEach(r=>{
+                if(!r.customer) return;
+                setCustomers(prev=>{
+                  const existing=prev.find(c=>c.name===r.customer);
+                  const custId=existing?.id||("CUST-"+Date.now().toString().slice(-6)+"-"+Math.random().toString(36).slice(2,4));
+                  const updated={
+                    id:        custId,
+                    name:      r.customer,
+                    phone:     r.contact||existing?.phone||"",
+                    whatsapp:  r.contact||existing?.whatsapp||"",
+                    address:   r.address||existing?.address||"",
+                    tag:       existing?.tag||"New Customer",
+                    notes:     existing?.notes||"",
+                    purchases: (existing?.purchases||0)+1,
+                    spend:     (existing?.spend||0)+(Number(r.amount)||0),
+                    last:      r.date||new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}),
+                  };
+                  dbSaveCustomer(updated).catch(()=>{});
+                  const idx=prev.findIndex(c=>c.name===r.customer);
+                  if(idx>=0){const n=[...prev];n[idx]=updated;return n;}
+                  return [...prev,updated];
+                });
+              });
+            }}/>
         </Modal>
       )}
 
@@ -2579,10 +2607,13 @@ return(
 /* ══════════════════════════════════════════════════════
    IMPORT / EXPORT PANEL
 ══════════════════════════════════════════════════════ */
-const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
+const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImport})=>{
   const [dragOver,setDragOver]=useState(false);
   const [fileName,setFileName]=useState(null);
+  const [fileObj,setFileObj]=useState(null);
   const [fileFmt,setFileFmt]=useState("CSV");
+  const [importing,setImporting]=useState(false);
+  const fileInputRef=useRef(null);
 
   // All 22 export columns — all ON by default
   const ALL_COLS=[
@@ -2797,17 +2828,17 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
       <div
         onDragOver={e=>{e.preventDefault();setDragOver(true);}}
         onDragLeave={()=>setDragOver(false)}
-        onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f)setFileName(f.name);}}
+        onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f){setFileName(f.name);setFileObj(f);}}}
         style={{
           border:"2px dashed "+(dragOver?shop.accent:"#cbd5e1"),
           borderRadius:14,padding:"40px 24px",textAlign:"center",
           background:dragOver?shop.accentBg:"#f8fafc",
           transition:"all 0.18s",cursor:"pointer",
         }}
-        onClick={()=>document.getElementById("imp-file-"+entity).click()}>
-        <input id={"imp-file-"+entity} type="file" accept=".csv,.xlsx"
+        onClick={()=>fileInputRef.current&&fileInputRef.current.click()}>
+        <input ref={fileInputRef} type="file" accept=".csv,.xlsx"
           style={{display:"none"}}
-          onChange={e=>setFileName(e.target.files[0]?.name||null)}/>
+          onChange={e=>{const f=e.target.files[0];if(f){setFileName(f.name);setFileObj(f);}}}/>
         <div style={{fontSize:40,marginBottom:10}}>{fileName?"✅":"📂"}</div>
         <p style={{margin:0,fontWeight:800,fontSize:15,color:fileName?shop.accent:"#374151"}}>
           {fileName||"Drop your CSV file here"}
@@ -2820,14 +2851,83 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
       {/* actions */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
         <button
-          onClick={()=>{if(!fileName){alert("Please select a file first.");}else{alert("Import started! "+fileName+" is being processed.");onClose();}}}
+          onClick={async()=>{
+            if(!fileObj){alert("Please select a file first.");return;}
+            setImporting(true);
+            try{
+              /* ── load SheetJS from CDN if not already present ── */
+              if(!window.XLSX){
+                await new Promise((res,rej)=>{
+                  const s=document.createElement("script");
+                  s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+                  s.onload=res; s.onerror=()=>rej(new Error("Failed to load XLSX library"));
+                  document.head.appendChild(s);
+                });
+              }
+              /* ── read file as ArrayBuffer (works for both XLSX and CSV) ── */
+              const buf=await fileObj.arrayBuffer();
+              const wb=window.XLSX.read(buf,{type:"array",cellDates:true});
+              const ws=wb.Sheets[wb.SheetNames[0]];
+              /* sheet_to_json with header:1 gives array-of-arrays */
+              const raw=window.XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
+              if(raw.length<2){alert("File appears empty or has no data rows.");setImporting(false);return;}
+              /* first non-empty row = headers */
+              const headers=raw[0].map(h=>String(h||"").trim().toLowerCase());
+              const get=(rowVals,keys)=>{
+                for(const k of keys){
+                  const idx=headers.indexOf(k);
+                  if(idx>=0){const v=rowVals[idx];return v===null||v===undefined?"":String(v).trim();}
+                }
+                return"";
+              };
+              const fmtDate=(v)=>{
+                if(!v)return new Date().toISOString().slice(0,10);
+                if(v instanceof Date)return v.toISOString().slice(0,10);
+                /* Excel serial number */
+                if(typeof v==="number"){
+                  const d=new Date(Math.round((v-25569)*86400*1000));
+                  return d.toISOString().slice(0,10);
+                }
+                return String(v).slice(0,10);
+              };
+              const rows=raw.slice(1).map(rowVals=>{
+                const id=get(rowVals,["sale id","sale_id","saleid"])||
+                  ("IMP-"+Date.now()+"-"+Math.random().toString(36).slice(2,6)).toUpperCase();
+                return{
+                  id,
+                  date:        fmtDate(get(rowVals,["date"])),
+                  invoiceNo:   get(rowVals,["invoice no.","invoice no","invoice_no","invoiceno"])||id,
+                  customer:    get(rowVals,["customer name","customer"]),
+                  address:     get(rowVals,["address"]),
+                  contact:     get(rowVals,["contact no.","contact no","contact"]),
+                  item:        get(rowVals,["item"]),
+                  qty:         get(rowVals,["quantity","qty"])||"1",
+                  amount:      parseFloat(get(rowVals,["total","amount"]))||0,
+                  pay:         get(rowVals,["payment method","payment","pay"]),
+                  ful:         get(rowVals,["status","ful"])||"PENDING",
+                  rem:         get(rowVals,["remarks","rem"]),
+                  tag:         get(rowVals,["tag"]),
+                  taxRate:     20,
+                  taxInclusive:true,
+                };
+              }).filter(r=>r.customer||r.item);
+              if(rows.length===0){alert("No valid rows found. Check the file format.");setImporting(false);return;}
+              if(onImport) onImport(rows);
+              alert("✅ Imported "+rows.length+" record(s) successfully.");
+              onClose();
+            }catch(err){
+              alert("Import failed: "+err.message);
+            }
+            setImporting(false);
+          }}
+          disabled={importing}
           style={{padding:"12px 0",borderRadius:11,border:"none",
             background:fileName?shop.accent:"#e2e8f0",
             color:fileName?"white":"#94a3b8",fontWeight:800,fontSize:14,
-            cursor:fileName?"pointer":"not-allowed",fontFamily:"inherit",
+            cursor:fileName&&!importing?"pointer":"not-allowed",fontFamily:"inherit",
             boxShadow:fileName?"0 4px 14px "+shop.accent+"44":"none",
-            transition:"all 0.2s"}}>
-          ⬆ Import Now
+            transition:"all 0.2s",opacity:importing?0.7:1}}>
+          {importing?"⏳ Importing...":"⬆ Import Now"}
         </button>
         <button onClick={onClose}
           style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",
