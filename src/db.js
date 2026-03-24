@@ -29,7 +29,7 @@ export const dbSaveSale = async (shopId, sale) => {
     phone:         sale.phone || '',
     address:       sale.address || '',
     rem:           sale.rem || '',
-    tax_rate:      sale.taxRate || 20,
+    tax_rate:      sale.taxRate !== undefined ? sale.taxRate : 20,
     tax_inclusive: sale.taxInclusive !== false,
     invoice_no:    sale.invoiceNo || sale.id,
   };
@@ -62,7 +62,7 @@ export const dbLoadSales = async (shopId) => {
     phone:        r.phone || '',
     address:      r.address || '',
     rem:          r.rem || '',
-    taxRate:      r.tax_rate || 20,
+    taxRate:      r.tax_rate !== undefined ? r.tax_rate : 20,
     taxInclusive: r.tax_inclusive !== false,
     invoiceNo:    r.invoice_no || r.id,
   }));
@@ -258,31 +258,36 @@ export const dbDeleteLogistic = async (id, shopId) => {
 /* ═══════════════════════════════════════════════════════════
    CUSTOMERS  (shop-isolated)
    ═══════════════════════════════════════════════════════════ */
-export const dbSaveCustomer = async (shopId, customer) => {
+export const dbSaveCustomer = async (shopIdOrCustomer, customer) => {
   if (!sb) return;
+  /* support both dbSaveCustomer(customer) and dbSaveCustomer(shopId, customer) */
+  const c    = customer !== undefined ? customer : shopIdOrCustomer;
+  const sid  = customer !== undefined ? shopIdOrCustomer : undefined;
+
   const { data: existing } = await sb.from('customers').select('id')
-    .eq('id', customer.id).eq('shop_id', shopId).maybeSingle();
+    .eq('id', c.id)
+    .maybeSingle();
 
   const payload = {
-    id:        customer.id,
-    shop_id:   shopId,
-    name:      customer.name || '',
-    phone:     customer.phone || '',
-    whatsapp:  customer.whatsapp || '',
-    address:   customer.address || '',
-    tag:       customer.tag || '',
-    notes:     customer.notes || '',
-    purchases: customer.purchases || 0,
-    spend:     customer.spend || 0,
-    last:      customer.last || '',
+    id:        c.id,
+    ...(sid ? { shop_id: sid } : {}),
+    name:      c.name || '',
+    phone:     c.phone || '',
+    whatsapp:  c.whatsapp || '',
+    address:   c.address || '',
+    tag:       c.tag || '',
+    notes:     c.notes || '',
+    purchases: c.purchases || 0,
+    spend:     c.spend || 0,
+    last:      c.last || '',
   };
 
   const { error } = existing
-    ? await sb.from('customers').update(payload).eq('id', customer.id).eq('shop_id', shopId)
+    ? await sb.from('customers').update(payload).eq('id', c.id)
     : await sb.from('customers').insert(payload);
 
   if (error) console.error('Save customer error:', error);
-  else console.log('✅ Customer saved:', customer.id);
+  else console.log('✅ Customer saved:', c.id);
 };
 
 export const dbLoadCustomers = async (shopId) => {

@@ -2907,7 +2907,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImport})=>{
                   ful:         get(rowVals,["status","ful"])||"PENDING",
                   rem:         get(rowVals,["remarks","rem"]),
                   tag:         get(rowVals,["tag"]),
-                  taxRate:     20,
+                  taxRate:     shopId==="ros-india" ? 18 : 20,
                   taxInclusive:true,
                 };
               }).filter(r=>r.customer||r.item);
