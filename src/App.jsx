@@ -259,14 +259,36 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
 
   // Calculate stats directly from salesData prop (always up to date)
   const today=new Date().toISOString().split('T')[0];
+  const nowD=new Date();
+  const curYear=nowD.getFullYear();
+  const curMonth=nowD.getMonth();
   const shopStats={};
+  const RETURN_STATUSES=new Set(["RTRN REQSTD","RETRN RCVD","REFUNDED","RETURN REQUESTED","RETURN RECEIVED"]);
   SHOPS.forEach(shop=>{
     const data=salesData[shop.id]||[];
     const todayRev=data.filter(s=>s.date===today).reduce((a,s)=>a+(s.amount||0),0);
     const totalRev=data.reduce((a,s)=>a+(s.amount||0),0);
-    const pending=data.filter(s=>s.pay==="Pending"||s.pay==="PENDING").length;
+    const pending=data.filter(s=>s.status==="PENDING"||s.status==="ORDER NOT PLACED"||s.status==="WORK IN PROGRESS"||s.status==="AWAITING TRACKING INFO.").length;
     const orders=data.length;
-    shopStats[shop.id]={todaySales:todayRev,totalRev,pendingOrders:pending,orders};
+    // Month revenue — sales in the current calendar month
+    const monthRev=data.filter(s=>{
+      if(!s.date)return false;
+      const d=new Date(s.date);
+      return d.getFullYear()===curYear&&d.getMonth()===curMonth;
+    }).reduce((a,s)=>a+(s.amount||0),0);
+    // Current month orders
+    const monthOrders=data.filter(s=>{
+      if(!s.date)return false;
+      const d=new Date(s.date);
+      return d.getFullYear()===curYear&&d.getMonth()===curMonth;
+    }).length;
+    // Current month returns
+    const monthReturns=data.filter(s=>{
+      if(!s.date)return false;
+      const d=new Date(s.date);
+      return d.getFullYear()===curYear&&d.getMonth()===curMonth&&RETURN_STATUSES.has(s.status);
+    }).length;
+    shopStats[shop.id]={todaySales:todayRev,totalRev,pendingOrders:pending,orders,monthRev,monthOrders,monthReturns};
   });
 
   useEffect(()=>{
@@ -432,15 +454,30 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
                     <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.65)",fontStyle:"italic"}}>{shop.tagline}</p>
                   </div>
 
-                  {/* revenue — hidden for staff on non-India shops */}
-                  <div style={{position:"relative",zIndex:1}}>
-                    <p style={{margin:"0 0 2px",fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Today\'s Revenue</p>
-                    {staffLocked
-                      ? <p style={{margin:0,fontSize:22,fontWeight:700,color:"rgba(255,255,255,0.30)",letterSpacing:2,fontFamily:"'Arimo',Arial,sans-serif"}}>● ● ● ●</p>
-                      : <p style={{margin:0,fontSize:34,fontWeight:700,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif"}}>{shop.id==="ros-india"
-                          ? formatCurrency(shopStats[shop.id]?.todaySales||0)
-                          : "£"+formatNumber(shopStats[shop.id]?.todaySales||0)}</p>
-                    }
+                  {/* revenue split: Today | Month */}
+                  <div style={{position:"relative",zIndex:1,display:"flex",alignItems:"stretch",gap:0}}>
+                    {/* Today's Revenue */}
+                    <div style={{flex:1,paddingRight:12}}>
+                      <p style={{margin:"0 0 2px",fontSize:9,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Today's Revenue</p>
+                      {staffLocked
+                        ? <p style={{margin:0,fontSize:18,fontWeight:700,color:"rgba(255,255,255,0.30)",letterSpacing:2,fontFamily:"'Arimo',Arial,sans-serif"}}>●●●</p>
+                        : <p style={{margin:0,fontSize:26,fontWeight:700,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif"}}>{shop.id==="ros-india"
+                            ? formatCurrency(shopStats[shop.id]?.todaySales||0)
+                            : "£"+formatNumber(shopStats[shop.id]?.todaySales||0)}</p>
+                      }
+                    </div>
+                    {/* Divider */}
+                    <div style={{width:1,background:"rgba(255,255,255,0.25)",margin:"2px 0"}}/>
+                    {/* Month Revenue */}
+                    <div style={{flex:1,paddingLeft:12}}>
+                      <p style={{margin:"0 0 2px",fontSize:9,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Month Revenue</p>
+                      {staffLocked
+                        ? <p style={{margin:0,fontSize:18,fontWeight:700,color:"rgba(255,255,255,0.30)",letterSpacing:2,fontFamily:"'Arimo',Arial,sans-serif"}}>●●●</p>
+                        : <p style={{margin:0,fontSize:26,fontWeight:700,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif"}}>{shop.id==="ros-india"
+                            ? formatCurrency(shopStats[shop.id]?.monthRev||0)
+                            : "£"+formatNumber(shopStats[shop.id]?.monthRev||0)}</p>
+                      }
+                    </div>
                   </div>
                 </div>
 
@@ -453,10 +490,15 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
                     </div>
                   ):(
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
-                      {[{l:"Orders",v:shopStats[shop.id]?.pendingOrders||0},{l:"Pending",v:shopStats[shop.id]?.pendingOrders||0},{l:"Stock",v:shop.stockValue}].map((s,i)=>(
+                      {[
+                        {l:"Orders",    v:shopStats[shop.id]?.monthOrders||0,  sub:"this month"},
+                        {l:"Pending",   v:shopStats[shop.id]?.pendingOrders||0, sub:"unfulfilled"},
+                        {l:"Returns",   v:shopStats[shop.id]?.monthReturns||0,  sub:"this month"},
+                      ].map((s,i)=>(
                         <div key={i} style={{textAlign:"center",background:shop.accentBg,borderRadius:10,padding:"9px 5px",border:"1px solid "+shop.accent+"18"}}>
                           <p style={{margin:0,fontWeight:900,fontSize:16,color:shop.accentText}}>{s.v}</p>
                           <p style={{margin:"2px 0 0",fontSize:10,color:shop.accent,fontWeight:700}}>{s.l}</p>
+                          <p style={{margin:"1px 0 0",fontSize:9,color:shop.accent+"99",fontWeight:500}}>{s.sub}</p>
                         </div>
                       ))}
                     </div>
@@ -634,7 +676,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
 </div>
 );
 };
-const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,purchData={},savePurchData,logData={},saveLogData})=>{
+const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":"dashboard");
   const [hov,setHov]=useState(null);
   const [search,setSearch]=useState("");
@@ -642,14 +684,6 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [selRow,setSelRow]=useState(null);
   const [confirmDelete,setConfirmDelete]=useState(false);
   const [editRow,setEditRow]=useState(null);
-  // purchase view/edit/delete
-  const [selPurch,setSelPurch]=useState(null);
-  const [editPurch,setEditPurch]=useState(null);
-  const [confirmDeletePurch,setConfirmDeletePurch]=useState(false);
-  // shipment view/edit/delete
-  const [selShip,setSelShip]=useState(null);
-  const [editShip,setEditShip]=useState(null);
-  const [confirmDeleteShip,setConfirmDeleteShip]=useState(false);
   const [selCustomer,setSelCustomer]=useState(null);
   const [openMenu,setOpenMenu]=useState(null);
   const [invoiceRow,setInvoiceRow]=useState(null);
@@ -682,9 +716,9 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
 
   const shop=SHOPS.find(s=>s.id===shopId);
   const sales=salesData[shopId]||[];
-  const purch=(purchData||{})[shopId]||[];
+  const purch=PURCH_SEED[shopId]||[];
   const exps=EXP_SEED[shopId]||[];
-  const logs=(logData||{})[shopId]||[];
+  const logs=LOG_SEED[shopId]||[];
   const lowStk=PRODUCTS.filter(p=>p.stock<=p.min);
   const totRev=sales.filter(s=>s.pay==="Paid").reduce((a,s)=>a+s.amount,0);
   const pendAmt=sales.filter(s=>s.pay==="Pending").reduce((a,s)=>a+s.amount,0);
@@ -1600,9 +1634,6 @@ return(
               purch={purch}
               shop={shop}
               shopId={shopId}
-              onViewPurchase={(p)=>setSelPurch(p)}
-              onEditPurchase={(p)=>{setEditPurch(p);setModal("edit-purchase");}}
-              onDeletePurchase={(p)=>{setSelPurch(p);setConfirmDeletePurch(true);}}
             />
           )}
 
@@ -1616,27 +1647,14 @@ return(
             <SuppliersPanel shop={shop} suppliers={SUPPLIERS}/>
           )}
 
-          {/* ─── PRODUCTS / STOCK TRACKER ─── */}
+          {/* ─── PRODUCTS ─── */}
           {tab==="products"&&(
-            <StockTracker
-              shop={shop}
-              shopId={shopId}
-              shopItems={(shopItems||{})[shopId]||[]}
-              sales={sales}
-              purch={purch}
-            />
+            <ProductsPanel lowStk={lowStk} products={PRODUCTS} shop={shop}/>
           )}
 
           {/* ─── LOGISTICS ─── */}
           {tab==="logistics"&&(
-            <LogisticsPanel
-              logs={logs}
-              onNewShipment={()=>setModal("new-shipment")}
-              shop={shop}
-              onViewShipment={(s)=>setSelShip(s)}
-              onEditShipment={(s)=>{setEditShip(s);setModal("edit-shipment");}}
-              onDeleteShipment={(s)=>{setSelShip(s);setConfirmDeleteShip(true);}}
-            />
+            <LogisticsPanel logs={logs} onNewShipment={()=>setModal("new-shipment")} shop={shop}/>
           )}
 
           {/* ─── AGENTS ─── */}
@@ -1689,11 +1707,8 @@ return(
             customers={customers}
             shopItems={(shopItems||{})[shopId]||[]}
             onAddShopItem={(item)=>{
-              // item is {name, code}
               const current=(shopItems||{})[shopId]||[];
-              const exists=current.some(x=>(x.name||x)===item.name);
-              if(exists) return;
-              const updated={...(shopItems||{}),[shopId]:[...current,item]};
+              const updated={...(shopItems||{}),[shopId]:[...new Set([...current,item])]};
               if(saveShopItems) saveShopItems(updated);
             }}
           />
@@ -1805,306 +1820,15 @@ return(
       {/* ── NEW SHIPMENT MODAL ── */}
       {modal==="new-shipment"&&(
         <Modal title="🚚 New Shipment" onClose={()=>setModal(null)} accent={shop.accent}>
-          <NewShipmentForm shopId={shopId} shop={shop} purch={purch} logs={logs} onSave={(form)=>{
-            const newShipment={...form, id:form.shipmentId, savedAt:new Date().toISOString()};
-            const updated={...(logData||{}),[shopId]:[newShipment,...((logData||{})[shopId]||[])]};
-            if(saveLogData) saveLogData(updated);
-            setModal(null);
-          }} onClose={()=>setModal(null)}/>
+          <NewShipmentForm shopId={shopId} shop={shop} purch={purch} onSave={()=>setModal(null)} onClose={()=>setModal(null)}/>
         </Modal>
-      )}
-
-      {/* ── EDIT SHIPMENT MODAL ── */}
-      {modal==="edit-shipment"&&editShip&&(
-        <Modal title={"✏️ Edit Shipment — "+editShip.id} onClose={()=>{setModal(null);setEditShip(null);}} accent={shop.accent}>
-          <EditShipmentForm
-            shopId={shopId} shop={shop} shipment={editShip} purch={purch}
-            onSave={(updated)=>{
-              const list=(logData||{})[shopId]||[];
-              const newList=list.map(x=>x.id===updated.id?{...x,...updated}:x);
-              if(saveLogData) saveLogData({...(logData||{}),[shopId]:newList});
-              setModal(null);setEditShip(null);
-            }}
-            onClose={()=>{setModal(null);setEditShip(null);}}
-          />
-        </Modal>
-      )}
-
-      {/* ── VIEW SHIPMENT MODAL ── */}
-      {selShip&&!confirmDeleteShip&&(
-        <div style={{position:"fixed",inset:0,zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
-          onClick={()=>setSelShip(null)}>
-          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(4px)"}}/>
-          <div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.22)",width:"100%",maxWidth:600,maxHeight:"90vh",overflowY:"auto",zIndex:61}}
-            onClick={e=>e.stopPropagation()}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"18px 24px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"10",borderRadius:"20px 20px 0 0"}}>
-              <div>
-                <h2 style={{margin:0,fontSize:17,fontWeight:900,color:"#0f172a"}}>Shipment Details</h2>
-                <p style={{margin:"3px 0 0",fontSize:11,color:"#94a3b8",fontFamily:"DM Mono,monospace"}}>{selShip.id} · {selShip.date}</p>
-              </div>
-              <div style={{display:"flex",gap:8}}>
-                <button onClick={()=>{setEditShip(selShip);setSelShip(null);setModal("edit-shipment");}}
-                  style={{padding:"7px 16px",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px "+shop.accent+"44"}}>
-                  ✏️ Edit
-                </button>
-                {user?.role!=="staff"&&(
-                  <button onClick={()=>setConfirmDeleteShip(true)}
-                    style={{padding:"7px 14px",borderRadius:9,border:"1px solid #fca5a5",background:"#fff5f5",color:"#dc2626",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-                    🗑 Delete
-                  </button>
-                )}
-                <button onClick={()=>setSelShip(null)}
-                  style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
-              </div>
-            </div>
-            <div style={{padding:"20px 24px"}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:16}}>
-                {[
-                  {l:"Shipment ID",   v:selShip.id,                              ic:"🔖"},
-                  {l:"Date",          v:selShip.date,                            ic:"📅"},
-                  {l:"Status",        v:selShip.status||"—",                     ic:"📋"},
-                  {l:"Supplier",      v:selShip.supplier||"—",                   ic:"🏭"},
-                  {l:"Courier",       v:selShip.serviceCustom||selShip.service||"—",ic:"🚚"},
-                  {l:"Tracking No",   v:selShip.trackingNo||"—",                 ic:"🔍"},
-                  {l:"Linked PO",     v:selShip.purchaseId||"—",                 ic:"📦"},
-                  {l:"Agent",         v:selShip.agentCustom||selShip.agent||"—", ic:"🤝"},
-                  {l:"Received Date", v:selShip.receivedDate||"—",               ic:"📬"},
-                ].map((f,i)=>(
-                  <div key={i} style={{background:"#f8fafc",borderRadius:10,padding:"10px 14px",border:"1px solid #f1f5f9"}}>
-                    <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>{f.ic} {f.l}</p>
-                    <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a",wordBreak:"break-word"}}>{f.v}</p>
-                  </div>
-                ))}
-              </div>
-              {selShip.deliveryAddr&&(
-                <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 14px",marginBottom:12,border:"1px solid #f1f5f9"}}>
-                  <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>📍 Delivery Address</p>
-                  <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{selShip.deliveryAddr}</p>
-                </div>
-              )}
-              {selShip.remarks&&(
-                <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"10px 14px",marginBottom:12}}>
-                  <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#92400e",textTransform:"uppercase",letterSpacing:"0.06em"}}>📝 Remarks</p>
-                  <p style={{margin:0,fontSize:13,color:"#92400e"}}>{selShip.remarks}</p>
-                </div>
-              )}
-              <div style={{display:"flex",justifyContent:"flex-end",marginTop:4}}>
-                <button onClick={()=>setSelShip(null)}
-                  style={{padding:"10px 28px",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── DELETE SHIPMENT CONFIRM ── */}
-      {selShip&&confirmDeleteShip&&(
-        <div style={{position:"fixed",inset:0,zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
-          onClick={()=>{setConfirmDeleteShip(false);setSelShip(null);}}>
-          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(4px)"}}/>
-          <div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.22)",width:"100%",maxWidth:420,zIndex:61}}
-            onClick={e=>e.stopPropagation()}>
-            <div style={{padding:28,textAlign:"center"}}>
-              <div style={{fontSize:48,marginBottom:12}}>⚠️</div>
-              <p style={{margin:"0 0 6px",fontWeight:900,fontSize:17,color:"#991b1b"}}>Delete Shipment?</p>
-              <p style={{margin:"0 0 20px",fontSize:13,color:"#64748b",lineHeight:1.6}}>
-                Permanently delete <strong style={{color:"#0f172a"}}>{selShip.id}</strong>. This cannot be undone.
-              </p>
-              <div style={{display:"flex",gap:10}}>
-                <button onClick={()=>{setConfirmDeleteShip(false);setSelShip(null);}}
-                  style={{flex:1,padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
-                  ← Cancel
-                </button>
-                <button onClick={()=>{
-                    const list=(logData||{})[shopId]||[];
-                    const newList=list.filter(x=>x.id!==selShip.id);
-                    if(saveLogData) saveLogData({...(logData||{}),[shopId]:newList});
-                    setConfirmDeleteShip(false);setSelShip(null);
-                  }}
-                  style={{flex:1,padding:"12px 0",borderRadius:11,border:"none",background:"#dc2626",color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(220,38,38,0.35)"}}>
-                  🗑 Yes, Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* ── NEW PURCHASE MODAL ── */}
       {modal==="new-purchase"&&(
         <Modal title="📦 New Purchase" onClose={()=>setModal(null)} accent={shop.accent}>
-          <NewPurchaseForm shopId={shopId} shop={shop} lastPurchNum={purch.length>0?parseInt((purch[0].id||"0").replace(/[^0-9]/g,""))||700:700}
-            shopItems={(shopItems||{})[shopId]||[]}
-            onAddShopItem={(item)=>{
-              const current=(shopItems||{})[shopId]||[];
-              const exists=current.some(x=>(x.name||x)===item.name);
-              if(exists) return;
-              const updated={...(shopItems||{}),[shopId]:[...current,item]};
-              if(saveShopItems) saveShopItems(updated);
-            }}
-            onSave={(form)=>{
-            const newPurch={...form, id:form.purchaseId, sup:form.supplier, savedAt:new Date().toISOString()};
-            const updated={...(purchData||{}),[shopId]:[newPurch,...((purchData||{})[shopId]||[])]};
-            if(savePurchData) savePurchData(updated);
-            setModal(null);
-          }} onClose={()=>setModal(null)}/>
+          <NewPurchaseForm shopId={shopId} shop={shop} lastPurchNum={purch.length>0?parseInt((purch[0].id||"0").replace(/[^0-9]/g,""))||700:700} onSave={(form)=>{setModal(null);}} onClose={()=>setModal(null)}/>
         </Modal>
-      )}
-
-      {/* ── EDIT PURCHASE MODAL ── */}
-      {modal==="edit-purchase"&&editPurch&&(
-        <Modal title={"✏️ Edit Purchase — "+editPurch.id} onClose={()=>{setModal(null);setEditPurch(null);}} accent={shop.accent}>
-          <EditPurchaseForm
-            shopId={shopId} shop={shop} purchase={editPurch}
-            onSave={(updated)=>{
-              const list=(purchData||{})[shopId]||[];
-              const newList=list.map(x=>x.id===updated.id?{...x,...updated}:x);
-              if(savePurchData) savePurchData({...(purchData||{}),[shopId]:newList});
-              setModal(null);setEditPurch(null);
-            }}
-            onClose={()=>{setModal(null);setEditPurch(null);}}
-          />
-        </Modal>
-      )}
-
-      {/* ── VIEW PURCHASE MODAL ── */}
-      {selPurch&&!confirmDeletePurch&&(
-        <div style={{position:"fixed",inset:0,zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
-          onClick={()=>setSelPurch(null)}>
-          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(4px)"}}/>
-          <div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.22)",width:"100%",maxWidth:640,maxHeight:"90vh",overflowY:"auto",zIndex:61}}
-            onClick={e=>e.stopPropagation()}>
-            {/* header */}
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"18px 24px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"10",borderRadius:"20px 20px 0 0"}}>
-              <div>
-                <h2 style={{margin:0,fontSize:17,fontWeight:900,color:"#0f172a"}}>Purchase Details</h2>
-                <p style={{margin:"3px 0 0",fontSize:11,color:"#94a3b8",fontFamily:"DM Mono,monospace"}}>{selPurch.id} · {selPurch.date}</p>
-              </div>
-              <div style={{display:"flex",gap:8}}>
-                <button onClick={()=>{setEditPurch(selPurch);setSelPurch(null);setModal("edit-purchase");}}
-                  style={{padding:"7px 16px",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px "+shop.accent+"44"}}>
-                  ✏️ Edit
-                </button>
-                {user?.role!=="staff"&&(
-                  <button onClick={()=>setConfirmDeletePurch(true)}
-                    style={{padding:"7px 14px",borderRadius:9,border:"1px solid #fca5a5",background:"#fff5f5",color:"#dc2626",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-                    🗑 Delete
-                  </button>
-                )}
-                <button onClick={()=>setSelPurch(null)}
-                  style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
-              </div>
-            </div>
-            <div style={{padding:"20px 24px"}}>
-              {/* top info grid */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:20}}>
-                {[
-                  {l:"Purchase ID",  v:selPurch.id,          ic:"🔖"},
-                  {l:"Date",         v:selPurch.date,         ic:"📅"},
-                  {l:"Supplier",     v:selPurch.supplier||selPurch.sup||"—", ic:"🏭"},
-                  {l:"Batch / Ref",  v:selPurch.batch||"—",  ic:"📋"},
-                  {l:"Invoice No",   v:selPurch.invoiceNo||"—",ic:"🧾"},
-                  {l:"Payment By",   v:selPurch.payBy||"—",  ic:"💳"},
-                  {l:"Payment Date", v:selPurch.payDate||"—",ic:"🗓"},
-                  {l:"Received",     v:selPurch.receivedDate||"—",ic:"📬"},
-                  {l:"Logistic By",  v:selPurch.logisticBy||"—",ic:"🚚"},
-                ].map((f,i)=>(
-                  <div key={i} style={{background:"#f8fafc",borderRadius:10,padding:"10px 14px",border:"1px solid #f1f5f9"}}>
-                    <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>{f.ic} {f.l}</p>
-                    <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a",wordBreak:"break-word"}}>{f.v}</p>
-                  </div>
-                ))}
-              </div>
-
-              {/* items table */}
-              <div style={{background:"white",borderRadius:12,border:"1px solid #e2e8f0",overflow:"hidden",marginBottom:16}}>
-                <div style={{padding:"10px 16px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0"}}>
-                  <p style={{margin:0,fontWeight:800,fontSize:13,color:"#0f172a"}}>Items Purchased</p>
-                </div>
-                <table style={{width:"100%",borderCollapse:"collapse"}}>
-                  <thead>
-                    <tr style={{background:"#f8fafc"}}>
-                      {["Item","Qty","Total ("+shop.symbol+")","GST","Unit Cost"].map(h=>(
-                        <th key={h} style={{padding:"9px 14px",textAlign:"left",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(selPurch.items&&selPurch.items.length>0?selPurch.items:[{item:selPurch.item||"—",qty:selPurch.qty||"—",total:selPurch.total||0,gst:selPurch.gst||0}]).map((it,i)=>{
-                      const q=parseFloat(it.qty),t=parseFloat(it.total);
-                      const unit=(q>0&&t>0)?(t/q).toFixed(2):"—";
-                      const name=it.itemCustom||it.item||"—";
-                      return(
-                        <tr key={i} style={{borderTop:i>0?"1px solid #f1f5f9":"none"}}>
-                          <td style={{padding:"11px 14px",fontSize:13,fontWeight:700,color:"#0f172a"}}>{name}</td>
-                          <td style={{padding:"11px 14px",fontSize:13,color:"#374151"}}>{it.qty||"—"}</td>
-                          <td style={{padding:"11px 14px",fontSize:13,fontWeight:800,color:shop.accent}}>{shop.symbol}{parseFloat(it.total||0).toLocaleString()}</td>
-                          <td style={{padding:"11px 14px",fontSize:13,color:"#374151"}}>{it.gst||0}</td>
-                          <td style={{padding:"11px 14px",fontSize:12,color:"#64748b",fontFamily:"DM Mono,monospace"}}>{unit!=="—"?shop.symbol+unit:"—"}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-                <div style={{padding:"10px 16px",borderTop:"1px solid #e2e8f0",display:"flex",justifyContent:"flex-end",gap:8,alignItems:"center"}}>
-                  <span style={{fontSize:12,fontWeight:700,color:"#64748b"}}>Grand Total:</span>
-                  <span style={{fontSize:16,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace"}}>{shop.symbol}{parseFloat(selPurch.total||0).toLocaleString()}</span>
-                </div>
-              </div>
-
-              {/* remarks */}
-              {selPurch.remarks&&(
-                <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"10px 14px",marginBottom:12}}>
-                  <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#92400e",textTransform:"uppercase",letterSpacing:"0.06em"}}>📝 Remarks</p>
-                  <p style={{margin:0,fontSize:13,color:"#92400e"}}>{selPurch.remarks}</p>
-                </div>
-              )}
-              <div style={{display:"flex",justifyContent:"flex-end",marginTop:4}}>
-                <button onClick={()=>setSelPurch(null)}
-                  style={{padding:"10px 28px",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── DELETE PURCHASE CONFIRM ── */}
-      {selPurch&&confirmDeletePurch&&(
-        <div style={{position:"fixed",inset:0,zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
-          onClick={()=>{setConfirmDeletePurch(false);setSelPurch(null);}}>
-          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(4px)"}}/>
-          <div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.22)",width:"100%",maxWidth:420,zIndex:61}}
-            onClick={e=>e.stopPropagation()}>
-            <div style={{padding:28,textAlign:"center"}}>
-              <div style={{fontSize:48,marginBottom:12}}>⚠️</div>
-              <p style={{margin:"0 0 6px",fontWeight:900,fontSize:17,color:"#991b1b"}}>Delete Purchase?</p>
-              <p style={{margin:"0 0 20px",fontSize:13,color:"#64748b",lineHeight:1.6}}>
-                Permanently delete <strong style={{color:"#0f172a"}}>{selPurch.id}</strong>
-                {selPurch.supplier||selPurch.sup?" from "+( selPurch.supplier||selPurch.sup):""}.
-                This cannot be undone.
-              </p>
-              <div style={{display:"flex",gap:10}}>
-                <button onClick={()=>{setConfirmDeletePurch(false);setSelPurch(null);}}
-                  style={{flex:1,padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
-                  ← Cancel
-                </button>
-                <button onClick={()=>{
-                    const list=(purchData||{})[shopId]||[];
-                    const newList=list.filter(x=>x.id!==selPurch.id);
-                    if(savePurchData) savePurchData({...(purchData||{}),[shopId]:newList});
-                    setConfirmDeletePurch(false);setSelPurch(null);
-                  }}
-                  style={{flex:1,padding:"12px 0",borderRadius:11,border:"none",background:"#dc2626",color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(220,38,38,0.35)"}}>
-                  🗑 Yes, Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* ══ PRINT STYLE + OVERLAY ══ */}
@@ -3116,242 +2840,6 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
   );
 };
 /* ══════════════════════════════════════════════════════
-   EDIT PURCHASE FORM
-══════════════════════════════════════════════════════ */
-const EditPurchaseForm=({shopId,shop,purchase,onSave,onClose})=>{
-  const emptyItem=()=>({id:Date.now()+Math.random(),item:"",itemCustom:"",qty:"",total:""});
-  const [form,setForm]=useState({
-    date:         purchase.date||new Date().toISOString().slice(0,10),
-    purchaseId:   purchase.id||purchase.purchaseId||"",
-    supplier:     purchase.supplier||purchase.sup||"",
-    invoiceNo:    purchase.invoiceNo||"",
-    batch:        purchase.batch||"",
-    payBy:        purchase.payBy||"HDFC SURESH",
-    payDate:      purchase.payDate||new Date().toISOString().slice(0,10),
-    logisticBy:   purchase.logisticBy||"",
-    logisticRef:  purchase.logisticRef||"",
-    receivedDate: purchase.receivedDate||"",
-    remarks:      purchase.remarks||"",
-    gst:          purchase.gst||"",
-    otherCharges: purchase.otherCharges||"",
-    adjustingAmt: purchase.adjustingAmt||"",
-  });
-  const [items,setItems]=useState(
-    purchase.items&&purchase.items.length>0
-      ? purchase.items.map(it=>({...it,id:it.id||Date.now()+Math.random()}))
-      : [{id:Date.now(),item:purchase.item||"",itemCustom:"",qty:purchase.qty||"",total:purchase.grossTotal||purchase.total||""}]
-  );
-  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const setItem=(idx,k,v)=>setItems(prev=>prev.map((it,i)=>i===idx?{...it,[k]:v}:it));
-  const addItem=()=>setItems(prev=>[...prev,emptyItem()]);
-  const removeItem=(idx)=>setItems(prev=>prev.length>1?prev.filter((_,i)=>i!==idx):prev);
-
-  const grossTotal=items.reduce((a,it)=>a+(parseFloat(it.total)||0),0);
-  const gstAmt=parseFloat(form.gst)||0;
-  const otherAmt=parseFloat(form.otherCharges)||0;
-  const adjustAmt=parseFloat(form.adjustingAmt)||0;
-  const netAmount=grossTotal+gstAmt+otherAmt+adjustAmt;
-
-  const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white",transition:"border-color 0.15s"};
-  const fo=e=>e.target.style.borderColor=shop.accent;
-  const bl=e=>e.target.style.borderColor="#e2e8f0";
-  const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
-  const Divider=({title})=>(
-    <div style={{display:"flex",alignItems:"center",gap:8,margin:"6px 0 12px"}}>
-      <div style={{height:1,flex:1,background:"#f1f5f9"}}/>
-      <span style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap"}}>{title}</span>
-      <div style={{height:1,flex:1,background:"#f1f5f9"}}/>
-    </div>
-  );
-
-  return(
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
-      {/* banner */}
-      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
-        <span style={{fontSize:20}}>✏️</span>
-        <div>
-          <p style={{margin:0,fontWeight:800,fontSize:13,color:shop.accentText}}>Editing Purchase {form.purchaseId}</p>
-          <p style={{margin:0,fontSize:11,color:shop.accent}}>Changes will be saved to local storage immediately</p>
-        </div>
-      </div>
-
-      <Divider title="Basic Info"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Date</label>
-          <input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Purchase ID</label>
-          <input value={form.purchaseId} readOnly
-            style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/>
-        </div>
-        <div>
-          <label style={lbl}>Batch / Reference</label>
-          <input value={form.batch} onChange={e=>set("batch",e.target.value)} placeholder="Mo 1057" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Supplier Invoice No.</label>
-          <input value={form.invoiceNo} onChange={e=>set("invoiceNo",e.target.value)} placeholder="ELT-7821" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/>
-        </div>
-      </div>
-
-      <Divider title="Supplier"/>
-      <div style={{marginBottom:16}}>
-        <label style={lbl}>Supplier Name</label>
-        <input value={form.supplier} onChange={e=>set("supplier",e.target.value)} placeholder="Supplier name" style={inp} onFocus={fo} onBlur={bl}/>
-      </div>
-
-      <Divider title="Items / Products"/>
-      <div style={{marginBottom:16}}>
-        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 32px",gap:8,marginBottom:6,paddingLeft:2}}>
-          {["Item Name","Qty","Total Amount ("+shop.symbol+")",""].map((h,i)=>(
-            <span key={i} style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</span>
-          ))}
-        </div>
-        {items.map((it,idx)=>{
-          const useCustom=it.item==="__custom__";
-          return(
-            <div key={it.id} style={{marginBottom:8}}>
-              <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 32px",gap:8,alignItems:"center"}}>
-                <div>
-                  <select value={it.item} onChange={e=>setItem(idx,"item",e.target.value)}
-                    style={{...inp,fontSize:12,padding:"8px 10px"}}>
-                    <option value="">Select / type item…</option>
-                    <option value="__custom__">✏️ Enter manually…</option>
-                    {PRODUCTS.map(p=><option key={p.id} value={p.name}>{p.name}</option>)}
-                  </select>
-                  {useCustom&&(
-                    <input value={it.itemCustom} onChange={e=>setItem(idx,"itemCustom",e.target.value)}
-                      placeholder="Type item name"
-                      style={{...inp,marginTop:5,fontSize:12,padding:"8px 10px",border:"1px solid "+shop.accent}}
-                      onFocus={fo} onBlur={bl}/>
-                  )}
-                  {!useCustom&&it.item&&!PRODUCTS.find(p=>p.name===it.item)&&(
-                    <input value={it.item} onChange={e=>setItem(idx,"item",e.target.value)}
-                      style={{...inp,marginTop:5,fontSize:12,padding:"8px 10px"}}
-                      onFocus={fo} onBlur={bl}/>
-                  )}
-                </div>
-                <input type="number" min="1" value={it.qty} onChange={e=>setItem(idx,"qty",e.target.value)}
-                  placeholder="0" style={{...inp,fontSize:12,padding:"8px 10px",textAlign:"center"}} onFocus={fo} onBlur={bl}/>
-                <input type="number" value={it.total} onChange={e=>setItem(idx,"total",e.target.value)}
-                  placeholder="0.00" style={{...inp,fontSize:12,padding:"8px 10px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
-                <button onClick={()=>removeItem(idx)}
-                  disabled={items.length===1}
-                  style={{width:28,height:28,borderRadius:7,border:"1px solid #fecaca",background:items.length===1?"#f8fafc":"#fff5f5",color:items.length===1?"#cbd5e1":"#dc2626",cursor:items.length===1?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,flexShrink:0}}>
-                  ×
-                </button>
-              </div>
-            </div>
-          );
-        })}
-        <button onClick={addItem}
-          style={{width:"100%",padding:"8px 0",borderRadius:10,border:"2px dashed "+shop.accent+"55",background:shop.accentBg,color:shop.accent,fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:6,marginBottom:16,transition:"all 0.15s"}}
-          onMouseEnter={e=>{e.currentTarget.style.borderColor=shop.accent;e.currentTarget.style.background=shop.accent+"18";}}
-          onMouseLeave={e=>{e.currentTarget.style.borderColor=shop.accent+"55";e.currentTarget.style.background=shop.accentBg;}}>
-          ＋ Add Another Item
-        </button>
-
-        {/* ── SUMMARY BLOCK ── */}
-        <div style={{background:"#f8fafc",borderRadius:12,border:"1px solid #e2e8f0",overflow:"hidden"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",borderBottom:"1px solid #e2e8f0"}}>
-            <span style={{fontSize:13,color:"#374151",fontWeight:600}}>Gross Total</span>
-            <span style={{fontSize:13,fontWeight:800,color:"#0f172a",fontFamily:"DM Mono,monospace"}}>{shop.symbol}{grossTotal.toLocaleString()}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 16px",borderBottom:"1px solid #e2e8f0",gap:16}}>
-            <span style={{fontSize:13,color:"#374151",fontWeight:600,whiteSpace:"nowrap"}}>GST</span>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <input type="number" value={form.gst} onChange={e=>set("gst",e.target.value)} placeholder="0.00"
-                style={{width:120,border:"1px solid #e2e8f0",borderRadius:7,padding:"5px 10px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",textAlign:"right",color:"#374151",background:"white"}}
-                onFocus={fo} onBlur={bl}/>
-              {gstAmt>0&&<span style={{fontSize:12,fontWeight:700,color:"#374151",fontFamily:"DM Mono,monospace",whiteSpace:"nowrap"}}>{shop.symbol}{gstAmt.toLocaleString()}</span>}
-            </div>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 16px",borderBottom:"1px solid #e2e8f0",gap:16}}>
-            <span style={{fontSize:13,color:"#374151",fontWeight:600,whiteSpace:"nowrap"}}>Other Charges</span>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <input type="number" value={form.otherCharges} onChange={e=>set("otherCharges",e.target.value)} placeholder="0.00"
-                style={{width:120,border:"1px solid #e2e8f0",borderRadius:7,padding:"5px 10px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",textAlign:"right",color:"#374151",background:"white"}}
-                onFocus={fo} onBlur={bl}/>
-              {otherAmt>0&&<span style={{fontSize:12,fontWeight:700,color:"#374151",fontFamily:"DM Mono,monospace",whiteSpace:"nowrap"}}>{shop.symbol}{otherAmt.toLocaleString()}</span>}
-            </div>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 16px",borderBottom:"2px solid #e2e8f0",gap:16}}>
-            <div>
-              <span style={{fontSize:13,color:"#374151",fontWeight:600,whiteSpace:"nowrap"}}>Adjusting Amount</span>
-              <p style={{margin:"1px 0 0",fontSize:10,color:"#94a3b8"}}>use negative value for discount</p>
-            </div>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <input type="number" value={form.adjustingAmt} onChange={e=>set("adjustingAmt",e.target.value)} placeholder="0.00"
-                style={{width:120,border:"1px solid #e2e8f0",borderRadius:7,padding:"5px 10px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",textAlign:"right",color:"#374151",background:"white"}}
-                onFocus={fo} onBlur={bl}/>
-              {adjustAmt!==0&&<span style={{fontSize:12,fontWeight:700,color:adjustAmt<0?"#dc2626":"#374151",fontFamily:"DM Mono,monospace",whiteSpace:"nowrap"}}>{adjustAmt<0?"-"+shop.symbol+Math.abs(adjustAmt).toLocaleString():shop.symbol+adjustAmt.toLocaleString()}</span>}
-            </div>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:shop.accentBg}}>
-            <span style={{fontSize:15,fontWeight:900,color:shop.accentText}}>Net Amount</span>
-            <span style={{fontSize:18,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace"}}>{shop.symbol}{netAmount.toLocaleString()}</span>
-          </div>
-        </div>
-      </div>
-
-      <Divider title="Payment"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Payment By</label>
-          <select value={["REMITLY SURESH","REMITLY BINITHA","HDFC SURESH","HDFC BINITHA","ROS INDIA"].includes(form.payBy)?form.payBy:"OTHER"}
-            onChange={e=>set("payBy",e.target.value)} style={{...inp,fontWeight:600}}>
-            {["REMITLY SURESH","REMITLY BINITHA","HDFC SURESH","HDFC BINITHA","ROS INDIA","OTHER"].map(o=><option key={o}>{o}</option>)}
-          </select>
-          {!["REMITLY SURESH","REMITLY BINITHA","HDFC SURESH","HDFC BINITHA","ROS INDIA"].includes(form.payBy)&&(
-            <input value={form.payBy==="OTHER"?"":form.payBy} onChange={e=>set("payBy",e.target.value||"OTHER")}
-              placeholder="Enter payment method…"
-              style={{...inp,marginTop:8,border:"1px solid "+shop.accent,fontWeight:600}} onFocus={fo} onBlur={bl}/>
-          )}
-        </div>
-        <div>
-          <label style={lbl}>Payment Date</label>
-          <input type="date" value={form.payDate} onChange={e=>set("payDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-      </div>
-
-      <Divider title="Logistics"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Logistic Service By</label>
-          <input value={form.logisticBy} onChange={e=>set("logisticBy",e.target.value)} placeholder="DHL, FedEx…" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Logistic Ref. Number</label>
-          <input value={form.logisticRef} onChange={e=>set("logisticRef",e.target.value)} placeholder="Tracking / AWB" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Item Received Date</label>
-          <input type="date" value={form.receivedDate} onChange={e=>set("receivedDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-      </div>
-
-      <div style={{marginBottom:16}}>
-        <label style={lbl}>Remarks</label>
-        <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
-      </div>
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...purchase,...form,id:purchase.id,sup:form.supplier,items,item:items[0]?.itemCustom||items[0]?.item||"",qty:items[0]?.qty||"",grossTotal,gst:gstAmt,otherCharges:otherAmt,adjustingAmt:adjustAmt,total:netAmount})}
-          style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
-          💾 Save Changes
-        </button>
-        <button onClick={onClose}
-          style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-};
-
-/* ══════════════════════════════════════════════════════
    NEW PURCHASE FORM
 ══════════════════════════════════════════════════════ */
 const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
@@ -3590,147 +3078,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
   );
 };
 
-/* ══════════════════════════════════════════════════════
-   EDIT SHIPMENT FORM
-══════════════════════════════════════════════════════ */
-const EditShipmentForm=({shopId,shop,shipment,purch,onSave,onClose})=>{
-  const [form,setForm]=useState({
-    date:         shipment.date||new Date().toISOString().slice(0,10),
-    shipmentId:   shipment.id||shipment.shipmentId||"",
-    purchaseId:   shipment.purchaseId||"",
-    supplier:     shipment.supplier||"",
-    deliveryAddr: shipment.deliveryAddr||"",
-    service:      shipment.service||"",
-    serviceCustom:shipment.serviceCustom||"",
-    agent:        shipment.agent||"",
-    agentCustom:  shipment.agentCustom||"",
-    trackingNo:   shipment.trackingNo||"",
-    cost:         shipment.cost||"",
-    status:       shipment.status||"PENDING",
-    receivedDate: shipment.receivedDate||"",
-    remarks:      shipment.remarks||"",
-  });
-  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-
-  const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white",transition:"border-color 0.15s"};
-  const fo=e=>e.target.style.borderColor=shop.accent;
-  const bl=e=>e.target.style.borderColor="#e2e8f0";
-  const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
-  const Divider=({title})=>(
-    <div style={{display:"flex",alignItems:"center",gap:8,margin:"6px 0 12px"}}>
-      <div style={{height:1,flex:1,background:"#f1f5f9"}}/>
-      <span style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap"}}>{title}</span>
-      <div style={{height:1,flex:1,background:"#f1f5f9"}}/>
-    </div>
-  );
-
-  const COURIERS=["DHL","FedEx","Royal Mail","Evri","UPS","DPD","India Post","DTDC","Blue Dart","Other"];
-  const STATUS_OPTS=["PENDING","DISPATCHED","IN TRANSIT","OUT FOR DELIVERY","DELIVERED","RETURNED","ON HOLD"];
-  const statusColor={"PENDING":"#a16207","DISPATCHED":"#1d4ed8","IN TRANSIT":"#0369a1","OUT FOR DELIVERY":"#7c3aed","DELIVERED":"#15803d","RETURNED":"#c2410c","ON HOLD":"#6b7280"};
-
-  const handlePurchaseSelect=(pid)=>{
-    set("purchaseId",pid);
-    const p=purch.find(x=>x.id===pid);
-    if(p) set("supplier",p.sup||p.supplier||"");
-  };
-
-  return(
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
-      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
-        <span style={{fontSize:20}}>✏️</span>
-        <div>
-          <p style={{margin:0,fontWeight:800,fontSize:13,color:shop.accentText}}>Editing Shipment {form.shipmentId}</p>
-          <p style={{margin:0,fontSize:11,color:shop.accent}}>Changes saved to local storage immediately</p>
-        </div>
-      </div>
-
-      <Divider title="Shipment Info"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Shipment Date</label>
-          <input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Shipment ID</label>
-          <input value={form.shipmentId} readOnly
-            style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/>
-        </div>
-        <div>
-          <label style={lbl}>Status</label>
-          <select value={form.status} onChange={e=>set("status",e.target.value)}
-            style={{...inp,fontWeight:700,color:statusColor[form.status]||"#374151"}}>
-            {STATUS_OPTS.map(o=><option key={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>)}
-          </select>
-        </div>
-      </div>
-
-      <Divider title="Linked Purchase"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Link to Purchase ID</label>
-          <select value={form.purchaseId} onChange={e=>handlePurchaseSelect(e.target.value)} style={inp}>
-            <option value="">Select purchase…</option>
-            {(purch||[]).map(p=><option key={p.id} value={p.id}>{p.id}{p.sup?" — "+p.sup:p.supplier?" — "+p.supplier:""}</option>)}
-          </select>
-        </div>
-        <div>
-          <label style={lbl}>Supplier</label>
-          <input value={form.supplier} onChange={e=>set("supplier",e.target.value)} placeholder="Auto-filled or enter" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div style={{gridColumn:"1/-1"}}>
-          <label style={lbl}>Delivery Address</label>
-          <textarea value={form.deliveryAddr} onChange={e=>set("deliveryAddr",e.target.value)} rows={2} placeholder="Full delivery address" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
-        </div>
-      </div>
-
-      <Divider title="Courier"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Courier / Service</label>
-          <select value={form.service} onChange={e=>set("service",e.target.value)} style={inp}>
-            <option value="">Select courier…</option>
-            {COURIERS.map(o=><option key={o}>{o}</option>)}
-          </select>
-          {form.service==="Other"&&(
-            <input value={form.serviceCustom} onChange={e=>set("serviceCustom",e.target.value)}
-              placeholder="Enter courier name…" style={{...inp,marginTop:8,border:"1px solid "+shop.accent}} onFocus={fo} onBlur={bl}/>
-          )}
-        </div>
-        <div>
-          <label style={lbl}>Tracking Number</label>
-          <input value={form.trackingNo} onChange={e=>set("trackingNo",e.target.value)}
-            placeholder="AWB / Tracking ref." style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Shipping Cost ({shop.symbol})</label>
-          <input type="number" value={form.cost} onChange={e=>set("cost",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Received Date</label>
-          <input type="date" value={form.receivedDate} onChange={e=>set("receivedDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-      </div>
-
-      <div style={{marginBottom:16}}>
-        <label style={lbl}>Remarks</label>
-        <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
-      </div>
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...shipment,...form,id:shipment.id})}
-          style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
-          💾 Save Changes
-        </button>
-        <button onClick={onClose}
-          style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-};
-
-const NewShipmentForm=({shopId,shop,purch,logs=[],onSave,onClose})=>{
+const NewShipmentForm=({shopId,shop,purch,onSave,onClose})=>{
   const [form,setForm]=useState({
     date:         new Date().toISOString().slice(0,10),
     shipmentId:   "SHP-"+String(Math.floor(Math.random()*9000)+1000),
@@ -3813,24 +3161,6 @@ const NewShipmentForm=({shopId,shop,purch,logs=[],onSave,onClose})=>{
             <option value="">Select purchase…</option>
             {purch.map(p=><option key={p.id} value={p.id}>{p.id}{p.sup?" — "+p.sup:p.supplier?" — "+p.supplier:""}</option>)}
           </select>
-          {/* Show existing shipments for this PO */}
-          {form.purchaseId&&(()=>{
-            const existing=logs.filter(l=>l.purchaseId===form.purchaseId);
-            if(existing.length===0) return null;
-            return(
-              <div style={{marginTop:8,background:"#eff6ff",borderRadius:8,padding:"8px 12px",border:"1px solid #bfdbfe"}}>
-                <p style={{margin:"0 0 4px",fontSize:10,fontWeight:800,color:"#1d4ed8",textTransform:"uppercase",letterSpacing:"0.05em"}}>
-                  {existing.length} existing shipment{existing.length>1?"s":""} for this PO
-                </p>
-                {existing.map(s=>(
-                  <p key={s.id} style={{margin:0,fontSize:11,color:"#1e40af",fontFamily:"DM Mono,monospace"}}>
-                    {s.id} · {s.serviceCustom||s.service||"—"} · {s.status}
-                  </p>
-                ))}
-                <p style={{margin:"4px 0 0",fontSize:10,color:"#3b82f6",fontWeight:600}}>You can add another shipment for the same PO</p>
-              </div>
-            );
-          })()}
         </div>
         <div>
           <label style={lbl}>Supplier</label>
@@ -3972,12 +3302,10 @@ const NewSupplierForm=({shop,onSave,onClose})=>{
   );
 };
 
-const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,shopItems=[],onAddShopItem})=>{
+const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
   const nextNum=(lastPurchNum||700)+1;
   const pfx={["ros-selections"]:"PO",["ros-hairlines"]:"PH",["ros-india"]:"PI"}[shopId]||"PO";
   const autoId=`${pfx}-${String(nextNum).padStart(4,"0")}`;
-
-  const emptyItem=()=>({id:Date.now()+Math.random(),item:"",itemCustom:"",qty:"",total:""});
 
   const [form,setForm]=useState({
     date:        new Date().toISOString().slice(0,10),
@@ -3986,35 +3314,30 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,shopItems=[],onA
     supplier:    "",
     invoiceNo:   "",
     batch:       "",
+    item:        "",
+    itemCustom:  "",
+    qty:         "",
+    total:       "",
+    gst:         "",
     payBy:       "HDFC SURESH",
     payDate:     new Date().toISOString().slice(0,10),
     logisticBy:  "",
     logisticRef: "",
     receivedDate:"",
     remarks:     "",
-    gst:         "",
-    otherCharges:"",
-    adjustingAmt:"",
   });
-  const [items,setItems]=useState([emptyItem()]);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
-  const setItem=(idx,k,v)=>setItems(prev=>prev.map((it,i)=>i===idx?{...it,[k]:v}:it));
-  const addItem=()=>setItems(prev=>[...prev,emptyItem()]);
-  const removeItem=(idx)=>setItems(prev=>prev.length>1?prev.filter((_,i)=>i!==idx):prev);
+  /* unit cost = total / qty — read-only, auto-calc */
+  const unitCost=(()=>{
+    const q=parseFloat(form.qty);
+    const t=parseFloat(form.total);
+    if(q>0&&t>0) return (t/q).toFixed(2);
+    return "";
+  })();
 
   const [supplierList,setSupplierList]=useState([...SUPPLIERS]);
   const [showNewSup,setShowNewSup]=useState(false);
-  const [showAddItemModal,setShowAddItemModal]=useState(false);
-  const [newItemName,setNewItemName]=useState("");
-  const [newItemCode,setNewItemCode]=useState("");
-
-  const makeItemCode=(name)=>{
-    if(!name) return "";
-    const words=name.trim().split(/\s+/);
-    if(words.length===1) return name.replace(/[^A-Za-z0-9]/g,"").slice(0,5).toUpperCase();
-    return words.map(w=>w[0]||"").join("").replace(/[^A-Z0-9]/gi,"").slice(0,5).toUpperCase();
-  };
 
   const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white",transition:"border-color 0.15s"};
   const inpGray={...inp,background:"#f1f5f9",color:"#64748b",cursor:"not-allowed"};
@@ -4030,17 +3353,13 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,shopItems=[],onA
     </div>
   );
 
+  const useCustomItem=form.item==="__custom__";
+
   const handleAddSupplier=(newSup)=>{
     setSupplierList(l=>[newSup,...l]);
     set("supplier",newSup.name);
     setShowNewSup(false);
   };
-
-  const grossTotal=items.reduce((a,it)=>a+(parseFloat(it.total)||0),0);
-  const gstAmt=parseFloat(form.gst)||0;
-  const otherAmt=parseFloat(form.otherCharges)||0;
-  const adjustAmt=parseFloat(form.adjustingAmt)||0;
-  const netAmount=grossTotal+gstAmt+otherAmt+adjustAmt;
 
   return(
     <>
@@ -4110,177 +3429,33 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,shopItems=[],onA
         </div>
       </div>
 
-      {/* ITEMS — multi-row */}
-      <Divider title="Items / Products"/>
-
-      {/* ── Pill tab item picker (shared item list) ── */}
-      <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12,alignItems:"center"}}>
-        {shopItems.map((itm,i)=>{
-          const name=itm.name||itm;
-          const code=itm.code||(name.replace(/[^A-Za-z]/g,"").slice(0,5).toUpperCase());
-          return(
-            <button key={i} type="button"
-              onClick={()=>{
-                // Add a new item row with this name if not already in current items
-                const hasEmpty=items.some(it=>!it.item);
-                if(hasEmpty){setItems(prev=>prev.map((it,i2)=>i2===prev.findIndex(x=>!x.item)?{...it,item:name}:it));}
-                else addItem();
-                setTimeout(()=>setItems(prev=>{const last=prev[prev.length-1];if(last&&!last.item)return prev.map((x,i2)=>i2===prev.length-1?{...x,item:name}:x);return prev;}),0);
-              }}
-              title={name}
-              style={{
-                display:"flex",alignItems:"center",gap:5,
-                padding:"5px 10px",borderRadius:8,cursor:"pointer",
-                fontFamily:"inherit",border:"1.5px solid "+shop.accent+"55",
-                background:"white",transition:"all 0.13s",
-              }}
-              onMouseEnter={e=>{e.currentTarget.style.background=shop.accent+"12";e.currentTarget.style.borderColor=shop.accent;}}
-              onMouseLeave={e=>{e.currentTarget.style.background="white";e.currentTarget.style.borderColor=shop.accent+"55";}}>
-              <span style={{fontSize:10,fontWeight:900,background:shop.accent+"18",color:shop.accent,borderRadius:5,padding:"1px 6px",fontFamily:"DM Mono,monospace",letterSpacing:"0.04em"}}>{code}</span>
-              <span style={{fontSize:12,fontWeight:700,color:shop.accentText}}>{name}</span>
-            </button>
-          );
-        })}
-        <button type="button"
-          onClick={()=>setShowAddItemModal(true)}
-          style={{display:"flex",alignItems:"center",gap:4,padding:"5px 10px",borderRadius:8,cursor:"pointer",fontFamily:"inherit",border:"1.5px dashed "+shop.accent+"66",background:"transparent",color:shop.accent,fontSize:12,fontWeight:700,transition:"all 0.13s"}}
-          onMouseEnter={e=>e.currentTarget.style.background=shop.accent+"12"}
-          onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
-          ＋ Add Item
-        </button>
-      </div>
-
-      {/* ── Add Item mini-modal ── */}
-      {showAddItemModal&&(
-        <div style={{position:"fixed",inset:0,zIndex:90,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
-          onClick={()=>setShowAddItemModal(false)}>
-          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(4px)"}}/>
-          <div style={{position:"relative",background:"white",borderRadius:16,boxShadow:"0 24px 60px rgba(0,0,0,0.22)",width:"100%",maxWidth:360,zIndex:91,padding:24}}
-            onClick={e=>e.stopPropagation()}>
-            <p style={{margin:"0 0 16px",fontWeight:900,fontSize:15,color:"#0f172a"}}>🏷️ Add New Item</p>
-            <div style={{marginBottom:12}}>
-              <label style={lbl}>Item Name</label>
-              <input value={newItemName} onChange={e=>{setNewItemName(e.target.value);setNewItemCode(makeItemCode(e.target.value));}}
-                placeholder="e.g. Salwar Kameez"
-                style={{...inp}} onFocus={fo} onBlur={bl} autoFocus/>
-            </div>
-            <div style={{marginBottom:16}}>
-              <label style={lbl}>Short Code <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0,color:"#94a3b8"}}>— auto-generated, editable</span></label>
-              <input value={newItemCode} onChange={e=>setNewItemCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,8))}
-                placeholder="SAL"
-                style={{...inp,fontFamily:"DM Mono,monospace",fontWeight:800,fontSize:14,letterSpacing:"0.08em",color:shop.accent}}
-                onFocus={fo} onBlur={bl}/>
-              <p style={{margin:"4px 0 0",fontSize:10,color:"#94a3b8"}}>Shown on pill tab (max 8 chars)</p>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <button onClick={()=>{
-                if(!newItemName.trim()) return;
-                const item={name:newItemName.trim(),code:newItemCode||makeItemCode(newItemName.trim())};
-                if(onAddShopItem) onAddShopItem(item);
-                setNewItemName("");setNewItemCode("");setShowAddItemModal(false);
-              }}
-              style={{padding:"11px 0",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px "+shop.accent+"44"}}>
-                ✅ Save Item
-              </button>
-              <button onClick={()=>{setShowAddItemModal(false);setNewItemName("");setNewItemCode("");}}
-                style={{padding:"11px 0",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-                Cancel
-              </button>
-            </div>
-          </div>
+      {/* ITEM */}
+      <Divider title="Item / Product"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={lbl}>Item</label>
+          <select value={form.item} onChange={e=>set("item",e.target.value)} style={inp}>
+            <option value="">Select product…</option>
+            <option value="__custom__">✏️ Enter manually…</option>
+            {PRODUCTS.map(p=><option key={p.id} value={p.name}>{p.name}</option>)}
+          </select>
+          {useCustomItem&&<input value={form.itemCustom} onChange={e=>set("itemCustom",e.target.value)} placeholder="Type item name" style={{...inp,marginTop:8,border:"1px solid "+shop.accent}} autoFocus onFocus={fo} onBlur={bl}/>}
         </div>
-      )}
-
-      <div style={{marginBottom:16}}>
-        {/* column headers */}
-        <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 32px",gap:8,marginBottom:6,paddingLeft:2}}>
-          {["Item Name","Qty","Total Amount ("+shop.symbol+")",""].map((h,i)=>(
-            <span key={i} style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</span>
-          ))}
+        <div>
+          <label style={lbl}>Total Quantity</label>
+          <input type="number" min="1" value={form.qty} onChange={e=>set("qty",e.target.value)} placeholder="0" style={inp} onFocus={fo} onBlur={bl}/>
         </div>
-        {items.map((it,idx)=>{
-          return(
-            <div key={it.id} style={{marginBottom:8}}>
-              <div style={{display:"grid",gridTemplateColumns:"2fr 1fr 1fr 32px",gap:8,alignItems:"center"}}>
-                {/* Item name — free text, pill click sets it */}
-                <input value={it.item} onChange={e=>setItem(idx,"item",e.target.value)}
-                  placeholder="Item name…"
-                  style={{...inp,fontSize:12,padding:"8px 10px"}} onFocus={fo} onBlur={bl}/>
-                {/* Qty */}
-                <input type="number" min="1" value={it.qty} onChange={e=>setItem(idx,"qty",e.target.value)}
-                  placeholder="0" style={{...inp,fontSize:12,padding:"8px 10px",textAlign:"center"}} onFocus={fo} onBlur={bl}/>
-                {/* Total amount */}
-                <input type="number" value={it.total} onChange={e=>setItem(idx,"total",e.target.value)}
-                  placeholder="0.00" style={{...inp,fontSize:12,padding:"8px 10px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
-                {/* Remove */}
-                <button onClick={()=>removeItem(idx)}
-                  disabled={items.length===1}
-                  style={{width:28,height:28,borderRadius:7,border:"1px solid #fecaca",background:items.length===1?"#f8fafc":"#fff5f5",color:items.length===1?"#cbd5e1":"#dc2626",cursor:items.length===1?"not-allowed":"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:13,fontWeight:900,flexShrink:0}}>
-                  ×
-                </button>
-              </div>
-            </div>
-          );
-        })}
-        {/* Add item row */}
-        <button onClick={addItem}
-          style={{width:"100%",padding:"8px 0",borderRadius:10,border:"2px dashed "+shop.accent+"55",
-            background:shop.accentBg,color:shop.accent,fontWeight:700,fontSize:13,cursor:"pointer",
-            fontFamily:"inherit",display:"flex",alignItems:"center",justifyContent:"center",gap:6,
-            marginBottom:16,transition:"all 0.15s"}}
-          onMouseEnter={e=>{e.currentTarget.style.borderColor=shop.accent;e.currentTarget.style.background=shop.accent+"18";}}
-          onMouseLeave={e=>{e.currentTarget.style.borderColor=shop.accent+"55";e.currentTarget.style.background=shop.accentBg;}}>
-          ＋ Add Another Row
-        </button>
-
-        {/* ── SUMMARY BLOCK ── */}
-        <div style={{background:"#f8fafc",borderRadius:12,border:"1px solid #e2e8f0",overflow:"hidden"}}>
-          {/* Gross Total — auto calculated */}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 16px",borderBottom:"1px solid #e2e8f0"}}>
-            <span style={{fontSize:13,color:"#374151",fontWeight:600}}>Gross Total</span>
-            <span style={{fontSize:13,fontWeight:800,color:"#0f172a",fontFamily:"DM Mono,monospace"}}>{shop.symbol}{grossTotal.toLocaleString()}</span>
-          </div>
-          {/* GST */}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 16px",borderBottom:"1px solid #e2e8f0",gap:16}}>
-            <span style={{fontSize:13,color:"#374151",fontWeight:600,whiteSpace:"nowrap"}}>GST</span>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <input type="number" value={form.gst} onChange={e=>set("gst",e.target.value)}
-                placeholder="0.00"
-                style={{width:120,border:"1px solid #e2e8f0",borderRadius:7,padding:"5px 10px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",textAlign:"right",color:"#374151",background:"white"}}
-                onFocus={fo} onBlur={bl}/>
-              {gstAmt>0&&<span style={{fontSize:12,fontWeight:700,color:"#374151",fontFamily:"DM Mono,monospace",whiteSpace:"nowrap"}}>{shop.symbol}{gstAmt.toLocaleString()}</span>}
-            </div>
-          </div>
-          {/* Other Charges */}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 16px",borderBottom:"1px solid #e2e8f0",gap:16}}>
-            <span style={{fontSize:13,color:"#374151",fontWeight:600,whiteSpace:"nowrap"}}>Other Charges</span>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <input type="number" value={form.otherCharges} onChange={e=>set("otherCharges",e.target.value)}
-                placeholder="0.00"
-                style={{width:120,border:"1px solid #e2e8f0",borderRadius:7,padding:"5px 10px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",textAlign:"right",color:"#374151",background:"white"}}
-                onFocus={fo} onBlur={bl}/>
-              {otherAmt>0&&<span style={{fontSize:12,fontWeight:700,color:"#374151",fontFamily:"DM Mono,monospace",whiteSpace:"nowrap"}}>{shop.symbol}{otherAmt.toLocaleString()}</span>}
-            </div>
-          </div>
-          {/* Adjusting Amount */}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 16px",borderBottom:"2px solid #e2e8f0",gap:16}}>
-            <div>
-              <span style={{fontSize:13,color:"#374151",fontWeight:600,whiteSpace:"nowrap"}}>Adjusting Amount</span>
-              <p style={{margin:"1px 0 0",fontSize:10,color:"#94a3b8"}}>use negative value for discount</p>
-            </div>
-            <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <input type="number" value={form.adjustingAmt} onChange={e=>set("adjustingAmt",e.target.value)}
-                placeholder="0.00"
-                style={{width:120,border:"1px solid #e2e8f0",borderRadius:7,padding:"5px 10px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",textAlign:"right",color:"#374151",background:"white"}}
-                onFocus={fo} onBlur={bl}/>
-              {adjustAmt!==0&&<span style={{fontSize:12,fontWeight:700,color:adjustAmt<0?"#dc2626":"#374151",fontFamily:"DM Mono,monospace",whiteSpace:"nowrap"}}>{adjustAmt<0?"-"+shop.symbol+Math.abs(adjustAmt).toLocaleString():shop.symbol+adjustAmt.toLocaleString()}</span>}
-            </div>
-          </div>
-          {/* Net Amount */}
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:shop.accentBg}}>
-            <span style={{fontSize:15,fontWeight:900,color:shop.accentText}}>Net Amount</span>
-            <span style={{fontSize:18,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace"}}>{shop.symbol}{netAmount.toLocaleString()}</span>
-          </div>
+        <div>
+          <label style={lbl}>Total Amount ({shop.symbol})</label>
+          <input type="number" value={form.total} onChange={e=>set("total",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+        <div>
+          <label style={{...lbl,color:"#94a3b8"}}>Unit Cost ({shop.symbol}) <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0}}>— auto</span></label>
+          <input readOnly value={unitCost} placeholder="Auto-calculated" style={inpGray}/>
+        </div>
+        <div>
+          <label style={lbl}>GST / VAT ({shop.currency==="INR"?"%":"£"})</label>
+          <input type="number" value={form.gst} onChange={e=>set("gst",e.target.value)} placeholder="0" style={inp} onFocus={fo} onBlur={bl}/>
         </div>
       </div>
 
@@ -4334,7 +3509,7 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,shopItems=[],onA
 
       {/* ACTIONS */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...form,items,item:items[0]?.itemCustom||items[0]?.item||"",qty:items[0]?.qty||"",total:netAmount,grossTotal,gst:gstAmt,otherCharges:otherAmt,adjustingAmt:adjustAmt})}
+        <button onClick={()=>onSave(form)}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Purchase
         </button>
@@ -4584,18 +3759,9 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const [showNewCust,setShowNewCust]=useState(false);
   const [showAddItem,setShowAddItem]=useState(false);
   const [newItemInput,setNewItemInput]=useState("");
-  const [newItemCode,setNewItemCode]=useState("");
   /* Customer autocomplete */
   const [custAcOpen,setCustAcOpen]=useState(false);
   const [custAcMatches,setCustAcMatches]=useState([]);
-
-  /* Auto-generate short code from name: take first letter of each word, up to 5 chars */
-  const makeItemCode=(name)=>{
-    if(!name) return "";
-    const words=name.trim().split(/\s+/);
-    if(words.length===1) return name.replace(/[^A-Za-z0-9]/g,"").slice(0,5).toUpperCase();
-    return words.map(w=>w[0]||"").join("").replace(/[^A-Z0-9]/gi,"").slice(0,5).toUpperCase();
-  };
 
   const inp={
     width:"100%",border:"1px solid #e2e8f0",borderRadius:9,
@@ -4811,103 +3977,43 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         <div style={{gridColumn:"1/-1"}}>
           <label style={lbl}>Item / Product</label>
-          {/* ── Item pill tabs ── */}
-          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8,alignItems:"center"}}>
-            {shopItems.map((itm,i)=>{
-              const name=itm.name||itm;
-              const code=itm.code||(name.replace(/[^A-Za-z]/g,"").slice(0,5).toUpperCase());
-              const isActive=form.item===name;
-              return(
-                <button key={i} type="button"
-                  onClick={()=>set("item",name)}
-                  title={name}
+          {/* Quick-select saved item tags */}
+          {shopItems.length>0&&(
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
+              {shopItems.map(itm=>(
+                <button key={itm} type="button"
+                  onClick={()=>set("item",itm)}
                   style={{
-                    display:"flex",alignItems:"center",gap:5,
-                    padding:"5px 10px",borderRadius:8,cursor:"pointer",
-                    fontFamily:"inherit",border:"1.5px solid",transition:"all 0.13s",
-                    background:isActive?shop.accent:"white",
-                    borderColor:isActive?shop.accent:shop.accent+"55",
-                    boxShadow:isActive?"0 2px 8px "+shop.accent+"44":"none",
-                  }}>
-                  <span style={{
-                    fontSize:10,fontWeight:900,
-                    background:isActive?"rgba(255,255,255,0.25)":shop.accent+"18",
-                    color:isActive?"white":shop.accent,
-                    borderRadius:5,padding:"1px 6px",
-                    fontFamily:"DM Mono,monospace",letterSpacing:"0.04em",
-                  }}>{code}</span>
-                  <span style={{fontSize:12,fontWeight:700,color:isActive?"white":shop.accentText}}>{name}</span>
-                </button>
-              );
-            })}
-            {/* ＋ Add new item button */}
-            <button type="button"
-              onClick={()=>setShowAddItem(true)}
-              style={{
-                display:"flex",alignItems:"center",gap:4,
-                padding:"5px 10px",borderRadius:8,cursor:"pointer",
-                fontFamily:"inherit",border:"1.5px dashed "+shop.accent+"66",
-                background:"transparent",color:shop.accent,
-                fontSize:12,fontWeight:700,transition:"all 0.13s",
-              }}
-              onMouseEnter={e=>{e.currentTarget.style.background=shop.accent+"12";}}
-              onMouseLeave={e=>{e.currentTarget.style.background="transparent";}}>
-              ＋ Add Item
-            </button>
-          </div>
-          {/* Manual type override */}
-          <input
-            value={form.item}
-            onChange={e=>set("item",e.target.value)}
-            placeholder="Or type item name…"
-            style={{...inp,fontSize:12}} onFocus={fo} onBlur={bl}/>
-
-          {/* ── Add Item mini-modal ── */}
-          {showAddItem&&(
-            <div style={{position:"fixed",inset:0,zIndex:90,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
-              onClick={()=>setShowAddItem(false)}>
-              <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(4px)"}}/>
-              <div style={{position:"relative",background:"white",borderRadius:16,boxShadow:"0 24px 60px rgba(0,0,0,0.22)",width:"100%",maxWidth:360,zIndex:91,padding:24}}
-                onClick={e=>e.stopPropagation()}>
-                <p style={{margin:"0 0 16px",fontWeight:900,fontSize:15,color:"#0f172a"}}>🏷️ Add New Item</p>
-                <div style={{marginBottom:12}}>
-                  <label style={lbl}>Item Name</label>
-                  <input value={newItemInput} onChange={e=>{
-                    setNewItemInput(e.target.value);
-                    setNewItemCode(makeItemCode(e.target.value));
-                  }}
-                  placeholder="e.g. Salwar Kameez"
-                  style={{...inp,marginBottom:8}}
-                  onFocus={fo} onBlur={bl}
-                  autoFocus/>
-                </div>
-                <div style={{marginBottom:16}}>
-                  <label style={lbl}>Short Code <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0,color:"#94a3b8"}}>— auto-generated, editable</span></label>
-                  <input value={newItemCode} onChange={e=>setNewItemCode(e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,8))}
-                    placeholder="SAL"
-                    style={{...inp,fontFamily:"DM Mono,monospace",fontWeight:800,fontSize:14,letterSpacing:"0.08em",color:shop.accent}}
-                    onFocus={fo} onBlur={bl}/>
-                  <p style={{margin:"4px 0 0",fontSize:10,color:"#94a3b8"}}>This code will appear on the pill tab (max 8 chars)</p>
-                </div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  <button onClick={()=>{
-                    if(!newItemInput.trim()) return;
-                    const item={name:newItemInput.trim(), code:newItemCode||makeItemCode(newItemInput.trim())};
-                    if(onAddShopItem) onAddShopItem(item);
-                    set("item",item.name);
-                    setNewItemInput("");setNewItemCode("");setShowAddItem(false);
-                  }}
-                  style={{padding:"11px 0",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px "+shop.accent+"44"}}>
-                    ✅ Save Item
-                  </button>
-                  <button onClick={()=>{setShowAddItem(false);setNewItemInput("");setNewItemCode("");}}
-                    style={{padding:"11px 0",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-                    Cancel
-                  </button>
-                </div>
-              </div>
+                    padding:"5px 14px",borderRadius:999,fontSize:12,fontWeight:700,
+                    cursor:"pointer",fontFamily:"inherit",border:"1px solid",
+                    transition:"all 0.15s",
+                    background:form.item===itm?shop.accent:"white",
+                    color:form.item===itm?"white":shop.accentText,
+                    borderColor:form.item===itm?shop.accent:shop.accent+"55",
+                  }}>{itm}</button>
+              ))}
             </div>
           )}
+          {/* Type item name + save button */}
+          <div style={{display:"flex",gap:6}}>
+            <input
+              value={form.item}
+              onChange={e=>set("item",e.target.value)}
+              placeholder="Type item name…"
+              style={{...inp,flex:1}} onFocus={fo} onBlur={bl}/>
+            <button type="button"
+              title="Save item for quick access next time"
+              onClick={()=>{
+                if(form.item.trim()&&onAddShopItem){
+                  onAddShopItem(form.item.trim());
+                }
+              }}
+              style={{padding:"9px 14px",borderRadius:9,border:"1px solid "+shop.accent+"66",
+                background:shop.accentBg,color:shop.accentText,fontSize:12,fontWeight:700,
+                cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+              ＋ Save
+            </button>
+          </div>
         </div>
         <div>
           <label style={lbl}>Quantity</label>
@@ -5074,180 +4180,6 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
 /* =========================================================
    INLINE PANEL COMPONENTS
    ========================================================= */
-
-/* ══════════════════════════════════════════════════════
-   STOCK TRACKER
-══════════════════════════════════════════════════════ */
-const StockTracker=({shop,shopId,shopItems=[],sales=[],purch=[]})=>{
-  const [hovRow,setHovRow]=useState(null);
-
-  const stockRows=shopItems.map(itm=>{
-    const name=itm.name||itm;
-    const code=itm.code||(name.replace(/[^A-Za-z]/g,"").slice(0,5).toUpperCase());
-
-    // Purchased qty: sum across all purchase records
-    let purchQty=0;
-    purch.forEach(p=>{
-      if(p.items&&p.items.length>0){
-        p.items.forEach(pi=>{
-          const pname=(pi.itemCustom||pi.item||"").toLowerCase();
-          if(pname===name.toLowerCase()) purchQty+=Number(pi.qty)||0;
-        });
-      } else {
-        const pname=(p.item||p.itemCustom||"").toLowerCase();
-        if(pname===name.toLowerCase()) purchQty+=Number(p.qty)||0;
-      }
-    });
-
-    // Sold qty: sum across all sales records
-    let soldQty=0;
-    sales.forEach(s=>{
-      const sname=(s.item||s.itemCustom||"").toLowerCase();
-      if(sname===name.toLowerCase()) soldQty+=Number(s.qty)||0;
-    });
-
-    const inStock=purchQty-soldQty;
-    return {name,code,purchQty,soldQty,inStock};
-  });
-
-  const totalPurch=stockRows.reduce((a,r)=>a+r.purchQty,0);
-  const totalSold=stockRows.reduce((a,r)=>a+r.soldQty,0);
-  const totalStock=stockRows.reduce((a,r)=>a+r.inStock,0);
-  const outCount=stockRows.filter(r=>r.inStock<=0).length;
-  const lowCount=stockRows.filter(r=>r.inStock>0&&r.inStock<=5).length;
-
-  return(
-    <div>
-      {/* Header */}
-      <div style={{marginBottom:20}}>
-        <h2 style={{margin:"0 0 2px",fontSize:20,fontWeight:800,color:"#0f172a"}}>Stock Tracker</h2>
-        <p style={{margin:0,fontSize:12,color:"#94a3b8"}}>
-          Live stock: purchases minus sales · {shopItems.length} item{shopItems.length!==1?"s":""}
-        </p>
-      </div>
-
-      {/* Summary KPI row */}
-      {shopItems.length>0&&(
-        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
-          {[
-            {label:"Total Purchased",value:totalPurch,color:"#1d4ed8",bg:"#eff6ff",border:"#bfdbfe",icon:"📦"},
-            {label:"Total Sold",     value:totalSold, color:"#059669",bg:"#f0fdf4",border:"#bbf7d0",icon:"🛒"},
-            {label:"In Stock",       value:totalStock,color:"#0f172a",bg:"#f8fafc",border:"#e2e8f0",icon:"🏪"},
-            {label:"Alerts",         value:outCount+" out · "+lowCount+" low",color:outCount>0?"#dc2626":"#d97706",bg:outCount>0?"#fef2f2":"#fffbeb",border:outCount>0?"#fca5a5":"#fde68a",icon:"⚠️"},
-          ].map((k,i)=>(
-            <div key={i} style={{background:k.bg,border:"1px solid "+k.border,borderRadius:12,padding:"14px 16px"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
-                <span style={{fontSize:18}}>{k.icon}</span>
-                <span style={{fontSize:11,fontWeight:700,color:k.color,textTransform:"uppercase",letterSpacing:"0.05em"}}>{k.label}</span>
-              </div>
-              <p style={{margin:0,fontSize:22,fontWeight:900,color:k.color,fontFamily:"DM Mono,monospace"}}>{k.value}</p>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {shopItems.length===0?(
-        <div style={{background:"white",borderRadius:16,border:"1px solid #f1f5f9",padding:"48px 24px",textAlign:"center",boxShadow:"0 2px 12px rgba(0,0,0,0.04)"}}>
-          <div style={{fontSize:40,marginBottom:12}}>🏷️</div>
-          <p style={{margin:"0 0 6px",fontWeight:800,fontSize:15,color:"#374151"}}>No items set up yet</p>
-          <p style={{margin:0,fontSize:13,color:"#94a3b8"}}>
-            Add items via <strong>New Sale</strong> or <strong>New Purchase</strong> using the <strong>＋ Add Item</strong> button. Items are shared across both forms.
-          </p>
-        </div>
-      ):(
-        <div style={{background:"white",borderRadius:16,border:"1px solid #f1f5f9",overflow:"hidden",boxShadow:"0 2px 12px rgba(0,0,0,0.04)"}}>
-          <table style={{width:"100%",borderCollapse:"collapse"}}>
-            <thead>
-              <tr style={{background:"#f8fafc"}}>
-                {["Code","Item Name","Purchased","Sold","In Stock","Status"].map((h,i)=>(
-                  <th key={h} style={{
-                    padding:"11px 16px",
-                    textAlign:i>=2?"center":"left",
-                    fontSize:11,fontWeight:800,color:"#94a3b8",
-                    textTransform:"uppercase",letterSpacing:"0.06em",
-                    borderBottom:"1px solid #f1f5f9",whiteSpace:"nowrap",
-                  }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {stockRows.map((row,i)=>{
-                const isH=hovRow===row.code;
-                const outOfStock=row.inStock<=0;
-                const stockLow=row.inStock>0&&row.inStock<=5;
-                const statusBg=outOfStock?"#fef2f2":stockLow?"#fffbeb":"#f0fdf4";
-                const statusColor=outOfStock?"#dc2626":stockLow?"#d97706":"#15803d";
-                const statusLabel=outOfStock?"Out of Stock":stockLow?"Low Stock":"In Stock";
-                const statusIcon=outOfStock?"🔴":stockLow?"🟡":"🟢";
-                return(
-                  <tr key={row.code}
-                    onMouseEnter={()=>setHovRow(row.code)}
-                    onMouseLeave={()=>setHovRow(null)}
-                    style={{
-                      borderBottom:i<stockRows.length-1?"1px solid #f8fafc":"none",
-                      background:outOfStock?"#fff5f5":isH?"#fafafa":"white",
-                      transition:"background 0.12s",
-                    }}>
-                    <td style={{padding:"14px 16px"}}>
-                      <span style={{
-                        display:"inline-block",
-                        background:shop.accent+"18",color:shop.accent,
-                        fontFamily:"DM Mono,monospace",fontWeight:900,fontSize:12,
-                        padding:"3px 10px",borderRadius:6,letterSpacing:"0.06em",
-                      }}>{row.code}</span>
-                    </td>
-                    <td style={{padding:"14px 16px",fontWeight:700,fontSize:14,color:"#0f172a"}}>{row.name}</td>
-                    <td style={{padding:"14px 16px",textAlign:"center"}}>
-                      <div style={{display:"inline-flex",flexDirection:"column",alignItems:"center",gap:1}}>
-                        <span style={{fontSize:20,fontWeight:900,color:"#1d4ed8",fontFamily:"DM Mono,monospace",lineHeight:1}}>{row.purchQty}</span>
-                        <span style={{fontSize:9,fontWeight:700,color:"#93c5fd",textTransform:"uppercase",letterSpacing:"0.05em"}}>purchased</span>
-                      </div>
-                    </td>
-                    <td style={{padding:"14px 16px",textAlign:"center"}}>
-                      <div style={{display:"inline-flex",flexDirection:"column",alignItems:"center",gap:1}}>
-                        <span style={{fontSize:20,fontWeight:900,color:"#059669",fontFamily:"DM Mono,monospace",lineHeight:1}}>{row.soldQty}</span>
-                        <span style={{fontSize:9,fontWeight:700,color:"#6ee7b7",textTransform:"uppercase",letterSpacing:"0.05em"}}>sold</span>
-                      </div>
-                    </td>
-                    <td style={{padding:"14px 16px",textAlign:"center"}}>
-                      <div style={{display:"inline-flex",flexDirection:"column",alignItems:"center",gap:1}}>
-                        <span style={{fontSize:24,fontWeight:900,color:statusColor,fontFamily:"DM Mono,monospace",lineHeight:1}}>{row.inStock}</span>
-                        <span style={{fontSize:9,fontWeight:700,color:statusColor+"99",textTransform:"uppercase",letterSpacing:"0.05em"}}>remaining</span>
-                      </div>
-                    </td>
-                    <td style={{padding:"14px 16px",textAlign:"center"}}>
-                      <span style={{
-                        display:"inline-flex",alignItems:"center",gap:5,
-                        background:statusBg,color:statusColor,fontWeight:700,fontSize:11,
-                        padding:"4px 12px",borderRadius:999,border:"1px solid "+statusColor+"33",
-                      }}>
-                        {statusIcon} {statusLabel}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          {/* Footer totals */}
-          <div style={{
-            display:"flex",gap:24,padding:"12px 20px",
-            borderTop:"1px solid #f1f5f9",background:"#f8fafc",flexWrap:"wrap",
-          }}>
-            <span style={{fontSize:12,color:"#64748b"}}><strong style={{color:"#1d4ed8"}}>{totalPurch}</strong> total purchased</span>
-            <span style={{fontSize:12,color:"#64748b"}}><strong style={{color:"#059669"}}>{totalSold}</strong> total sold</span>
-            <span style={{fontSize:12,color:"#64748b"}}><strong style={{color:"#0f172a"}}>{totalStock}</strong> total in stock</span>
-            {(outCount>0||lowCount>0)&&(
-              <span style={{fontSize:12,color:"#dc2626",marginLeft:"auto"}}>
-                ⚠️ {outCount>0?outCount+" out of stock":""}{outCount>0&&lowCount>0?" · ":""}{lowCount>0?lowCount+" low":""}
-              </span>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-};
 
 /* ── CustomerEditModal — proper component so hooks are always called at top level ── */
 const CustomerEditModal=({customer,shop,onSave,onClose})=>{
@@ -6363,29 +5295,10 @@ export default function App(){
   const [users,setUsers]=useState(INITIAL_USERS);
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
-  const [purchData,setPurchData]=useState(()=>{
-    try{const s=localStorage.getItem("ros_purchData");return s?JSON.parse(s):{"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
-    catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
-  });
-  const [logData,setLogData]=useState(()=>{
-    try{const s=localStorage.getItem("ros_logData");return s?JSON.parse(s):{"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
-    catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
-  });
   const [customers,setCustomers]=useState([]);
   const [shopItems,setShopItems]=useState(()=>{
-    try{
-      const s=localStorage.getItem("ros_shopItems");
-      if(!s) return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
-      const parsed=JSON.parse(s);
-      // Migrate old flat-string format to {name,code} objects
-      const migrated={};
-      Object.keys(parsed).forEach(k=>{
-        migrated[k]=(parsed[k]||[]).map(it=>
-          typeof it==="string" ? {name:it, code:it.replace(/[^A-Za-z]/g,"").slice(0,5).toUpperCase()} : it
-        );
-      });
-      return migrated;
-    }catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
+    try{const s=localStorage.getItem("ros_shopItems");return s?JSON.parse(s):{"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
+    catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
   });
   const saveShopItems=(updated)=>{
     setShopItems(updated);
@@ -6393,16 +5306,6 @@ export default function App(){
   };
 
   const updateSalesData=setSalesData;
-
-  const savePurchData=(updated)=>{
-    setPurchData(updated);
-    try{localStorage.setItem("ros_purchData",JSON.stringify(updated));}catch{}
-  };
-
-  const saveLogData=(updated)=>{
-    setLogData(updated);
-    try{localStorage.setItem("ros_logData",JSON.stringify(updated));}catch{}
-  };
 
   // Load from Supabase on mount - Supabase is single source of truth
   useEffect(()=>{
@@ -6442,7 +5345,7 @@ export default function App(){
   const activeShop = shop || (user.role==="staff" && allowedShops.length===1 ? allowedShops[0] : null);
 
   if(activeShop&&allowedShops.includes(activeShop))
-    return <ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={updateSalesData} customers={customers} setCustomers={setCustomers} shopItems={shopItems} saveShopItems={saveShopItems} purchData={purchData} savePurchData={savePurchData} logData={logData} saveLogData={saveLogData}/>;
+    return <ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={updateSalesData} customers={customers} setCustomers={setCustomers} shopItems={shopItems} saveShopItems={saveShopItems}/>;
 
   return(
     <>
