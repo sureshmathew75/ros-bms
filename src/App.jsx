@@ -1805,7 +1805,7 @@ return(
       {/* ── NEW SHIPMENT MODAL ── */}
       {modal==="new-shipment"&&(
         <Modal title="🚚 New Shipment" onClose={()=>setModal(null)} accent={shop.accent}>
-          <NewShipmentForm shopId={shopId} shop={shop} purch={purch} onSave={(form)=>{
+          <NewShipmentForm shopId={shopId} shop={shop} purch={purch} logs={logs} onSave={(form)=>{
             const newShipment={...form, id:form.shipmentId, savedAt:new Date().toISOString()};
             const updated={...(logData||{}),[shopId]:[newShipment,...((logData||{})[shopId]||[])]};
             if(saveLogData) saveLogData(updated);
@@ -3730,7 +3730,7 @@ const EditShipmentForm=({shopId,shop,shipment,purch,onSave,onClose})=>{
   );
 };
 
-const NewShipmentForm=({shopId,shop,purch,onSave,onClose})=>{
+const NewShipmentForm=({shopId,shop,purch,logs=[],onSave,onClose})=>{
   const [form,setForm]=useState({
     date:         new Date().toISOString().slice(0,10),
     shipmentId:   "SHP-"+String(Math.floor(Math.random()*9000)+1000),
@@ -3813,6 +3813,24 @@ const NewShipmentForm=({shopId,shop,purch,onSave,onClose})=>{
             <option value="">Select purchase…</option>
             {purch.map(p=><option key={p.id} value={p.id}>{p.id}{p.sup?" — "+p.sup:p.supplier?" — "+p.supplier:""}</option>)}
           </select>
+          {/* Show existing shipments for this PO */}
+          {form.purchaseId&&(()=>{
+            const existing=logs.filter(l=>l.purchaseId===form.purchaseId);
+            if(existing.length===0) return null;
+            return(
+              <div style={{marginTop:8,background:"#eff6ff",borderRadius:8,padding:"8px 12px",border:"1px solid #bfdbfe"}}>
+                <p style={{margin:"0 0 4px",fontSize:10,fontWeight:800,color:"#1d4ed8",textTransform:"uppercase",letterSpacing:"0.05em"}}>
+                  {existing.length} existing shipment{existing.length>1?"s":""} for this PO
+                </p>
+                {existing.map(s=>(
+                  <p key={s.id} style={{margin:0,fontSize:11,color:"#1e40af",fontFamily:"DM Mono,monospace"}}>
+                    {s.id} · {s.serviceCustom||s.service||"—"} · {s.status}
+                  </p>
+                ))}
+                <p style={{margin:"4px 0 0",fontSize:10,color:"#3b82f6",fontWeight:600}}>You can add another shipment for the same PO</p>
+              </div>
+            );
+          })()}
         </div>
         <div>
           <label style={lbl}>Supplier</label>
