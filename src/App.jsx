@@ -646,6 +646,10 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [selPurch,setSelPurch]=useState(null);
   const [editPurch,setEditPurch]=useState(null);
   const [confirmDeletePurch,setConfirmDeletePurch]=useState(false);
+  // shipment view/edit/delete
+  const [selShip,setSelShip]=useState(null);
+  const [editShip,setEditShip]=useState(null);
+  const [confirmDeleteShip,setConfirmDeleteShip]=useState(false);
   const [selCustomer,setSelCustomer]=useState(null);
   const [openMenu,setOpenMenu]=useState(null);
   const [invoiceRow,setInvoiceRow]=useState(null);
@@ -1625,7 +1629,14 @@ return(
 
           {/* ─── LOGISTICS ─── */}
           {tab==="logistics"&&(
-            <LogisticsPanel logs={logs} onNewShipment={()=>setModal("new-shipment")} shop={shop}/>
+            <LogisticsPanel
+              logs={logs}
+              onNewShipment={()=>setModal("new-shipment")}
+              shop={shop}
+              onViewShipment={(s)=>setSelShip(s)}
+              onEditShipment={(s)=>{setEditShip(s);setModal("edit-shipment");}}
+              onDeleteShipment={(s)=>{setSelShip(s);setConfirmDeleteShip(true);}}
+            />
           )}
 
           {/* ─── AGENTS ─── */}
@@ -1801,6 +1812,124 @@ return(
             setModal(null);
           }} onClose={()=>setModal(null)}/>
         </Modal>
+      )}
+
+      {/* ── EDIT SHIPMENT MODAL ── */}
+      {modal==="edit-shipment"&&editShip&&(
+        <Modal title={"✏️ Edit Shipment — "+editShip.id} onClose={()=>{setModal(null);setEditShip(null);}} accent={shop.accent}>
+          <EditShipmentForm
+            shopId={shopId} shop={shop} shipment={editShip} purch={purch}
+            onSave={(updated)=>{
+              const list=(logData||{})[shopId]||[];
+              const newList=list.map(x=>x.id===updated.id?{...x,...updated}:x);
+              if(saveLogData) saveLogData({...(logData||{}),[shopId]:newList});
+              setModal(null);setEditShip(null);
+            }}
+            onClose={()=>{setModal(null);setEditShip(null);}}
+          />
+        </Modal>
+      )}
+
+      {/* ── VIEW SHIPMENT MODAL ── */}
+      {selShip&&!confirmDeleteShip&&(
+        <div style={{position:"fixed",inset:0,zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
+          onClick={()=>setSelShip(null)}>
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(4px)"}}/>
+          <div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.22)",width:"100%",maxWidth:600,maxHeight:"90vh",overflowY:"auto",zIndex:61}}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"18px 24px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"10",borderRadius:"20px 20px 0 0"}}>
+              <div>
+                <h2 style={{margin:0,fontSize:17,fontWeight:900,color:"#0f172a"}}>Shipment Details</h2>
+                <p style={{margin:"3px 0 0",fontSize:11,color:"#94a3b8",fontFamily:"DM Mono,monospace"}}>{selShip.id} · {selShip.date}</p>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>{setEditShip(selShip);setSelShip(null);setModal("edit-shipment");}}
+                  style={{padding:"7px 16px",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px "+shop.accent+"44"}}>
+                  ✏️ Edit
+                </button>
+                {user?.role!=="staff"&&(
+                  <button onClick={()=>setConfirmDeleteShip(true)}
+                    style={{padding:"7px 14px",borderRadius:9,border:"1px solid #fca5a5",background:"#fff5f5",color:"#dc2626",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                    🗑 Delete
+                  </button>
+                )}
+                <button onClick={()=>setSelShip(null)}
+                  style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+              </div>
+            </div>
+            <div style={{padding:"20px 24px"}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:16}}>
+                {[
+                  {l:"Shipment ID",   v:selShip.id,                              ic:"🔖"},
+                  {l:"Date",          v:selShip.date,                            ic:"📅"},
+                  {l:"Status",        v:selShip.status||"—",                     ic:"📋"},
+                  {l:"Supplier",      v:selShip.supplier||"—",                   ic:"🏭"},
+                  {l:"Courier",       v:selShip.serviceCustom||selShip.service||"—",ic:"🚚"},
+                  {l:"Tracking No",   v:selShip.trackingNo||"—",                 ic:"🔍"},
+                  {l:"Linked PO",     v:selShip.purchaseId||"—",                 ic:"📦"},
+                  {l:"Agent",         v:selShip.agentCustom||selShip.agent||"—", ic:"🤝"},
+                  {l:"Received Date", v:selShip.receivedDate||"—",               ic:"📬"},
+                ].map((f,i)=>(
+                  <div key={i} style={{background:"#f8fafc",borderRadius:10,padding:"10px 14px",border:"1px solid #f1f5f9"}}>
+                    <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>{f.ic} {f.l}</p>
+                    <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a",wordBreak:"break-word"}}>{f.v}</p>
+                  </div>
+                ))}
+              </div>
+              {selShip.deliveryAddr&&(
+                <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 14px",marginBottom:12,border:"1px solid #f1f5f9"}}>
+                  <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>📍 Delivery Address</p>
+                  <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{selShip.deliveryAddr}</p>
+                </div>
+              )}
+              {selShip.remarks&&(
+                <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"10px 14px",marginBottom:12}}>
+                  <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#92400e",textTransform:"uppercase",letterSpacing:"0.06em"}}>📝 Remarks</p>
+                  <p style={{margin:0,fontSize:13,color:"#92400e"}}>{selShip.remarks}</p>
+                </div>
+              )}
+              <div style={{display:"flex",justifyContent:"flex-end",marginTop:4}}>
+                <button onClick={()=>setSelShip(null)}
+                  style={{padding:"10px 28px",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
+                  Close
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── DELETE SHIPMENT CONFIRM ── */}
+      {selShip&&confirmDeleteShip&&(
+        <div style={{position:"fixed",inset:0,zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
+          onClick={()=>{setConfirmDeleteShip(false);setSelShip(null);}}>
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(4px)"}}/>
+          <div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.22)",width:"100%",maxWidth:420,zIndex:61}}
+            onClick={e=>e.stopPropagation()}>
+            <div style={{padding:28,textAlign:"center"}}>
+              <div style={{fontSize:48,marginBottom:12}}>⚠️</div>
+              <p style={{margin:"0 0 6px",fontWeight:900,fontSize:17,color:"#991b1b"}}>Delete Shipment?</p>
+              <p style={{margin:"0 0 20px",fontSize:13,color:"#64748b",lineHeight:1.6}}>
+                Permanently delete <strong style={{color:"#0f172a"}}>{selShip.id}</strong>. This cannot be undone.
+              </p>
+              <div style={{display:"flex",gap:10}}>
+                <button onClick={()=>{setConfirmDeleteShip(false);setSelShip(null);}}
+                  style={{flex:1,padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
+                  ← Cancel
+                </button>
+                <button onClick={()=>{
+                    const list=(logData||{})[shopId]||[];
+                    const newList=list.filter(x=>x.id!==selShip.id);
+                    if(saveLogData) saveLogData({...(logData||{}),[shopId]:newList});
+                    setConfirmDeleteShip(false);setSelShip(null);
+                  }}
+                  style={{flex:1,padding:"12px 0",borderRadius:11,border:"none",background:"#dc2626",color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px rgba(220,38,38,0.35)"}}>
+                  🗑 Yes, Delete
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── NEW PURCHASE MODAL ── */}
@@ -3449,6 +3578,146 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
         <button onClick={()=>onSave({...form,id:sale.id,ful:form.status,pay:form.payBy,rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn})}
+          style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
+          💾 Save Changes
+        </button>
+        <button onClick={onClose}
+          style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+};
+
+/* ══════════════════════════════════════════════════════
+   EDIT SHIPMENT FORM
+══════════════════════════════════════════════════════ */
+const EditShipmentForm=({shopId,shop,shipment,purch,onSave,onClose})=>{
+  const [form,setForm]=useState({
+    date:         shipment.date||new Date().toISOString().slice(0,10),
+    shipmentId:   shipment.id||shipment.shipmentId||"",
+    purchaseId:   shipment.purchaseId||"",
+    supplier:     shipment.supplier||"",
+    deliveryAddr: shipment.deliveryAddr||"",
+    service:      shipment.service||"",
+    serviceCustom:shipment.serviceCustom||"",
+    agent:        shipment.agent||"",
+    agentCustom:  shipment.agentCustom||"",
+    trackingNo:   shipment.trackingNo||"",
+    cost:         shipment.cost||"",
+    status:       shipment.status||"PENDING",
+    receivedDate: shipment.receivedDate||"",
+    remarks:      shipment.remarks||"",
+  });
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+
+  const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white",transition:"border-color 0.15s"};
+  const fo=e=>e.target.style.borderColor=shop.accent;
+  const bl=e=>e.target.style.borderColor="#e2e8f0";
+  const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
+  const Divider=({title})=>(
+    <div style={{display:"flex",alignItems:"center",gap:8,margin:"6px 0 12px"}}>
+      <div style={{height:1,flex:1,background:"#f1f5f9"}}/>
+      <span style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap"}}>{title}</span>
+      <div style={{height:1,flex:1,background:"#f1f5f9"}}/>
+    </div>
+  );
+
+  const COURIERS=["DHL","FedEx","Royal Mail","Evri","UPS","DPD","India Post","DTDC","Blue Dart","Other"];
+  const STATUS_OPTS=["PENDING","DISPATCHED","IN TRANSIT","OUT FOR DELIVERY","DELIVERED","RETURNED","ON HOLD"];
+  const statusColor={"PENDING":"#a16207","DISPATCHED":"#1d4ed8","IN TRANSIT":"#0369a1","OUT FOR DELIVERY":"#7c3aed","DELIVERED":"#15803d","RETURNED":"#c2410c","ON HOLD":"#6b7280"};
+
+  const handlePurchaseSelect=(pid)=>{
+    set("purchaseId",pid);
+    const p=purch.find(x=>x.id===pid);
+    if(p) set("supplier",p.sup||p.supplier||"");
+  };
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
+      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:20}}>✏️</span>
+        <div>
+          <p style={{margin:0,fontWeight:800,fontSize:13,color:shop.accentText}}>Editing Shipment {form.shipmentId}</p>
+          <p style={{margin:0,fontSize:11,color:shop.accent}}>Changes saved to local storage immediately</p>
+        </div>
+      </div>
+
+      <Divider title="Shipment Info"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div>
+          <label style={lbl}>Shipment Date</label>
+          <input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+        <div>
+          <label style={lbl}>Shipment ID</label>
+          <input value={form.shipmentId} readOnly
+            style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/>
+        </div>
+        <div>
+          <label style={lbl}>Status</label>
+          <select value={form.status} onChange={e=>set("status",e.target.value)}
+            style={{...inp,fontWeight:700,color:statusColor[form.status]||"#374151"}}>
+            {STATUS_OPTS.map(o=><option key={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <Divider title="Linked Purchase"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div>
+          <label style={lbl}>Link to Purchase ID</label>
+          <select value={form.purchaseId} onChange={e=>handlePurchaseSelect(e.target.value)} style={inp}>
+            <option value="">Select purchase…</option>
+            {(purch||[]).map(p=><option key={p.id} value={p.id}>{p.id}{p.sup?" — "+p.sup:p.supplier?" — "+p.supplier:""}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={lbl}>Supplier</label>
+          <input value={form.supplier} onChange={e=>set("supplier",e.target.value)} placeholder="Auto-filled or enter" style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={lbl}>Delivery Address</label>
+          <textarea value={form.deliveryAddr} onChange={e=>set("deliveryAddr",e.target.value)} rows={2} placeholder="Full delivery address" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
+        </div>
+      </div>
+
+      <Divider title="Courier"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div>
+          <label style={lbl}>Courier / Service</label>
+          <select value={form.service} onChange={e=>set("service",e.target.value)} style={inp}>
+            <option value="">Select courier…</option>
+            {COURIERS.map(o=><option key={o}>{o}</option>)}
+          </select>
+          {form.service==="Other"&&(
+            <input value={form.serviceCustom} onChange={e=>set("serviceCustom",e.target.value)}
+              placeholder="Enter courier name…" style={{...inp,marginTop:8,border:"1px solid "+shop.accent}} onFocus={fo} onBlur={bl}/>
+          )}
+        </div>
+        <div>
+          <label style={lbl}>Tracking Number</label>
+          <input value={form.trackingNo} onChange={e=>set("trackingNo",e.target.value)}
+            placeholder="AWB / Tracking ref." style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/>
+        </div>
+        <div>
+          <label style={lbl}>Shipping Cost ({shop.symbol})</label>
+          <input type="number" value={form.cost} onChange={e=>set("cost",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+        <div>
+          <label style={lbl}>Received Date</label>
+          <input type="date" value={form.receivedDate} onChange={e=>set("receivedDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+      </div>
+
+      <div style={{marginBottom:16}}>
+        <label style={lbl}>Remarks</label>
+        <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
+        <button onClick={()=>onSave({...shipment,...form,id:shipment.id})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
