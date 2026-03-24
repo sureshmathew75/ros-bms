@@ -104,6 +104,9 @@ export default function PurchasesPanel({
   onExport,
   onImport,
   onNewPurchase,
+  onViewPurchase,
+  onEditPurchase,
+  onDeletePurchase,
   purch,
   shop,
   shopId,
@@ -242,10 +245,10 @@ export default function PurchasesPanel({
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
             <thead>
               <tr style={{ background: "#f8fafc" }}>
-                {["PO ID", "Date", "Supplier", "Item", "Qty", "Total", "Status", "Pay By"].map((h, i) => (
+                {["PO ID", "Date", "Supplier", "Item", "Qty", "Total", "Status", "Pay By", "Actions"].map((h, i) => (
                   <th key={h} style={{
                     padding: "11px 16px",
-                    textAlign: i >= 5 ? "right" : "left",
+                    textAlign: i >= 5 && i < 8 ? "right" : "left",
                     fontSize: 11, fontWeight: 800, color: "#94a3b8",
                     textTransform: "uppercase", letterSpacing: "0.06em",
                     borderBottom: "1px solid #f1f5f9", whiteSpace: "nowrap",
@@ -258,7 +261,7 @@ export default function PurchasesPanel({
             <tbody>
               {rows.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ padding: "48px 16px", textAlign: "center" }}>
+                  <td colSpan={9} style={{ padding: "48px 16px", textAlign: "center" }}>
                     <div style={{ fontSize: 32, marginBottom: 8 }}>📦</div>
                     <p style={{ margin: 0, fontWeight: 700, color: "#94a3b8", fontSize: 14 }}>
                       No purchases found
@@ -276,7 +279,7 @@ export default function PurchasesPanel({
                 if (row._type === "fy") {
                   return (
                     <tr key={`fy-${row._fyStart}-${idx}`}>
-                      <td colSpan={8} style={{ padding: 0 }}>
+                      <td colSpan={9} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex",
                           alignItems: "center",
@@ -313,7 +316,7 @@ export default function PurchasesPanel({
                 if (row._type === "month") {
                   return (
                     <tr key={`month-${row._monthKey}-${idx}`}>
-                      <td colSpan={8} style={{ padding: 0 }}>
+                      <td colSpan={9} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex",
                           alignItems: "center",
@@ -428,6 +431,53 @@ export default function PurchasesPanel({
                       <span style={{ fontSize: 11, color: "#64748b", whiteSpace: "nowrap" }}>
                         {p.payBy || "—"}
                       </span>
+                    </td>
+                    {/* Actions */}
+                    <td style={{ padding: "12px 16px" }}>
+                      <div style={{ display: "flex", gap: 5, alignItems: "center", justifyContent: "flex-start" }}>
+                        <button
+                          onClick={() => onViewPurchase && onViewPurchase(p)}
+                          title="View details"
+                          style={{
+                            padding: "5px 10px", borderRadius: 7,
+                            border: "1px solid #e2e8f0", background: "white",
+                            color: "#374151", fontSize: 12, fontWeight: 700,
+                            cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                            transition: "all 0.13s",
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.background = `${accent}15`; e.currentTarget.style.color = accent; e.currentTarget.style.borderColor = accent; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = "white"; e.currentTarget.style.color = "#374151"; e.currentTarget.style.borderColor = "#e2e8f0"; }}>
+                          👁 View
+                        </button>
+                        <button
+                          onClick={() => onEditPurchase && onEditPurchase(p)}
+                          title="Edit purchase"
+                          style={{
+                            padding: "5px 10px", borderRadius: 7,
+                            border: `1px solid ${accent}`, background: `${accent}12`,
+                            color: accent, fontSize: 12, fontWeight: 700,
+                            cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                            transition: "all 0.13s",
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.background = accent; e.currentTarget.style.color = "white"; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = `${accent}12`; e.currentTarget.style.color = accent; }}>
+                          ✏️ Edit
+                        </button>
+                        <button
+                          onClick={() => onDeletePurchase && onDeletePurchase(p)}
+                          title="Delete purchase"
+                          style={{
+                            padding: "5px 10px", borderRadius: 7,
+                            border: "1px solid #fca5a5", background: "#fff5f5",
+                            color: "#dc2626", fontSize: 12, fontWeight: 700,
+                            cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                            transition: "all 0.13s",
+                          }}
+                          onMouseEnter={e => { e.currentTarget.style.background = "#dc2626"; e.currentTarget.style.color = "white"; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = "#fff5f5"; e.currentTarget.style.color = "#dc2626"; }}>
+                          🗑
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 );
