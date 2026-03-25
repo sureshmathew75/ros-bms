@@ -794,7 +794,7 @@ const addSale = async (form) => {
       if(idx>=0){const n=[...prev];n[idx]=updatedCust;return n;}
       return [...prev,updatedCust];
     });
-    dbSaveCustomer(updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
+    dbSaveCustomer(shopId, updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
   }
 };
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
@@ -1739,7 +1739,7 @@ return(
                     spend:     (existing?.spend||0)+(Number(r.amount)||0),
                     last:      r.date||new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}),
                   };
-                  dbSaveCustomer(updated).catch(()=>{});
+                  dbSaveCustomer(shopId, updated).catch(()=>{});
                   const idx=prev.findIndex(c=>c.name===r.customer);
                   if(idx>=0){const n=[...prev];n[idx]=updated;return n;}
                   return [...prev,updated];
@@ -2458,7 +2458,7 @@ return(
                   <div style={{display:"flex",justifyContent:"space-between"}}>
                     <span style={{fontSize:12,color:"#64748b"}}>Amount</span>
                     <span style={{fontSize:14,fontWeight:900,color:shop.accent}}>
-                      {selRow?(()=>{const a=Number(selRow.amount)||0,r=shopId==="ros-india"?0.18:0.20,inc=selRow.taxInclusive!==false;return fmt(shopId,inc?a:parseFloat((a*(1+r)).toFixed(2)));})():"—"}
+                      {selRow?(()=>{const a=Number(selRow.amount)||0,r=(selRow.taxRate!==undefined?selRow.taxRate:0)/100,inc=selRow.taxInclusive!==false;return fmt(shopId,inc?a:parseFloat((a*(1+r)).toFixed(2)));})():"—"}
                     </span>
                   </div>
                 </div>
@@ -2472,7 +2472,7 @@ return(
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
                     <span style={{fontSize:12,color:"#64748b"}}>Total</span>
                     <span style={{fontSize:14,fontWeight:900,color:shop.accent}}>
-                      {selRow?(()=>{const a=Number(selRow.amount)||0,r=shopId==="ros-india"?0.18:0.20,inc=selRow.taxInclusive!==false;return fmt(shopId,inc?a:parseFloat((a*(1+r)).toFixed(2)));})():"—"}
+                      {selRow?(()=>{const a=Number(selRow.amount)||0,r=(selRow.taxRate!==undefined?selRow.taxRate:0)/100,inc=selRow.taxInclusive!==false;return fmt(shopId,inc?a:parseFloat((a*(1+r)).toFixed(2)));})():"—"}
                     </span>
                   </div>
                   {selRow.sentDate&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
@@ -2503,9 +2503,9 @@ return(
                       </td>
                       <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700,color:"#374151"}}>{selRow.qty||1}</td>
                       {(()=>{
-                        const e2=Number(selRow.amount)||0,r2=shopId==="ros-india"?0.18:0.20,inc2=selRow.taxInclusive!==false;
-                        const sub2=inc2?parseFloat((e2/(1+r2)).toFixed(2)):e2;
-                        const grd2=parseFloat((sub2*(1+r2)).toFixed(2));
+                        const e2=Number(selRow.amount)||0,r2=(selRow.taxRate!==undefined?selRow.taxRate:0)/100,inc2=selRow.taxInclusive!==false;
+                        const sub2=inc2?(r2===0?e2:parseFloat((e2/(1+r2)).toFixed(2))):e2;
+                        const grd2=inc2?e2:parseFloat((sub2*(1+r2)).toFixed(2));
                         return <>
                           <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700,color:"#374151"}}>{fmt(shopId,sub2)}</td>
                           <td style={{padding:"12px 14px",textAlign:"right",fontWeight:800,color:shop.accent}}>{fmt(shopId,grd2)}</td>
@@ -2907,7 +2907,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImport})=>{
                   ful:         get(rowVals,["status","ful"])||"PENDING",
                   rem:         get(rowVals,["remarks","rem"]),
                   tag:         get(rowVals,["tag"]),
-                  taxRate:     shopId==="ros-india" ? 18 : 20,
+                  taxRate:     0,
                   taxInclusive:true,
                 };
               }).filter(r=>r.customer||r.item);
@@ -2960,7 +2960,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     tag:         sale.tag||"",
     remarks:     sale.rem||sale.remarks||"",
     taxInclusive: sale.taxInclusive !== false,
-    taxRate:      sale.taxRate !== undefined ? sale.taxRate : (shopId==="ros-india" ? 18 : 20),
+    taxRate:      sale.taxRate !== undefined ? sale.taxRate : 0,
     phoneSavedOn: sale.phoneSavedOn||"UK 888",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
@@ -3843,7 +3843,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     qty:         "1",
     amount:      "",
     taxInclusive: true,
-    taxRate:     shopId==="ros-india" ? 18 : 20,
+    taxRate:     0,
     payBy:       "SHOP",
     status:      shopId==="ros-india" ? "ORDER NOT PLACED" : "PENDING",
     sentDate:    "",
@@ -4354,7 +4354,7 @@ const CustomerEditModal=({customer,shop,onSave,onClose})=>{
               rows={2} style={{...einp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
           </div>
           <div>
-            <label style={elbl}>Notes / Remarks</label>
+            <label style={elbl}>Remarks</label>
             <textarea value={ef.notes||""} onChange={e=>se("notes",e.target.value)}
               rows={2} style={{...einp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
           </div>
@@ -4474,14 +4474,12 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                   textTransform:"uppercase",letterSpacing:"0.06em"}}>📍 Address</p>
                 <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{viewCust.address||"—"}</p>
               </div>
-              {viewCust.notes&&(
-                <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,
-                  padding:"10px 14px",marginBottom:12}}>
-                  <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#92400e",
-                    textTransform:"uppercase",letterSpacing:"0.06em"}}>📝 Notes</p>
-                  <p style={{margin:0,fontSize:13,color:"#92400e"}}>{viewCust.notes}</p>
-                </div>
-              )}
+              <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,
+                padding:"10px 14px",marginBottom:12}}>
+                <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#92400e",
+                  textTransform:"uppercase",letterSpacing:"0.06em"}}>📝 Remarks</p>
+                <p style={{margin:0,fontSize:13,color:"#92400e"}}>{viewCust.notes||"—"}</p>
+              </div>
               <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:4}}>
                 <button onClick={()=>{setEditCust(viewCust);setViewCust(null);}}
                   style={{padding:"9px 20px",borderRadius:10,border:"none",
@@ -4600,7 +4598,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
         <table style={{width:"100%",borderCollapse:"collapse"}}>
           <thead>
             <tr style={{background:"#f8fafc",borderBottom:"1px solid #f1f5f9"}}>
-              {["Customer","Contact","Address","Purchases","Total Spend","Last Order","Tag","Actions"].map(h=>(
+              {["Customer","Contact","Address","Purchases","Total Spend","Last Order","Tag","Remarks","Actions"].map(h=>(
                 <th key={h} style={{padding:"11px 16px",fontSize:10,fontWeight:800,color:"#64748b",
                   textTransform:"uppercase",letterSpacing:"0.06em",textAlign:"left",whiteSpace:"nowrap"}}>
                   {h}
@@ -4610,7 +4608,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
           </thead>
           <tbody>
             {filtered.length===0&&(
-              <tr><td colSpan={8} style={{padding:40,textAlign:"center",color:"#94a3b8",fontSize:13}}>No customers found</td></tr>
+              <tr><td colSpan={9} style={{padding:40,textAlign:"center",color:"#94a3b8",fontSize:13}}>No customers found</td></tr>
             )}
             {filtered.map((c,i)=>{
               const isH=hovR===c.id;
@@ -4665,6 +4663,13 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                         {c.tag}
                       </span>
                     )}
+                  </td>
+                  <td style={{padding:"13px 16px",maxWidth:180}}>
+                    {c.notes
+                      ? <span style={{fontSize:12,color:"#64748b",display:"block",overflow:"hidden",
+                          textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={c.notes}>{c.notes}</span>
+                      : <span style={{fontSize:12,color:"#cbd5e1"}}>—</span>
+                    }
                   </td>
                   {/* Actions */}
                   <td style={{padding:"13px 16px"}}>

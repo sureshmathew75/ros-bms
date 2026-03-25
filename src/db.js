@@ -258,19 +258,18 @@ export const dbDeleteLogistic = async (id, shopId) => {
 /* ═══════════════════════════════════════════════════════════
    CUSTOMERS  (shop-isolated)
    ═══════════════════════════════════════════════════════════ */
-export const dbSaveCustomer = async (shopIdOrCustomer, customer) => {
+export const dbSaveCustomer = async (shopId, customer) => {
   if (!sb) return;
-  /* support both dbSaveCustomer(customer) and dbSaveCustomer(shopId, customer) */
-  const c    = customer !== undefined ? customer : shopIdOrCustomer;
-  const sid  = customer !== undefined ? shopIdOrCustomer : undefined;
+  /* support both dbSaveCustomer(shopId, customer) and legacy dbSaveCustomer(customer) */
+  const c   = customer !== undefined ? customer : shopId;
+  const sid = customer !== undefined ? shopId   : (shopId?.id ? null : shopId);
 
   const { data: existing } = await sb.from('customers').select('id')
-    .eq('id', c.id)
-    .maybeSingle();
+    .eq('id', c.id).maybeSingle();
 
   const payload = {
     id:        c.id,
-    ...(sid ? { shop_id: sid } : {}),
+    shop_id:   sid || c.shop_id || null,
     name:      c.name || '',
     phone:     c.phone || '',
     whatsapp:  c.whatsapp || '',
