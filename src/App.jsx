@@ -266,28 +266,31 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
   const RETURN_STATUSES=new Set(["RTRN REQSTD","RETRN RCVD","REFUNDED","RETURN REQUESTED","RETURN RECEIVED"]);
   SHOPS.forEach(shop=>{
     const data=salesData[shop.id]||[];
-    const todayRev=data.filter(s=>s.date===today).reduce((a,s)=>a+(s.amount||0),0);
+    // Parse date safely: handles YYYY-MM-DD, DD-MM-YYYY, DD-MM-YY (no timezone shift)
+    const parseLocalDate=str=>{
+      if(!str)return null;
+      const s=String(str).trim();
+      const iso=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if(iso)return{y:parseInt(iso[1],10),m:parseInt(iso[2],10)-1,d:parseInt(iso[3],10)};
+      const dmy=s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+      if(dmy)return{y:parseInt(dmy[3],10),m:parseInt(dmy[2],10)-1,d:parseInt(dmy[1],10)};
+      const dmyy=s.match(/^(\d{2})-(\d{2})-(\d{2})$/);
+      if(dmyy){const y=parseInt(dmyy[3],10);return{y:y<50?2000+y:1900+y,m:parseInt(dmyy[2],10)-1,d:parseInt(dmyy[1],10)};}
+      return null;
+    };
+    const isThisMonth=str=>{const p=parseLocalDate(str);return p&&p.y===curYear&&p.m===curMonth;};
+    const isToday=str=>{const p=parseLocalDate(str);return p&&p.y===curYear&&p.m===curMonth&&p.d===nowD.getDate();};
+    const todayRev=data.filter(s=>isToday(s.date)).reduce((a,s)=>a+(s.amount||0),0);
     const totalRev=data.reduce((a,s)=>a+(s.amount||0),0);
-    const pending=data.filter(s=>s.status==="PENDING"||s.status==="ORDER NOT PLACED"||s.status==="WORK IN PROGRESS"||s.status==="AWAITING TRACKING INFO.").length;
+    const FULFILLED_STATUSES=new Set(["FULFILLED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]);
+    const pending=data.filter(s=>!FULFILLED_STATUSES.has(s.ful||s.status)).length;
     const orders=data.length;
     // Month revenue — sales in the current calendar month
-    const monthRev=data.filter(s=>{
-      if(!s.date)return false;
-      const d=new Date(s.date);
-      return d.getFullYear()===curYear&&d.getMonth()===curMonth;
-    }).reduce((a,s)=>a+(s.amount||0),0);
+    const monthRev=data.filter(s=>isThisMonth(s.date)).reduce((a,s)=>a+(s.amount||0),0);
     // Current month orders
-    const monthOrders=data.filter(s=>{
-      if(!s.date)return false;
-      const d=new Date(s.date);
-      return d.getFullYear()===curYear&&d.getMonth()===curMonth;
-    }).length;
+    const monthOrders=data.filter(s=>isThisMonth(s.date)).length;
     // Current month returns
-    const monthReturns=data.filter(s=>{
-      if(!s.date)return false;
-      const d=new Date(s.date);
-      return d.getFullYear()===curYear&&d.getMonth()===curMonth&&RETURN_STATUSES.has(s.status);
-    }).length;
+    const monthReturns=data.filter(s=>isThisMonth(s.date)&&RETURN_STATUSES.has(s.ful||s.status)).length;
     shopStats[shop.id]={todaySales:todayRev,totalRev,pendingOrders:pending,orders,monthRev,monthOrders,monthReturns};
   });
 
@@ -794,7 +797,7 @@ const addSale = async (form) => {
       if(idx>=0){const n=[...prev];n[idx]=updatedCust;return n;}
       return [...prev,updatedCust];
     });
-    dbSaveCustomer(shopId, updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
+    dbSaveCustomer(updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
   }
 };
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
@@ -1717,35 +1720,7 @@ return(
       {/* ── IMPORT MODAL — SALES ── */}
       {modal==="import-sales"&&user?.role!=="staff"&&(
         <Modal title="⬇ Import Sales" onClose={()=>setModal(null)} accent={shop.accent}>
-          <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}
-            onImport={rows=>{
-              setSalesData(prev=>({...prev,[shopId]:[...rows,...(prev[shopId]||[])]}));
-              rows.forEach(r=>dbSaveSale(shopId,r).catch(()=>{}));
-              /* ── upsert customers from imported rows ── */
-              rows.forEach(r=>{
-                if(!r.customer) return;
-                setCustomers(prev=>{
-                  const existing=prev.find(c=>c.name===r.customer);
-                  const custId=existing?.id||("CUST-"+Date.now().toString().slice(-6)+"-"+Math.random().toString(36).slice(2,4));
-                  const updated={
-                    id:        custId,
-                    name:      r.customer,
-                    phone:     r.contact||existing?.phone||"",
-                    whatsapp:  r.contact||existing?.whatsapp||"",
-                    address:   r.address||existing?.address||"",
-                    tag:       existing?.tag||"New Customer",
-                    notes:     existing?.notes||"",
-                    purchases: (existing?.purchases||0)+1,
-                    spend:     (existing?.spend||0)+(Number(r.amount)||0),
-                    last:      r.date||new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}),
-                  };
-                  dbSaveCustomer(shopId, updated).catch(()=>{});
-                  const idx=prev.findIndex(c=>c.name===r.customer);
-                  if(idx>=0){const n=[...prev];n[idx]=updated;return n;}
-                  return [...prev,updated];
-                });
-              });
-            }}/>
+          <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}/>
         </Modal>
       )}
 
@@ -2458,7 +2433,7 @@ return(
                   <div style={{display:"flex",justifyContent:"space-between"}}>
                     <span style={{fontSize:12,color:"#64748b"}}>Amount</span>
                     <span style={{fontSize:14,fontWeight:900,color:shop.accent}}>
-                      {selRow?(()=>{const a=Number(selRow.amount)||0,r=(selRow.taxRate!==undefined?selRow.taxRate:0)/100,inc=selRow.taxInclusive!==false;return fmt(shopId,inc?a:parseFloat((a*(1+r)).toFixed(2)));})():"—"}
+                      {selRow?(()=>{const a=Number(selRow.amount)||0,r=shopId==="ros-india"?0.18:0.20,inc=selRow.taxInclusive!==false;return fmt(shopId,inc?a:parseFloat((a*(1+r)).toFixed(2)));})():"—"}
                     </span>
                   </div>
                 </div>
@@ -2472,7 +2447,7 @@ return(
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
                     <span style={{fontSize:12,color:"#64748b"}}>Total</span>
                     <span style={{fontSize:14,fontWeight:900,color:shop.accent}}>
-                      {selRow?(()=>{const a=Number(selRow.amount)||0,r=(selRow.taxRate!==undefined?selRow.taxRate:0)/100,inc=selRow.taxInclusive!==false;return fmt(shopId,inc?a:parseFloat((a*(1+r)).toFixed(2)));})():"—"}
+                      {selRow?(()=>{const a=Number(selRow.amount)||0,r=shopId==="ros-india"?0.18:0.20,inc=selRow.taxInclusive!==false;return fmt(shopId,inc?a:parseFloat((a*(1+r)).toFixed(2)));})():"—"}
                     </span>
                   </div>
                   {selRow.sentDate&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
@@ -2503,9 +2478,9 @@ return(
                       </td>
                       <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700,color:"#374151"}}>{selRow.qty||1}</td>
                       {(()=>{
-                        const e2=Number(selRow.amount)||0,r2=(selRow.taxRate!==undefined?selRow.taxRate:0)/100,inc2=selRow.taxInclusive!==false;
-                        const sub2=inc2?(r2===0?e2:parseFloat((e2/(1+r2)).toFixed(2))):e2;
-                        const grd2=inc2?e2:parseFloat((sub2*(1+r2)).toFixed(2));
+                        const e2=Number(selRow.amount)||0,r2=shopId==="ros-india"?0.18:0.20,inc2=selRow.taxInclusive!==false;
+                        const sub2=inc2?parseFloat((e2/(1+r2)).toFixed(2)):e2;
+                        const grd2=parseFloat((sub2*(1+r2)).toFixed(2));
                         return <>
                           <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700,color:"#374151"}}>{fmt(shopId,sub2)}</td>
                           <td style={{padding:"12px 14px",textAlign:"right",fontWeight:800,color:shop.accent}}>{fmt(shopId,grd2)}</td>
@@ -2607,13 +2582,10 @@ return(
 /* ══════════════════════════════════════════════════════
    IMPORT / EXPORT PANEL
 ══════════════════════════════════════════════════════ */
-const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImport})=>{
+const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
   const [dragOver,setDragOver]=useState(false);
   const [fileName,setFileName]=useState(null);
-  const [fileObj,setFileObj]=useState(null);
   const [fileFmt,setFileFmt]=useState("CSV");
-  const [importing,setImporting]=useState(false);
-  const fileInputRef=useRef(null);
 
   // All 22 export columns — all ON by default
   const ALL_COLS=[
@@ -2828,17 +2800,17 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImport})=>{
       <div
         onDragOver={e=>{e.preventDefault();setDragOver(true);}}
         onDragLeave={()=>setDragOver(false)}
-        onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f){setFileName(f.name);setFileObj(f);}}}
+        onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f)setFileName(f.name);}}
         style={{
           border:"2px dashed "+(dragOver?shop.accent:"#cbd5e1"),
           borderRadius:14,padding:"40px 24px",textAlign:"center",
           background:dragOver?shop.accentBg:"#f8fafc",
           transition:"all 0.18s",cursor:"pointer",
         }}
-        onClick={()=>fileInputRef.current&&fileInputRef.current.click()}>
-        <input ref={fileInputRef} type="file" accept=".csv,.xlsx"
+        onClick={()=>document.getElementById("imp-file-"+entity).click()}>
+        <input id={"imp-file-"+entity} type="file" accept=".csv,.xlsx"
           style={{display:"none"}}
-          onChange={e=>{const f=e.target.files[0];if(f){setFileName(f.name);setFileObj(f);}}}/>
+          onChange={e=>setFileName(e.target.files[0]?.name||null)}/>
         <div style={{fontSize:40,marginBottom:10}}>{fileName?"✅":"📂"}</div>
         <p style={{margin:0,fontWeight:800,fontSize:15,color:fileName?shop.accent:"#374151"}}>
           {fileName||"Drop your CSV file here"}
@@ -2851,83 +2823,14 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onImport})=>{
       {/* actions */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
         <button
-          onClick={async()=>{
-            if(!fileObj){alert("Please select a file first.");return;}
-            setImporting(true);
-            try{
-              /* ── load SheetJS from CDN if not already present ── */
-              if(!window.XLSX){
-                await new Promise((res,rej)=>{
-                  const s=document.createElement("script");
-                  s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
-                  s.onload=res; s.onerror=()=>rej(new Error("Failed to load XLSX library"));
-                  document.head.appendChild(s);
-                });
-              }
-              /* ── read file as ArrayBuffer (works for both XLSX and CSV) ── */
-              const buf=await fileObj.arrayBuffer();
-              const wb=window.XLSX.read(buf,{type:"array",cellDates:true});
-              const ws=wb.Sheets[wb.SheetNames[0]];
-              /* sheet_to_json with header:1 gives array-of-arrays */
-              const raw=window.XLSX.utils.sheet_to_json(ws,{header:1,defval:""});
-              if(raw.length<2){alert("File appears empty or has no data rows.");setImporting(false);return;}
-              /* first non-empty row = headers */
-              const headers=raw[0].map(h=>String(h||"").trim().toLowerCase());
-              const get=(rowVals,keys)=>{
-                for(const k of keys){
-                  const idx=headers.indexOf(k);
-                  if(idx>=0){const v=rowVals[idx];return v===null||v===undefined?"":String(v).trim();}
-                }
-                return"";
-              };
-              const fmtDate=(v)=>{
-                if(!v)return new Date().toISOString().slice(0,10);
-                if(v instanceof Date)return v.toISOString().slice(0,10);
-                /* Excel serial number */
-                if(typeof v==="number"){
-                  const d=new Date(Math.round((v-25569)*86400*1000));
-                  return d.toISOString().slice(0,10);
-                }
-                return String(v).slice(0,10);
-              };
-              const rows=raw.slice(1).map(rowVals=>{
-                const id=get(rowVals,["sale id","sale_id","saleid"])||
-                  ("IMP-"+Date.now()+"-"+Math.random().toString(36).slice(2,6)).toUpperCase();
-                return{
-                  id,
-                  date:        fmtDate(get(rowVals,["date"])),
-                  invoiceNo:   get(rowVals,["invoice no.","invoice no","invoice_no","invoiceno"])||id,
-                  customer:    get(rowVals,["customer name","customer"]),
-                  address:     get(rowVals,["address"]),
-                  contact:     get(rowVals,["contact no.","contact no","contact"]),
-                  item:        get(rowVals,["item"]),
-                  qty:         get(rowVals,["quantity","qty"])||"1",
-                  amount:      parseFloat(get(rowVals,["total","amount"]))||0,
-                  pay:         get(rowVals,["payment method","payment","pay"]),
-                  ful:         get(rowVals,["status","ful"])||"PENDING",
-                  rem:         get(rowVals,["remarks","rem"]),
-                  tag:         get(rowVals,["tag"]),
-                  taxRate:     0,
-                  taxInclusive:true,
-                };
-              }).filter(r=>r.customer||r.item);
-              if(rows.length===0){alert("No valid rows found. Check the file format.");setImporting(false);return;}
-              if(onImport) onImport(rows);
-              alert("✅ Imported "+rows.length+" record(s) successfully.");
-              onClose();
-            }catch(err){
-              alert("Import failed: "+err.message);
-            }
-            setImporting(false);
-          }}
-          disabled={importing}
+          onClick={()=>{if(!fileName){alert("Please select a file first.");}else{alert("Import started! "+fileName+" is being processed.");onClose();}}}
           style={{padding:"12px 0",borderRadius:11,border:"none",
             background:fileName?shop.accent:"#e2e8f0",
             color:fileName?"white":"#94a3b8",fontWeight:800,fontSize:14,
-            cursor:fileName&&!importing?"pointer":"not-allowed",fontFamily:"inherit",
+            cursor:fileName?"pointer":"not-allowed",fontFamily:"inherit",
             boxShadow:fileName?"0 4px 14px "+shop.accent+"44":"none",
-            transition:"all 0.2s",opacity:importing?0.7:1}}>
-          {importing?"⏳ Importing...":"⬆ Import Now"}
+            transition:"all 0.2s"}}>
+          ⬆ Import Now
         </button>
         <button onClick={onClose}
           style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",
@@ -2960,7 +2863,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     tag:         sale.tag||"",
     remarks:     sale.rem||sale.remarks||"",
     taxInclusive: sale.taxInclusive !== false,
-    taxRate:      sale.taxRate !== undefined ? sale.taxRate : 0,
+    taxRate:      sale.taxRate !== undefined ? sale.taxRate : (shopId==="ros-india" ? 18 : 20),
     phoneSavedOn: sale.phoneSavedOn||"UK 888",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
@@ -3843,7 +3746,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     qty:         "1",
     amount:      "",
     taxInclusive: true,
-    taxRate:     0,
+    taxRate:     shopId==="ros-india" ? 18 : 20,
     payBy:       "SHOP",
     status:      shopId==="ros-india" ? "ORDER NOT PLACED" : "PENDING",
     sentDate:    "",
@@ -4354,7 +4257,7 @@ const CustomerEditModal=({customer,shop,onSave,onClose})=>{
               rows={2} style={{...einp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
           </div>
           <div>
-            <label style={elbl}>Remarks</label>
+            <label style={elbl}>Notes / Remarks</label>
             <textarea value={ef.notes||""} onChange={e=>se("notes",e.target.value)}
               rows={2} style={{...einp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
           </div>
@@ -4474,12 +4377,14 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                   textTransform:"uppercase",letterSpacing:"0.06em"}}>📍 Address</p>
                 <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{viewCust.address||"—"}</p>
               </div>
-              <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,
-                padding:"10px 14px",marginBottom:12}}>
-                <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#92400e",
-                  textTransform:"uppercase",letterSpacing:"0.06em"}}>📝 Remarks</p>
-                <p style={{margin:0,fontSize:13,color:"#92400e"}}>{viewCust.notes||"—"}</p>
-              </div>
+              {viewCust.notes&&(
+                <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,
+                  padding:"10px 14px",marginBottom:12}}>
+                  <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#92400e",
+                    textTransform:"uppercase",letterSpacing:"0.06em"}}>📝 Notes</p>
+                  <p style={{margin:0,fontSize:13,color:"#92400e"}}>{viewCust.notes}</p>
+                </div>
+              )}
               <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:4}}>
                 <button onClick={()=>{setEditCust(viewCust);setViewCust(null);}}
                   style={{padding:"9px 20px",borderRadius:10,border:"none",
@@ -4598,7 +4503,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
         <table style={{width:"100%",borderCollapse:"collapse"}}>
           <thead>
             <tr style={{background:"#f8fafc",borderBottom:"1px solid #f1f5f9"}}>
-              {["Customer","Contact","Address","Purchases","Total Spend","Last Order","Tag","Remarks","Actions"].map(h=>(
+              {["Customer","Contact","Address","Purchases","Total Spend","Last Order","Tag","Actions"].map(h=>(
                 <th key={h} style={{padding:"11px 16px",fontSize:10,fontWeight:800,color:"#64748b",
                   textTransform:"uppercase",letterSpacing:"0.06em",textAlign:"left",whiteSpace:"nowrap"}}>
                   {h}
@@ -4608,7 +4513,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
           </thead>
           <tbody>
             {filtered.length===0&&(
-              <tr><td colSpan={9} style={{padding:40,textAlign:"center",color:"#94a3b8",fontSize:13}}>No customers found</td></tr>
+              <tr><td colSpan={8} style={{padding:40,textAlign:"center",color:"#94a3b8",fontSize:13}}>No customers found</td></tr>
             )}
             {filtered.map((c,i)=>{
               const isH=hovR===c.id;
@@ -4663,13 +4568,6 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                         {c.tag}
                       </span>
                     )}
-                  </td>
-                  <td style={{padding:"13px 16px",maxWidth:180}}>
-                    {c.notes
-                      ? <span style={{fontSize:12,color:"#64748b",display:"block",overflow:"hidden",
-                          textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={c.notes}>{c.notes}</span>
-                      : <span style={{fontSize:12,color:"#cbd5e1"}}>—</span>
-                    }
                   </td>
                   {/* Actions */}
                   <td style={{padding:"13px 16px"}}>
