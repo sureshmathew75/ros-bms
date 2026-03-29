@@ -1741,7 +1741,7 @@ return(
         <Modal title="⬇ Import Sales" onClose={()=>setModal(null)} accent={shop.accent}>
           <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}
             onSave={async (rows)=>{
-              // Upsert ALL imported rows — updates existing (e.g. zero-amount) + inserts new
+              // Upsert ALL imported rows — updates existing + inserts new
               if(rows.length===0){setModal(null);return;}
 
               // Update UI: merge rows — imported takes priority over existing
@@ -1754,16 +1754,11 @@ return(
 
               // Save ALL rows to Supabase in batches of 50
               const BATCH=50;
-              let saved=0;
               for(let i=0;i<rows.length;i+=BATCH){
                 const batch=rows.slice(i,i+BATCH);
-                await Promise.all(batch.map(sale=>
-                  dbSaveSale(shopId,sale)
-                    .then(()=>saved++)
-                    .catch(e=>console.error("Save failed:",sale.id,e))
-                ));
+                await Promise.all(batch.map(sale=>dbSaveSale(shopId,sale).catch(e=>console.error("Save failed:",sale.id,e))));
               }
-              console.log(`✅ Import complete: ${saved}/${rows.length} rows saved to Supabase`);
+              console.log(`✅ Import complete: ${rows.length} rows sent to Supabase`);
             }}/>
         </Modal>
       )}
