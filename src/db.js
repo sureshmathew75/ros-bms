@@ -31,9 +31,22 @@ export const dbSaveSale = async (shopId, sale) => {
     invoice_no:    sale.invoiceNo || sale.id,
   };
 
-  const { error } = await sb.from('sales').upsert(payload, { onConflict: 'id,shop_id' });
-  if (error) console.error('❌ Save sale error:', error);
-  else console.log('✅ Sale saved:', sale.id);
+  // Try upsert first, fall back to insert if row doesn't exist
+  const { error: upsertErr } = await sb.from('sales').upsert(payload);
+  if (upsertErr) {
+    // Fallback: try plain insert
+    const { error: insertErr } = await sb.from('sales').insert(payload);
+    if (insertErr) {
+      // Last resort: update
+      const { error: updateErr } = await sb.from('sales').update(payload).eq('id', sale.id).eq('shop_id', shopId);
+      if (updateErr) console.error('❌ Save sale failed:', sale.id, updateErr);
+      else console.log('✅ Sale updated (fallback):', sale.id);
+    } else {
+      console.log('✅ Sale inserted (fallback):', sale.id);
+    }
+  } else {
+    console.log('✅ Sale upserted:', sale.id);
+  }
 };
 
 export const dbLoadSales = async (shopId) => {
@@ -53,7 +66,7 @@ export const dbLoadSales = async (shopId) => {
     if (data.length < PAGE) break;
     from += PAGE;
   }
-  return all.map(r => ({
+  console.log(`✅ Loaded ${all.length} sales for ${shopId} from Supabase`);
     id:           r.id,
     customer:     r.customer || '',
     amount:       Number(r.amount) || 0,
