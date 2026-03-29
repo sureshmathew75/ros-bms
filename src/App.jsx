@@ -1,5 +1,4 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import Login from "./Login";
 import CommandPalette from "./components/CommandPalette";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import DocumentsPanel from "./components/DocumentsPanel";
@@ -5172,6 +5171,186 @@ const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
    UI COMPONENTS
    ========================================================= */
 
+/* ── Login Screen ── */
+const LoginScreen=({onLogin,users})=>{
+  const [selUser,setSelUser]=useState(null);
+  const [pin,setPin]=useState("");
+  const [err,setErr]=useState("");
+  const [shake,setShake]=useState(false);
+  const [success,setSuccess]=useState(false);
+  const [hovB,setHovB]=useState(null);
+
+  const handlePin=(d)=>{
+    if(pin.length>=4||success)return;
+    const np=pin+d;
+    setPin(np);
+    setErr("");
+    if(np.length===4){
+      setTimeout(()=>{
+        if(np===selUser.pin){
+          setSuccess(true);
+          setTimeout(()=>onLogin(selUser),420);
+        } else {
+          setShake(true);
+          setErr("Incorrect PIN — try again");
+          setPin("");
+          setTimeout(()=>setShake(false),500);
+        }
+      },180);
+    }
+  };
+  const handleDel=()=>{setPin(p=>p.slice(0,-1));setErr("");};
+  const handleBack=()=>{setSelUser(null);setPin("");setErr("");setSuccess(false);setShake(false);};
+
+  const ROLE_LABELS={"superadmin":"Super Admin","admin":"Administrator","staff":"Staff"};
+
+  return(
+    <div style={{
+      minHeight:"100vh",width:"100vw",
+      background:"#060b14",
+      display:"flex",alignItems:"stretch",
+      fontFamily:"'DM Sans',system-ui,sans-serif",
+      position:"relative",overflow:"hidden",
+    }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800;900&family=Syne:wght@700;800&display=swap');
+        @keyframes ros-floatOrb{0%,100%{transform:translateY(0) scale(1);}50%{transform:translateY(-28px) scale(1.04);}}
+        @keyframes ros-fadeUp{from{opacity:0;transform:translateY(20px);}to{opacity:1;transform:translateY(0);}}
+        @keyframes ros-fadeIn{from{opacity:0;}to{opacity:1;}}
+        @keyframes ros-shake{0%,100%{transform:translateX(0);}20%{transform:translateX(-9px);}40%{transform:translateX(9px);}60%{transform:translateX(-6px);}80%{transform:translateX(6px);}}
+        @keyframes ros-pulse{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,0.5);}50%{box-shadow:0 0 0 8px rgba(16,185,129,0);}}
+        .ros-user-card{transition:all 0.22s cubic-bezier(0.34,1.56,0.64,1);cursor:pointer;}
+        .ros-user-card:hover{transform:translateY(-3px) scale(1.02)!important;background:rgba(255,255,255,0.08)!important;border-color:rgba(255,255,255,0.18)!important;box-shadow:0 16px 40px rgba(0,0,0,0.5)!important;}
+        .ros-pin-btn{transition:background 0.12s,border-color 0.12s,transform 0.1s;cursor:pointer;}
+        .ros-pin-btn:hover:not([data-empty]){background:rgba(255,255,255,0.13)!important;border-color:rgba(255,255,255,0.22)!important;}
+        .ros-pin-btn:active:not([data-empty]){transform:scale(0.90)!important;}
+        @media(max-width:700px){.ros-left-panel{display:none!important;}.ros-right-panel{padding:36px 20px!important;}}
+      `}</style>
+
+      {/* LEFT — branding */}
+      <div className="ros-left-panel" style={{
+        flex:"0 0 44%",
+        background:"linear-gradient(155deg,#0d1f3c 0%,#091526 55%,#060b14 100%)",
+        display:"flex",flexDirection:"column",justifyContent:"space-between",
+        padding:"52px 56px",position:"relative",overflow:"hidden",
+      }}>
+        <div style={{position:"absolute",top:-90,left:-90,width:420,height:420,borderRadius:"50%",background:"radial-gradient(circle,rgba(37,99,235,0.18) 0%,transparent 68%)",animation:"ros-floatOrb 7s ease-in-out infinite",pointerEvents:"none"}}/>
+        <div style={{position:"absolute",bottom:-70,right:-70,width:380,height:380,borderRadius:"50%",background:"radial-gradient(circle,rgba(124,58,237,0.14) 0%,transparent 68%)",animation:"ros-floatOrb 9s ease-in-out infinite reverse",pointerEvents:"none"}}/>
+        <div style={{position:"absolute",inset:0,backgroundImage:"linear-gradient(rgba(255,255,255,0.024) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.024) 1px,transparent 1px)",backgroundSize:"48px 48px",pointerEvents:"none"}}/>
+
+        <div style={{position:"relative",zIndex:1,animation:"ros-fadeUp 0.7s ease both"}}>
+          <div style={{display:"flex",alignItems:"center",gap:14}}>
+            <div style={{width:48,height:48,borderRadius:15,background:"linear-gradient(135deg,#2563eb,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 24px rgba(37,99,235,0.50)",flexShrink:0}}>
+              <span style={{color:"white",fontWeight:900,fontSize:22,fontFamily:"'Syne',sans-serif"}}>R</span>
+            </div>
+            <div>
+              <p style={{margin:0,fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:18,color:"white",letterSpacing:"-0.2px",lineHeight:1.2}}>ROS Nexus</p>
+              <p style={{margin:0,fontSize:10,fontWeight:500,letterSpacing:"0.10em",textTransform:"uppercase",color:"rgba(255,255,255,0.32)"}}>Business Suite</p>
+            </div>
+          </div>
+        </div>
+
+        <div style={{position:"relative",zIndex:1,animation:"ros-fadeUp 0.7s 0.15s ease both",opacity:0,animationFillMode:"forwards"}}>
+          <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"rgba(37,99,235,0.14)",border:"1px solid rgba(37,99,235,0.28)",borderRadius:999,padding:"5px 14px",marginBottom:22}}>
+            <span style={{width:6,height:6,borderRadius:"50%",background:"#60a5fa",display:"inline-block"}}/>
+            <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.65)"}}>Secure Access Portal</span>
+          </div>
+          <h1 style={{margin:"0 0 18px",fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:"clamp(30px,3vw,44px)",color:"white",lineHeight:1.12,letterSpacing:"-1px"}}>
+            Run your business<br/>
+            <span style={{background:"linear-gradient(90deg,#3b82f6 0%,#8b5cf6 50%,#06b6d4 100%)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>with confidence.</span>
+          </h1>
+          <p style={{margin:0,fontSize:14,color:"rgba(255,255,255,0.38)",lineHeight:1.75,maxWidth:320,fontWeight:400}}>
+            Manage sales, customers, inventory and finances across all your shops — in one unified dashboard.
+          </p>
+        </div>
+
+        <div style={{position:"relative",zIndex:1,animation:"ros-fadeIn 1s 0.5s ease both",opacity:0,animationFillMode:"forwards"}}>
+          <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.16)",fontWeight:500}}>© {new Date().getFullYear()} ROS Nexus · All rights reserved</p>
+        </div>
+      </div>
+
+      {/* RIGHT — login form */}
+      <div className="ros-right-panel" style={{
+        flex:1,background:"#0a0f1a",
+        display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+        padding:"48px 32px",position:"relative",
+      }}>
+        <div style={{position:"absolute",inset:0,backgroundImage:"radial-gradient(rgba(255,255,255,0.018) 1px,transparent 1px)",backgroundSize:"24px 24px",pointerEvents:"none"}}/>
+        <div style={{position:"absolute",top:0,left:0,width:1,height:"100%",background:"linear-gradient(180deg,transparent 0%,rgba(255,255,255,0.06) 30%,rgba(255,255,255,0.06) 70%,transparent 100%)"}}/>
+
+        <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:360}}>
+          {!selUser?(
+            <div style={{animation:"ros-fadeUp 0.5s ease both"}}>
+              <div style={{marginBottom:32}}>
+                <h2 style={{margin:"0 0 6px",fontSize:26,fontWeight:800,color:"white",letterSpacing:"-0.5px",fontFamily:"'Syne',sans-serif"}}>Welcome back</h2>
+                <p style={{margin:0,fontSize:13,color:"rgba(255,255,255,0.36)",fontWeight:400}}>Choose your account to continue</p>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {(users||[]).map((u,i)=>(
+                  <div key={u.id} className="ros-user-card" onClick={()=>setSelUser(u)}
+                    style={{display:"flex",alignItems:"center",gap:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16,padding:"14px 16px",boxShadow:"0 4px 20px rgba(0,0,0,0.28)"}}>
+                    <div style={{width:44,height:44,borderRadius:13,background:u.avatar,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:15,flexShrink:0,boxShadow:"0 4px 14px rgba(0,0,0,0.35)"}}>
+                      {u.initials}
+                    </div>
+                    <div style={{flex:1}}>
+                      <p style={{margin:"0 0 2px",fontWeight:700,fontSize:14,color:"white"}}>{u.name}</p>
+                      <p style={{margin:0,fontSize:11,fontWeight:500,color:"rgba(255,255,255,0.30)",textTransform:"capitalize"}}>{ROLE_LABELS[u.role]||u.role}</p>
+                    </div>
+                    <div style={{width:28,height:28,borderRadius:9,background:"rgba(255,255,255,0.05)",display:"flex",alignItems:"center",justifyContent:"center",color:"rgba(255,255,255,0.30)",fontSize:14}}>›</div>
+                  </div>
+                ))}
+              </div>
+              <p style={{textAlign:"center",marginTop:36,fontSize:11,color:"rgba(255,255,255,0.14)",fontWeight:500,letterSpacing:"0.06em"}}>DEVELOPED BY ROS NEXUS</p>
+            </div>
+          ):(
+            <div style={{animation:"ros-fadeUp 0.4s ease both",textAlign:"center"}}>
+              <button onClick={handleBack}
+                style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"7px 14px",cursor:"pointer",color:"rgba(255,255,255,0.42)",fontSize:12,fontWeight:600,fontFamily:"inherit",marginBottom:28,transition:"all 0.15s",outline:"none"}}
+                onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.10)";e.currentTarget.style.color="white";}}
+                onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.05)";e.currentTarget.style.color="rgba(255,255,255,0.42)";}}>
+                ← All accounts
+              </button>
+              <div style={{marginBottom:22}}>
+                <div style={{width:66,height:66,borderRadius:20,background:selUser.avatar,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:24,margin:"0 auto 12px",boxShadow:"0 8px 32px rgba(0,0,0,0.50)",transition:"all 0.3s",animation:success?"ros-pulse 0.6s ease":"none"}}>
+                  {success?"✓":selUser.initials}
+                </div>
+                <p style={{margin:"0 0 6px",fontWeight:700,fontSize:18,color:"white",fontFamily:"'Syne',sans-serif"}}>{selUser.name}</p>
+                <span style={{display:"inline-block",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.40)",background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:999,padding:"3px 12px"}}>
+                  {ROLE_LABELS[selUser.role]||selUser.role}
+                </span>
+              </div>
+              <div style={{animation:shake?"ros-shake 0.45s ease":"none",marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"center",gap:18,marginBottom:10}}>
+                  {[0,1,2,3].map(i=>{
+                    const filled=pin.length>i;
+                    return(<div key={i} style={{width:13,height:13,borderRadius:"50%",background:success?"#10b981":filled?"white":"transparent",border:"2px solid "+(success?"#10b981":filled?"white":"rgba(255,255,255,0.22)"),transition:"all 0.15s",transform:filled?"scale(1.18)":"scale(1)",boxShadow:success?"0 0 12px rgba(16,185,129,0.60)":filled?"0 0 10px rgba(255,255,255,0.45)":"none"}}/>);
+                  })}
+                </div>
+                <p style={{margin:0,minHeight:20,fontSize:12,fontWeight:600,color:err?"#f87171":success?"#34d399":"rgba(255,255,255,0.28)",transition:"color 0.2s"}}>
+                  {err||(success?"Signing in…":"Enter your 4-digit PIN")}
+                </p>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:20,opacity:success?0.35:1,transition:"opacity 0.3s"}}>
+                {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((d,i)=>{
+                  const isEmpty=d==="";const isDel=d==="⌫";
+                  return(
+                    <button key={i} className="ros-pin-btn" data-empty={isEmpty||undefined}
+                      onMouseEnter={()=>!isEmpty&&setHovB(i)} onMouseLeave={()=>setHovB(null)}
+                      onClick={()=>{if(isEmpty||success)return;isDel?handleDel():handlePin(String(d));}}
+                      style={{height:56,borderRadius:14,border:"1px solid "+(isEmpty?"transparent":"rgba(255,255,255,0.09)"),background:isEmpty?"transparent":"rgba(255,255,255,0.05)",color:isEmpty?"transparent":isDel?"rgba(255,255,255,0.50)":"white",fontSize:isDel?20:22,fontWeight:isDel?400:700,cursor:isEmpty?"default":"pointer",fontFamily:"inherit",outline:"none"}}>
+                      {d}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function App(){
   // Always start logged-out — login page shown on every fresh load
   const [user,setUser]=useState(null);
@@ -5247,7 +5426,7 @@ export default function App(){
     try{localStorage.setItem("ros_shop",s);}catch{}
   };
 
-  if(!user) return <Login users={users} onLogin={handleLogin}/>;
+  if(!user) return <LoginScreen users={users} onLogin={handleLogin}/>;
 
   const allowedShops=(user.shops||SHOP_IDS);
 
