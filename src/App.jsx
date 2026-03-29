@@ -1741,23 +1741,29 @@ return(
         <Modal title="⬇ Import Sales" onClose={()=>setModal(null)} accent={shop.accent}>
           <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}
             onSave={async (rows)=>{
-              // 1. Get current sales to find truly new rows
-              const existing=salesData[shopId]||[];
-              const existingIds=new Set(existing.map(s=>s.id));
-              const fresh=rows.filter(r=>r.id&&!existingIds.has(r.id));
-              if(fresh.length===0){setModal(null);return;}
+              // Upsert ALL imported rows — updates existing (e.g. zero-amount) + inserts new
+              if(rows.length===0){setModal(null);return;}
 
-              // 2. Update UI immediately
-              setSalesData(prev=>({...prev,[shopId]:[...fresh,...(prev[shopId]||[])]}));
+              // Update UI: merge rows — imported takes priority over existing
+              setSalesData(prev=>{
+                const existingMap=new Map((prev[shopId]||[]).map(s=>[s.id,s]));
+                rows.forEach(r=>existingMap.set(r.id,{...existingMap.get(r.id)||{},...r}));
+                return {...prev,[shopId]:Array.from(existingMap.values())};
+              });
               setModal(null);
 
-              // 3. Save to Supabase in batches of 50 to avoid overwhelming the API
+              // Save ALL rows to Supabase in batches of 50
               const BATCH=50;
-              for(let i=0;i<fresh.length;i+=BATCH){
-                const batch=fresh.slice(i,i+BATCH);
-                await Promise.all(batch.map(sale=>dbSaveSale(shopId,sale).catch(e=>console.error("Save failed:",sale.id,e))));
+              let saved=0;
+              for(let i=0;i<rows.length;i+=BATCH){
+                const batch=rows.slice(i,i+BATCH);
+                await Promise.all(batch.map(sale=>
+                  dbSaveSale(shopId,sale)
+                    .then(()=>saved++)
+                    .catch(e=>console.error("Save failed:",sale.id,e))
+                ));
               }
-              console.log(`✅ Import complete: ${fresh.length} rows saved to Supabase`);
+              console.log(`✅ Import complete: ${saved}/${rows.length} rows saved to Supabase`);
             }}/>
         </Modal>
       )}
@@ -2693,7 +2699,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
           for(const n of needles){const idx=headers.findIndex(h=>h.includes(n));if(idx>=0)return idx;}
           return -1;
         };
-        const idxId       = col("saleid","invoiceno","shopinv");
+        const idxId       = col("shopinv","Shop Inv.","invoiceno","Invoice No.","saleid","Sale ID");
         const idxDate     = col("date");
         const idxCust     = col("customername","customer");
         const idxAddressee= col("addressee");
