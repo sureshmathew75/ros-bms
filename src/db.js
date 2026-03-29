@@ -29,7 +29,7 @@ export const dbSaveSale = async (shopId, sale) => {
     phone:         sale.phone || '',
     address:       sale.address || '',
     rem:           sale.rem || '',
-    tax_rate:      sale.taxRate !== undefined ? sale.taxRate : 20,
+    tax_rate:      sale.taxRate || 20,
     tax_inclusive: sale.taxInclusive !== false,
     invoice_no:    sale.invoiceNo || sale.id,
   };
@@ -44,11 +44,22 @@ export const dbSaveSale = async (shopId, sale) => {
 
 export const dbLoadSales = async (shopId) => {
   if (!sb) return null;
-  const { data, error } = await sb.from('sales').select('*')
-    .eq('shop_id', shopId)
-    .order('date', { ascending: false });         // ← sort by actual date
-  if (error) { console.error('Load sales error:', error); return null; }
-  return data.map(r => ({
+  // Fetch in pages of 1000 to bypass Supabase default row limit
+  let all = [];
+  let from = 0;
+  const PAGE = 1000;
+  while (true) {
+    const { data, error } = await sb.from('sales').select('*')
+      .eq('shop_id', shopId)
+      .order('date', { ascending: false })
+      .range(from, from + PAGE - 1);
+    if (error) { console.error('Load sales error:', error); return null; }
+    if (!data || data.length === 0) break;
+    all = all.concat(data);
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  return all.map(r => ({
     id:           r.id,
     customer:     r.customer || '',
     amount:       Number(r.amount) || 0,
@@ -62,7 +73,7 @@ export const dbLoadSales = async (shopId) => {
     phone:        r.phone || '',
     address:      r.address || '',
     rem:          r.rem || '',
-    taxRate:      r.tax_rate !== undefined ? r.tax_rate : 20,
+    taxRate:      r.tax_rate || 20,
     taxInclusive: r.tax_inclusive !== false,
     invoiceNo:    r.invoice_no || r.id,
   }));
@@ -260,33 +271,29 @@ export const dbDeleteLogistic = async (id, shopId) => {
    ═══════════════════════════════════════════════════════════ */
 export const dbSaveCustomer = async (shopId, customer) => {
   if (!sb) return;
-  /* support both dbSaveCustomer(shopId, customer) and legacy dbSaveCustomer(customer) */
-  const c   = customer !== undefined ? customer : shopId;
-  const sid = customer !== undefined ? shopId   : (shopId?.id ? null : shopId);
-
   const { data: existing } = await sb.from('customers').select('id')
-    .eq('id', c.id).maybeSingle();
+    .eq('id', customer.id).eq('shop_id', shopId).maybeSingle();
 
   const payload = {
-    id:        c.id,
-    shop_id:   sid || c.shop_id || null,
-    name:      c.name || '',
-    phone:     c.phone || '',
-    whatsapp:  c.whatsapp || '',
-    address:   c.address || '',
-    tag:       c.tag || '',
-    notes:     c.notes || '',
-    purchases: c.purchases || 0,
-    spend:     c.spend || 0,
-    last:      c.last || '',
+    id:        customer.id,
+    shop_id:   shopId,
+    name:      customer.name || '',
+    phone:     customer.phone || '',
+    whatsapp:  customer.whatsapp || '',
+    address:   customer.address || '',
+    tag:       customer.tag || '',
+    notes:     customer.notes || '',
+    purchases: customer.purchases || 0,
+    spend:     customer.spend || 0,
+    last:      customer.last || '',
   };
 
   const { error } = existing
-    ? await sb.from('customers').update(payload).eq('id', c.id)
+    ? await sb.from('customers').update(payload).eq('id', customer.id).eq('shop_id', shopId)
     : await sb.from('customers').insert(payload);
 
   if (error) console.error('Save customer error:', error);
-  else console.log('✅ Customer saved:', c.id);
+  else console.log('✅ Customer saved:', customer.id);
 };
 
 export const dbLoadCustomers = async (shopId) => {
