@@ -1618,6 +1618,8 @@ return(
                 fmt={fmt}
                 formatDate={formatDate}
                 openMenu={openMenu}
+                onImport={()=>setModal("import-sales")}
+                onExport={()=>setModal("export-sales")}
                 search={search}
                 sales={sales}
                 salesPeriod={salesPeriod}
@@ -1737,7 +1739,22 @@ return(
       {/* ── IMPORT MODAL — SALES ── */}
       {modal==="import-sales"&&user?.role!=="staff"&&(
         <Modal title="⬇ Import Sales" onClose={()=>setModal(null)} accent={shop.accent}>
-          <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}/>
+          <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}
+            onSave={(rows)=>{
+              // Merge imported rows — skip duplicates by id
+              setSalesData(prev=>{
+                const existing=prev[shopId]||[];
+                const existingIds=new Set(existing.map(s=>s.id));
+                const fresh=rows.filter(r=>r.id&&!existingIds.has(r.id));
+                const merged=[...fresh,...existing];
+                // Save each new row to Supabase
+                fresh.forEach(sale=>{
+                  dbSaveSale(shopId,sale).catch(()=>{});
+                });
+                return {...prev,[shopId]:merged};
+              });
+              setModal(null);
+            }}/>
         </Modal>
       )}
 
@@ -2599,10 +2616,166 @@ return(
 /* ══════════════════════════════════════════════════════
    IMPORT / EXPORT PANEL
 ══════════════════════════════════════════════════════ */
-const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
+const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
   const [dragOver,setDragOver]=useState(false);
   const [fileName,setFileName]=useState(null);
+  const [fileObj,setFileObj]=useState(null);
   const [fileFmt,setFileFmt]=useState("CSV");
+  const [importing,setImporting]=useState(false);
+  const [importResult,setImportResult]=useState(null); // {ok:n, skip:n, errors:[]}
+  const [detectedCols,setDetectedCols]=useState(null); // show what columns were found
+
+  const handleFileSelect=(f)=>{
+    if(!f)return;
+    setFileName(f.name);
+    setFileObj(f);
+    setImportResult(null);
+    setDetectedCols(null);
+    // Peek at headers to show user what was detected
+    const reader=new FileReader();
+    reader.onload=(e)=>{
+      try{
+        const firstLines=e.target.result.split('\n').slice(0,2).join('\n');
+        const hdrs=firstLines.split('\n')[0].split(',').map(h=>h.replace(/^"|"$/g,"").trim());
+        setDetectedCols(hdrs);
+      }catch{}
+    };
+    reader.readAsText(f);
+  };
+
+  /* ── Parse CSV text robustly (handles quoted fields with commas/newlines) ── */
+  const parseCSV=(text)=>{
+    const rows=[];
+    let row=[],field="",inQ=false;
+    for(let i=0;i<text.length;i++){
+      const ch=text[i],nx=text[i+1];
+      if(inQ){
+        if(ch==='"'&&nx==='"'){field+='"';i++;}
+        else if(ch==='"'){inQ=false;}
+        else{field+=ch;}
+      } else {
+        if(ch==='"'){inQ=true;}
+        else if(ch===','){row.push(field.trim());field="";}
+        else if(ch==='\n'||(ch==='\r'&&nx==='\n')){
+          row.push(field.trim());field="";
+          if(row.some(c=>c!==""))rows.push(row);
+          row=[];
+          if(ch==='\r')i++;
+        } else {field+=ch;}
+      }
+    }
+    if(field||row.length)row.push(field.trim());
+    if(row.some(c=>c!==""))rows.push(row);
+    return rows;
+  };
+
+  const handleImport=()=>{
+    if(!fileObj){alert("Please select a file first.");return;}
+    if(!onSave){alert("Import not configured for this section.");return;}
+    setImporting(true);
+
+    const isXlsx=fileObj.name.toLowerCase().endsWith(".xlsx")||fileObj.name.toLowerCase().endsWith(".xls");
+
+    const processRows=(rows)=>{
+      try{
+        if(rows.length<2){alert("File appears to be empty or has no data rows.");setImporting(false);return;}
+        const norm=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+        const headers=rows[0].map(h=>norm(h));
+        const dataRows=rows.slice(1);
+        console.log("Import headers:", headers);
+        const col=(...names)=>{
+          const needles=names.map(n=>norm(n));
+          for(const n of needles){const idx=headers.indexOf(n);if(idx>=0)return idx;}
+          for(const n of needles){const idx=headers.findIndex(h=>h.includes(n));if(idx>=0)return idx;}
+          return -1;
+        };
+        const idxId       = col("saleid","invoiceno","shopinv");
+        const idxDate     = col("date");
+        const idxCust     = col("customername","customer");
+        const idxAddressee= col("addressee");
+        const idxAddress  = col("address");
+        const idxContact  = col("contactno","contact","phone");
+        const idxItem     = col("item","description");
+        const idxQty      = col("quantity","qty");
+        const idxPrice    = col("priceexcltax","price");
+        const idxTotal    = col("total","grandtotal","amount");
+        const idxPayment  = col("paymentmethod","payment","pay");
+        const idxSentDate = col("dispatchdate","sentdate","dispatch");
+        const idxReturn   = col("returnreceived","returnrcvd");
+        const idxRefund   = col("refund");
+        const idxTag      = col("tag");
+        const idxRemarks  = col("remarks","notes","rem");
+        const idxStatus   = col("status","ful","delivery","fulfil");
+        const get=(row,idx)=>idx>=0?String(row[idx]||"").trim():"";
+        const cleanNum=s=>parseFloat(String(s||"").replace(/[^0-9.\-]/g,""))||0;
+        let ok=0,skip=0;
+        const imported=[];
+        dataRows.forEach((row,i)=>{
+          if(row.every(c=>!c&&c!==0)){return;}
+          const customer=get(row,idxCust);
+          if(!customer){skip++;return;}
+          const id=get(row,idxId)||("IMP-"+Date.now()+"-"+i);
+          const amount=cleanNum(get(row,idxTotal))||cleanNum(get(row,idxPrice));
+          const statusRaw=get(row,idxStatus);
+          const ful=statusRaw||(shopId==="ros-india"?"ORDER NOT PLACED":"PENDING");
+          imported.push({
+            id, customer,
+            date:        get(row,idxDate)||new Date().toISOString().slice(0,10),
+            addressee:   get(row,idxAddressee),
+            address:     get(row,idxAddress),
+            contact:     get(row,idxContact),
+            phone:       get(row,idxContact),
+            item:        get(row,idxItem),
+            qty:         get(row,idxQty)||"1",
+            amount,
+            pay:         get(row,idxPayment)||"SHOP",
+            payBy:       get(row,idxPayment)||"SHOP",
+            ful, status: ful,
+            rem:         get(row,idxRemarks),
+            remarks:     get(row,idxRemarks),
+            tag:         get(row,idxTag),
+            sentDate:    get(row,idxSentDate),
+            refundAmt:   cleanNum(get(row,idxRefund)),
+            returnRcvd:  get(row,idxReturn),
+            taxRate:     shopId==="ros-india"?18:20,
+            taxInclusive:true,
+            invoiceNo:   id,
+          });
+          ok++;
+        });
+        setImportResult({ok,skip,errors:[]});
+        if(ok>0){onSave(imported);}
+        else{alert("No valid rows found. Make sure the file has a Customer Name column.");}
+      }catch(err){alert("Error processing file: "+err.message);console.error(err);}
+      setImporting(false);
+    };
+
+    if(isXlsx){
+      const loadXLSX=()=>new Promise((res,rej)=>{
+        if(window.XLSX){res(window.XLSX);return;}
+        const s=document.createElement("script");
+        s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+        s.onload=()=>res(window.XLSX);
+        s.onerror=()=>rej(new Error("Failed to load XLSX library"));
+        document.head.appendChild(s);
+      });
+      const reader=new FileReader();
+      reader.onload=(e)=>{
+        loadXLSX().then(XLSX=>{
+          const wb=XLSX.read(e.target.result,{type:"array"});
+          const ws=wb.Sheets[wb.SheetNames[0]];
+          const raw=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:""});
+          processRows(raw);
+        }).catch(err=>{alert("Could not load Excel reader: "+err.message);setImporting(false);});
+      };
+      reader.readAsArrayBuffer(fileObj);
+    } else {
+      const reader=new FileReader();
+      reader.onload=(e)=>processRows(parseCSV(e.target.result));
+      reader.onerror=()=>{alert("Could not read file.");setImporting(false);};
+      reader.readAsText(fileObj);
+    }
+  };
 
   // All 22 export columns — all ON by default
   const ALL_COLS=[
@@ -2817,7 +2990,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
       <div
         onDragOver={e=>{e.preventDefault();setDragOver(true);}}
         onDragLeave={()=>setDragOver(false)}
-        onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f)setFileName(f.name);}}
+        onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f)handleFileSelect(f);}}
         style={{
           border:"2px dashed "+(dragOver?shop.accent:"#cbd5e1"),
           borderRadius:14,padding:"40px 24px",textAlign:"center",
@@ -2825,35 +2998,58 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
           transition:"all 0.18s",cursor:"pointer",
         }}
         onClick={()=>document.getElementById("imp-file-"+entity).click()}>
-        <input id={"imp-file-"+entity} type="file" accept=".csv,.xlsx"
+        <input id={"imp-file-"+entity} type="file" accept=".csv,.xlsx,.xls"
           style={{display:"none"}}
-          onChange={e=>setFileName(e.target.files[0]?.name||null)}/>
-        <div style={{fontSize:40,marginBottom:10}}>{fileName?"✅":"📂"}</div>
+          onChange={e=>handleFileSelect(e.target.files[0]||null)}/>
+        <div style={{fontSize:40,marginBottom:10}}>{importResult?"✅":fileName?"📄":"📂"}</div>
         <p style={{margin:0,fontWeight:800,fontSize:15,color:fileName?shop.accent:"#374151"}}>
-          {fileName||"Drop your CSV file here"}
+          {importResult?`Imported ${importResult.ok} records`:fileName||"Drop your CSV file here"}
         </p>
         <p style={{margin:"4px 0 0",fontSize:12,color:"#94a3b8"}}>
-          {fileName?"File ready to import":"or click to browse · CSV accepted"}
+          {importResult&&importResult.skip>0?`${importResult.skip} rows skipped`:fileName?"File ready to import":"or click to browse · CSV or Excel (.xlsx) accepted"}
         </p>
       </div>
+
+      {/* detected columns preview */}
+      {detectedCols&&!importResult&&(
+        <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"10px 14px"}}>
+          <p style={{margin:"0 0 6px",fontSize:11,fontWeight:800,color:"#15803d",textTransform:"uppercase",letterSpacing:"0.05em"}}>✅ Columns detected ({detectedCols.length})</p>
+          <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+            {detectedCols.map((c,i)=>(
+              <span key={i} style={{fontSize:10,fontWeight:600,color:"#15803d",background:"white",border:"1px solid #bbf7d0",borderRadius:6,padding:"2px 8px"}}>{c}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* import result */}
+      {importResult&&(
+        <div style={{background:importResult.ok>0?"#f0fdf4":"#fef2f2",border:"1px solid "+(importResult.ok>0?"#bbf7d0":"#fecaca"),borderRadius:10,padding:"12px 14px"}}>
+          <p style={{margin:0,fontWeight:800,fontSize:13,color:importResult.ok>0?"#15803d":"#dc2626"}}>
+            {importResult.ok>0?`✅ ${importResult.ok} records imported successfully`:"❌ No records imported"}
+          </p>
+          {importResult.skip>0&&<p style={{margin:"4px 0 0",fontSize:12,color:"#64748b"}}>{importResult.skip} rows skipped (blank/invalid)</p>}
+        </div>
+      )}
 
       {/* actions */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
         <button
-          onClick={()=>{if(!fileName){alert("Please select a file first.");}else{alert("Import started! "+fileName+" is being processed.");onClose();}}}
+          onClick={handleImport}
+          disabled={!fileName||importing||!!importResult}
           style={{padding:"12px 0",borderRadius:11,border:"none",
-            background:fileName?shop.accent:"#e2e8f0",
-            color:fileName?"white":"#94a3b8",fontWeight:800,fontSize:14,
-            cursor:fileName?"pointer":"not-allowed",fontFamily:"inherit",
-            boxShadow:fileName?"0 4px 14px "+shop.accent+"44":"none",
+            background:importResult?"#10b981":fileName&&!importing?shop.accent:"#e2e8f0",
+            color:fileName&&!importing?"white":"#94a3b8",fontWeight:800,fontSize:14,
+            cursor:fileName&&!importing&&!importResult?"pointer":"default",fontFamily:"inherit",
+            boxShadow:fileName&&!importing?"0 4px 14px "+shop.accent+"44":"none",
             transition:"all 0.2s"}}>
-          ⬆ Import Now
+          {importing?"⏳ Processing…":importResult?"✅ Done":"⬆ Import Now"}
         </button>
         <button onClick={onClose}
           style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",
             background:"white",color:"#374151",fontWeight:700,fontSize:14,
             cursor:"pointer",fontFamily:"inherit"}}>
-          Cancel
+          {importResult?"Close":"Cancel"}
         </button>
       </div>
     </div>
