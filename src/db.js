@@ -11,9 +11,6 @@ const today = () => new Date().toISOString().split('T')[0];
    ═══════════════════════════════════════════════════════════ */
 export const dbSaveSale = async (shopId, sale) => {
   if (!sb) return;
-  const { data: existing } = await sb.from('sales').select('id')
-    .eq('id', sale.id).eq('shop_id', shopId).maybeSingle();
-
   const payload = {
     id:            sale.id,
     shop_id:       shopId,
@@ -34,10 +31,7 @@ export const dbSaveSale = async (shopId, sale) => {
     invoice_no:    sale.invoiceNo || sale.id,
   };
 
-  const { error } = existing
-    ? await sb.from('sales').update(payload).eq('id', sale.id).eq('shop_id', shopId)
-    : await sb.from('sales').insert(payload);
-
+  const { error } = await sb.from('sales').upsert(payload, { onConflict: 'id,shop_id' });
   if (error) console.error('❌ Save sale error:', error);
   else console.log('✅ Sale saved:', sale.id);
 };

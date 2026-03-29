@@ -1740,20 +1740,24 @@ return(
       {modal==="import-sales"&&user?.role!=="staff"&&(
         <Modal title="⬇ Import Sales" onClose={()=>setModal(null)} accent={shop.accent}>
           <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}
-            onSave={(rows)=>{
-              // Merge imported rows — skip duplicates by id
-              setSalesData(prev=>{
-                const existing=prev[shopId]||[];
-                const existingIds=new Set(existing.map(s=>s.id));
-                const fresh=rows.filter(r=>r.id&&!existingIds.has(r.id));
-                const merged=[...fresh,...existing];
-                // Save each new row to Supabase
-                fresh.forEach(sale=>{
-                  dbSaveSale(shopId,sale).catch(()=>{});
-                });
-                return {...prev,[shopId]:merged};
-              });
+            onSave={async (rows)=>{
+              // 1. Get current sales to find truly new rows
+              const existing=salesData[shopId]||[];
+              const existingIds=new Set(existing.map(s=>s.id));
+              const fresh=rows.filter(r=>r.id&&!existingIds.has(r.id));
+              if(fresh.length===0){setModal(null);return;}
+
+              // 2. Update UI immediately
+              setSalesData(prev=>({...prev,[shopId]:[...fresh,...(prev[shopId]||[])]}));
               setModal(null);
+
+              // 3. Save to Supabase in batches of 50 to avoid overwhelming the API
+              const BATCH=50;
+              for(let i=0;i<fresh.length;i+=BATCH){
+                const batch=fresh.slice(i,i+BATCH);
+                await Promise.all(batch.map(sale=>dbSaveSale(shopId,sale).catch(e=>console.error("Save failed:",sale.id,e))));
+              }
+              console.log(`✅ Import complete: ${fresh.length} rows saved to Supabase`);
             }}/>
         </Modal>
       )}
