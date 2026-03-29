@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
+import Login from "./Login";
 import CommandPalette from "./components/CommandPalette";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import DocumentsPanel from "./components/DocumentsPanel";
@@ -797,7 +798,7 @@ const addSale = async (form) => {
       if(idx>=0){const n=[...prev];n[idx]=updatedCust;return n;}
       return [...prev,updatedCust];
     });
-    dbSaveCustomer(updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
+    dbSaveCustomer(shopId, updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
   }
 };
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
@@ -1191,6 +1192,23 @@ return(
               <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search…"
                 style={{border:"none",background:"transparent",outline:"none",fontSize:13,color:"#374151",width:140,fontFamily:"inherit"}}/>
             </div>
+            {/* All Shops button — hidden for staff and on mobile */}
+            {user?.role!=="staff"&&(
+              <button onClick={onBack}
+                className="mob-hide"
+                style={{display:"flex",alignItems:"center",gap:7,
+                  padding:"7px 14px",borderRadius:10,
+                  border:"1px solid "+shop.accent+"44",
+                  background:shop.accentBg,
+                  color:shop.accentText,fontSize:12,fontWeight:700,
+                  cursor:"pointer",fontFamily:"inherit",
+                  transition:"all 0.15s",whiteSpace:"nowrap",
+                }}
+                onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.color="white";e.currentTarget.style.borderColor=shop.accent;}}
+                onMouseLeave={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accentText;e.currentTarget.style.borderColor=shop.accent+"44";}}>
+                🏪 All Shops
+              </button>
+            )}
             {/* Notification bell */}
             <button style={{position:"relative",width:38,height:38,borderRadius:11,border:"1px solid "+shop.accent+"33",background:shop.accentBg,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,transition:"all 0.15s"}}
               onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.borderColor=shop.accent;}}
@@ -3983,18 +4001,23 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
           {/* Quick-select saved item tags */}
           {shopItems.length>0&&(
             <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
-              {shopItems.map(itm=>(
-                <button key={itm} type="button"
-                  onClick={()=>set("item",itm)}
-                  style={{
-                    padding:"5px 14px",borderRadius:999,fontSize:12,fontWeight:700,
-                    cursor:"pointer",fontFamily:"inherit",border:"1px solid",
-                    transition:"all 0.15s",
-                    background:form.item===itm?shop.accent:"white",
-                    color:form.item===itm?"white":shop.accentText,
-                    borderColor:form.item===itm?shop.accent:shop.accent+"55",
-                  }}>{itm}</button>
-              ))}
+              {shopItems.map((itm,idx)=>{
+                // Guard: itm may be a string or a legacy {name,...} object
+                const label=typeof itm==="object"&&itm!==null?(itm.name||itm.label||"Item"):String(itm);
+                const value=typeof itm==="object"&&itm!==null?(itm.name||itm.label||""):String(itm);
+                return(
+                  <button key={idx} type="button"
+                    onClick={()=>set("item",value)}
+                    style={{
+                      padding:"5px 14px",borderRadius:999,fontSize:12,fontWeight:700,
+                      cursor:"pointer",fontFamily:"inherit",border:"1px solid",
+                      transition:"all 0.15s",
+                      background:form.item===value?shop.accent:"white",
+                      color:form.item===value?"white":shop.accentText,
+                      borderColor:form.item===value?shop.accent:shop.accent+"55",
+                    }}>{label}</button>
+                );
+              })}
             </div>
           )}
           {/* Type item name + save button */}
@@ -5144,164 +5167,32 @@ const ROLE_NAV={
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
 
-/* ── Login Screen ── */
-const LoginScreen=({onLogin,users})=>{
-  const [selUser,setSelUser]=useState(null);
-  const [pin,setPin]=useState("");
-  const [err,setErr]=useState("");
-  const [hovU,setHovU]=useState(null);
-  const [hovB,setHovB]=useState(false);
-  const [showPin,setShowPin]=useState(false);
-
-  const handlePin=(d)=>{
-    if(pin.length>=4)return;
-    const np=pin+d;
-    setPin(np);
-    setErr("");
-    if(np.length===4){
-      setTimeout(()=>{
-        if(np===selUser.pin){ onLogin(selUser); }
-        else{ setErr("Wrong PIN — try again"); setPin(""); }
-      },200);
-    }
-  };
-  const back=()=>{setSelUser(null);setPin("");setErr("");};
-
-  return(
-    <div style={{
-      minHeight:"100vh",
-      background:"linear-gradient(145deg,#0f172a 0%,#1e293b 40%,#0f172a 100%)",
-      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-      fontFamily:"'Arimo',Arial,sans-serif",
-      position:"relative",overflow:"hidden",
-    }}>
-      {/* background mesh */}
-      <div style={{position:"absolute",inset:0,backgroundImage:"radial-gradient(rgba(255,255,255,0.03) 1px,transparent 1px)",backgroundSize:"28px 28px",pointerEvents:"none"}}/>
-      {/* glowing orbs */}
-      <div style={{position:"absolute",top:-120,left:-120,width:400,height:400,borderRadius:"50%",background:"rgba(37,99,235,0.12)",filter:"blur(80px)",pointerEvents:"none"}}/>
-      <div style={{position:"absolute",bottom:-100,right:-100,width:350,height:350,borderRadius:"50%",background:"rgba(124,58,237,0.10)",filter:"blur(80px)",pointerEvents:"none"}}/>
-
-      {/* logo + brand */}
-      <div style={{textAlign:"center",marginBottom:40,position:"relative",zIndex:1}}>
-        <div style={{width:64,height:64,borderRadius:20,background:"linear-gradient(135deg,#2563eb,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",boxShadow:"0 8px 32px rgba(37,99,235,0.40)"}}>
-          <span style={{color:"white",fontWeight:900,fontSize:28}}>R</span>
-        </div>
-        <h1 style={{margin:"0 0 4px",fontSize:26,fontWeight:800,color:"white",letterSpacing:"-0.5px"}}>ROS Business Suite</h1>
-        <p style={{margin:0,fontSize:13,color:"rgba(255,255,255,0.45)",fontWeight:500}}>Select your account to continue</p>
-      </div>
-
-      {!selUser?(
-        /* ── user selection ── */
-        <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:420,padding:"0 24px"}}>
-          <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            {(users||[]).map(u=>{
-              const isH=hovU===u.id;
-              return(
-                <div key={u.id}
-                  onClick={()=>setSelUser(u)}
-                  onMouseEnter={()=>setHovU(u.id)}
-                  onMouseLeave={()=>setHovU(null)}
-                  style={{
-                    display:"flex",alignItems:"center",gap:14,
-                    background:isH?"rgba(255,255,255,0.10)":"rgba(255,255,255,0.05)",
-                    border:isH?"1px solid rgba(255,255,255,0.20)":"1px solid rgba(255,255,255,0.08)",
-                    borderRadius:16,padding:"14px 18px",cursor:"pointer",
-                    transition:"all 0.18s",
-                    transform:isH?"translateX(4px)":"none",
-                  }}>
-                  <div style={{width:46,height:46,borderRadius:14,background:u.avatar,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:15,flexShrink:0,boxShadow:"0 4px 14px rgba(0,0,0,0.25)"}}>
-                    {u.initials}
-                  </div>
-                  <div style={{flex:1}}>
-                    <p style={{margin:0,fontWeight:700,fontSize:15,color:"white"}}>{u.name}</p>
-                  </div>
-                  <span style={{color:"rgba(255,255,255,0.30)",fontSize:18}}>›</span>
-                </div>
-              );
-            })}
-          </div>
-          <p style={{textAlign:"center",marginTop:32,fontSize:11,color:"rgba(255,255,255,0.22)"}}>Developed by ROS Nexus</p>
-        </div>
-      ):(
-        /* ── PIN entry ── */
-        <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:340,padding:"0 24px",textAlign:"center"}}>
-          {/* user badge */}
-          <div style={{marginBottom:24}}>
-            <div style={{width:60,height:60,borderRadius:18,background:selUser.avatar,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:20,margin:"0 auto 10px",boxShadow:"0 8px 24px rgba(0,0,0,0.30)"}}>
-              {selUser.initials}
-            </div>
-            <p style={{margin:"0 0 2px",fontWeight:700,fontSize:17,color:"white"}}>{selUser.name}</p>
-            <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.40)"}}>Enter your 4-digit PIN</p>
-          </div>
-
-          {/* PIN dots */}
-          <div style={{display:"flex",justifyContent:"center",gap:14,marginBottom:8}}>
-            {[0,1,2,3].map(i=>(
-              <div key={i} style={{
-                width:14,height:14,borderRadius:"50%",
-                background:pin.length>i?"white":"rgba(255,255,255,0.15)",
-                border:"2px solid rgba(255,255,255,0.30)",
-                transition:"background 0.15s",
-                boxShadow:pin.length>i?"0 0 10px rgba(255,255,255,0.5)":"none",
-              }}/>
-            ))}
-          </div>
-          {err&&<p style={{margin:"0 0 8px",fontSize:12,color:"#f87171",fontWeight:600}}>{err}</p>}
-
-          {/* numpad */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:20,marginBottom:16}}>
-            {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((d,i)=>{
-              const isEmpty=d==="";
-              const isDel=d==="⌫";
-              const isHB=hovB===i;
-              return(
-                <button key={i}
-                  onMouseEnter={()=>setHovB(i)}
-                  onMouseLeave={()=>setHovB(false)}
-                  onClick={()=>{ if(isEmpty)return; if(isDel){setPin(p=>p.slice(0,-1));setErr("");}else handlePin(String(d)); }}
-                  style={{
-                    height:52,borderRadius:13,border:"1px solid rgba(255,255,255,0.12)",
-                    background:isEmpty?"transparent":isHB?"rgba(255,255,255,0.20)":"rgba(255,255,255,0.08)",
-                    color:isEmpty?"transparent":"white",
-                    fontSize:isDel?18:20,fontWeight:isDel?500:700,
-                    cursor:isEmpty?"default":"pointer",
-                    transition:"all 0.15s",
-                    fontFamily:"inherit",
-                    transform:isHB&&!isEmpty?"scale(0.95)":"scale(1)",
-                  }}>
-                  {d}
-                </button>
-              );
-            })}
-          </div>
-
-          <button onClick={back} style={{background:"none",border:"none",color:"rgba(255,255,255,0.40)",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
-            ← Back to accounts
-          </button>
-        </div>
-      )}
-    </div>
-  );
-};
 
 /* =========================================================
    UI COMPONENTS
    ========================================================= */
 
 export default function App(){
-  const [user,setUser]=useState(()=>{
-    try{const s=localStorage.getItem("ros_user");return s?JSON.parse(s):null;}catch{return null;}
-  });
-  const [shop,setShop]=useState(()=>{
-    try{return localStorage.getItem("ros_shop")||null;}catch{return null;}
-  });
+  // Always start logged-out — login page shown on every fresh load
+  const [user,setUser]=useState(null);
+  const [shop,setShop]=useState(null);
   const [users,setUsers]=useState(INITIAL_USERS);
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
   const [customers,setCustomers]=useState([]);
   const [shopItems,setShopItems]=useState(()=>{
-    try{const s=localStorage.getItem("ros_shopItems");return s?JSON.parse(s):{"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
-    catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
+    try{
+      const s=localStorage.getItem("ros_shopItems");
+      if(!s) return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
+      const parsed=JSON.parse(s);
+      // Normalize: ensure every entry is a plain string (guard against legacy {name,code} objects)
+      const normalize=(arr)=>(arr||[]).map(x=>typeof x==="object"&&x!==null?(x.name||x.label||JSON.stringify(x)):String(x)).filter(Boolean);
+      return {
+        "ros-selections": normalize(parsed["ros-selections"]),
+        "ros-hairlines":  normalize(parsed["ros-hairlines"]),
+        "ros-india":      normalize(parsed["ros-india"]),
+      };
+    }catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
   });
   const saveShopItems=(updated)=>{
     setShopItems(updated);
@@ -5309,6 +5200,24 @@ export default function App(){
   };
 
   const updateSalesData=setSalesData;
+
+  // Self-heal: clear any corrupted ros_shopItems from localStorage on first mount
+  useEffect(()=>{
+    try{
+      const raw=localStorage.getItem("ros_shopItems");
+      if(raw){
+        const parsed=JSON.parse(raw);
+        const hasObjects=["ros-selections","ros-hairlines","ros-india"].some(k=>
+          (parsed[k]||[]).some(x=>typeof x==="object"&&x!==null)
+        );
+        if(hasObjects){
+          console.warn("🔧 Clearing corrupted ros_shopItems from localStorage");
+          localStorage.removeItem("ros_shopItems");
+          setShopItems({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
+        }
+      }
+    }catch{}
+  },[]);
 
   // Load from Supabase on mount - Supabase is single source of truth
   useEffect(()=>{
@@ -5327,12 +5236,10 @@ export default function App(){
   const handleLogin=u=>{
     const fresh=users.find(x=>x.id===u.id)||u;
     setUser(fresh);setShop(null);
-    try{localStorage.setItem("ros_user",JSON.stringify(fresh));localStorage.removeItem("ros_shop");}catch{}
   };
 
   const handleLogout=()=>{
     setUser(null);setShop(null);
-    try{localStorage.removeItem("ros_user");localStorage.removeItem("ros_shop");}catch{}
   };
 
   const handleSetShop=(s)=>{
@@ -5340,7 +5247,7 @@ export default function App(){
     try{localStorage.setItem("ros_shop",s);}catch{}
   };
 
-  if(!user) return <LoginScreen users={users} onLogin={handleLogin}/>;
+  if(!user) return <Login users={users} onLogin={handleLogin}/>;
 
   const allowedShops=(user.shops||SHOP_IDS);
 
