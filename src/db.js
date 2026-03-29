@@ -67,6 +67,7 @@ export const dbLoadSales = async (shopId) => {
     from += PAGE;
   }
   console.log(`✅ Loaded ${all.length} sales for ${shopId} from Supabase`);
+  return all.map(r => ({
     id:           r.id,
     customer:     r.customer || '',
     amount:       Number(r.amount) || 0,
