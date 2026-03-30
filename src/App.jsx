@@ -1707,7 +1707,7 @@ return(
           )}
           {/* REPORTS */}
           {tab==="reports"&&(
-            <ReportsPanel shop={shop} showPdf={showPdf}/>
+            <ReportsPanel shop={shop} showPdf={showPdf} sales={sales} customers={customers} fmt={fmt} shopId={shopId} exps={exps} purch={purch}/>
           )}
 
           {/* INVOICES placeholder */}
