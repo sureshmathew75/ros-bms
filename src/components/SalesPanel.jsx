@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react";
-
+import { formatDate } from "../utils";
 /* ─────────────────────────────────────────────────────────────────────────
    SALES PANEL
    Period definitions:
@@ -44,7 +44,7 @@ function filterByPeriod(sales, period) {
   const { start, end } = getPeriodRange(period);
   if (!start && !end) return sales;
   return sales.filter(s => {
-    const dt = toSortableDate(s.date);
+    const dt = toSortableDate({formatDate(s.date)});
     return dt >= start && dt <= end;
   });
 }
