@@ -44,7 +44,7 @@ function filterByPeriod(sales, period) {
   const { start, end } = getPeriodRange(period);
   if (!start && !end) return sales;
   return sales.filter(s => {
-    {formatDate(s.date)};
+    const dt = toSortableDate(s.date);
     return dt >= start && dt <= end;
   });
 }
