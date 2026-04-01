@@ -11,6 +11,9 @@ const today = () => new Date().toISOString().split('T')[0];
    ═══════════════════════════════════════════════════════════ */
 export const dbSaveSale = async (shopId, sale) => {
   if (!sb) return;
+  const { data: existing } = await sb.from('sales').select('id')
+    .eq('id', sale.id).eq('shop_id', shopId).maybeSingle();
+
   const payload = {
     id:            sale.id,
     shop_id:       shopId,
@@ -31,43 +34,35 @@ export const dbSaveSale = async (shopId, sale) => {
     invoice_no:    sale.invoiceNo || sale.id,
   };
 
-  // Try upsert first, fall back to insert if row doesn't exist
-  const { error: upsertErr } = await sb.from('sales').upsert(payload);
-  if (upsertErr) {
-    // Fallback: try plain insert
-    const { error: insertErr } = await sb.from('sales').insert(payload);
-    if (insertErr) {
-      // Last resort: update
-      const { error: updateErr } = await sb.from('sales').update(payload).eq('id', sale.id).eq('shop_id', shopId);
-      if (updateErr) console.error('❌ Save sale failed:', sale.id, updateErr);
-      else console.log('✅ Sale updated (fallback):', sale.id);
-    } else {
-      console.log('✅ Sale inserted (fallback):', sale.id);
-    }
-  } else {
-    console.log('✅ Sale upserted:', sale.id);
-  }
+  const { error } = existing
+    ? await sb.from('sales').update(payload).eq('id', sale.id).eq('shop_id', shopId)
+    : await sb.from('sales').insert(payload);
+
+  if (error) console.error('❌ Save sale error:', error);
+  else console.log('✅ Sale saved:', sale.id);
+};
+
+/* Parse any date string to a comparable timestamp for sorting */
+const parseDateMs = (raw) => {
+  if (!raw) return 0;
+  const s = String(raw).trim();
+  // yyyy-mm-dd
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(s).getTime();
+  // M/D/YYYY or MM/DD/YYYY (US import format)
+  const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (us) return new Date(Number(us[3]), Number(us[1]) - 1, Number(us[2])).getTime();
+  // DD-MM-YYYY
+  const dmy = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (dmy) return new Date(Number(dmy[3]), Number(dmy[2]) - 1, Number(dmy[1])).getTime();
+  return 0;
 };
 
 export const dbLoadSales = async (shopId) => {
   if (!sb) return null;
-  // Fetch in pages of 1000 to bypass Supabase default row limit
-  let all = [];
-  let from = 0;
-  const PAGE = 1000;
-  while (true) {
-    const { data, error } = await sb.from('sales').select('*')
-      .eq('shop_id', shopId)
-      .order('date', { ascending: false })
-      .range(from, from + PAGE - 1);
-    if (error) { console.error('Load sales error:', error); return null; }
-    if (!data || data.length === 0) break;
-    all = all.concat(data);
-    if (data.length < PAGE) break;
-    from += PAGE;
-  }
-  console.log(`✅ Loaded ${all.length} sales for ${shopId} from Supabase`);
-  return all.map(r => ({
+  const { data, error } = await sb.from('sales').select('*')
+    .eq('shop_id', shopId);
+  if (error) { console.error('Load sales error:', error); return null; }
+  const mapped = data.map(r => ({
     id:           r.id,
     customer:     r.customer || '',
     amount:       Number(r.amount) || 0,
@@ -85,6 +80,8 @@ export const dbLoadSales = async (shopId) => {
     taxInclusive: r.tax_inclusive !== false,
     invoiceNo:    r.invoice_no || r.id,
   }));
+  // Sort latest first — handles mixed date formats (ISO, M/D/YYYY, DD-MM-YYYY)
+  return mapped.sort((a, b) => parseDateMs(b.date) - parseDateMs(a.date));
 };
 
 export const dbDeleteSale = async (id, shopId) => {
@@ -137,7 +134,7 @@ export const dbLoadPurchases = async (shopId) => {
   if (!sb) return null;
   const { data, error } = await sb.from('purchases').select('*')
     .eq('shop_id', shopId)
-    .order('date', { ascending: false });         // ← sort by actual date
+    .order('date', { ascending: false });
   if (error) { console.error('Load purchases error:', error); return null; }
   return data.map(r => ({
     id:           r.id,
@@ -199,7 +196,7 @@ export const dbLoadExpenses = async (shopId) => {
   if (!sb) return null;
   const { data, error } = await sb.from('expenses').select('*')
     .eq('shop_id', shopId)
-    .order('date', { ascending: false });         // ← sort by actual date
+    .order('date', { ascending: false });
   if (error) { console.error('Load expenses error:', error); return null; }
   return data.map(r => ({
     id:     r.id,
@@ -252,7 +249,7 @@ export const dbLoadLogistics = async (shopId) => {
   if (!sb) return null;
   const { data, error } = await sb.from('logistics').select('*')
     .eq('shop_id', shopId)
-    .order('created_at', { ascending: false });   // logistics has no date field
+    .order('created_at', { ascending: false });
   if (error) { console.error('Load logistics error:', error); return null; }
   return data.map(r => ({
     id:     r.id,
