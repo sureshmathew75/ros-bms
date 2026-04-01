@@ -67,6 +67,8 @@ function safeParseDate(raw) {
   const s = String(raw).trim();
   // yyyy-mm-dd (standard ISO from Supabase)
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(s);
+   const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+if (us) return new Date(Number(us[3]), Number(us[1]) - 1, Number(us[2]));
   // dd-mm-yyyy
   const dmy4 = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
   if (dmy4) return new Date(`${dmy4[3]}-${dmy4[2].padStart(2,"0")}-${dmy4[1].padStart(2,"0")}`);
