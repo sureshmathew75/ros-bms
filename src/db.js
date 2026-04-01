@@ -249,6 +249,7 @@ export const dbLoadLogistics = async (shopId) => {
   if (!sb) return null;
   const { data, error } = await sb.from('logistics').select('*')
     .eq('shop_id', shopId)
+     .limit(10000);
     .order('created_at', { ascending: false });
   if (error) { console.error('Load logistics error:', error); return null; }
   return data.map(r => ({
