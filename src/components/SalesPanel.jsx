@@ -105,11 +105,18 @@ function toSortableDate(raw) {
 function fmtDate(raw) {
   if (!raw) return "—";
   const s = String(raw).trim();
-  // Already yyyy-mm-dd → convert to DD-MM-YYYY
+  // yyyy-mm-dd → DD/MM/YY
   const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (iso) return `${iso[3]}-${iso[2]}-${iso[1].slice(2)}`; // DD-MM-YY
-  // Already dd-mm-yyyy or dd-mm-yy → return as-is
-  if (/^\d{2}-\d{2}-\d{2,4}$/.test(s)) return s;
+  if (iso) return `${iso[3]}/${iso[2]}/${iso[1].slice(2)}`;
+  // M/D/YYYY or MM/DD/YYYY (imported sales format) → DD/MM/YY
+  const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (us) return `${us[2].padStart(2,"0")}/${us[1].padStart(2,"0")}/${us[3].slice(2)}`;
+  // DD-MM-YYYY → DD/MM/YY
+  const dmy4 = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (dmy4) return `${dmy4[1]}/${dmy4[2]}/${dmy4[3].slice(2)}`;
+  // DD-MM-YY → DD/MM/YY
+  const dmy2 = s.match(/^(\d{2})-(\d{2})-(\d{2})$/);
+  if (dmy2) return `${dmy2[1]}/${dmy2[2]}/${dmy2[3]}`;
   return s;
 }
 
