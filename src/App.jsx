@@ -771,11 +771,7 @@ const addSale = async (form) => {
   setModal(null);
   // Save to Supabase then reload that shop's sales to ensure consistency
   // Save to Supabase then reload THIS shop only to confirm sync
-  dbSaveSale(shopId, newSale).then(()=>{
-    dbLoadSales(shopId).then(data=>{
-      if(data) setSalesData(prev=>({...prev,[shopId]:data}));
-    }).catch(()=>{});
-  }).catch(err => console.error("❌ Supabase save failed:", err));
+  dbSaveSale(shopId, newSale).catch(err => console.error("❌ Supabase save failed:", err));
   // Auto-save/update customer record
   if(form.customer){
     const existing=customers.find(c=>c.name===form.customer);
