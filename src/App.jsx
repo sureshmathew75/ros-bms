@@ -766,13 +766,9 @@ const addSale = async (form) => {
   // Update UI instantly
   setSalesData(d => ({...d, [shopId]: [newSale, ...d[shopId]]}));
   setModal(null);
-  // Save to Supabase then reload that shop's sales to ensure consistency
-  // Save to Supabase then reload THIS shop only to confirm sync
-  dbSaveSale(shopId, newSale).then(()=>{
-    dbLoadSales(shopId).then(data=>{
-      if(data) setSalesData(prev=>({...prev,[shopId]:data}));
-    }).catch(()=>{});
-  }).catch(err => console.error("❌ Supabase save failed:", err));
+  const _usedNum = parseInt((nid||"0").match(/^ROS(\d{4})\d$/)?.[1]||"0")||0;
+  if(_usedNum >= 1313) { try { localStorage.setItem("ros_lastInv_"+shopId, String(_usedNum)); } catch{} }
+  dbSaveSale(shopId, newSale).catch(err => console.error("❌ Supabase save failed:", err));
   // Auto-save/update customer record
   if(form.customer){
     const existing=customers.find(c=>c.name===form.customer);
@@ -2067,20 +2063,13 @@ return(
                   </tr>
                 </thead>
                 <tbody>
-                  {(inv.lineItems&&inv.lineItems.length>0?inv.lineItems:[{item:inv.item||"Product / Service",qty:inv.qty||1,price:sub}]).map((li,idx)=>{
-                    const liQty=Number(li.qty)||1;
-                    const liPrice=Number(li.price)||0;
-                    const liTotal=liQty*liPrice;
-                    return(
-                      <tr key={idx} style={{borderBottom:"1px solid #e2e8f0"}}>
-                        <td style={{padding:"12px 14px",fontSize:13,color:"#64748b"}}>{idx+1}</td>
-                        <td style={{padding:"12px 14px",fontWeight:700}}>{li.item||"Product / Service"}</td>
-                        <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700}}>{liQty}</td>
-                        <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700}}>{sym}{liPrice.toLocaleString()}</td>
-                        <td style={{padding:"12px 14px",textAlign:"right",fontWeight:800,color:shop.accent}}>{sym}{liTotal.toLocaleString()}</td>
-                      </tr>
-                    );
-                  })}
+                  <tr style={{borderBottom:"1px solid #e2e8f0"}}>
+                    <td style={{padding:"12px 14px",fontSize:13,color:"#64748b"}}>1</td>
+                    <td style={{padding:"12px 14px",fontWeight:700}}>{inv.item||"Product / Service"}</td>
+                    <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700}}>{inv.qty||1}</td>
+                    <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700}}>{sym}{sub.toLocaleString()}</td>
+                    <td style={{padding:"12px 14px",textAlign:"right",fontWeight:800,color:shop.accent}}>{sym}{grd.toLocaleString()}</td>
+                  </tr>
                 </tbody>
               </table>
               {/* Totals */}
@@ -2465,7 +2454,7 @@ return(
               <div style={{border:"1px solid #e2e8f0",borderRadius:14,overflow:"hidden",marginBottom:20}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0"}}>
                   <span style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>Line Items</span>
-                  <span style={{fontSize:12,color:"#94a3b8"}}>{selRow.lineItems&&selRow.lineItems.length>0?selRow.lineItems.length:1} item(s)</span>
+                  <span style={{fontSize:12,color:"#94a3b8"}}>1 item(s)</span>
                 </div>
                 <table style={{width:"100%",borderCollapse:"collapse"}}>
                   <thead>
@@ -2476,24 +2465,21 @@ return(
                     </tr>
                   </thead>
                   <tbody>
-                    {(selRow.lineItems&&selRow.lineItems.length>0
-                      ? selRow.lineItems
-                      : [{item:selRow.item||selRow.customer,qty:selRow.qty||1,price:(()=>{const e2=Number(selRow.amount)||0,r2=shopId==="ros-india"?0.18:0.20,inc2=selRow.taxInclusive!==false;return inc2?parseFloat((e2/(1+r2)).toFixed(2)):e2;})()}]
-                    ).map((li,idx)=>{
-                      const liQty=Number(li.qty)||1;
-                      const liPrice=Number(li.price)||0;
-                      const liTotal=liQty*liPrice;
-                      return(
-                        <tr key={idx} style={{borderTop:idx>0?"1px solid #f1f5f9":"none"}}>
-                          <td style={{padding:"12px 14px"}}>
-                            <p style={{margin:0,fontWeight:700,fontSize:13,color:"#1e293b"}}>{li.item||"—"}</p>
-                          </td>
-                          <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700,color:"#374151"}}>{liQty}</td>
-                          <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700,color:"#374151"}}>{fmt(shopId,liPrice)}</td>
-                          <td style={{padding:"12px 14px",textAlign:"right",fontWeight:800,color:shop.accent}}>{fmt(shopId,liTotal)}</td>
-                        </tr>
-                      );
-                    })}
+                    <tr>
+                      <td style={{padding:"12px 14px"}}>
+                        <p style={{margin:0,fontWeight:700,fontSize:13,color:"#1e293b"}}>{selRow.item||selRow.customer}</p>
+                      </td>
+                      <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700,color:"#374151"}}>{selRow.qty||1}</td>
+                      {(()=>{
+                        const e2=Number(selRow.amount)||0,r2=shopId==="ros-india"?0.18:0.20,inc2=selRow.taxInclusive!==false;
+                        const sub2=inc2?parseFloat((e2/(1+r2)).toFixed(2)):e2;
+                        const grd2=parseFloat((sub2*(1+r2)).toFixed(2));
+                        return <>
+                          <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700,color:"#374151"}}>{fmt(shopId,sub2)}</td>
+                          <td style={{padding:"12px 14px",textAlign:"right",fontWeight:800,color:shop.accent}}>{fmt(shopId,grd2)}</td>
+                        </>;
+                      })()}
+                    </tr>
                   </tbody>
                 </table>
               </div>
@@ -3750,8 +3736,9 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     qty:         "1",
     amount:      "",
     taxInclusive: true,
-    taxRate:     shopId==="ros-india" ? 18 : 20,
+    taxRate:     0,
     payBy:       "SHOP",
+    shopInvoiceNo: "",
     status:      shopId==="ros-india" ? "ORDER NOT PLACED" : "PENDING",
     sentDate:    "",
     returnRcvd:  "",
@@ -3988,7 +3975,6 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
       {/* ORDER DETAILS */}
       <Divider title="Order Details"/>
       <div style={{marginBottom:16}}>
-        {/* Quick-select saved item tags */}
         {shopItems.length>0&&(
           <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
             <span style={{fontSize:11,fontWeight:700,color:"#94a3b8",alignSelf:"center"}}>Quick add:</span>
@@ -4007,7 +3993,6 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             })}
           </div>
         )}
-        {/* Line items table */}
         <div style={{border:"1px solid #e2e8f0",borderRadius:12,overflow:"hidden",marginBottom:10}}>
           <div style={{background:"#f8fafc",padding:"8px 14px",display:"grid",gridTemplateColumns:"1fr 70px 110px 32px",gap:8,borderBottom:"1px solid #f1f5f9"}}>
             <span style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>Item / Description</span>
@@ -4018,19 +4003,16 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
           {lineItems.map((li,i)=>(
             <div key={i} style={{padding:"8px 14px",display:"grid",gridTemplateColumns:"1fr 70px 110px 32px",gap:8,borderTop:i>0?"1px solid #f1f5f9":"none",alignItems:"center"}}>
               <input value={li.item} onChange={e=>setLineItem(i,"item",e.target.value)}
-                placeholder="Item name…"
-                style={{...inp,padding:"7px 10px",fontSize:12}} onFocus={fo} onBlur={bl}/>
+                placeholder="Item name\u2026" style={{...inp,padding:"7px 10px",fontSize:12}} onFocus={fo} onBlur={bl}/>
               <input type="number" min="1" value={li.qty} onChange={e=>setLineItem(i,"qty",e.target.value)}
                 style={{...inp,padding:"7px 10px",fontSize:12}} onFocus={fo} onBlur={bl}/>
               <input type="number" min="0" step="0.01" value={li.price} onChange={e=>setLineItem(i,"price",e.target.value)}
-                placeholder="0.00"
-                style={{...inp,padding:"7px 10px",fontSize:12}} onFocus={fo} onBlur={bl}/>
-              <button type="button" onClick={()=>removeLineItem(i)}
-                disabled={lineItems.length===1}
-                style={{width:28,height:28,borderRadius:7,border:"1px solid #fca5a5",
-                  background:"#fef2f2",color:"#dc2626",cursor:lineItems.length===1?"not-allowed":"pointer",
-                  fontSize:15,display:"flex",alignItems:"center",justifyContent:"center",
-                  opacity:lineItems.length===1?0.35:1,fontFamily:"inherit",padding:0}}>×</button>
+                placeholder="0.00" style={{...inp,padding:"7px 10px",fontSize:12}} onFocus={fo} onBlur={bl}/>
+              <button type="button" onClick={()=>removeLineItem(i)} disabled={lineItems.length===1}
+                style={{width:28,height:28,borderRadius:7,border:"1px solid #fca5a5",background:"#fef2f2",
+                  color:"#dc2626",cursor:lineItems.length===1?"not-allowed":"pointer",fontSize:15,
+                  display:"flex",alignItems:"center",justifyContent:"center",
+                  opacity:lineItems.length===1?0.35:1,fontFamily:"inherit",padding:0}}>\xd7</button>
             </div>
           ))}
           <div style={{padding:"8px 14px",borderTop:"1px solid #f1f5f9",display:"flex",justifyContent:"space-between",alignItems:"center",background:"#fafafa"}}>
@@ -4038,16 +4020,15 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               style={{padding:"6px 14px",borderRadius:8,border:"1px dashed "+shop.accent,
                 background:shop.accentBg,color:shop.accent,fontSize:12,fontWeight:700,
                 cursor:"pointer",fontFamily:"inherit"}}>
-              ＋ Add Item
+              \uff0b Add Item
             </button>
             <div style={{display:"flex",alignItems:"center",gap:10}}>
               <button type="button"
-                title="Save last item for quick access"
                 onClick={()=>{const last=lineItems[lineItems.length-1];if(last?.item?.trim()&&onAddShopItem)onAddShopItem(last.item.trim());}}
                 style={{padding:"5px 10px",borderRadius:7,border:"1px solid "+shop.accent+"55",
                   background:shop.accentBg,color:shop.accentText,fontSize:11,fontWeight:700,
                   cursor:"pointer",fontFamily:"inherit"}}>
-                ＋ Save Item
+                \uff0b Save Item
               </button>
               <span style={{fontSize:13,fontWeight:900,color:shop.accent}}>
                 Total: {shop.symbol}{lineTotal.toFixed(2)}
@@ -4067,7 +4048,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               <div>
                 <p style={{margin:0,fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>GST / Tax Calculation</p>
                 <p style={{margin:"2px 0 0",fontSize:12,fontWeight:700,color:form.taxInclusive?"#15803d":"#1d4ed8"}}>
-                  {form.taxInclusive?"Price includes tax — calculated backwards":"Price excludes tax — added on top"}
+                  {form.taxInclusive?"Price includes tax \u2014 calculated backwards":"Price excludes tax \u2014 added on top"}
                 </p>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}} onClick={()=>set("taxInclusive",!form.taxInclusive)}>
@@ -4077,31 +4058,28 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 </div>
               </div>
             </div>
-            {/* Tax Rate Buttons */}
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <span style={{fontSize:11,fontWeight:700,color:"#64748b",marginRight:4}}>Tax Rate:</span>
               {[0,5,18,20].map(r=>(
-                <button key={r} type="button" onClick={()=>set("taxRate",r)}
-                  style={{padding:"4px 12px",borderRadius:999,border:"2px solid "+(form.taxRate===r?shop.accent:"#e2e8f0"),
-                    background:form.taxRate===r?shop.accent:"white",color:form.taxRate===r?"white":"#374151",
+                <button key={r} type="button" onClick={()=>set("taxRate",Number(r))}
+                  style={{padding:"4px 12px",borderRadius:999,border:"2px solid "+(Number(form.taxRate)===r?shop.accent:"#e2e8f0"),
+                    background:Number(form.taxRate)===r?shop.accent:"white",color:Number(form.taxRate)===r?"white":"#374151",
                     fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>
                   {r}%
                 </button>
               ))}
             </div>
           </div>
-          {/* Amount + live breakdown */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <div>
-              <label style={lbl}>Amount ({shop.symbol}) — {form.taxInclusive?"incl. tax":"excl. tax"}</label>
+              <label style={lbl}>Amount ({shop.symbol}) \u2014 {form.taxInclusive?"incl. tax":"excl. tax"}</label>
               <input type="number"
                 value={lineTotal>0?lineTotal.toFixed(2):form.amount}
                 onChange={e=>set("amount",e.target.value)}
                 placeholder="0.00"
-                style={{...inp,background:lineTotal>0?"#f0fdf4":undefined,
-                  border:lineTotal>0?"1px solid #bbf7d0":undefined}}
+                style={{...inp,background:lineTotal>0?"#f0fdf4":undefined,border:lineTotal>0?"1px solid #bbf7d0":undefined}}
                 onFocus={fo} onBlur={bl}/>
-              {lineTotal>0&&<p style={{margin:"3px 0 0",fontSize:10,color:"#15803d",fontWeight:600}}>✓ Auto-calculated from line items</p>}
+              {lineTotal>0&&<p style={{margin:"3px 0 0",fontSize:10,color:"#15803d",fontWeight:600}}>\u2713 Auto-calculated from line items</p>}
             </div>
             {(lineTotal>0?lineTotal:Number(form.amount))>0&&(()=>{
               const a=lineTotal>0?lineTotal:Number(form.amount);
@@ -4133,11 +4111,20 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
 
       {/* PAYMENT */}
       <Divider title="Payment"/>
-      <div style={{marginBottom:16}}>
-        <label style={lbl}>Payment By</label>
-        <select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>
-          {["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"].map(o=><option key={o}>{o}</option>)}
-        </select>
+      <div style={{display:"grid",gridTemplateColumns:form.payBy==="SHOP"?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
+        <div>
+          <label style={lbl}>Payment By</label>
+          <select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>
+            {["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"].map(o=><option key={o}>{o}</option>)}
+          </select>
+        </div>
+        {form.payBy==="SHOP"&&(
+          <div>
+            <label style={lbl}>Shop Invoice No.</label>
+            <input value={form.shopInvoiceNo||""} onChange={e=>set("shopInvoiceNo",e.target.value)}
+              placeholder="e.g. 12345" style={inp} onFocus={fo} onBlur={bl}/>
+          </div>
+        )}
       </div>
 
       {/* DELIVERY */}
