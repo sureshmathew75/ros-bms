@@ -3949,15 +3949,15 @@ const NewCustomerForm=({shop,onSave,onClose,customers=[]})=>{
    NEW SALE FORM
 ══════════════════════════════════════════════════════ */
 const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,customers=[]})=>{
-  const nextNum=(lastInvoiceNum||1312)+1;
-  /* Financial year suffix: Apr-Mar cycle
-     e.g. sale in Jan 2026 → FY 2025-26 → suffix "6"
-          sale in May 2025 → FY 2025-26 → suffix "6"
-          sale in May 2026 → FY 2026-27 → suffix "7"  */
   const _now=new Date();
-  const _yr=_now.getMonth()>=3?_now.getFullYear():_now.getFullYear()-1; // FY start year
-  const _fySuffix=String(_yr+1).slice(-1); // last digit of end year
-  const _seq=String(nextNum).padStart(4,"0");
+  const _yr=_now.getMonth()>=3?_now.getFullYear():_now.getFullYear()-1;
+  const _fySuffix=String(_yr+1).slice(-1);
+  const _fyStart=_now.getMonth()>=3?new Date(_now.getFullYear(),3,1):new Date(_now.getFullYear()-1,3,1);
+  const _fySales=(lastInvoiceNum?[]:[]).concat(
+    typeof window!=="undefined"&&window._rosFySales?window._rosFySales:[]
+  );
+  const _nextNum=(lastInvoiceNum||1312)+1;
+  const _seq=String(_nextNum).padStart(4,"0");
   const autoInv=`ROS${_seq}${_fySuffix}`;
 
   const [form,setForm]=useState({
