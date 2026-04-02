@@ -1738,7 +1738,8 @@ return(
     return parseDateMs(s.date) >= fyStart.getTime();
   });
   if (fySales.length === 0) return 1312;
-  return parseInt((fySales[0].id||"0").replace(/[^0-9]/g,""))||1312;
+ const nums = fySales.map(s => parseInt((s.id||"0").replace(/[^0-9]/g,""))||0).filter(n => n >= 1313 && n < 9999);
+              return nums.length > 0 ? Math.max(...nums) : 1312;
 })()}
             customers={customers}
             shopItems={(shopItems||{})[shopId]||[]}
