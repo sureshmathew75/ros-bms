@@ -32,10 +32,10 @@ function getPeriodRange(period) {
         end:   new Date(y, m + 1, 0).toISOString().slice(0, 10),
       };
     }
-    case "year": {
-      const fy = m < 3 ? y - 1 : y;
-      return { start: `${fy}-04-01`, end: `${fy + 1}-03-31` };
-    }
+   case "year": {
+  const fy = m < 3 ? y - 1 : y - 1;
+  return { start: `${fy}-04-01`, end: `${fy + 1}-03-31` };
+}
     default: return { start: null, end: null };
   }
 }
