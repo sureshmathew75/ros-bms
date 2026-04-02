@@ -775,7 +775,7 @@ export default function SalesPanel({
                     </td>
                     {/* Customer */}
                     <td style={{ padding: "12px 16px" }}>
-                      <div style={{ fontWeight: 700, fontSize: 13, color: "#0f172a" }}>{s.customer}</div>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: "#0f172a", textTransform: "uppercase" }}>{s.customer}</div>
                       {s.phone && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>{s.phone}</div>}
                     </td>
                     {/* Item */}
