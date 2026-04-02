@@ -3193,11 +3193,9 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <span style={{fontSize:11,fontWeight:700,color:"#64748b",marginRight:4}}>Tax Rate:</span>
               {[0,5,18,20].map(r=>(
-                <button key={r} type="button"
-                  onClick={()=>set("taxRate",r)}
-                  style={{padding:"4px 12px",borderRadius:999,border:"2px solid "+(form.taxRate===r?shop.accent:"#e2e8f0"),
-                    background:form.taxRate===r?shop.accent:"white",
-                    color:form.taxRate===r?"white":"#374151",
+                <button key={r} type="button" onClick={()=>set("taxRate",Number(r))}
+                  style={{padding:"4px 12px",borderRadius:999,border:"2px solid "+(Number(form.taxRate)===r?shop.accent:"#e2e8f0"),
+                    background:Number(form.taxRate)===r?shop.accent:"white",color:Number(form.taxRate)===r?"white":"#374151",
                     fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>
                   {r}%
                 </button>
