@@ -244,7 +244,13 @@ export default function SalesPanel({
 
   /* ── Sort descending by date ─────────────────────────────────────────── */
   const sortedSales = useMemo(
-    () => [...statusFiltered].sort((a, b) => toSortableDate(b.date).localeCompare(toSortableDate(a.date))),
+    () => [...statusFiltered].sort((a, b) => {
+    const dateDiff = toSortableDate(b.date).localeCompare(toSortableDate(a.date));
+    if (dateDiff !== 0) return dateDiff;
+    const numA = parseInt((a.id||"0").replace(/[^0-9]/g,""))||0;
+    const numB = parseInt((b.id||"0").replace(/[^0-9]/g,""))||0;
+    return numB - numA;
+  }),
     [statusFiltered]
   );
 
