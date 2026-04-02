@@ -2602,7 +2602,7 @@ return(
                           ...prev,
                           [shopId]:(prev[shopId]||[]).filter(x=>x.id!==id)
                         }));
-                        dbDeleteSale(shopId,id).catch(()=>{});
+                        dbDeleteSale(id,shopId).catch(()=>{});
                         setSelRow(null);
                         setConfirmDelete(false);
                       }}
