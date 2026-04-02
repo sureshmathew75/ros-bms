@@ -1726,11 +1726,12 @@ return(
     : new Date(now.getFullYear() - 1, 3, 1);
   const fyStartStr = fyStart.toISOString().slice(0, 10);
   const fySales = sales.filter(s => {
-    const { parseDateMs } = { parseDateMs: (r) => {
-      const us = String(r).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-      if (us) return new Date(+us[3], +us[1]-1, +us[2]).getTime();
-      return new Date(r).getTime();
-    }};
+      const raw = String(s.date).trim();
+      const us = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+      const dt = us ? new Date(+us[3],+us[1]-1,+us[2]) : iso ? new Date(+iso[1],+iso[2]-1,+iso[3]) : new Date(raw);
+      return !isNaN(dt.getTime()) && dt.getTime() >= fyStart.getTime();
+    });
     return parseDateMs(s.date) >= fyStart.getTime();
   });
   if (fySales.length === 0) return 1312;
