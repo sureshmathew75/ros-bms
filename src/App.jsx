@@ -3980,6 +3980,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     taxInclusive: true,
     taxRate:     shopId==="ros-india" ? 18 : 20,
     payBy:       "SHOP",
+    shopInvoiceNo: "",
     status:      shopId==="ros-india" ? "ORDER NOT PLACED" : "PENDING",
     sentDate:    "",
     returnRcvd:  "",
