@@ -3959,10 +3959,9 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const _now=new Date();
   const _yr=_now.getMonth()>=3?_now.getFullYear():_now.getFullYear()-1;
   const _fySuffix=String(_yr+1).slice(-1);
-  const _stored=()=>{try{const v=localStorage.getItem("ros_lastInv_"+shopId);return v?parseInt(v)||0:0;}catch{return 0;}};
-  const _base=Math.max(lastInvoiceNum||1312,_stored());
-  const _nextNum=(_base<1313||_base>9998)?1312:_base;
-  const _seq=String(_nextNum+1).padStart(4,"0");
+  const _stored=()=>{try{const v=localStorage.getItem("ros_lastInv_"+shopId);return v?parseInt(v)||1312:1312;}catch{return 1312;}};
+  const _nextNum=_stored()+1;
+  const _seq=String(_nextNum).padStart(4,"0");
   const autoInv=`ROS${_seq}${_fySuffix}`;
 
   const [form,setForm]=useState({
