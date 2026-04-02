@@ -770,8 +770,8 @@ const addSale = async (form) => {
   // Update UI instantly
   setSalesData(d => ({...d, [shopId]: [newSale, ...d[shopId]]}));
   setModal(null);
-  const _usedNum = parseInt((nid||"0").replace(/[^0-9]/g,""))||0;
-  if(_usedNum > 0) { try { localStorage.setItem("ros_lastInv_"+shopId, String(_usedNum)); } catch{} }
+  const _usedNum = parseInt((nid||"0").match(/^ROS(\d{4})\d$/)?.[1]||"0")||0;
+  if(_usedNum >= 1313) { try { localStorage.setItem("ros_lastInv_"+shopId, String(_usedNum)); } catch{} }
   dbSaveSale(shopId, newSale).catch(err => console.error("❌ Supabase save failed:", err));
   // Auto-save/update customer record
   if(form.customer){
