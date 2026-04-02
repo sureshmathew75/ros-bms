@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import CommandPalette from "./components/CommandPalette";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import DocumentsPanel from "./components/DocumentsPanel";
@@ -266,28 +266,31 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
   const RETURN_STATUSES=new Set(["RTRN REQSTD","RETRN RCVD","REFUNDED","RETURN REQUESTED","RETURN RECEIVED"]);
   SHOPS.forEach(shop=>{
     const data=salesData[shop.id]||[];
-    const todayRev=data.filter(s=>s.date===today).reduce((a,s)=>a+(s.amount||0),0);
+    // Parse date safely: handles YYYY-MM-DD, DD-MM-YYYY, DD-MM-YY (no timezone shift)
+    const parseLocalDate=str=>{
+      if(!str)return null;
+      const s=String(str).trim();
+      const iso=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if(iso)return{y:parseInt(iso[1],10),m:parseInt(iso[2],10)-1,d:parseInt(iso[3],10)};
+      const dmy=s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+      if(dmy)return{y:parseInt(dmy[3],10),m:parseInt(dmy[2],10)-1,d:parseInt(dmy[1],10)};
+      const dmyy=s.match(/^(\d{2})-(\d{2})-(\d{2})$/);
+      if(dmyy){const y=parseInt(dmyy[3],10);return{y:y<50?2000+y:1900+y,m:parseInt(dmyy[2],10)-1,d:parseInt(dmyy[1],10)};}
+      return null;
+    };
+    const isThisMonth=str=>{const p=parseLocalDate(str);return p&&p.y===curYear&&p.m===curMonth;};
+    const isToday=str=>{const p=parseLocalDate(str);return p&&p.y===curYear&&p.m===curMonth&&p.d===nowD.getDate();};
+    const todayRev=data.filter(s=>isToday(s.date)).reduce((a,s)=>a+(s.amount||0),0);
     const totalRev=data.reduce((a,s)=>a+(s.amount||0),0);
-    const pending=data.filter(s=>s.status==="PENDING"||s.status==="ORDER NOT PLACED"||s.status==="WORK IN PROGRESS"||s.status==="AWAITING TRACKING INFO.").length;
+    const FULFILLED_STATUSES=new Set(["FULFILLED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]);
+    const pending=data.filter(s=>!FULFILLED_STATUSES.has(s.ful||s.status)).length;
     const orders=data.length;
     // Month revenue — sales in the current calendar month
-    const monthRev=data.filter(s=>{
-      if(!s.date)return false;
-      const d=new Date(s.date);
-      return d.getFullYear()===curYear&&d.getMonth()===curMonth;
-    }).reduce((a,s)=>a+(s.amount||0),0);
+    const monthRev=data.filter(s=>isThisMonth(s.date)).reduce((a,s)=>a+(s.amount||0),0);
     // Current month orders
-    const monthOrders=data.filter(s=>{
-      if(!s.date)return false;
-      const d=new Date(s.date);
-      return d.getFullYear()===curYear&&d.getMonth()===curMonth;
-    }).length;
+    const monthOrders=data.filter(s=>isThisMonth(s.date)).length;
     // Current month returns
-    const monthReturns=data.filter(s=>{
-      if(!s.date)return false;
-      const d=new Date(s.date);
-      return d.getFullYear()===curYear&&d.getMonth()===curMonth&&RETURN_STATUSES.has(s.status);
-    }).length;
+    const monthReturns=data.filter(s=>isThisMonth(s.date)&&RETURN_STATUSES.has(s.ful||s.status)).length;
     shopStats[shop.id]={todaySales:todayRev,totalRev,pendingOrders:pending,orders,monthRev,monthOrders,monthReturns};
   });
 
@@ -749,7 +752,8 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
 const addSale = async (form) => {
   const pfx = {["ros-selections"]:"SI",["ros-hairlines"]:"SH",["ros-india"]:"IN"}[shopId];
   const nid = form.invoiceNo || `${pfx}-${Date.now().toString().slice(-6)}`;
-  const newSale = {
+  // Update ref so next sale gets the correct next number
+    const newSale = {
     id: nid, ...form,
     amount:       Number(form.amount) || 0,
     taxRate:      form.taxRate !== undefined ? form.taxRate : (shopId === "ros-india" ? 18 : 20),
@@ -790,7 +794,7 @@ const addSale = async (form) => {
       if(idx>=0){const n=[...prev];n[idx]=updatedCust;return n;}
       return [...prev,updatedCust];
     });
-    dbSaveCustomer(updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
+    dbSaveCustomer(shopId, updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
   }
 };
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
@@ -1184,6 +1188,23 @@ return(
               <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search…"
                 style={{border:"none",background:"transparent",outline:"none",fontSize:13,color:"#374151",width:140,fontFamily:"inherit"}}/>
             </div>
+            {/* All Shops button — hidden for staff and on mobile */}
+            {user?.role!=="staff"&&(
+              <button onClick={onBack}
+                className="mob-hide"
+                style={{display:"flex",alignItems:"center",gap:7,
+                  padding:"7px 14px",borderRadius:10,
+                  border:"1px solid "+shop.accent+"44",
+                  background:shop.accentBg,
+                  color:shop.accentText,fontSize:12,fontWeight:700,
+                  cursor:"pointer",fontFamily:"inherit",
+                  transition:"all 0.15s",whiteSpace:"nowrap",
+                }}
+                onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.color="white";e.currentTarget.style.borderColor=shop.accent;}}
+                onMouseLeave={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accentText;e.currentTarget.style.borderColor=shop.accent+"44";}}>
+                🏪 All Shops
+              </button>
+            )}
             {/* Notification bell */}
             <button style={{position:"relative",width:38,height:38,borderRadius:11,border:"1px solid "+shop.accent+"33",background:shop.accentBg,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,transition:"all 0.15s"}}
               onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.borderColor=shop.accent;}}
@@ -1594,6 +1615,8 @@ return(
                 fmt={fmt}
                 formatDate={formatDate}
                 openMenu={openMenu}
+                onImport={()=>setModal("import-sales")}
+                onExport={()=>setModal("export-sales")}
                 search={search}
                 sales={sales}
                 salesPeriod={salesPeriod}
@@ -1681,7 +1704,7 @@ return(
           )}
           {/* REPORTS */}
           {tab==="reports"&&(
-            <ReportsPanel shop={shop} showPdf={showPdf}/>
+            <ReportsPanel shop={shop} showPdf={showPdf} sales={sales} customers={customers} fmt={fmt} shopId={shopId} exps={exps} purch={purch}/>
           )}
 
           {/* INVOICES placeholder */}
@@ -1697,9 +1720,26 @@ return(
           <NewSaleForm
             shopId={shopId} shop={shop}
             onSave={addSale} onClose={()=>setModal(null)}
-            lastInvoiceNum={sales.length>0
-              ? parseInt((sales[0].id||"0").replace(/[^0-9]/g,""))||1022
-              : 1022}
+           lastInvoiceNum={(() => {
+              try {
+                const stored = localStorage.getItem("ros_lastInv_"+shopId);
+                if (stored) return parseInt(stored)||1312;
+              } catch{}
+              const now = new Date();
+              const fyStart = now.getMonth() >= 3 ? new Date(now.getFullYear(), 3, 1) : new Date(now.getFullYear() - 1, 3, 1);
+              const fySales = sales.filter(s => {
+                const raw = String(s.date).trim();
+                const us = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                const dt = us ? new Date(+us[3],+us[1]-1,+us[2]) : iso ? new Date(+iso[1],+iso[2]-1,+iso[3]) : new Date(raw);
+                return !isNaN(dt.getTime()) && dt.getTime() >= fyStart.getTime();
+              });
+              if (fySales.length === 0) return 1312;
+              const nums = fySales.map(s => {
+                const m = (s.id||"").match(/^ROS(\d{4})\d$/);
+                return m ? parseInt(m[1]) : 0;
+              }).filter(n => n >= 1313 && n <= 9999);
+            })()}
             customers={customers}
             shopItems={(shopItems||{})[shopId]||[]}
             onAddShopItem={(item)=>{
@@ -1713,7 +1753,27 @@ return(
       {/* ── IMPORT MODAL — SALES ── */}
       {modal==="import-sales"&&user?.role!=="staff"&&(
         <Modal title="⬇ Import Sales" onClose={()=>setModal(null)} accent={shop.accent}>
-          <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}/>
+          <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}
+            onSave={async (rows)=>{
+              // Upsert ALL imported rows — updates existing + inserts new
+              if(rows.length===0){setModal(null);return;}
+
+              // Update UI: merge rows — imported takes priority over existing
+              setSalesData(prev=>{
+                const existingMap=new Map((prev[shopId]||[]).map(s=>[s.id,s]));
+                rows.forEach(r=>existingMap.set(r.id,{...existingMap.get(r.id)||{},...r}));
+                return {...prev,[shopId]:Array.from(existingMap.values())};
+              });
+              setModal(null);
+
+              // Save ALL rows to Supabase in batches of 50
+              const BATCH=50;
+              for(let i=0;i<rows.length;i+=BATCH){
+                const batch=rows.slice(i,i+BATCH);
+                await Promise.all(batch.map(sale=>dbSaveSale(shopId,sale).catch(e=>console.error("Save failed:",sale.id,e))));
+              }
+              console.log(`✅ Import complete: ${rows.length} rows sent to Supabase`);
+            }}/>
         </Modal>
       )}
 
@@ -2542,7 +2602,7 @@ return(
                           ...prev,
                           [shopId]:(prev[shopId]||[]).filter(x=>x.id!==id)
                         }));
-                        dbDeleteSale(shopId,id).catch(()=>{});
+                        dbDeleteSale(id,shopId).catch(()=>{});
                         setSelRow(null);
                         setConfirmDelete(false);
                       }}
@@ -2575,10 +2635,166 @@ return(
 /* ══════════════════════════════════════════════════════
    IMPORT / EXPORT PANEL
 ══════════════════════════════════════════════════════ */
-const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
+const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
   const [dragOver,setDragOver]=useState(false);
   const [fileName,setFileName]=useState(null);
+  const [fileObj,setFileObj]=useState(null);
   const [fileFmt,setFileFmt]=useState("CSV");
+  const [importing,setImporting]=useState(false);
+  const [importResult,setImportResult]=useState(null); // {ok:n, skip:n, errors:[]}
+  const [detectedCols,setDetectedCols]=useState(null); // show what columns were found
+
+  const handleFileSelect=(f)=>{
+    if(!f)return;
+    setFileName(f.name);
+    setFileObj(f);
+    setImportResult(null);
+    setDetectedCols(null);
+    // Peek at headers to show user what was detected
+    const reader=new FileReader();
+    reader.onload=(e)=>{
+      try{
+        const firstLines=e.target.result.split('\n').slice(0,2).join('\n');
+        const hdrs=firstLines.split('\n')[0].split(',').map(h=>h.replace(/^"|"$/g,"").trim());
+        setDetectedCols(hdrs);
+      }catch{}
+    };
+    reader.readAsText(f);
+  };
+
+  /* ── Parse CSV text robustly (handles quoted fields with commas/newlines) ── */
+  const parseCSV=(text)=>{
+    const rows=[];
+    let row=[],field="",inQ=false;
+    for(let i=0;i<text.length;i++){
+      const ch=text[i],nx=text[i+1];
+      if(inQ){
+        if(ch==='"'&&nx==='"'){field+='"';i++;}
+        else if(ch==='"'){inQ=false;}
+        else{field+=ch;}
+      } else {
+        if(ch==='"'){inQ=true;}
+        else if(ch===','){row.push(field.trim());field="";}
+        else if(ch==='\n'||(ch==='\r'&&nx==='\n')){
+          row.push(field.trim());field="";
+          if(row.some(c=>c!==""))rows.push(row);
+          row=[];
+          if(ch==='\r')i++;
+        } else {field+=ch;}
+      }
+    }
+    if(field||row.length)row.push(field.trim());
+    if(row.some(c=>c!==""))rows.push(row);
+    return rows;
+  };
+
+  const handleImport=()=>{
+    if(!fileObj){alert("Please select a file first.");return;}
+    if(!onSave){alert("Import not configured for this section.");return;}
+    setImporting(true);
+
+    const isXlsx=fileObj.name.toLowerCase().endsWith(".xlsx")||fileObj.name.toLowerCase().endsWith(".xls");
+
+    const processRows=(rows)=>{
+      try{
+        if(rows.length<2){alert("File appears to be empty or has no data rows.");setImporting(false);return;}
+        const norm=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
+        const headers=rows[0].map(h=>norm(h));
+        const dataRows=rows.slice(1);
+        console.log("Import headers:", headers);
+        const col=(...names)=>{
+          const needles=names.map(n=>norm(n));
+          for(const n of needles){const idx=headers.indexOf(n);if(idx>=0)return idx;}
+          for(const n of needles){const idx=headers.findIndex(h=>h.includes(n));if(idx>=0)return idx;}
+          return -1;
+        };
+        const idxId       = col("shopinv","Shop Inv.","invoiceno","Invoice No.","saleid","Sale ID");
+        const idxDate     = col("date");
+        const idxCust     = col("customername","customer");
+        const idxAddressee= col("addressee");
+        const idxAddress  = col("address");
+        const idxContact  = col("contactno","contact","phone");
+        const idxItem     = col("item","description");
+        const idxQty      = col("quantity","qty");
+        const idxPrice    = col("priceexcltax","price");
+        const idxTotal    = col("total","grandtotal","amount");
+        const idxPayment  = col("paymentmethod","payment","pay");
+        const idxSentDate = col("dispatchdate","sentdate","dispatch");
+        const idxReturn   = col("returnreceived","returnrcvd");
+        const idxRefund   = col("refund");
+        const idxTag      = col("tag");
+        const idxRemarks  = col("remarks","notes","rem");
+        const idxStatus   = col("status","ful","delivery","fulfil");
+        const get=(row,idx)=>idx>=0?String(row[idx]||"").trim():"";
+        const cleanNum=s=>parseFloat(String(s||"").replace(/[^0-9.\-]/g,""))||0;
+        let ok=0,skip=0;
+        const imported=[];
+        dataRows.forEach((row,i)=>{
+          if(row.every(c=>!c&&c!==0)){return;}
+          const customer=get(row,idxCust);
+          if(!customer){skip++;return;}
+          const id=get(row,idxId)||("IMP-"+Date.now()+"-"+i);
+          const amount=cleanNum(get(row,idxTotal))||cleanNum(get(row,idxPrice));
+          const statusRaw=get(row,idxStatus);
+          const ful=statusRaw||(shopId==="ros-india"?"ORDER NOT PLACED":"PENDING");
+          imported.push({
+            id, customer,
+            date:        get(row,idxDate)||new Date().toISOString().slice(0,10),
+            addressee:   get(row,idxAddressee),
+            address:     get(row,idxAddress),
+            contact:     get(row,idxContact),
+            phone:       get(row,idxContact),
+            item:        get(row,idxItem),
+            qty:         get(row,idxQty)||"1",
+            amount,
+            pay:         get(row,idxPayment)||"SHOP",
+            payBy:       get(row,idxPayment)||"SHOP",
+            ful, status: ful,
+            rem:         get(row,idxRemarks),
+            remarks:     get(row,idxRemarks),
+            tag:         get(row,idxTag),
+            sentDate:    get(row,idxSentDate),
+            refundAmt:   cleanNum(get(row,idxRefund)),
+            returnRcvd:  get(row,idxReturn),
+            taxRate:     shopId==="ros-india"?18:20,
+            taxInclusive:true,
+            invoiceNo:   id,
+          });
+          ok++;
+        });
+        setImportResult({ok,skip,errors:[]});
+        if(ok>0){onSave(imported);}
+        else{alert("No valid rows found. Make sure the file has a Customer Name column.");}
+      }catch(err){alert("Error processing file: "+err.message);console.error(err);}
+      setImporting(false);
+    };
+
+    if(isXlsx){
+      const loadXLSX=()=>new Promise((res,rej)=>{
+        if(window.XLSX){res(window.XLSX);return;}
+        const s=document.createElement("script");
+        s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+        s.onload=()=>res(window.XLSX);
+        s.onerror=()=>rej(new Error("Failed to load XLSX library"));
+        document.head.appendChild(s);
+      });
+      const reader=new FileReader();
+      reader.onload=(e)=>{
+        loadXLSX().then(XLSX=>{
+          const wb=XLSX.read(e.target.result,{type:"array"});
+          const ws=wb.Sheets[wb.SheetNames[0]];
+          const raw=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:""});
+          processRows(raw);
+        }).catch(err=>{alert("Could not load Excel reader: "+err.message);setImporting(false);});
+      };
+      reader.readAsArrayBuffer(fileObj);
+    } else {
+      const reader=new FileReader();
+      reader.onload=(e)=>processRows(parseCSV(e.target.result));
+      reader.onerror=()=>{alert("Could not read file.");setImporting(false);};
+      reader.readAsText(fileObj);
+    }
+  };
 
   // All 22 export columns — all ON by default
   const ALL_COLS=[
@@ -2793,7 +3009,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
       <div
         onDragOver={e=>{e.preventDefault();setDragOver(true);}}
         onDragLeave={()=>setDragOver(false)}
-        onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f)setFileName(f.name);}}
+        onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f)handleFileSelect(f);}}
         style={{
           border:"2px dashed "+(dragOver?shop.accent:"#cbd5e1"),
           borderRadius:14,padding:"40px 24px",textAlign:"center",
@@ -2801,35 +3017,58 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId})=>{
           transition:"all 0.18s",cursor:"pointer",
         }}
         onClick={()=>document.getElementById("imp-file-"+entity).click()}>
-        <input id={"imp-file-"+entity} type="file" accept=".csv,.xlsx"
+        <input id={"imp-file-"+entity} type="file" accept=".csv,.xlsx,.xls"
           style={{display:"none"}}
-          onChange={e=>setFileName(e.target.files[0]?.name||null)}/>
-        <div style={{fontSize:40,marginBottom:10}}>{fileName?"✅":"📂"}</div>
+          onChange={e=>handleFileSelect(e.target.files[0]||null)}/>
+        <div style={{fontSize:40,marginBottom:10}}>{importResult?"✅":fileName?"📄":"📂"}</div>
         <p style={{margin:0,fontWeight:800,fontSize:15,color:fileName?shop.accent:"#374151"}}>
-          {fileName||"Drop your CSV file here"}
+          {importResult?`Imported ${importResult.ok} records`:fileName||"Drop your CSV file here"}
         </p>
         <p style={{margin:"4px 0 0",fontSize:12,color:"#94a3b8"}}>
-          {fileName?"File ready to import":"or click to browse · CSV accepted"}
+          {importResult&&importResult.skip>0?`${importResult.skip} rows skipped`:fileName?"File ready to import":"or click to browse · CSV or Excel (.xlsx) accepted"}
         </p>
       </div>
+
+      {/* detected columns preview */}
+      {detectedCols&&!importResult&&(
+        <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"10px 14px"}}>
+          <p style={{margin:"0 0 6px",fontSize:11,fontWeight:800,color:"#15803d",textTransform:"uppercase",letterSpacing:"0.05em"}}>✅ Columns detected ({detectedCols.length})</p>
+          <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
+            {detectedCols.map((c,i)=>(
+              <span key={i} style={{fontSize:10,fontWeight:600,color:"#15803d",background:"white",border:"1px solid #bbf7d0",borderRadius:6,padding:"2px 8px"}}>{c}</span>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* import result */}
+      {importResult&&(
+        <div style={{background:importResult.ok>0?"#f0fdf4":"#fef2f2",border:"1px solid "+(importResult.ok>0?"#bbf7d0":"#fecaca"),borderRadius:10,padding:"12px 14px"}}>
+          <p style={{margin:0,fontWeight:800,fontSize:13,color:importResult.ok>0?"#15803d":"#dc2626"}}>
+            {importResult.ok>0?`✅ ${importResult.ok} records imported successfully`:"❌ No records imported"}
+          </p>
+          {importResult.skip>0&&<p style={{margin:"4px 0 0",fontSize:12,color:"#64748b"}}>{importResult.skip} rows skipped (blank/invalid)</p>}
+        </div>
+      )}
 
       {/* actions */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
         <button
-          onClick={()=>{if(!fileName){alert("Please select a file first.");}else{alert("Import started! "+fileName+" is being processed.");onClose();}}}
+          onClick={handleImport}
+          disabled={!fileName||importing||!!importResult}
           style={{padding:"12px 0",borderRadius:11,border:"none",
-            background:fileName?shop.accent:"#e2e8f0",
-            color:fileName?"white":"#94a3b8",fontWeight:800,fontSize:14,
-            cursor:fileName?"pointer":"not-allowed",fontFamily:"inherit",
-            boxShadow:fileName?"0 4px 14px "+shop.accent+"44":"none",
+            background:importResult?"#10b981":fileName&&!importing?shop.accent:"#e2e8f0",
+            color:fileName&&!importing?"white":"#94a3b8",fontWeight:800,fontSize:14,
+            cursor:fileName&&!importing&&!importResult?"pointer":"default",fontFamily:"inherit",
+            boxShadow:fileName&&!importing?"0 4px 14px "+shop.accent+"44":"none",
             transition:"all 0.2s"}}>
-          ⬆ Import Now
+          {importing?"⏳ Processing…":importResult?"✅ Done":"⬆ Import Now"}
         </button>
         <button onClick={onClose}
           style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",
             background:"white",color:"#374151",fontWeight:700,fontSize:14,
             cursor:"pointer",fontFamily:"inherit"}}>
-          Cancel
+          {importResult?"Close":"Cancel"}
         </button>
       </div>
     </div>
@@ -2954,11 +3193,9 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <span style={{fontSize:11,fontWeight:700,color:"#64748b",marginRight:4}}>Tax Rate:</span>
               {[0,5,18,20].map(r=>(
-                <button key={r} type="button"
-                  onClick={()=>set("taxRate",r)}
-                  style={{padding:"4px 12px",borderRadius:999,border:"2px solid "+(form.taxRate===r?shop.accent:"#e2e8f0"),
-                    background:form.taxRate===r?shop.accent:"white",
-                    color:form.taxRate===r?"white":"#374151",
+                <button key={r} type="button" onClick={()=>set("taxRate",Number(r))}
+                  style={{padding:"4px 12px",borderRadius:999,border:"2px solid "+(Number(form.taxRate)===r?shop.accent:"#e2e8f0"),
+                    background:Number(form.taxRate)===r?shop.accent:"white",color:Number(form.taxRate)===r?"white":"#374151",
                     fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>
                   {r}%
                 </button>
@@ -3720,7 +3957,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const _now=new Date();
   const _yr=_now.getMonth()>=3?_now.getFullYear():_now.getFullYear()-1;
   const _fySuffix=String(_yr+1).slice(-1);
-  const _stored=()=>{try{const v=localStorage.getItem("ros_lastInv_"+shopId);return v?parseInt(v)||1312:1312;}catch{return 1312;}};
+ const _stored=()=>{try{const v=localStorage.getItem("ros_lastInv_"+shopId);return v?parseInt(v)||1312:1312;}catch{return 1312;}};
   const _nextNum=_stored()+1;
   const _seq=String(_nextNum).padStart(4,"0");
   const autoInv=`ROS${_seq}${_fySuffix}`;
@@ -3736,7 +3973,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     qty:         "1",
     amount:      "",
     taxInclusive: true,
-    taxRate:     0,
+    taxRate:     shopId==="ros-india" ? 18 : 20,
     payBy:       "SHOP",
     shopInvoiceNo: "",
     status:      shopId==="ros-india" ? "ORDER NOT PLACED" : "PENDING",
@@ -3756,12 +3993,6 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   /* Customer autocomplete */
   const [custAcOpen,setCustAcOpen]=useState(false);
   const [custAcMatches,setCustAcMatches]=useState([]);
-  /* Line items */
-  const [lineItems,setLineItems]=useState([{item:"",qty:"1",price:""}]);
-  const addLineItem=()=>setLineItems(li=>[...li,{item:"",qty:"1",price:""}]);
-  const removeLineItem=i=>setLineItems(li=>li.filter((_,idx)=>idx!==i));
-  const setLineItem=(i,k,v)=>setLineItems(li=>li.map((x,idx)=>idx===i?{...x,[k]:v}:x));
-  const lineTotal=lineItems.reduce((a,l)=>a+(Number(l.price)||0)*(Number(l.qty)||1),0);
 
   const inp={
     width:"100%",border:"1px solid #e2e8f0",borderRadius:9,
@@ -3974,70 +4205,57 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
 
       {/* ORDER DETAILS */}
       <Divider title="Order Details"/>
-      <div style={{marginBottom:16}}>
-        {shopItems.length>0&&(
-          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
-            <span style={{fontSize:11,fontWeight:700,color:"#94a3b8",alignSelf:"center"}}>Quick add:</span>
-            {shopItems.map((itm,idx)=>{
-              const label=typeof itm==="object"&&itm!==null?(itm.name||itm.label||"Item"):String(itm);
-              const value=typeof itm==="object"&&itm!==null?(itm.name||itm.label||""):String(itm);
-              return(
-                <button key={idx} type="button"
-                  onClick={()=>setLineItem(lineItems.length-1,"item",value)}
-                  style={{padding:"4px 12px",borderRadius:999,fontSize:11,fontWeight:700,
-                    cursor:"pointer",fontFamily:"inherit",border:"1px solid "+shop.accent+"55",
-                    background:"white",color:shop.accentText,transition:"all 0.15s"}}>
-                  {label}
-                </button>
-              );
-            })}
-          </div>
-        )}
-        <div style={{border:"1px solid #e2e8f0",borderRadius:12,overflow:"hidden",marginBottom:10}}>
-          <div style={{background:"#f8fafc",padding:"8px 14px",display:"grid",gridTemplateColumns:"1fr 70px 110px 32px",gap:8,borderBottom:"1px solid #f1f5f9"}}>
-            <span style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>Item / Description</span>
-            <span style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>Qty</span>
-            <span style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>Price ({shop.symbol})</span>
-            <span/>
-          </div>
-          {lineItems.map((li,i)=>(
-            <div key={i} style={{padding:"8px 14px",display:"grid",gridTemplateColumns:"1fr 70px 110px 32px",gap:8,borderTop:i>0?"1px solid #f1f5f9":"none",alignItems:"center"}}>
-              <input value={li.item} onChange={e=>setLineItem(i,"item",e.target.value)}
-                placeholder="Item name\u2026" style={{...inp,padding:"7px 10px",fontSize:12}} onFocus={fo} onBlur={bl}/>
-              <input type="number" min="1" value={li.qty} onChange={e=>setLineItem(i,"qty",e.target.value)}
-                style={{...inp,padding:"7px 10px",fontSize:12}} onFocus={fo} onBlur={bl}/>
-              <input type="number" min="0" step="0.01" value={li.price} onChange={e=>setLineItem(i,"price",e.target.value)}
-                placeholder="0.00" style={{...inp,padding:"7px 10px",fontSize:12}} onFocus={fo} onBlur={bl}/>
-              <button type="button" onClick={()=>removeLineItem(i)} disabled={lineItems.length===1}
-                style={{width:28,height:28,borderRadius:7,border:"1px solid #fca5a5",background:"#fef2f2",
-                  color:"#dc2626",cursor:lineItems.length===1?"not-allowed":"pointer",fontSize:15,
-                  display:"flex",alignItems:"center",justifyContent:"center",
-                  opacity:lineItems.length===1?0.35:1,fontFamily:"inherit",padding:0}}>\xd7</button>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={lbl}>Item / Product</label>
+          {/* Quick-select saved item tags */}
+          {shopItems.length>0&&(
+            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
+              {shopItems.map((itm,idx)=>{
+                // Guard: itm may be a string or a legacy {name,...} object
+                const label=typeof itm==="object"&&itm!==null?(itm.name||itm.label||"Item"):String(itm);
+                const value=typeof itm==="object"&&itm!==null?(itm.name||itm.label||""):String(itm);
+                return(
+                  <button key={idx} type="button"
+                    onClick={()=>set("item",value)}
+                    style={{
+                      padding:"5px 14px",borderRadius:999,fontSize:12,fontWeight:700,
+                      cursor:"pointer",fontFamily:"inherit",border:"1px solid",
+                      transition:"all 0.15s",
+                      background:form.item===value?shop.accent:"white",
+                      color:form.item===value?"white":shop.accentText,
+                      borderColor:form.item===value?shop.accent:shop.accent+"55",
+                    }}>{label}</button>
+                );
+              })}
             </div>
-          ))}
-          <div style={{padding:"8px 14px",borderTop:"1px solid #f1f5f9",display:"flex",justifyContent:"space-between",alignItems:"center",background:"#fafafa"}}>
-            <button type="button" onClick={addLineItem}
-              style={{padding:"6px 14px",borderRadius:8,border:"1px dashed "+shop.accent,
-                background:shop.accentBg,color:shop.accent,fontSize:12,fontWeight:700,
-                cursor:"pointer",fontFamily:"inherit"}}>
-              \uff0b Add Item
+          )}
+          {/* Type item name + save button */}
+          <div style={{display:"flex",gap:6}}>
+            <input
+              value={form.item}
+              onChange={e=>set("item",e.target.value)}
+              placeholder="Type item name…"
+              style={{...inp,flex:1}} onFocus={fo} onBlur={bl}/>
+            <button type="button"
+              title="Save item for quick access next time"
+              onClick={()=>{
+                if(form.item.trim()&&onAddShopItem){
+                  onAddShopItem(form.item.trim());
+                }
+              }}
+              style={{padding:"9px 14px",borderRadius:9,border:"1px solid "+shop.accent+"66",
+                background:shop.accentBg,color:shop.accentText,fontSize:12,fontWeight:700,
+                cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+              ＋ Save
             </button>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <button type="button"
-                onClick={()=>{const last=lineItems[lineItems.length-1];if(last?.item?.trim()&&onAddShopItem)onAddShopItem(last.item.trim());}}
-                style={{padding:"5px 10px",borderRadius:7,border:"1px solid "+shop.accent+"55",
-                  background:shop.accentBg,color:shop.accentText,fontSize:11,fontWeight:700,
-                  cursor:"pointer",fontFamily:"inherit"}}>
-                \uff0b Save Item
-              </button>
-              <span style={{fontSize:13,fontWeight:900,color:shop.accent}}>
-                Total: {shop.symbol}{lineTotal.toFixed(2)}
-              </span>
-            </div>
           </div>
         </div>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div>
+          <label style={lbl}>Quantity</label>
+          <input type="number" min="1" value={form.qty} onChange={e=>set("qty",e.target.value)}
+            style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
         <div style={{gridColumn:"1/-1"}}>
           {/* GST TOGGLE */}
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
@@ -4048,7 +4266,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               <div>
                 <p style={{margin:0,fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>GST / Tax Calculation</p>
                 <p style={{margin:"2px 0 0",fontSize:12,fontWeight:700,color:form.taxInclusive?"#15803d":"#1d4ed8"}}>
-                  {form.taxInclusive?"Price includes tax \u2014 calculated backwards":"Price excludes tax \u2014 added on top"}
+                  {form.taxInclusive?"Price includes tax — calculated backwards":"Price excludes tax — added on top"}
                 </p>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}} onClick={()=>set("taxInclusive",!form.taxInclusive)}>
@@ -4058,31 +4276,28 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 </div>
               </div>
             </div>
+            {/* Tax Rate Buttons */}
             <div style={{display:"flex",alignItems:"center",gap:6}}>
               <span style={{fontSize:11,fontWeight:700,color:"#64748b",marginRight:4}}>Tax Rate:</span>
               {[0,5,18,20].map(r=>(
-                <button key={r} type="button" onClick={()=>set("taxRate",Number(r))}
-                  style={{padding:"4px 12px",borderRadius:999,border:"2px solid "+(Number(form.taxRate)===r?shop.accent:"#e2e8f0"),
-                    background:Number(form.taxRate)===r?shop.accent:"white",color:Number(form.taxRate)===r?"white":"#374151",
+                <button key={r} type="button" onClick={()=>set("taxRate",r)}
+                  style={{padding:"4px 12px",borderRadius:999,border:"2px solid "+(form.taxRate===r?shop.accent:"#e2e8f0"),
+                    background:form.taxRate===r?shop.accent:"white",color:form.taxRate===r?"white":"#374151",
                     fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>
                   {r}%
                 </button>
               ))}
             </div>
           </div>
+          {/* Amount + live breakdown */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <div>
-              <label style={lbl}>Amount ({shop.symbol}) \u2014 {form.taxInclusive?"incl. tax":"excl. tax"}</label>
-              <input type="number"
-                value={lineTotal>0?lineTotal.toFixed(2):form.amount}
-                onChange={e=>set("amount",e.target.value)}
-                placeholder="0.00"
-                style={{...inp,background:lineTotal>0?"#f0fdf4":undefined,border:lineTotal>0?"1px solid #bbf7d0":undefined}}
-                onFocus={fo} onBlur={bl}/>
-              {lineTotal>0&&<p style={{margin:"3px 0 0",fontSize:10,color:"#15803d",fontWeight:600}}>\u2713 Auto-calculated from line items</p>}
+              <label style={lbl}>Amount ({shop.symbol}) — {form.taxInclusive?"incl. tax":"excl. tax"}</label>
+              <input type="number" value={form.amount} onChange={e=>set("amount",e.target.value)}
+                placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
             </div>
-            {(lineTotal>0?lineTotal:Number(form.amount))>0&&(()=>{
-              const a=lineTotal>0?lineTotal:Number(form.amount);
+            {form.amount&&Number(form.amount)>0&&(()=>{
+              const a=Number(form.amount);
               const rate=(form.taxRate||0)/100;
               const subtotal=form.taxInclusive?parseFloat((a/(1+rate)).toFixed(2)):a;
               const tax=form.taxInclusive?parseFloat((a-subtotal).toFixed(2)):parseFloat((a*rate).toFixed(2));
@@ -4109,7 +4324,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
         </div>
       </div>
 
-      {/* PAYMENT */}
+  {/* PAYMENT */}
       <Divider title="Payment"/>
       <div style={{display:"grid",gridTemplateColumns:form.payBy==="SHOP"?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
         <div>
@@ -4121,8 +4336,11 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
         {form.payBy==="SHOP"&&(
           <div>
             <label style={lbl}>Shop Invoice No.</label>
-            <input value={form.shopInvoiceNo||""} onChange={e=>set("shopInvoiceNo",e.target.value)}
-              placeholder="e.g. 12345" style={inp} onFocus={fo} onBlur={bl}/>
+            <input
+              value={form.shopInvoiceNo||""}
+              onChange={e=>set("shopInvoiceNo",e.target.value)}
+              placeholder="e.g. 12345"
+              style={inp} onFocus={fo} onBlur={bl}/>
           </div>
         )}
       </div>
@@ -4188,13 +4406,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,
         position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,
         borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({
-            ...form,
-            amount: lineTotal>0 ? lineTotal : (Number(form.amount)||0),
-            item: lineItems.filter(l=>l.item.trim()).map(l=>l.item.trim()).join(", "),
-            qty: String(lineItems.reduce((a,l)=>a+(Number(l.qty)||1),0)),
-            lineItems: lineItems.filter(l=>l.item.trim()),
-          })}
+        <button onClick={()=>onSave(form)}
           style={{padding:"12px 0",borderRadius:11,border:"none",
             background:shop.accent,color:"white",fontWeight:800,fontSize:14,
             cursor:"pointer",fontFamily:"inherit",
@@ -5177,164 +5389,212 @@ const ROLE_NAV={
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
 
-/* ── Login Screen ── */
-const LoginScreen=({onLogin,users})=>{
-  const [selUser,setSelUser]=useState(null);
-  const [pin,setPin]=useState("");
-  const [err,setErr]=useState("");
-  const [hovU,setHovU]=useState(null);
-  const [hovB,setHovB]=useState(false);
-  const [showPin,setShowPin]=useState(false);
-
-  const handlePin=(d)=>{
-    if(pin.length>=4)return;
-    const np=pin+d;
-    setPin(np);
-    setErr("");
-    if(np.length===4){
-      setTimeout(()=>{
-        if(np===selUser.pin){ onLogin(selUser); }
-        else{ setErr("Wrong PIN — try again"); setPin(""); }
-      },200);
-    }
-  };
-  const back=()=>{setSelUser(null);setPin("");setErr("");};
-
-  return(
-    <div style={{
-      minHeight:"100vh",
-      background:"linear-gradient(145deg,#0f172a 0%,#1e293b 40%,#0f172a 100%)",
-      display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-      fontFamily:"'Arimo',Arial,sans-serif",
-      position:"relative",overflow:"hidden",
-    }}>
-      {/* background mesh */}
-      <div style={{position:"absolute",inset:0,backgroundImage:"radial-gradient(rgba(255,255,255,0.03) 1px,transparent 1px)",backgroundSize:"28px 28px",pointerEvents:"none"}}/>
-      {/* glowing orbs */}
-      <div style={{position:"absolute",top:-120,left:-120,width:400,height:400,borderRadius:"50%",background:"rgba(37,99,235,0.12)",filter:"blur(80px)",pointerEvents:"none"}}/>
-      <div style={{position:"absolute",bottom:-100,right:-100,width:350,height:350,borderRadius:"50%",background:"rgba(124,58,237,0.10)",filter:"blur(80px)",pointerEvents:"none"}}/>
-
-      {/* logo + brand */}
-      <div style={{textAlign:"center",marginBottom:40,position:"relative",zIndex:1}}>
-        <div style={{width:64,height:64,borderRadius:20,background:"linear-gradient(135deg,#2563eb,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",margin:"0 auto 14px",boxShadow:"0 8px 32px rgba(37,99,235,0.40)"}}>
-          <span style={{color:"white",fontWeight:900,fontSize:28}}>R</span>
-        </div>
-        <h1 style={{margin:"0 0 4px",fontSize:26,fontWeight:800,color:"white",letterSpacing:"-0.5px"}}>ROS Business Suite</h1>
-        <p style={{margin:0,fontSize:13,color:"rgba(255,255,255,0.45)",fontWeight:500}}>Select your account to continue</p>
-      </div>
-
-      {!selUser?(
-        /* ── user selection ── */
-        <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:420,padding:"0 24px"}}>
-          <div style={{display:"flex",flexDirection:"column",gap:12}}>
-            {(users||[]).map(u=>{
-              const isH=hovU===u.id;
-              return(
-                <div key={u.id}
-                  onClick={()=>setSelUser(u)}
-                  onMouseEnter={()=>setHovU(u.id)}
-                  onMouseLeave={()=>setHovU(null)}
-                  style={{
-                    display:"flex",alignItems:"center",gap:14,
-                    background:isH?"rgba(255,255,255,0.10)":"rgba(255,255,255,0.05)",
-                    border:isH?"1px solid rgba(255,255,255,0.20)":"1px solid rgba(255,255,255,0.08)",
-                    borderRadius:16,padding:"14px 18px",cursor:"pointer",
-                    transition:"all 0.18s",
-                    transform:isH?"translateX(4px)":"none",
-                  }}>
-                  <div style={{width:46,height:46,borderRadius:14,background:u.avatar,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:15,flexShrink:0,boxShadow:"0 4px 14px rgba(0,0,0,0.25)"}}>
-                    {u.initials}
-                  </div>
-                  <div style={{flex:1}}>
-                    <p style={{margin:0,fontWeight:700,fontSize:15,color:"white"}}>{u.name}</p>
-                  </div>
-                  <span style={{color:"rgba(255,255,255,0.30)",fontSize:18}}>›</span>
-                </div>
-              );
-            })}
-          </div>
-          <p style={{textAlign:"center",marginTop:32,fontSize:11,color:"rgba(255,255,255,0.22)"}}>Developed by ROS Nexus</p>
-        </div>
-      ):(
-        /* ── PIN entry ── */
-        <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:340,padding:"0 24px",textAlign:"center"}}>
-          {/* user badge */}
-          <div style={{marginBottom:24}}>
-            <div style={{width:60,height:60,borderRadius:18,background:selUser.avatar,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:20,margin:"0 auto 10px",boxShadow:"0 8px 24px rgba(0,0,0,0.30)"}}>
-              {selUser.initials}
-            </div>
-            <p style={{margin:"0 0 2px",fontWeight:700,fontSize:17,color:"white"}}>{selUser.name}</p>
-            <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.40)"}}>Enter your 4-digit PIN</p>
-          </div>
-
-          {/* PIN dots */}
-          <div style={{display:"flex",justifyContent:"center",gap:14,marginBottom:8}}>
-            {[0,1,2,3].map(i=>(
-              <div key={i} style={{
-                width:14,height:14,borderRadius:"50%",
-                background:pin.length>i?"white":"rgba(255,255,255,0.15)",
-                border:"2px solid rgba(255,255,255,0.30)",
-                transition:"background 0.15s",
-                boxShadow:pin.length>i?"0 0 10px rgba(255,255,255,0.5)":"none",
-              }}/>
-            ))}
-          </div>
-          {err&&<p style={{margin:"0 0 8px",fontSize:12,color:"#f87171",fontWeight:600}}>{err}</p>}
-
-          {/* numpad */}
-          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:20,marginBottom:16}}>
-            {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((d,i)=>{
-              const isEmpty=d==="";
-              const isDel=d==="⌫";
-              const isHB=hovB===i;
-              return(
-                <button key={i}
-                  onMouseEnter={()=>setHovB(i)}
-                  onMouseLeave={()=>setHovB(false)}
-                  onClick={()=>{ if(isEmpty)return; if(isDel){setPin(p=>p.slice(0,-1));setErr("");}else handlePin(String(d)); }}
-                  style={{
-                    height:52,borderRadius:13,border:"1px solid rgba(255,255,255,0.12)",
-                    background:isEmpty?"transparent":isHB?"rgba(255,255,255,0.20)":"rgba(255,255,255,0.08)",
-                    color:isEmpty?"transparent":"white",
-                    fontSize:isDel?18:20,fontWeight:isDel?500:700,
-                    cursor:isEmpty?"default":"pointer",
-                    transition:"all 0.15s",
-                    fontFamily:"inherit",
-                    transform:isHB&&!isEmpty?"scale(0.95)":"scale(1)",
-                  }}>
-                  {d}
-                </button>
-              );
-            })}
-          </div>
-
-          <button onClick={back} style={{background:"none",border:"none",color:"rgba(255,255,255,0.40)",fontSize:12,cursor:"pointer",fontFamily:"inherit",fontWeight:600}}>
-            ← Back to accounts
-          </button>
-        </div>
-      )}
-    </div>
-  );
-};
 
 /* =========================================================
    UI COMPONENTS
    ========================================================= */
 
+/* ── Login Screen ── */
+const LoginScreen=({onLogin,users})=>{
+  const [selUser,setSelUser]=useState(null);
+  const [pin,setPin]=useState("");
+  const [err,setErr]=useState("");
+  const [shake,setShake]=useState(false);
+  const [success,setSuccess]=useState(false);
+  const [hovB,setHovB]=useState(null);
+
+  const handlePin=(d)=>{
+    if(pin.length>=4||success)return;
+    const np=pin+d;
+    setPin(np);
+    setErr("");
+    if(np.length===4){
+      setTimeout(()=>{
+        if(np===selUser.pin){
+          setSuccess(true);
+          setTimeout(()=>onLogin(selUser),420);
+        } else {
+          setShake(true);
+          setErr("Incorrect PIN — try again");
+          setPin("");
+          setTimeout(()=>setShake(false),500);
+        }
+      },180);
+    }
+  };
+  const handleDel=()=>{setPin(p=>p.slice(0,-1));setErr("");};
+  const handleBack=()=>{setSelUser(null);setPin("");setErr("");setSuccess(false);setShake(false);};
+
+  const ROLE_LABELS={"superadmin":"Super Admin","admin":"Administrator","staff":"Staff"};
+
+  return(
+    <div style={{
+      minHeight:"100vh",width:"100vw",
+      background:"#060b14",
+      display:"flex",alignItems:"stretch",
+      fontFamily:"'DM Sans',system-ui,sans-serif",
+      position:"relative",overflow:"hidden",
+    }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800;900&family=Syne:wght@700;800&display=swap');
+        @keyframes ros-floatOrb{0%,100%{transform:translateY(0) scale(1);}50%{transform:translateY(-28px) scale(1.04);}}
+        @keyframes ros-fadeUp{from{opacity:0;transform:translateY(20px);}to{opacity:1;transform:translateY(0);}}
+        @keyframes ros-fadeIn{from{opacity:0;}to{opacity:1;}}
+        @keyframes ros-shake{0%,100%{transform:translateX(0);}20%{transform:translateX(-9px);}40%{transform:translateX(9px);}60%{transform:translateX(-6px);}80%{transform:translateX(6px);}}
+        @keyframes ros-pulse{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,0.5);}50%{box-shadow:0 0 0 8px rgba(16,185,129,0);}}
+        .ros-user-card{transition:all 0.22s cubic-bezier(0.34,1.56,0.64,1);cursor:pointer;}
+        .ros-user-card:hover{transform:translateY(-3px) scale(1.02)!important;background:rgba(255,255,255,0.08)!important;border-color:rgba(255,255,255,0.18)!important;box-shadow:0 16px 40px rgba(0,0,0,0.5)!important;}
+        .ros-pin-btn{transition:background 0.12s,border-color 0.12s,transform 0.1s;cursor:pointer;}
+        .ros-pin-btn:hover:not([data-empty]){background:rgba(255,255,255,0.13)!important;border-color:rgba(255,255,255,0.22)!important;}
+        .ros-pin-btn:active:not([data-empty]){transform:scale(0.90)!important;}
+        @media(max-width:700px){.ros-left-panel{display:none!important;}.ros-right-panel{padding:36px 20px!important;}}
+      `}</style>
+
+      {/* LEFT — branding */}
+      <div className="ros-left-panel" style={{
+        flex:"0 0 44%",
+        background:"linear-gradient(155deg,#0d1f3c 0%,#091526 55%,#060b14 100%)",
+        display:"flex",flexDirection:"column",justifyContent:"space-between",
+        padding:"52px 56px",position:"relative",overflow:"hidden",
+      }}>
+        <div style={{position:"absolute",top:-90,left:-90,width:420,height:420,borderRadius:"50%",background:"radial-gradient(circle,rgba(37,99,235,0.18) 0%,transparent 68%)",animation:"ros-floatOrb 7s ease-in-out infinite",pointerEvents:"none"}}/>
+        <div style={{position:"absolute",bottom:-70,right:-70,width:380,height:380,borderRadius:"50%",background:"radial-gradient(circle,rgba(124,58,237,0.14) 0%,transparent 68%)",animation:"ros-floatOrb 9s ease-in-out infinite reverse",pointerEvents:"none"}}/>
+        <div style={{position:"absolute",inset:0,backgroundImage:"linear-gradient(rgba(255,255,255,0.024) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.024) 1px,transparent 1px)",backgroundSize:"48px 48px",pointerEvents:"none"}}/>
+
+        <div style={{position:"relative",zIndex:1,animation:"ros-fadeUp 0.7s ease both"}}>
+          <div style={{display:"flex",alignItems:"center",gap:14}}>
+            <div style={{width:48,height:48,borderRadius:15,background:"linear-gradient(135deg,#2563eb,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 24px rgba(37,99,235,0.50)",flexShrink:0}}>
+              <span style={{color:"white",fontWeight:900,fontSize:22,fontFamily:"'Syne',sans-serif"}}>R</span>
+            </div>
+            <div>
+              <p style={{margin:0,fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:18,color:"white",letterSpacing:"-0.2px",lineHeight:1.2}}>ROS Nexus</p>
+              <p style={{margin:0,fontSize:10,fontWeight:500,letterSpacing:"0.10em",textTransform:"uppercase",color:"rgba(255,255,255,0.32)"}}>Business Suite</p>
+            </div>
+          </div>
+        </div>
+
+        <div style={{position:"relative",zIndex:1,animation:"ros-fadeUp 0.7s 0.15s ease both",opacity:0,animationFillMode:"forwards"}}>
+          <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"rgba(37,99,235,0.14)",border:"1px solid rgba(37,99,235,0.28)",borderRadius:999,padding:"5px 14px",marginBottom:22}}>
+            <span style={{width:6,height:6,borderRadius:"50%",background:"#60a5fa",display:"inline-block"}}/>
+            <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.65)"}}>Secure Access Portal</span>
+          </div>
+          <h1 style={{margin:"0 0 18px",fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:"clamp(30px,3vw,44px)",color:"white",lineHeight:1.12,letterSpacing:"-1px"}}>
+            Run your business<br/>
+            <span style={{background:"linear-gradient(90deg,#3b82f6 0%,#8b5cf6 50%,#06b6d4 100%)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>with confidence.</span>
+          </h1>
+          <p style={{margin:0,fontSize:14,color:"rgba(255,255,255,0.38)",lineHeight:1.75,maxWidth:320,fontWeight:400}}>
+            Manage sales, customers, inventory and finances across all your shops — in one unified dashboard.
+          </p>
+        </div>
+
+        <div style={{position:"relative",zIndex:1,animation:"ros-fadeIn 1s 0.5s ease both",opacity:0,animationFillMode:"forwards"}}>
+          <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.16)",fontWeight:500}}>© {new Date().getFullYear()} ROS Nexus · All rights reserved</p>
+        </div>
+      </div>
+
+      {/* RIGHT — login form */}
+      <div className="ros-right-panel" style={{
+        flex:1,background:"#0a0f1a",
+        display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
+        padding:"48px 32px",position:"relative",
+      }}>
+        <div style={{position:"absolute",inset:0,backgroundImage:"radial-gradient(rgba(255,255,255,0.018) 1px,transparent 1px)",backgroundSize:"24px 24px",pointerEvents:"none"}}/>
+        <div style={{position:"absolute",top:0,left:0,width:1,height:"100%",background:"linear-gradient(180deg,transparent 0%,rgba(255,255,255,0.06) 30%,rgba(255,255,255,0.06) 70%,transparent 100%)"}}/>
+
+        <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:360}}>
+          {!selUser?(
+            <div style={{animation:"ros-fadeUp 0.5s ease both"}}>
+              <div style={{marginBottom:32}}>
+                <h2 style={{margin:"0 0 6px",fontSize:26,fontWeight:800,color:"white",letterSpacing:"-0.5px",fontFamily:"'Syne',sans-serif"}}>Welcome back</h2>
+                <p style={{margin:0,fontSize:13,color:"rgba(255,255,255,0.36)",fontWeight:400}}>Choose your account to continue</p>
+              </div>
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {(users||[]).map((u,i)=>(
+                  <div key={u.id} className="ros-user-card" onClick={()=>setSelUser(u)}
+                    style={{display:"flex",alignItems:"center",gap:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16,padding:"14px 16px",boxShadow:"0 4px 20px rgba(0,0,0,0.28)"}}>
+                    <div style={{width:44,height:44,borderRadius:13,background:u.avatar,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:15,flexShrink:0,boxShadow:"0 4px 14px rgba(0,0,0,0.35)"}}>
+                      {u.initials}
+                    </div>
+                    <div style={{flex:1}}>
+                      <p style={{margin:"0 0 2px",fontWeight:700,fontSize:14,color:"white"}}>{u.name}</p>
+                      <p style={{margin:0,fontSize:11,fontWeight:500,color:"rgba(255,255,255,0.30)",textTransform:"capitalize"}}>{ROLE_LABELS[u.role]||u.role}</p>
+                    </div>
+                    <div style={{width:28,height:28,borderRadius:9,background:"rgba(255,255,255,0.05)",display:"flex",alignItems:"center",justifyContent:"center",color:"rgba(255,255,255,0.30)",fontSize:14}}>›</div>
+                  </div>
+                ))}
+              </div>
+              <p style={{textAlign:"center",marginTop:36,fontSize:11,color:"rgba(255,255,255,0.14)",fontWeight:500,letterSpacing:"0.06em"}}>DEVELOPED BY ROS NEXUS</p>
+            </div>
+          ):(
+            <div style={{animation:"ros-fadeUp 0.4s ease both",textAlign:"center"}}>
+              <button onClick={handleBack}
+                style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"7px 14px",cursor:"pointer",color:"rgba(255,255,255,0.42)",fontSize:12,fontWeight:600,fontFamily:"inherit",marginBottom:28,transition:"all 0.15s",outline:"none"}}
+                onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.10)";e.currentTarget.style.color="white";}}
+                onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.05)";e.currentTarget.style.color="rgba(255,255,255,0.42)";}}>
+                ← All accounts
+              </button>
+              <div style={{marginBottom:22}}>
+                <div style={{width:66,height:66,borderRadius:20,background:selUser.avatar,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:24,margin:"0 auto 12px",boxShadow:"0 8px 32px rgba(0,0,0,0.50)",transition:"all 0.3s",animation:success?"ros-pulse 0.6s ease":"none"}}>
+                  {success?"✓":selUser.initials}
+                </div>
+                <p style={{margin:"0 0 6px",fontWeight:700,fontSize:18,color:"white",fontFamily:"'Syne',sans-serif"}}>{selUser.name}</p>
+                <span style={{display:"inline-block",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.40)",background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:999,padding:"3px 12px"}}>
+                  {ROLE_LABELS[selUser.role]||selUser.role}
+                </span>
+              </div>
+              <div style={{animation:shake?"ros-shake 0.45s ease":"none",marginBottom:8}}>
+                <div style={{display:"flex",justifyContent:"center",gap:18,marginBottom:10}}>
+                  {[0,1,2,3].map(i=>{
+                    const filled=pin.length>i;
+                    return(<div key={i} style={{width:13,height:13,borderRadius:"50%",background:success?"#10b981":filled?"white":"transparent",border:"2px solid "+(success?"#10b981":filled?"white":"rgba(255,255,255,0.22)"),transition:"all 0.15s",transform:filled?"scale(1.18)":"scale(1)",boxShadow:success?"0 0 12px rgba(16,185,129,0.60)":filled?"0 0 10px rgba(255,255,255,0.45)":"none"}}/>);
+                  })}
+                </div>
+                <p style={{margin:0,minHeight:20,fontSize:12,fontWeight:600,color:err?"#f87171":success?"#34d399":"rgba(255,255,255,0.28)",transition:"color 0.2s"}}>
+                  {err||(success?"Signing in…":"Enter your 4-digit PIN")}
+                </p>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:20,opacity:success?0.35:1,transition:"opacity 0.3s"}}>
+                {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((d,i)=>{
+                  const isEmpty=d==="";const isDel=d==="⌫";
+                  return(
+                    <button key={i} className="ros-pin-btn" data-empty={isEmpty||undefined}
+                      onMouseEnter={()=>!isEmpty&&setHovB(i)} onMouseLeave={()=>setHovB(null)}
+                      onClick={()=>{if(isEmpty||success)return;isDel?handleDel():handlePin(String(d));}}
+                      style={{height:56,borderRadius:14,border:"1px solid "+(isEmpty?"transparent":"rgba(255,255,255,0.09)"),background:isEmpty?"transparent":"rgba(255,255,255,0.05)",color:isEmpty?"transparent":isDel?"rgba(255,255,255,0.50)":"white",fontSize:isDel?20:22,fontWeight:isDel?400:700,cursor:isEmpty?"default":"pointer",fontFamily:"inherit",outline:"none"}}>
+                      {d}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+};
+
 export default function App(){
-  const [user,setUser]=useState(()=>{
-    try{const s=localStorage.getItem("ros_user");return s?JSON.parse(s):null;}catch{return null;}
-  });
-  const [shop,setShop]=useState(()=>{
-    try{return localStorage.getItem("ros_shop")||null;}catch{return null;}
-  });
+  // Always start logged-out — login page shown on every fresh load
+  const [user,setUser]=useState(null);
+  const [shop,setShop]=useState(null);
   const [users,setUsers]=useState(INITIAL_USERS);
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
   const [customers,setCustomers]=useState([]);
   const [shopItems,setShopItems]=useState(()=>{
-    try{const s=localStorage.getItem("ros_shopItems");return s?JSON.parse(s):{"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
-    catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
+    try{
+      const s=localStorage.getItem("ros_shopItems");
+      if(!s) return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
+      const parsed=JSON.parse(s);
+      // Normalize: ensure every entry is a plain string (guard against legacy {name,code} objects)
+      const normalize=(arr)=>(arr||[]).map(x=>typeof x==="object"&&x!==null?(x.name||x.label||JSON.stringify(x)):String(x)).filter(Boolean);
+      return {
+        "ros-selections": normalize(parsed["ros-selections"]),
+        "ros-hairlines":  normalize(parsed["ros-hairlines"]),
+        "ros-india":      normalize(parsed["ros-india"]),
+      };
+    }catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
   });
   const saveShopItems=(updated)=>{
     setShopItems(updated);
@@ -5342,6 +5602,24 @@ export default function App(){
   };
 
   const updateSalesData=setSalesData;
+
+  // Self-heal: clear any corrupted ros_shopItems from localStorage on first mount
+  useEffect(()=>{
+    try{
+      const raw=localStorage.getItem("ros_shopItems");
+      if(raw){
+        const parsed=JSON.parse(raw);
+        const hasObjects=["ros-selections","ros-hairlines","ros-india"].some(k=>
+          (parsed[k]||[]).some(x=>typeof x==="object"&&x!==null)
+        );
+        if(hasObjects){
+          console.warn("🔧 Clearing corrupted ros_shopItems from localStorage");
+          localStorage.removeItem("ros_shopItems");
+          setShopItems({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
+        }
+      }
+    }catch{}
+  },[]);
 
   // Load from Supabase on mount - Supabase is single source of truth
   useEffect(()=>{
@@ -5360,12 +5638,10 @@ export default function App(){
   const handleLogin=u=>{
     const fresh=users.find(x=>x.id===u.id)||u;
     setUser(fresh);setShop(null);
-    try{localStorage.setItem("ros_user",JSON.stringify(fresh));localStorage.removeItem("ros_shop");}catch{}
   };
 
   const handleLogout=()=>{
     setUser(null);setShop(null);
-    try{localStorage.removeItem("ros_user");localStorage.removeItem("ros_shop");}catch{}
   };
 
   const handleSetShop=(s)=>{
