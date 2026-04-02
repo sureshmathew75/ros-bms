@@ -1735,8 +1735,10 @@ return(
                 return !isNaN(dt.getTime()) && dt.getTime() >= fyStart.getTime();
               });
               if (fySales.length === 0) return 1312;
-              const nums = fySales.map(s => parseInt((s.id||"0").replace(/[^0-9]/g,""))||0).filter(n => n >= 1313 && n < 9999);
-              return nums.length > 0 ? Math.max(...nums) : 1312;
+              const nums = fySales.map(s => {
+                const m = (s.id||"").match(/^ROS(\d{4})\d$/);
+                return m ? parseInt(m[1]) : 0;
+              }).filter(n => n >= 1313 && n <= 9999);
             })()}
             customers={customers}
             shopItems={(shopItems||{})[shopId]||[]}
@@ -3958,8 +3960,9 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const _yr=_now.getMonth()>=3?_now.getFullYear():_now.getFullYear()-1;
   const _fySuffix=String(_yr+1).slice(-1);
   const _stored=()=>{try{const v=localStorage.getItem("ros_lastInv_"+shopId);return v?parseInt(v)||0:0;}catch{return 0;}};
-  const _nextNum=Math.max(lastInvoiceNum||0,_stored())+1;
-  const _seq=String(_nextNum).padStart(4,"0");
+  const _base=Math.max(lastInvoiceNum||1312,_stored());
+  const _nextNum=(_base<1313||_base>9998)?1312:_base;
+  const _seq=String(_nextNum+1).padStart(4,"0");
   const autoInv=`ROS${_seq}${_fySuffix}`;
 
   const [form,setForm]=useState({
