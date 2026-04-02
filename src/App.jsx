@@ -1723,9 +1723,23 @@ return(
           <NewSaleForm
             shopId={shopId} shop={shop}
             onSave={addSale} onClose={()=>setModal(null)}
-            lastInvoiceNum={sales.length>0
-              ? parseInt((sales[0].id||"0").replace(/[^0-9]/g,""))||1022
-              : 1022}
+            lastInvoiceNum={(() => {
+  const now = new Date();
+  const fyStart = now.getMonth() >= 3
+    ? new Date(now.getFullYear(), 3, 1)
+    : new Date(now.getFullYear() - 1, 3, 1);
+  const fyStartStr = fyStart.toISOString().slice(0, 10);
+  const fySales = sales.filter(s => {
+    const { parseDateMs } = { parseDateMs: (r) => {
+      const us = String(r).match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+      if (us) return new Date(+us[3], +us[1]-1, +us[2]).getTime();
+      return new Date(r).getTime();
+    }};
+    return parseDateMs(s.date) >= fyStart.getTime();
+  });
+  if (fySales.length === 0) return 1312;
+  return parseInt((fySales[0].id||"0").replace(/[^0-9]/g,""))||1312;
+})()}
             customers={customers}
             shopItems={(shopItems||{})[shopId]||[]}
             onAddShopItem={(item)=>{
