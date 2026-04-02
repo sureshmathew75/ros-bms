@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import CommandPalette from "./components/CommandPalette";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import DocumentsPanel from "./components/DocumentsPanel";
@@ -753,9 +753,7 @@ const addSale = async (form) => {
   const pfx = {["ros-selections"]:"SI",["ros-hairlines"]:"SH",["ros-india"]:"IN"}[shopId];
   const nid = form.invoiceNo || `${pfx}-${Date.now().toString().slice(-6)}`;
   // Update ref so next sale gets the correct next number
-  const numInId = parseInt((nid||"0").replace(/[^0-9]/g,""))||0;
-  if(numInId > (lastInvNumRef.current[shopId]||0)) lastInvNumRef.current[shopId]=numInId;
-  const newSale = {
+    const newSale = {
     id: nid, ...form,
     amount:       Number(form.amount) || 0,
     taxRate:      form.taxRate !== undefined ? form.taxRate : (shopId === "ros-india" ? 18 : 20),
@@ -5584,7 +5582,6 @@ export default function App(){
   const [users,setUsers]=useState(INITIAL_USERS);
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
-  const lastInvNumRef=useRef({});
   const [customers,setCustomers]=useState([]);
   const [shopItems,setShopItems]=useState(()=>{
     try{
