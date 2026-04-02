@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import CommandPalette from "./components/CommandPalette";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import DocumentsPanel from "./components/DocumentsPanel";
@@ -752,6 +752,9 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
 const addSale = async (form) => {
   const pfx = {["ros-selections"]:"SI",["ros-hairlines"]:"SH",["ros-india"]:"IN"}[shopId];
   const nid = form.invoiceNo || `${pfx}-${Date.now().toString().slice(-6)}`;
+  // Update ref so next sale gets the correct next number
+  const numInId = parseInt((nid||"0").replace(/[^0-9]/g,""))||0;
+  if(numInId > (lastInvNumRef.current[shopId]||0)) lastInvNumRef.current[shopId]=numInId;
   const newSale = {
     id: nid, ...form,
     amount:       Number(form.amount) || 0,
@@ -1721,7 +1724,7 @@ return(
           <NewSaleForm
             shopId={shopId} shop={shop}
             onSave={addSale} onClose={()=>setModal(null)}
-            lastInvoiceNum={(() => {
+           lastInvoiceNum={lastInvNumRef.current[shopId] || (() => {
               const now = new Date();
               const fyStart = now.getMonth() >= 3 ? new Date(now.getFullYear(), 3, 1) : new Date(now.getFullYear() - 1, 3, 1);
               const fySales = sales.filter(s => {
@@ -5581,6 +5584,7 @@ export default function App(){
   const [users,setUsers]=useState(INITIAL_USERS);
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
+  const lastInvNumRef=useRef({});
   const [customers,setCustomers]=useState([]);
   const [shopItems,setShopItems]=useState(()=>{
     try{
