@@ -1732,8 +1732,7 @@ return(
       const dt = us ? new Date(+us[3],+us[1]-1,+us[2]) : iso ? new Date(+iso[1],+iso[2]-1,+iso[3]) : new Date(raw);
       return !isNaN(dt.getTime()) && dt.getTime() >= fyStart.getTime();
     });
-    return parseDateMs(s.date) >= fyStart.getTime();
-  });
+});
   if (fySales.length === 0) return 1312;
  const nums = fySales.map(s => parseInt((s.id||"0").replace(/[^0-9]/g,""))||0).filter(n => n >= 1313 && n < 9999);
               return nums.length > 0 ? Math.max(...nums) : 1312;
