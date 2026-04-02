@@ -59,11 +59,20 @@ const parseDateMs = (raw) => {
 
 export const dbLoadSales = async (shopId) => {
   if (!sb) return null;
-  const { data, error } = await sb.from('sales').select('*')
-    .eq('shop_id', shopId)
-    .limit(10000);
-  if (error) { console.error('Load sales error:', error); return null; }
-  const mapped = data.map(r => ({
+  let all = [];
+  let from = 0;
+  const PAGE = 1000;
+  while (true) {
+    const { data, error } = await sb.from('sales').select('*')
+      .eq('shop_id', shopId)
+      .range(from, from + PAGE - 1);
+    if (error) { console.error('Load sales error:', error); return null; }
+    if (!data || data.length === 0) break;
+    all = [...all, ...data];
+    if (data.length < PAGE) break;
+    from += PAGE;
+  }
+  const mapped = all.map(r => ({
     id:           r.id,
     customer:     r.customer || '',
     amount:       Number(r.amount) || 0,
@@ -81,7 +90,6 @@ export const dbLoadSales = async (shopId) => {
     taxInclusive: r.tax_inclusive !== false,
     invoiceNo:    r.invoice_no || r.id,
   }));
-  // Sort latest first — handles mixed date formats (ISO, M/D/YYYY, DD-MM-YYYY)
   return mapped.sort((a, b) => parseDateMs(b.date) - parseDateMs(a.date));
 };
 
