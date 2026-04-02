@@ -60,7 +60,8 @@ const parseDateMs = (raw) => {
 export const dbLoadSales = async (shopId) => {
   if (!sb) return null;
   const { data, error } = await sb.from('sales').select('*')
-    .eq('shop_id', shopId);
+    .eq('shop_id', shopId)
+    .limit(10000);
   if (error) { console.error('Load sales error:', error); return null; }
   const mapped = data.map(r => ({
     id:           r.id,
