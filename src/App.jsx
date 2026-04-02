@@ -1720,23 +1720,19 @@ return(
             shopId={shopId} shop={shop}
             onSave={addSale} onClose={()=>setModal(null)}
             lastInvoiceNum={(() => {
-  const now = new Date();
-  const fyStart = now.getMonth() >= 3
-    ? new Date(now.getFullYear(), 3, 1)
-    : new Date(now.getFullYear() - 1, 3, 1);
-  const fyStartStr = fyStart.toISOString().slice(0, 10);
-  const fySales = sales.filter(s => {
-      const raw = String(s.date).trim();
-      const us = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-      const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-      const dt = us ? new Date(+us[3],+us[1]-1,+us[2]) : iso ? new Date(+iso[1],+iso[2]-1,+iso[3]) : new Date(raw);
-      return !isNaN(dt.getTime()) && dt.getTime() >= fyStart.getTime();
-    });
-});
-  if (fySales.length === 0) return 1312;
- const nums = fySales.map(s => parseInt((s.id||"0").replace(/[^0-9]/g,""))||0).filter(n => n >= 1313 && n < 9999);
+              const now = new Date();
+              const fyStart = now.getMonth() >= 3 ? new Date(now.getFullYear(), 3, 1) : new Date(now.getFullYear() - 1, 3, 1);
+              const fySales = sales.filter(s => {
+                const raw = String(s.date).trim();
+                const us = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+                const dt = us ? new Date(+us[3],+us[1]-1,+us[2]) : iso ? new Date(+iso[1],+iso[2]-1,+iso[3]) : new Date(raw);
+                return !isNaN(dt.getTime()) && dt.getTime() >= fyStart.getTime();
+              });
+              if (fySales.length === 0) return 1312;
+              const nums = fySales.map(s => parseInt((s.id||"0").replace(/[^0-9]/g,""))||0).filter(n => n >= 1313 && n < 9999);
               return nums.length > 0 ? Math.max(...nums) : 1312;
-})()}
+            })()}
             customers={customers}
             shopItems={(shopItems||{})[shopId]||[]}
             onAddShopItem={(item)=>{
