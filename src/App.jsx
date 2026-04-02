@@ -4328,13 +4328,25 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
         </div>
       </div>
 
-      {/* PAYMENT */}
+  {/* PAYMENT */}
       <Divider title="Payment"/>
-      <div style={{marginBottom:16}}>
-        <label style={lbl}>Payment By</label>
-        <select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>
-          {["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"].map(o=><option key={o}>{o}</option>)}
-        </select>
+      <div style={{display:"grid",gridTemplateColumns:form.payBy==="SHOP"?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
+        <div>
+          <label style={lbl}>Payment By</label>
+          <select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>
+            {["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"].map(o=><option key={o}>{o}</option>)}
+          </select>
+        </div>
+        {form.payBy==="SHOP"&&(
+          <div>
+            <label style={lbl}>Shop Invoice No.</label>
+            <input
+              value={form.shopInvoiceNo||""}
+              onChange={e=>set("shopInvoiceNo",e.target.value)}
+              placeholder="e.g. 12345"
+              style={inp} onFocus={fo} onBlur={bl}/>
+          </div>
+        )}
       </div>
 
       {/* DELIVERY */}
