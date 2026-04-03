@@ -97,6 +97,26 @@ function filterByPeriod(sales, period) {
 /* ── Date / separator helpers ───────────────────────────────────────────── */
 
 function monthKey(dateStr) {
+  const d = safeParseDate(dateStr);
+  if (!d || isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+function monthLabel(dateStr) {
+  const d = safeParseDate(dateStr);
+  if (!d || isNaN(d.getTime())) return "";
+  return d.toLocaleString("default", { month: "long", year: "numeric" });
+}
+function fyStartYear(dateStr) {
+  const d = safeParseDate(dateStr);
+  if (!d || isNaN(d.getTime())) return null;
+  return d.getMonth() < 3 ? d.getFullYear() - 1 : d.getFullYear();
+}
+function fyLabel(startYear) {
+  if (startYear === null || isNaN(startYear)) return "";
+  return `FY ${startYear}–${String(startYear + 1).slice(-2)}`;
+}
+
+function buildRowsWithSeparators(sortedRows) {
   const result = [];
   for (let i = 0; i < sortedRows.length; i++) {
     const curr = sortedRows[i];
