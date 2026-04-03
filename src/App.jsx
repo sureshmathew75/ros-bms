@@ -272,9 +272,11 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
       const s=String(str).trim();
       const iso=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
       if(iso)return{y:parseInt(iso[1],10),m:parseInt(iso[2],10)-1,d:parseInt(iso[3],10)};
-      const dmy=s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+      // DD/MM/YYYY or DD-MM-YYYY
+      const dmy=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
       if(dmy)return{y:parseInt(dmy[3],10),m:parseInt(dmy[2],10)-1,d:parseInt(dmy[1],10)};
-      const dmyy=s.match(/^(\d{2})-(\d{2})-(\d{2})$/);
+      // DD/MM/YY or DD-MM-YY
+      const dmyy=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})$/);
       if(dmyy){const y=parseInt(dmyy[3],10);return{y:y<50?2000+y:1900+y,m:parseInt(dmyy[2],10)-1,d:parseInt(dmyy[1],10)};}
       return null;
     };
@@ -693,11 +695,14 @@ const parseDate=str=>{
   if(!str) return null;
   const s=String(str).trim();
   let m;
+  // YYYY-MM-DD (ISO — most common from Supabase)
   m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if(m) return new Date(+m[1],+m[2]-1,+m[3]);
-  m=s.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})$/);
+  // DD/MM/YYYY or DD-MM-YYYY (UK 4-digit year, 1-2 digit day/month)
+  m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
   if(m) return new Date(+m[3],+m[2]-1,+m[1]);
-  m=s.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{2})$/);
+  // DD/MM/YY or DD-MM-YY (UK 2-digit year → 2000s)
+  m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})$/);
   if(m){const y=+m[3];return new Date(y<50?2000+y:1900+y,+m[2]-1,+m[1]);}
   return null;
 };
@@ -1287,9 +1292,9 @@ return(
             const todayStr=now.toISOString().slice(0,10);
             const curMonth=now.getMonth();
             const curYear=now.getFullYear();
-            // UK financial year: Apr 6 – Apr 5
-            const fyStart=now.getMonth()<3||(now.getMonth()===3&&now.getDate()<6)
-              ? new Date(curYear-1,3,6) : new Date(curYear,3,6);
+            // Financial Year: 1 April → 31 March
+            const fyStart=now.getMonth()<3
+              ? new Date(curYear-1,3,1) : new Date(curYear,3,1);
 
             const isSameDay=d=>{const dt=parseDate(d);return dt&&dt.getFullYear()===curYear&&dt.getMonth()===curMonth&&dt.getDate()===now.getDate();};
             const isSameMonth=d=>{const dt=parseDate(d);return dt&&dt.getMonth()===curMonth&&dt.getFullYear()===curYear;};
@@ -1326,7 +1331,7 @@ return(
                 progress:Math.min(100,Math.round((monthSales/(shop.monthRevenue||1))*100)),
               },
               {
-                icon:"📈", label:"Financial Year", sub:"Apr "+fyStart.getFullYear()+" – Mar "+(fyStart.getFullYear()+1),
+                icon:"📈", label:"Financial Year", sub:"1 Apr "+fyStart.getFullYear()+" – 31 Mar "+(fyStart.getFullYear()+1),
                 value:fmt(shopId,fySales),
                 accent:"#10b981", dark:"#065f46",
                 grad:"linear-gradient(145deg,#064e3b 0%,#065f46 45%,#059669 100%)",
@@ -1779,11 +1784,8 @@ return(
               const now = new Date();
               const fyStart = now.getMonth() >= 3 ? new Date(now.getFullYear(), 3, 1) : new Date(now.getFullYear() - 1, 3, 1);
               const fySales = sales.filter(s => {
-                const raw = String(s.date).trim();
-                const us = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-                const iso = raw.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-                const dt = us ? new Date(+us[3],+us[1]-1,+us[2]) : iso ? new Date(+iso[1],+iso[2]-1,+iso[3]) : new Date(raw);
-                return !isNaN(dt.getTime()) && dt.getTime() >= fyStart.getTime();
+                const dt = parseDate(s.date);
+                return dt && !isNaN(dt.getTime()) && dt >= fyStart;
               });
               if (fySales.length === 0) return 1312;
               const nums = fySales.map(s => {
