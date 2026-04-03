@@ -684,6 +684,24 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
    into separate line rows. Prices are split equally (estimated)
    because individual prices weren't stored in old records.
 ────────────────────────────────────────────────────────────── */
+/* ── parseDate ─────────────────────────────────────────────────
+   Robust date parser: handles YYYY-MM-DD, DD-MM-YYYY, DD/MM/YYYY,
+   DD-MM-YY. Returns a local Date or null. Never uses new Date(str)
+   directly which misparses non-ISO formats.
+────────────────────────────────────────────────────────────── */
+const parseDate=str=>{
+  if(!str) return null;
+  const s=String(str).trim();
+  let m;
+  m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if(m) return new Date(+m[1],+m[2]-1,+m[3]);
+  m=s.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{4})$/);
+  if(m) return new Date(+m[3],+m[2]-1,+m[1]);
+  m=s.match(/^(\d{2})[\/\-](\d{2})[\/\-](\d{2})$/);
+  if(m){const y=+m[3];return new Date(y<50?2000+y:1900+y,+m[2]-1,+m[1]);}
+  return null;
+};
+
 const parseLegacyItems=(itemStr,qty,subtotal)=>{
   if(!itemStr) return [{name:"Product/Service",qty:qty||1,price:subtotal||0,estimated:false}];
   if(itemStr.includes("(x")){
@@ -1273,9 +1291,9 @@ return(
             const fyStart=now.getMonth()<3||(now.getMonth()===3&&now.getDate()<6)
               ? new Date(curYear-1,3,6) : new Date(curYear,3,6);
 
-            const isSameDay=d=>d===todayStr;
-            const isSameMonth=d=>{const dt=new Date(d);return dt.getMonth()===curMonth&&dt.getFullYear()===curYear;};
-            const isInFY=d=>new Date(d)>=fyStart;
+            const isSameDay=d=>{const dt=parseDate(d);return dt&&dt.getFullYear()===curYear&&dt.getMonth()===curMonth&&dt.getDate()===now.getDate();};
+            const isSameMonth=d=>{const dt=parseDate(d);return dt&&dt.getMonth()===curMonth&&dt.getFullYear()===curYear;};
+            const isInFY=d=>{const dt=parseDate(d);return dt&&dt>=fyStart;};
 
             const todaySales   =sales.filter(s=>isSameDay(s.date)).reduce((a,s)=>a+(s.amount||0),0);
             const monthSales   =sales.filter(s=>isSameMonth(s.date)).reduce((a,s)=>a+(s.amount||0),0);
@@ -1646,6 +1664,7 @@ return(
                 filtSales={filtSales}
                 fmt={fmt}
                 formatDate={formatDate}
+                parseDate={parseDate}
                 openMenu={openMenu}
                 onImport={()=>setModal("import-sales")}
                 onExport={()=>setModal("export-sales")}
