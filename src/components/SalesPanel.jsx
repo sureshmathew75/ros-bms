@@ -316,11 +316,31 @@ export default function SalesPanel({
     [filtSales, salesPeriod]
   );
 
-  /* ── KPI values — across full period, all statuses ───────────────────── */
+  /* ── Build per-FY breakdown from periodSales ─────────────────────────── */
+  const fyGroups = useMemo(() => {
+    const groups = {};
+    periodSales.forEach(s => {
+      const fy = fyStartYear(s) ?? "other";
+      if (!groups[fy]) groups[fy] = [];
+      groups[fy].push(s);
+    });
+    return Object.entries(groups)
+      .sort(([a], [b]) => Number(b) - Number(a))
+      .map(([fyStart, rows]) => {
+        const fyS = Number(fyStart);
+        const rev = rows.reduce((a, s) => a + (Number(s.amount) || 0), 0);
+        const qty = rows.reduce((a, s) => a + (Number(s.qty)    || 1), 0);
+        const avg = rows.length > 0 ? Math.round(rev / rows.length) : 0;
+        return {
+          fyStart: fyS,
+          label: isNaN(fyS) ? "Other" : `${String(fyS).slice(-2)}-${String(fyS+1).slice(-2)}`,
+          count: rows.length, rev, qty, avg,
+        };
+      });
+  }, [periodSales]);
+
+  const fmtAmt = v => fmt ? fmt(shopId, v) : `${shop?.symbol || "£"}${Number(v).toLocaleString()}`;
   const totalRev = periodSales.reduce((a, s) => a + (Number(s.amount) || 0), 0);
-  const totalQty = periodSales.reduce((a, s) => a + (Number(s.qty)    || 1), 0);
-  const avgOrder = periodSales.length > 0 ? Math.round(totalRev / periodSales.length) : 0;
-  const fmtAmt   = v => fmt ? fmt(shopId, v) : `${shop?.symbol || "£"}${Number(v).toLocaleString()}`;
 
   /* ── Status tab counts (from period+search filtered) ─────────────────── */
   const tabCounts = useMemo(() => {
@@ -376,56 +396,12 @@ export default function SalesPanel({
   const resolvedTabs = statusTabs || STATUS_TABS;
   const activeTabCfg = STATUS_TABS.find(t => t.key === statusTab) || STATUS_TABS[0];
 
-  /* ── KPI card config ────────────────────────────────────────────────── */
-  const kpiCards = [
-    {
-      icon: "🛒", label: "Total Orders",
-      value: periodSales.length,
-      sub: `${periodSales.length} order${periodSales.length !== 1 ? "s" : ""}`,
-      topColor:  "#6366f1",
-      topGrad:   "linear-gradient(90deg,#4f46e5,#818cf8,#4f46e5)",
-      iconBg:    "#eef2ff",
-      iconColor: "#4f46e5",
-      valColor:  "#1e1b4b",
-      shadow:    "rgba(99,102,241,0.14)",
-      glowColor: "rgba(99,102,241,0.32)",
-    },
-    {
-      icon: "📦", label: "Total Quantity",
-      value: `${totalQty} units`,
-      sub: "units sold",
-      topColor:  "#0ea5e9",
-      topGrad:   "linear-gradient(90deg,#0284c7,#38bdf8,#0284c7)",
-      iconBg:    "#e0f2fe",
-      iconColor: "#0284c7",
-      valColor:  "#0c4a6e",
-      shadow:    "rgba(14,165,233,0.14)",
-      glowColor: "rgba(14,165,233,0.32)",
-    },
-    {
-      icon: "💰", label: "Total Revenue",
-      value: fmtAmt(totalRev),
-      sub: "gross revenue",
-      topColor:  accent,
-      topGrad:   `linear-gradient(90deg,${accent},${accent}99,${accent})`,
-      iconBg:    accentBg,
-      iconColor: accent,
-      valColor:  "#0f172a",
-      shadow:    `${accent}22`,
-      glowColor: `${accent}44`,
-    },
-    {
-      icon: "📈", label: "Avg Order Value",
-      value: fmtAmt(avgOrder),
-      sub: "per order",
-      topColor:  "#f59e0b",
-      topGrad:   "linear-gradient(90deg,#d97706,#fbbf24,#d97706)",
-      iconBg:    "#fef3c7",
-      iconColor: "#d97706",
-      valColor:  "#451a03",
-      shadow:    "rgba(245,158,11,0.14)",
-      glowColor: "rgba(245,158,11,0.36)",
-    },
+  /* ── KPI card definitions ───────────────────────────────────────────── */
+  const kpiDefs = [
+    { icon:"🛒", label:"Orders",    getValue: g=>String(g.count),    topGrad:"linear-gradient(90deg,#4f46e5,#818cf8,#4f46e5)", topColor:"#6366f1", iconBg:"#eef2ff", iconColor:"#4f46e5", shadow:"rgba(99,102,241,0.14)",  glowColor:"rgba(99,102,241,0.32)"  },
+    { icon:"📦", label:"Quantity",  getValue: g=>`${g.qty} units`,   topGrad:"linear-gradient(90deg,#0284c7,#38bdf8,#0284c7)", topColor:"#0ea5e9", iconBg:"#e0f2fe", iconColor:"#0284c7", shadow:"rgba(14,165,233,0.14)",  glowColor:"rgba(14,165,233,0.32)"  },
+    { icon:"💰", label:"Revenue",   getValue: g=>fmtAmt(g.rev),      topGrad:`linear-gradient(90deg,${accent},${accent}99,${accent})`,          topColor:accent,    iconBg:accentBg,   iconColor:accent,    shadow:`${accent}22`,               glowColor:`${accent}44`            },
+    { icon:"📈", label:"Avg. Order",getValue: g=>fmtAmt(g.avg),      topGrad:"linear-gradient(90deg,#d97706,#fbbf24,#d97706)", topColor:"#f59e0b", iconBg:"#fef3c7", iconColor:"#d97706",shadow:"rgba(245,158,11,0.14)", glowColor:"rgba(245,158,11,0.36)"  },
   ];
 
   return (
@@ -512,102 +488,73 @@ export default function SalesPanel({
       </div>
 
       {/* ══════════════════════════════════════════════════════════
-          KPI CARDS
+          KPI COMPARISON CARDS — current FY large, prior years smaller
          ══════════════════════════════════════════════════════════ */}
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))",
-        gap: 16, marginBottom: 20,
-      }}>
-        {kpiCards.map((card, i) => {
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))", gap:14, marginBottom:20 }}>
+        {kpiDefs.map((card, i) => {
           const isHov = hovCard === i;
           return (
             <div key={card.label}
               onMouseEnter={() => setHovCard(i)}
               onMouseLeave={() => setHovCard(null)}
               style={{
-                background: "white",
-                borderRadius: 18,
-                border: "1px solid #f1f5f9",
-                overflow: "hidden",
-                boxShadow: isHov
-                  ? `0 20px 48px ${card.glowColor}, 0 4px 16px ${card.shadow}`
-                  : `0 2px 12px ${card.shadow}`,
-                transform: isHov ? "translateY(-6px) scale(1.025)" : "translateY(0) scale(1)",
-                transition: "all 0.24s cubic-bezier(0.34,1.56,0.64,1)",
-                cursor: "default",
-                position: "relative",
+                background:"white", borderRadius:16, border:"1px solid #f1f5f9", overflow:"hidden",
+                boxShadow: isHov ? `0 16px 40px ${card.glowColor},0 4px 12px ${card.shadow}` : `0 2px 10px ${card.shadow}`,
+                transform: isHov ? "translateY(-4px) scale(1.02)" : "none",
+                transition:"all 0.22s cubic-bezier(0.34,1.56,0.64,1)",
               }}>
-
-              {/* ── Coloured top accent bar ── */}
-              <div style={{
-                height: 5,
-                background: card.topGrad,
-                backgroundSize: isHov ? "200% 100%" : "100% 100%",
-                transition: "background-size 0.4s ease",
-              }} />
-
-              {/* ── Shimmer overlay on hover ── */}
-              <div style={{
-                position: "absolute", top: 5, left: 0, right: 0, bottom: 0,
-                background: isHov
-                  ? `radial-gradient(ellipse at 60% 0%, ${card.glowColor} 0%, transparent 70%)`
-                  : "transparent",
-                transition: "background 0.30s ease",
-                pointerEvents: "none",
-                borderRadius: "0 0 18px 18px",
-              }} />
-
-              {/* ── Card body ── */}
-              <div style={{ padding: "18px 20px 20px" }}>
+              {/* Top accent bar */}
+              <div style={{ height:4, background:card.topGrad }} />
+              <div style={{ padding:"14px 16px 16px" }}>
                 {/* Icon + label row */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+                <div style={{ display:"flex", alignItems:"center", gap:9, marginBottom:14 }}>
                   <div style={{
-                    width: 44, height: 44, borderRadius: 12,
-                    background: card.iconBg,
-                    display: "flex", alignItems: "center", justifyContent: "center",
-                    fontSize: 21,
-                    boxShadow: isHov ? `0 4px 14px ${card.glowColor}` : "none",
-                    transition: "box-shadow 0.24s",
-                    transform: isHov ? "scale(1.10) rotate(-4deg)" : "scale(1) rotate(0deg)",
-                  }}>
-                    {card.icon}
-                  </div>
-                  {/* Animated colour dot */}
+                    width:36, height:36, borderRadius:10, background:card.iconBg,
+                    display:"flex", alignItems:"center", justifyContent:"center", fontSize:18,
+                    transform: isHov ? "scale(1.1) rotate(-4deg)" : "none", transition:"transform 0.22s",
+                  }}>{card.icon}</div>
+                  <span style={{ fontSize:11, fontWeight:800, color:"#64748b", textTransform:"uppercase", letterSpacing:"0.07em" }}>
+                    {card.label}
+                  </span>
                   <div style={{
-                    width: 8, height: 8, borderRadius: "50%",
-                    background: card.topColor,
-                    boxShadow: isHov ? `0 0 0 4px ${card.glowColor}` : "none",
-                    transition: "box-shadow 0.24s",
+                    marginLeft:"auto", width:7, height:7, borderRadius:"50%", background:card.topColor,
+                    boxShadow: isHov ? `0 0 0 3px ${card.glowColor}` : "none", transition:"box-shadow 0.22s",
                   }} />
                 </div>
-
-                {/* Label */}
-                <div style={{
-                  fontSize: 11, fontWeight: 700, color: "#94a3b8",
-                  textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 6,
-                }}>
-                  {card.label}
-                </div>
-
-                {/* Value */}
-                <div style={{
-                  fontSize: 26, fontWeight: 900,
-                  color: isHov ? card.topColor : card.valColor,
-                  lineHeight: 1.1, letterSpacing: "-0.5px",
-                  transition: "color 0.20s",
-                }}>
-                  {card.value}
-                </div>
-
-                {/* Sub label + accent bottom line */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
-                  <span style={{ fontSize: 11, color: "#94a3b8" }}>{card.sub}</span>
-                  <div style={{
-                    height: 2, width: isHov ? 32 : 16, borderRadius: 2,
-                    background: card.topColor,
-                    transition: "width 0.30s ease",
-                  }} />
+                {/* FY rows — newest first, current year bigger */}
+                <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+                  {fyGroups.length === 0 && (
+                    <span style={{ fontSize:22, fontWeight:900, color:"#94a3b8" }}>—</span>
+                  )}
+                  {fyGroups.map((g, gi) => {
+                    const isCurrent = gi === 0;
+                    return (
+                      <div key={g.fyStart} style={{
+                        display:"flex", alignItems:"center", justifyContent:"space-between",
+                        padding: isCurrent ? "6px 10px" : "4px 10px",
+                        borderRadius:8,
+                        background: isCurrent ? `${card.topColor}12` : "#f8fafc",
+                        borderLeft: `3px solid ${isCurrent ? card.topColor : "#e2e8f0"}`,
+                      }}>
+                        <span style={{
+                          fontSize: isCurrent ? 10 : 9, fontWeight:700,
+                          color: isCurrent ? card.topColor : "#94a3b8",
+                          letterSpacing:"0.04em", minWidth:38,
+                        }}>
+                          FY {g.label}
+                        </span>
+                        <span style={{
+                          fontSize: isCurrent ? 22 : 14,
+                          fontWeight: isCurrent ? 900 : 700,
+                          color: isCurrent ? (isHov ? card.topColor : "#0f172a") : "#64748b",
+                          letterSpacing: isCurrent ? "-0.5px" : "0",
+                          transition:"color 0.2s",
+                        }}>
+                          {card.getValue(g)}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
