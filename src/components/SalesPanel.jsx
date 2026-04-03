@@ -86,6 +86,31 @@ function getPeriodRange(period) {
 
 function filterByPeriod(sales, period) {
   if (period === "lifetime") return sales;
+
+  // For "year": use invoice number suffix as ground truth for FY
+  // Invoice suffix digit = last digit of the FY end year
+  // e.g. ROS13277 ends in 7 → FY 2026-27 (current if now in FY26-27)
+  //      ROS13276 ends in 6 → FY 2025-26
+  if (period === "year") {
+    const now = new Date();
+    const m = now.getMonth();
+    const y = now.getFullYear();
+    // Current FY end year: if Apr-Dec → ends next year; if Jan-Mar → ends this year
+    const fyEndYear = m >= 3 ? y + 1 : y;
+    const fySuffix = String(fyEndYear).slice(-1); // e.g. "7" for 2026-27
+
+    return sales.filter(s => {
+      const id = String(s.id || "");
+      // If invoice has the ROS pattern with a suffix digit, use it
+      const m2 = id.match(/^[A-Z]{2,3}(\d{4})(\d)$/);
+      if (m2) return m2[2] === fySuffix;
+      // Fallback to date for invoices without the suffix pattern
+      const dt = toSortableDate(s.date);
+      const { start, end } = getPeriodRange("year");
+      return dt >= start && dt <= end;
+    });
+  }
+
   const { start, end } = getPeriodRange(period);
   if (!start || !end) return sales;
   return sales.filter(s => {
@@ -106,7 +131,27 @@ function monthLabel(dateStr) {
   if (!d || isNaN(d.getTime())) return "";
   return d.toLocaleString("default", { month: "long", year: "numeric" });
 }
-function fyStartYear(dateStr) {
+function fyStartYear(dateStrOrSale) {
+  // Accept either a raw dateStr or a sale object
+  const id = dateStrOrSale && typeof dateStrOrSale === "object" ? dateStrOrSale.id : null;
+  const dateStr = dateStrOrSale && typeof dateStrOrSale === "object" ? dateStrOrSale.date : dateStrOrSale;
+  // Use invoice suffix if available — most reliable FY indicator
+  if (id) {
+    const m2 = String(id).match(/^[A-Z]{2,3}(\d{4})(\d)$/);
+    if (m2) {
+      const suffixDigit = +m2[2];
+      // Determine the full FY end year from the suffix digit
+      // The suffix is the last digit of the year FY ends in.
+      // Find the nearest decade that makes sense relative to now.
+      const nowYear = new Date().getFullYear();
+      const decade = Math.floor(nowYear / 10) * 10;
+      let endYear = decade + suffixDigit;
+      // Adjust if endYear is more than 5 years away from now (pick closer decade)
+      if (endYear - nowYear > 5) endYear -= 10;
+      if (nowYear - endYear > 5) endYear += 10;
+      return endYear - 1; // FY start year = end year - 1
+    }
+  }
   const d = safeParseDate(dateStr);
   if (!d || isNaN(d.getTime())) return null;
   return d.getMonth() < 3 ? d.getFullYear() - 1 : d.getFullYear();
@@ -122,8 +167,10 @@ function buildRowsWithSeparators(sortedRows) {
     const curr = sortedRows[i];
     const prev = sortedRows[i - 1];
     if (prev) {
-      const prevFY = fyStartYear(prev.date), currFY = fyStartYear(curr.date);
-      const prevMK = monthKey(prev.date),    currMK = monthKey(curr.date);
+      const prevFY = fyStartYear(prev);   // pass full sale object
+      const currFY = fyStartYear(curr);
+      const prevMK = monthKey(prev.date);
+      const currMK = monthKey(curr.date);
       if (prevFY !== currFY)
         result.push({ _type: "fy", _fyStart: currFY, _label: fyLabel(currFY) });
       if (prevMK !== currMK)
