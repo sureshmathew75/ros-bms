@@ -679,6 +679,27 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
 </div>
 );
 };
+/* ── parseLegacyItems ──────────────────────────────────────────
+   Splits old combined item strings like "SALWAR(x1), BLOUSE(x1)"
+   into separate line rows. Prices are split equally (estimated)
+   because individual prices weren't stored in old records.
+────────────────────────────────────────────────────────────── */
+const parseLegacyItems=(itemStr,qty,subtotal)=>{
+  if(!itemStr) return [{name:"Product/Service",qty:qty||1,price:subtotal||0,estimated:false}];
+  if(itemStr.includes("(x")){
+    const parts=itemStr.split(",").map(s=>s.trim()).filter(Boolean);
+    const parsed=parts.map(part=>{
+      const m=part.match(/^(.+?)\(x(\d+)\)$/);
+      return m?{name:m[1].trim(),qty:parseInt(m[2])||1}:{name:part,qty:1};
+    });
+    const totalQty=parsed.reduce((s,l)=>s+l.qty,0)||1;
+    const unitPrice=parseFloat(((subtotal||0)/totalQty).toFixed(2));
+    return parsed.map(l=>({...l,price:unitPrice,estimated:true}));
+  }
+  const q=parseFloat(qty)||1;
+  return [{name:itemStr,qty:q,price:parseFloat(((subtotal||0)/q).toFixed(2)),estimated:false}];
+};
+
 const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":"dashboard");
   const [hov,setHov]=useState(null);
@@ -1961,8 +1982,15 @@ return(
                 const pdfOtherChargesAmt=Number(inv.otherCharges)||0;
                 const pdfLines=hasLines
                   ? inv.saleLines
-                  : [{name:inv.item||"Product/Service",qty:inv.qty||1,price:parseFloat((subtotal/(parseFloat(inv.qty)||1)).toFixed(2))}];
-                return(
+                  : parseLegacyItems(inv.item,inv.qty,subtotal);
+                const pdfHasEstimated=!hasLines&&pdfLines.some(l=>l.estimated);
+                return(<>
+                  {pdfHasEstimated&&(
+                    <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:6,padding:"6px 10px",marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+                      <span style={{fontSize:11}}>⚠️</span>
+                      <span style={{fontSize:9,color:"#92400e",fontWeight:600}}>Unit prices are estimated equally — sale recorded before individual item pricing. Edit &amp; re-enter to set correct individual prices.</span>
+                    </div>
+                  )}
                   <table style={{width:"100%",borderCollapse:"collapse",marginBottom:20}}>
                     <thead>
                       <tr style={{background:"#0f172a",color:"white"}}>
@@ -2000,7 +2028,7 @@ return(
                       )}
                     </tbody>
                   </table>
-                );
+                </>);
               })()}
 
               {/* Amount in words + Totals */}
@@ -2331,8 +2359,15 @@ return(
                 const invOtherChargesAmt=Number(invoiceRow.otherCharges)||0;
                 const invLines=hasLines
                   ? invoiceRow.saleLines
-                  : [{name:invoiceRow.item||"Product/Service",qty:invoiceRow.qty||1,price:parseFloat((invSubtotal/(parseFloat(invoiceRow.qty)||1)).toFixed(2))}];
-                return(
+                  : parseLegacyItems(invoiceRow.item,invoiceRow.qty,invSubtotal);
+                const invHasEstimated=!hasLines&&invLines.some(l=>l.estimated);
+                return(<>
+                  {invHasEstimated&&(
+                    <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8,padding:"8px 12px",marginBottom:8,display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:12}}>⚠️</span>
+                      <span style={{fontSize:10,color:"#92400e",fontWeight:600}}>Unit prices are estimated equally — sale recorded before individual item pricing. Edit &amp; re-enter the sale to set correct individual prices.</span>
+                    </div>
+                  )}
                   <table style={{width:"100%",borderCollapse:"collapse",marginBottom:20}}>
                     <thead>
                       <tr style={{background:"#0f172a",color:"white"}}>
@@ -2372,7 +2407,7 @@ return(
                       )}
                     </tbody>
                   </table>
-                );
+                </>);
               })()}
 
               {/* Amount in words + Totals */}
@@ -2577,19 +2612,29 @@ return(
               {/* ── LINE ITEMS ── */}
               {(()=>{
                 const hasLines=Array.isArray(selRow.saleLines)&&selRow.saleLines.length>0;
-                const displayLines=hasLines
-                  ? selRow.saleLines
-                  : [{name:selRow.item||selRow.customer||"Item",qty:selRow.qty||1,price:(()=>{const a=Number(selRow.amount)||0,q=parseFloat(selRow.qty)||1,r=(selRow.taxRate!=null?selRow.taxRate:0)/100,inc=selRow.taxInclusive!==false;const sub=inc?parseFloat((a/(1+r)).toFixed(2)):a;return parseFloat((sub/q).toFixed(2));})()}];
                 const grandTotal=Number(selRow.amount)||0;
                 const discountAmt=Number(selRow.discount)||0;
                 const otherChargesAmt=Number(selRow.otherCharges)||0;
                 const taxRatePct=selRow.taxRate!=null?selRow.taxRate:0;
+                const legacySubtotal=taxRatePct>0&&selRow.taxInclusive!==false
+                  ? parseFloat((grandTotal/(1+taxRatePct/100)).toFixed(2))
+                  : grandTotal;
+                const displayLines=hasLines
+                  ? selRow.saleLines
+                  : parseLegacyItems(selRow.item,selRow.qty,legacySubtotal);
+                const hasEstimated=!hasLines&&displayLines.some(l=>l.estimated);
                 return(
                   <div style={{border:"1px solid #e2e8f0",borderRadius:14,overflow:"hidden",marginBottom:20}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0"}}>
                       <span style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>Line Items</span>
                       <span style={{fontSize:12,color:"#94a3b8"}}>{displayLines.length} item{displayLines.length!==1?"s":""}</span>
                     </div>
+                    {hasEstimated&&(
+                      <div style={{padding:"8px 14px",background:"#fffbeb",borderBottom:"1px solid #fde68a",display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontSize:13}}>⚠️</span>
+                        <span style={{fontSize:11,color:"#92400e",fontWeight:600}}>Unit prices are estimated equally — this sale was recorded before individual item pricing. Delete &amp; re-enter to set correct prices per item.</span>
+                      </div>
+                    )}
                     <table style={{width:"100%",borderCollapse:"collapse"}}>
                       <thead>
                         <tr style={{background:"#f8fafc"}}>
