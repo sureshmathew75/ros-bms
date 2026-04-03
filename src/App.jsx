@@ -757,7 +757,7 @@ const addSale = async (form) => {
     const newSale = {
     id: nid, ...form,
     amount:       Number(form.amount) || 0,
-    taxRate:      form.taxRate !== undefined ? form.taxRate : (shopId === "ros-india" ? 18 : 20),
+    taxRate:      form.taxRate !== undefined && form.taxRate !== null ? form.taxRate : 0,
     taxInclusive: form.taxInclusive !== false,
     contact:  form.contact || "",
     phone:    form.contact || "",
@@ -2550,7 +2550,7 @@ return(
                   <div style={{display:"flex",justifyContent:"space-between"}}>
                     <span style={{fontSize:12,color:"#64748b"}}>Amount</span>
                     <span style={{fontSize:14,fontWeight:900,color:shop.accent}}>
-                      {selRow?(()=>{const a=Number(selRow.amount)||0,r=shopId==="ros-india"?0.18:0.20,inc=selRow.taxInclusive!==false;return fmt(shopId,inc?a:parseFloat((a*(1+r)).toFixed(2)));})():"—"}
+                      {fmt(shopId,Number(selRow.amount)||0)}
                     </span>
                   </div>
                 </div>
@@ -2564,7 +2564,7 @@ return(
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
                     <span style={{fontSize:12,color:"#64748b"}}>Total</span>
                     <span style={{fontSize:14,fontWeight:900,color:shop.accent}}>
-                      {selRow?(()=>{const a=Number(selRow.amount)||0,r=shopId==="ros-india"?0.18:0.20,inc=selRow.taxInclusive!==false;return fmt(shopId,inc?a:parseFloat((a*(1+r)).toFixed(2)));})():"—"}
+                      {fmt(shopId,Number(selRow.amount)||0)}
                     </span>
                   </div>
                   {selRow.sentDate&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
@@ -2583,7 +2583,7 @@ return(
                 const grandTotal=Number(selRow.amount)||0;
                 const discountAmt=Number(selRow.discount)||0;
                 const otherChargesAmt=Number(selRow.otherCharges)||0;
-                const taxRatePct=selRow.taxRate!=null?selRow.taxRate:(shopId==="ros-india"?18:20);
+                const taxRatePct=selRow.taxRate!=null?selRow.taxRate:0;
                 return(
                   <div style={{border:"1px solid #e2e8f0",borderRadius:14,overflow:"hidden",marginBottom:20}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0"}}>
@@ -2655,20 +2655,45 @@ return(
                 </div>
                 {/* totals */}
                 <div style={{border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 16px"}}>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
-                    <span style={{fontSize:13,color:"#64748b"}}>Subtotal</span>
-                    <span style={{fontSize:13,fontWeight:600,color:"#374151"}}>{fmt(shopId,selRow.amount)}</span>
-                  </div>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:12,paddingBottom:12,borderBottom:"1px solid #f1f5f9"}}>
-                    <span style={{fontSize:13,color:"#64748b"}}>Balance Due</span>
-                    <span style={{fontSize:13,fontWeight:700,color:"#15803d"}}>
-                      {shop.symbol}0
-                    </span>
-                  </div>
-                  <div style={{display:"flex",justifyContent:"space-between"}}>
-                    <span style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>Grand Total</span>
-                    <span style={{fontSize:16,fontWeight:900,color:shop.accent}}>{fmt(shopId,selRow.amount)}</span>
-                  </div>
+                  {(()=>{
+                    const amt=Number(selRow.amount)||0;
+                    const rPct=selRow.taxRate!=null?selRow.taxRate:0;
+                    const r=rPct/100;
+                    // amount is always the final grand total as entered/saved
+                    const sub=r>0?(selRow.taxInclusive!==false?parseFloat((amt/(1+r)).toFixed(2)):amt):amt;
+                    const taxAmt=r>0?parseFloat((sub*r).toFixed(2)):0;
+                    const grand=r>0?parseFloat((sub+taxAmt).toFixed(2)):amt;
+                    const discAmt=Number(selRow.discount)||0;
+                    const otherAmt=Number(selRow.otherCharges)||0;
+                    return(<>
+                      {discAmt>0&&(
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                          <span style={{fontSize:12,color:"#dc2626"}}>Discount</span>
+                          <span style={{fontSize:12,fontWeight:600,color:"#dc2626"}}>− {fmt(shopId,discAmt)}</span>
+                        </div>
+                      )}
+                      {otherAmt>0&&(
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                          <span style={{fontSize:12,color:"#64748b"}}>{selRow.otherChargesLabel||"Other Charges"}</span>
+                          <span style={{fontSize:12,fontWeight:600,color:"#374151"}}>+ {fmt(shopId,otherAmt)}</span>
+                        </div>
+                      )}
+                      {rPct>0&&(
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                          <span style={{fontSize:12,color:"#64748b"}}>GST / Tax ({rPct}%)</span>
+                          <span style={{fontSize:12,fontWeight:600,color:"#374151"}}>{fmt(shopId,taxAmt)}</span>
+                        </div>
+                      )}
+                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:8,paddingBottom:10,borderBottom:"1px solid #f1f5f9"}}>
+                        <span style={{fontSize:12,color:"#64748b"}}>Balance Due</span>
+                        <span style={{fontSize:12,fontWeight:700,color:"#15803d"}}>{shop.symbol}0</span>
+                      </div>
+                      <div style={{display:"flex",justifyContent:"space-between"}}>
+                        <span style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>Grand Total</span>
+                        <span style={{fontSize:16,fontWeight:900,color:shop.accent}}>{fmt(shopId,amt)}</span>
+                      </div>
+                    </>);
+                  })()}
                 </div>
               </div>
 
@@ -2857,7 +2882,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
             sentDate:    get(row,idxSentDate),
             refundAmt:   cleanNum(get(row,idxRefund)),
             returnRcvd:  get(row,idxReturn),
-            taxRate:     shopId==="ros-india"?18:20,
+            taxRate:     0,
             taxInclusive:true,
             invoiceNo:   id,
           });
@@ -2933,8 +2958,8 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
   const mapRow=(s)=>{
     const isIndia=(shopId||"")===("ros-india");
     const entered=Number(s.amount)||0;
-    const rate=((s.taxRate!==undefined?s.taxRate:(isIndia?18:20))/100);
-    const inc=s.taxInclusive!==false;
+    const rate=((s.taxRate!==undefined&&s.taxRate!==null?s.taxRate:0)/100);
+    const inc=rate===0?true:s.taxInclusive!==false;
     const subtotal=inc?parseFloat((entered/(1+rate)).toFixed(2)):entered;
     const taxAmt=parseFloat((subtotal*rate).toFixed(2));
     const grand=parseFloat((subtotal+taxAmt).toFixed(2));
