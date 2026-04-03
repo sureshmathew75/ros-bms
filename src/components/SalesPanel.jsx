@@ -55,6 +55,50 @@ function fmtDate(raw) {
   return `${d}/${mo}/${y}`;
 }
 
+/* ── fmtDateForSale: like fmtDate but corrects year using invoice suffix ───
+   If the stored date year conflicts with the FY implied by the invoice
+   suffix, derive the correct year from the suffix instead.
+   e.g. date="2026-04-12", id="ROS24356" (suffix=6 → FY25-26 → year 2025)
+   → displays "12/04/25" not "12/04/26"                                   ── */
+function fmtDateForSale(sale) {
+  if (!sale) return "—";
+  const raw = sale.date;
+  const dt = safeParseDate(raw);
+  if (!dt || isNaN(dt.getTime())) return raw ? String(raw) : "—";
+
+  const id = String(sale.id || "");
+  const rosMatch = id.match(/^[A-Z]{2,3}(\d{4})(\d)$/);
+  if (rosMatch) {
+    const suffix = +rosMatch[2];
+    const nowYear = new Date().getFullYear();
+    const decade  = Math.floor(nowYear / 10) * 10;
+    let fyEndYear = decade + suffix;
+    if (fyEndYear - nowYear > 5) fyEndYear -= 10;
+    if (nowYear - fyEndYear > 5) fyEndYear += 10;
+    const fyStartYr = fyEndYear - 1; // e.g. 2026 for FY25-26
+
+    // The date month/day are likely correct; only fix the year
+    // A sale in FY fyStartYr-fyEndYear should have year = fyStartYr (Apr-Dec)
+    // or fyEndYear (Jan-Mar)
+    const storedMonth = dt.getMonth(); // 0-indexed
+    const correctYear = storedMonth >= 3 ? fyStartYr : fyEndYear;
+    const storedYear  = dt.getFullYear();
+
+    if (storedYear !== correctYear) {
+      // Year is wrong — display with corrected year
+      const d  = String(dt.getDate()).padStart(2, "0");
+      const mo = String(dt.getMonth() + 1).padStart(2, "0");
+      const y  = String(correctYear).slice(-2);
+      return `${d}/${mo}/${y}`;
+    }
+  }
+  // No correction needed — display as stored
+  const d  = String(dt.getDate()).padStart(2, "0");
+  const mo = String(dt.getMonth() + 1).padStart(2, "0");
+  const y  = String(dt.getFullYear()).slice(-2);
+  return `${d}/${mo}/${y}`;
+}
+
 function getPeriodRange(period) {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
@@ -829,7 +873,7 @@ export default function SalesPanel({
                     {/* Date */}
                     <td style={{ padding: "12px 16px" }}>
                       <span style={{ fontSize: 12, color: "#64748b", whiteSpace: "nowrap" }}>
-                        {fmtDate(s.date)}
+                        {fmtDateForSale(s)}
                       </span>
                     </td>
                     {/* Customer */}
