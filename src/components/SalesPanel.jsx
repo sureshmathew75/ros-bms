@@ -224,8 +224,14 @@ export default function SalesPanel({
   const accent   = shop?.accent   || "#059669";
   const accentBg = shop?.accentBg || "#ecfdf5";
 
-  /* ── Period-filtered sales (all statuses — drives KPI cards) ─────────── */
+  /* ── Period-filtered sales ───────────────────────────────────────────── */
+  // KPI cards use ALL sales for the period (ignoring search/status filter)
   const periodSales = useMemo(
+    () => filterByPeriod(sales, salesPeriod),
+    [sales, salesPeriod]
+  );
+  // Table rows use filtSales (search + status filtered) then period filtered
+  const periodFiltSales = useMemo(
     () => filterByPeriod(filtSales, salesPeriod),
     [filtSales, salesPeriod]
   );
@@ -236,22 +242,22 @@ export default function SalesPanel({
   const avgOrder = periodSales.length > 0 ? Math.round(totalRev / periodSales.length) : 0;
   const fmtAmt   = v => fmt ? fmt(shopId, v) : `${shop?.symbol || "£"}${Number(v).toLocaleString()}`;
 
-  /* ── Status tab counts ───────────────────────────────────────────────── */
+  /* ── Status tab counts (based on period + search filtered) ──────────── */
   const tabCounts = useMemo(() => {
-    const c = { ALL: periodSales.length };
+    const c = { ALL: periodFiltSales.length };
     (statusTabs || STATUS_TABS).forEach(t => {
       const k = t.key ?? t;
       if (k !== "ALL")
-        c[k] = periodSales.filter(s => (s.ful || s.status || "PENDING") === k).length;
+        c[k] = periodFiltSales.filter(s => (s.ful || s.status || "PENDING") === k).length;
     });
     return c;
-  }, [periodSales, statusTabs]);
+  }, [periodFiltSales, statusTabs]);
 
-  /* ── Status-filtered rows ────────────────────────────────────────────── */
+  /* ── Status-filtered rows for the table ─────────────────────────────── */
   const statusFiltered = useMemo(() => {
-    if (statusTab === "ALL") return periodSales;
-    return periodSales.filter(s => (s.ful || s.status || "PENDING") === statusTab);
-  }, [periodSales, statusTab]);
+    if (statusTab === "ALL") return periodFiltSales;
+    return periodFiltSales.filter(s => (s.ful || s.status || "PENDING") === statusTab);
+  }, [periodFiltSales, statusTab]);
 
   /* ── Sort descending by date ─────────────────────────────────────────── */
   const sortedSales = useMemo(
