@@ -1886,7 +1886,14 @@ return(
               // Persist to Supabase then reload to confirm sync
               dbSaveSale(shopId,updated).then(()=>{
                 dbLoadSales(shopId).then(data=>{
-                  if(data) setSalesData(prev=>({...prev,[shopId]:data}));
+                  if(data) setSalesData(prev=>({...prev,[shopId]:data.map(s=>{
+                    if(!s) return s;
+                    const taxRate=s.taxRate!==undefined?s.taxRate:s.tax_rate!==undefined?s.tax_rate:0;
+                    const taxInclusive=s.taxInclusive!==undefined?s.taxInclusive:s.tax_inclusive!==undefined?s.tax_inclusive:true;
+                    let saleLines=s.saleLines||s.sale_lines||null;
+                    if(typeof saleLines==="string"){try{saleLines=JSON.parse(saleLines);}catch{saleLines=null;}}
+                    return {...s,taxRate:Number(taxRate)||0,taxInclusive:taxInclusive!==false,saleLines:Array.isArray(saleLines)?saleLines:null,discount:Number(s.discount||s.discount_amt)||0,otherCharges:Number(s.otherCharges||s.other_charges)||0};
+                  })}));
                 }).catch(()=>{});
               }).catch(err=>console.error("❌ Edit save failed:",err));
             }}
@@ -5540,10 +5547,37 @@ export default function App(){
   // Load from Supabase on mount - Supabase is single source of truth
   useEffect(()=>{
     const shops=["ros-selections","ros-hairlines","ros-india"];
+    // Normalise a sale record from Supabase: map snake_case → camelCase,
+    // ensure taxRate defaults to 0 (never undefined), parse JSON fields.
+    const normaliseSale=(s)=>{
+      if(!s) return s;
+      // snake_case aliases Supabase may use
+      const taxRate   = s.taxRate   !== undefined ? s.taxRate
+                      : s.tax_rate  !== undefined ? s.tax_rate
+                      : 0;
+      const taxInclusive = s.taxInclusive !== undefined ? s.taxInclusive
+                         : s.tax_inclusive !== undefined ? s.tax_inclusive
+                         : true;
+      // saleLines may be stored as JSON string or as sale_lines
+      let saleLines = s.saleLines || s.sale_lines || null;
+      if(typeof saleLines === "string"){try{saleLines=JSON.parse(saleLines);}catch{saleLines=null;}}
+      let discount = s.discount !== undefined ? s.discount : s.discount_amt || 0;
+      let otherCharges = s.otherCharges !== undefined ? s.otherCharges : s.other_charges || 0;
+      let otherChargesLabel = s.otherChargesLabel || s.other_charges_label || "Other Charges";
+      return {
+        ...s,
+        taxRate:          Number(taxRate)||0,
+        taxInclusive:     taxInclusive !== false,
+        saleLines:        Array.isArray(saleLines) ? saleLines : null,
+        discount:         Number(discount)||0,
+        otherCharges:     Number(otherCharges)||0,
+        otherChargesLabel: otherChargesLabel,
+      };
+    };
     shops.forEach(sid=>{
       dbLoadSales(sid).then(data=>{
         if(!data) return;
-        setSalesData(prev=>({...prev,[sid]:data}));
+        setSalesData(prev=>({...prev,[sid]:data.map(normaliseSale)}));
       }).catch(()=>{});
     });
     dbLoadCustomers().then(data=>{
