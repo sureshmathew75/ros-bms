@@ -774,20 +774,30 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
 const addSale = async (form) => {
   const pfx = {["ros-selections"]:"SI",["ros-hairlines"]:"SH",["ros-india"]:"IN"}[shopId];
   const nid = form.invoiceNo || `${pfx}-${Date.now().toString().slice(-6)}`;
-  // Update ref so next sale gets the correct next number
+
+  // Encode saleLines into the item field so it survives Supabase round-trip
+  // without needing a new column. Format: "__LINES__:{json}\n{displayText}"
+  const saleLines = Array.isArray(form.saleLines)&&form.saleLines.length>0 ? form.saleLines : null;
+  const displayItem = form.itemCustom || form.item || "";
+  const encodedItem = saleLines
+    ? `__LINES__:${JSON.stringify(saleLines)}\n${displayItem}`
+    : displayItem;
+
     const newSale = {
     id: nid, ...form,
     amount:       Number(form.amount) || 0,
     taxRate:      form.taxRate !== undefined && form.taxRate !== null ? form.taxRate : 0,
-    taxInclusive: form.taxInclusive !== false,
+    taxInclusive: form.taxRate===0 ? true : form.taxInclusive !== false,
     contact:  form.contact || "",
     phone:    form.contact || "",
     address:  form.address || "",
     qty:      form.qty || "1",
-    item:     form.itemCustom || form.item || "",
+    item:     encodedItem,
     ful:      form.status || "PENDING",
     pay:      form.payBy || "SHOP",
     rem:      form.remarks || "",
+    // Keep saleLines in memory object for immediate display
+    saleLines: saleLines,
   };
   // Update UI instantly
   setSalesData(d => ({...d, [shopId]: [newSale, ...d[shopId]]}));
@@ -1888,11 +1898,13 @@ return(
                 dbLoadSales(shopId).then(data=>{
                   if(data) setSalesData(prev=>({...prev,[shopId]:data.map(s=>{
                     if(!s) return s;
-                    const taxRate=s.taxRate!==undefined?s.taxRate:s.tax_rate!==undefined?s.tax_rate:0;
-                    const taxInclusive=s.taxInclusive!==undefined?s.taxInclusive:s.tax_inclusive!==undefined?s.tax_inclusive:true;
-                    let saleLines=s.saleLines||s.sale_lines||null;
-                    if(typeof saleLines==="string"){try{saleLines=JSON.parse(saleLines);}catch{saleLines=null;}}
-                    return {...s,taxRate:Number(taxRate)||0,taxInclusive:taxInclusive!==false,saleLines:Array.isArray(saleLines)?saleLines:null,discount:Number(s.discount||s.discount_amt)||0,otherCharges:Number(s.otherCharges||s.other_charges)||0};
+                    let rawItem=s.item||"",decodedLines=null,displayItem=rawItem;
+                    if(rawItem.startsWith("__LINES__:")){const nl=rawItem.indexOf("\n");const jp=nl>=0?rawItem.slice(10,nl):rawItem.slice(10);displayItem=nl>=0?rawItem.slice(nl+1):"";try{decodedLines=JSON.parse(jp);}catch{decodedLines=null;}}
+                    const tr=Number(s.taxRate!==undefined?s.taxRate:s.tax_rate!==undefined?s.tax_rate:0)||0;
+                    const ti=tr===0?true:(s.taxInclusive!==undefined?s.taxInclusive!==false:true);
+                    let sl=decodedLines||s.saleLines||s.sale_lines||null;
+                    if(typeof sl==="string"){try{sl=JSON.parse(sl);}catch{sl=null;}}
+                    return {...s,item:displayItem,taxRate:tr,taxInclusive:ti,saleLines:Array.isArray(sl)?sl:null,discount:Number(s.discount||s.discount_amt)||0,otherCharges:Number(s.otherCharges||s.other_charges)||0};
                   })}));
                 }).catch(()=>{});
               }).catch(err=>console.error("❌ Edit save failed:",err));
@@ -5547,31 +5559,52 @@ export default function App(){
   // Load from Supabase on mount - Supabase is single source of truth
   useEffect(()=>{
     const shops=["ros-selections","ros-hairlines","ros-india"];
-    // Normalise a sale record from Supabase: map snake_case → camelCase,
-    // ensure taxRate defaults to 0 (never undefined), parse JSON fields.
+    // Normalise a sale record from Supabase.
+    // Handles: snake_case → camelCase, __LINES__ encoding in item field,
+    // taxRate defaulting to 0, JSON field parsing.
     const normaliseSale=(s)=>{
       if(!s) return s;
-      // snake_case aliases Supabase may use
-      const taxRate   = s.taxRate   !== undefined ? s.taxRate
-                      : s.tax_rate  !== undefined ? s.tax_rate
-                      : 0;
-      const taxInclusive = s.taxInclusive !== undefined ? s.taxInclusive
-                         : s.tax_inclusive !== undefined ? s.tax_inclusive
+
+      // ── Decode __LINES__ from item field (encoded by addSale for Supabase persistence) ──
+      let rawItem = s.item || "";
+      let decodedLines = null;
+      let displayItem = rawItem;
+      if(rawItem.startsWith("__LINES__:")){
+        const nlIdx = rawItem.indexOf("\n");
+        const jsonPart = nlIdx >= 0 ? rawItem.slice(10, nlIdx) : rawItem.slice(10);
+        displayItem = nlIdx >= 0 ? rawItem.slice(nlIdx + 1) : "";
+        try { decodedLines = JSON.parse(jsonPart); } catch { decodedLines = null; }
+      }
+
+      // ── taxRate: prefer explicitly saved value, then snake_case, then 0 ──
+      const taxRate = s.taxRate !== undefined ? s.taxRate
+                    : s.tax_rate !== undefined ? s.tax_rate
+                    : 0;
+      const rateNum = Number(taxRate) || 0;
+
+      // ── taxInclusive: if rate is 0 always true (no tax), else use saved value ──
+      const taxInclusive = rateNum === 0 ? true
+                         : s.taxInclusive !== undefined ? s.taxInclusive !== false
+                         : s.tax_inclusive !== undefined ? s.tax_inclusive !== false
                          : true;
-      // saleLines may be stored as JSON string or as sale_lines
-      let saleLines = s.saleLines || s.sale_lines || null;
+
+      // ── saleLines: prefer decoded from item, then any existing field ──
+      let saleLines = decodedLines || s.saleLines || s.sale_lines || null;
       if(typeof saleLines === "string"){try{saleLines=JSON.parse(saleLines);}catch{saleLines=null;}}
-      let discount = s.discount !== undefined ? s.discount : s.discount_amt || 0;
-      let otherCharges = s.otherCharges !== undefined ? s.otherCharges : s.other_charges || 0;
-      let otherChargesLabel = s.otherChargesLabel || s.other_charges_label || "Other Charges";
+
+      const discount = Number(s.discount !== undefined ? s.discount : s.discount_amt || 0) || 0;
+      const otherCharges = Number(s.otherCharges !== undefined ? s.otherCharges : s.other_charges || 0) || 0;
+      const otherChargesLabel = s.otherChargesLabel || s.other_charges_label || "Other Charges";
+
       return {
         ...s,
-        taxRate:          Number(taxRate)||0,
-        taxInclusive:     taxInclusive !== false,
+        item:             displayItem,
+        taxRate:          rateNum,
+        taxInclusive:     taxInclusive,
         saleLines:        Array.isArray(saleLines) ? saleLines : null,
-        discount:         Number(discount)||0,
-        otherCharges:     Number(otherCharges)||0,
-        otherChargesLabel: otherChargesLabel,
+        discount,
+        otherCharges,
+        otherChargesLabel,
       };
     };
     shops.forEach(sid=>{
