@@ -295,15 +295,21 @@ export default function SalesPanel({
     return periodFiltSales.filter(s => (s.ful || s.status || "PENDING") === statusTab);
   }, [periodFiltSales, statusTab]);
 
-  /* ── Sort descending by date ─────────────────────────────────────────── */
+  /* ── Sort: FY descending → date descending → invoice number descending ── */
   const sortedSales = useMemo(
     () => [...statusFiltered].sort((a, b) => {
-    const dateDiff = toSortableDate(b.date).localeCompare(toSortableDate(a.date));
-    if (dateDiff !== 0) return dateDiff;
-    const numA = parseInt((a.id||"0").replace(/[^0-9]/g,""))||0;
-    const numB = parseInt((b.id||"0").replace(/[^0-9]/g,""))||0;
-    return numB - numA;
-  }),
+      // Primary: FY group (use fyStartYear which reads invoice suffix)
+      const fyA = fyStartYear(a) ?? 0;
+      const fyB = fyStartYear(b) ?? 0;
+      if (fyB !== fyA) return fyB - fyA;
+      // Secondary: date descending
+      const dateDiff = toSortableDate(b.date).localeCompare(toSortableDate(a.date));
+      if (dateDiff !== 0) return dateDiff;
+      // Tertiary: invoice number descending
+      const numA = parseInt((a.id||"0").replace(/[^0-9]/g,""))||0;
+      const numB = parseInt((b.id||"0").replace(/[^0-9]/g,""))||0;
+      return numB - numA;
+    }),
     [statusFiltered]
   );
 
