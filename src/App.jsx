@@ -1955,7 +1955,7 @@ return(
                 const pdfOtherChargesAmt=Number(inv.otherCharges)||0;
                 const pdfLines=hasLines
                   ? inv.saleLines
-                  : [{name:inv.item||"Product/Service",qty:inv.qty||1,price:subtotal}];
+                  : [{name:inv.item||"Product/Service",qty:inv.qty||1,price:parseFloat((subtotal/(parseFloat(inv.qty)||1)).toFixed(2))}];
                 return(
                   <table style={{width:"100%",borderCollapse:"collapse",marginBottom:20}}>
                     <thead>
@@ -2325,7 +2325,7 @@ return(
                 const invOtherChargesAmt=Number(invoiceRow.otherCharges)||0;
                 const invLines=hasLines
                   ? invoiceRow.saleLines
-                  : [{name:invoiceRow.item||"Product/Service",qty:invoiceRow.qty||1,price:invSubtotal}];
+                  : [{name:invoiceRow.item||"Product/Service",qty:invoiceRow.qty||1,price:parseFloat((invSubtotal/(parseFloat(invoiceRow.qty)||1)).toFixed(2))}];
                 return(
                   <table style={{width:"100%",borderCollapse:"collapse",marginBottom:20}}>
                     <thead>
@@ -2573,7 +2573,7 @@ return(
                 const hasLines=Array.isArray(selRow.saleLines)&&selRow.saleLines.length>0;
                 const displayLines=hasLines
                   ? selRow.saleLines
-                  : [{name:selRow.item||selRow.customer||"Item",qty:selRow.qty||1,price:(()=>{const a=Number(selRow.amount)||0,r=(selRow.taxRate!=null?selRow.taxRate:(shopId==="ros-india"?18:20))/100,inc=selRow.taxInclusive!==false;return inc?parseFloat((a/(1+r)).toFixed(2)):a;})()}];
+                  : [{name:selRow.item||selRow.customer||"Item",qty:selRow.qty||1,price:(()=>{const a=Number(selRow.amount)||0,q=parseFloat(selRow.qty)||1,r=(selRow.taxRate!=null?selRow.taxRate:0)/100,inc=selRow.taxInclusive!==false;const sub=inc?parseFloat((a/(1+r)).toFixed(2)):a;return parseFloat((sub/q).toFixed(2));})()}];
                 const grandTotal=Number(selRow.amount)||0;
                 const discountAmt=Number(selRow.discount)||0;
                 const otherChargesAmt=Number(selRow.otherCharges)||0;
