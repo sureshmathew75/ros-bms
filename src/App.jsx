@@ -1949,24 +1949,53 @@ return(
               </div>
 
               {/* Line Items */}
-              <table style={{width:"100%",borderCollapse:"collapse",marginBottom:20}}>
-                <thead>
-                  <tr style={{background:"#0f172a",color:"white"}}>
-                    {["SR.","DESCRIPTION","QTY","RATE","TOTAL"].map((h,i)=>(
-                      <th key={h} style={{padding:"9px 12px",textAlign:i>1?"right":"left",fontSize:11,fontWeight:800,letterSpacing:"0.05em"}}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr style={{borderBottom:"1px solid #e2e8f0"}}>
-                    <td style={{padding:"12px",color:"#64748b",fontSize:12}}>1</td>
-                    <td style={{padding:"12px",fontWeight:700}}>{inv.item||"Product/Service"}</td>
-                    <td style={{padding:"12px",textAlign:"right",fontWeight:700}}>{inv.qty||1}</td>
-                    <td style={{padding:"12px",textAlign:"right",fontWeight:700}}>{sym}{subtotal.toLocaleString()}</td>
-                    <td style={{padding:"12px",textAlign:"right",fontWeight:800,color:shop.accent}}>{sym}{grand.toLocaleString()}</td>
-                  </tr>
-                </tbody>
-              </table>
+              {(()=>{
+                const hasLines=Array.isArray(inv.saleLines)&&inv.saleLines.length>0;
+                const pdfDiscountAmt=Number(inv.discount)||0;
+                const pdfOtherChargesAmt=Number(inv.otherCharges)||0;
+                const pdfLines=hasLines
+                  ? inv.saleLines
+                  : [{name:inv.item||"Product/Service",qty:inv.qty||1,price:subtotal}];
+                return(
+                  <table style={{width:"100%",borderCollapse:"collapse",marginBottom:20}}>
+                    <thead>
+                      <tr style={{background:"#0f172a",color:"white"}}>
+                        {["SR.","DESCRIPTION","QTY","UNIT PRICE","TOTAL"].map((h,i)=>(
+                          <th key={h} style={{padding:"9px 12px",textAlign:i>1?"right":"left",fontSize:11,fontWeight:800,letterSpacing:"0.05em"}}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pdfLines.map((line,idx)=>{
+                        const q=parseFloat(line.qty)||1;
+                        const p=parseFloat(line.price)||0;
+                        const lineTotal=parseFloat((q*p).toFixed(2));
+                        return(
+                          <tr key={idx} style={{borderBottom:"1px solid #e2e8f0",background:idx%2===0?"white":"#fafafa"}}>
+                            <td style={{padding:"12px",color:"#64748b",fontSize:12}}>{idx+1}</td>
+                            <td style={{padding:"12px",fontWeight:700}}>{line.name||"Item "+(idx+1)}</td>
+                            <td style={{padding:"12px",textAlign:"right",fontWeight:700}}>{q}</td>
+                            <td style={{padding:"12px",textAlign:"right",fontWeight:700}}>{sym}{p.toLocaleString()}</td>
+                            <td style={{padding:"12px",textAlign:"right",fontWeight:800,color:shop.accent}}>{sym}{lineTotal.toLocaleString()}</td>
+                          </tr>
+                        );
+                      })}
+                      {pdfDiscountAmt>0&&(
+                        <tr style={{borderBottom:"1px solid #f1f5f9"}}>
+                          <td colSpan={4} style={{padding:"8px 12px",textAlign:"right",fontSize:12,color:"#dc2626",fontWeight:600}}>Discount</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:"#dc2626"}}>− {sym}{pdfDiscountAmt.toLocaleString()}</td>
+                        </tr>
+                      )}
+                      {pdfOtherChargesAmt>0&&(
+                        <tr style={{borderBottom:"1px solid #f1f5f9"}}>
+                          <td colSpan={4} style={{padding:"8px 12px",textAlign:"right",fontSize:12,color:"#64748b",fontWeight:600}}>{inv.otherChargesLabel||"Other Charges"}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:"#374151"}}>+ {sym}{pdfOtherChargesAmt.toLocaleString()}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                );
+              })()}
 
               {/* Amount in words + Totals */}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
@@ -2290,26 +2319,55 @@ return(
               </div>
 
               {/* Line Items table */}
-              <table style={{width:"100%",borderCollapse:"collapse",marginBottom:20}}>
-                <thead>
-                  <tr style={{background:"#0f172a",color:"white"}}>
-                    {["SR.","DESCRIPTION","QTY","RATE","TOTAL"].map((h,hi)=>(
-                      <th key={h} style={{padding:"10px 14px",textAlign:hi===0||hi===1?"left":"right",fontSize:11,fontWeight:800,letterSpacing:"0.06em"}}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr style={{borderBottom:"1px solid #e2e8f0"}}>
-                    <td style={{padding:"12px 14px",fontSize:13,color:"#64748b"}}>1</td>
-                    <td style={{padding:"12px 14px"}}>
-                      <p style={{margin:0,fontWeight:700,fontSize:13,color:"#0f172a"}}>{invoiceRow.item||"Product/Service"}</p>
-                    </td>
-                    <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700}}>{invoiceRow.qty||1}</td>
-                    <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700}}>{fmt(shopId,invSubtotal)}</td>
-                    <td style={{padding:"12px 14px",textAlign:"right",fontWeight:800,color:shop.accent}}>{fmt(shopId,invGrand)}</td>
-                  </tr>
-                </tbody>
-              </table>
+              {(()=>{
+                const hasLines=Array.isArray(invoiceRow.saleLines)&&invoiceRow.saleLines.length>0;
+                const invDiscountAmt=Number(invoiceRow.discount)||0;
+                const invOtherChargesAmt=Number(invoiceRow.otherCharges)||0;
+                const invLines=hasLines
+                  ? invoiceRow.saleLines
+                  : [{name:invoiceRow.item||"Product/Service",qty:invoiceRow.qty||1,price:invSubtotal}];
+                return(
+                  <table style={{width:"100%",borderCollapse:"collapse",marginBottom:20}}>
+                    <thead>
+                      <tr style={{background:"#0f172a",color:"white"}}>
+                        {["SR.","DESCRIPTION","QTY","UNIT PRICE","TOTAL"].map((h,hi)=>(
+                          <th key={h} style={{padding:"10px 14px",textAlign:hi===0||hi===1?"left":"right",fontSize:11,fontWeight:800,letterSpacing:"0.06em"}}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {invLines.map((line,idx)=>{
+                        const q=parseFloat(line.qty)||1;
+                        const p=parseFloat(line.price)||0;
+                        const lineTotal=parseFloat((q*p).toFixed(2));
+                        return(
+                          <tr key={idx} style={{borderBottom:"1px solid #e2e8f0",background:idx%2===0?"white":"#fafafa"}}>
+                            <td style={{padding:"12px 14px",fontSize:13,color:"#64748b"}}>{idx+1}</td>
+                            <td style={{padding:"12px 14px"}}>
+                              <p style={{margin:0,fontWeight:700,fontSize:13,color:"#0f172a"}}>{line.name||"Item "+(idx+1)}</p>
+                            </td>
+                            <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700}}>{q}</td>
+                            <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700}}>{fmt(shopId,p)}</td>
+                            <td style={{padding:"12px 14px",textAlign:"right",fontWeight:800,color:shop.accent}}>{fmt(shopId,lineTotal)}</td>
+                          </tr>
+                        );
+                      })}
+                      {invDiscountAmt>0&&(
+                        <tr style={{borderBottom:"1px solid #f1f5f9"}}>
+                          <td colSpan={4} style={{padding:"8px 14px",textAlign:"right",fontSize:12,color:"#dc2626",fontWeight:600}}>Discount</td>
+                          <td style={{padding:"8px 14px",textAlign:"right",fontSize:12,fontWeight:700,color:"#dc2626"}}>− {fmt(shopId,invDiscountAmt)}</td>
+                        </tr>
+                      )}
+                      {invOtherChargesAmt>0&&(
+                        <tr style={{borderBottom:"1px solid #f1f5f9"}}>
+                          <td colSpan={4} style={{padding:"8px 14px",textAlign:"right",fontSize:12,color:"#64748b",fontWeight:600}}>{invoiceRow.otherChargesLabel||"Other Charges"}</td>
+                          <td style={{padding:"8px 14px",textAlign:"right",fontSize:12,fontWeight:700,color:"#374151"}}>+ {fmt(shopId,invOtherChargesAmt)}</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                );
+              })()}
 
               {/* Amount in words + Totals */}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
@@ -2511,38 +2569,75 @@ return(
               </div>
 
               {/* ── LINE ITEMS ── */}
-              <div style={{border:"1px solid #e2e8f0",borderRadius:14,overflow:"hidden",marginBottom:20}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0"}}>
-                  <span style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>Line Items</span>
-                  <span style={{fontSize:12,color:"#94a3b8"}}>1 item(s)</span>
-                </div>
-                <table style={{width:"100%",borderCollapse:"collapse"}}>
-                  <thead>
-                    <tr style={{background:"#f8fafc"}}>
-                      {["Description","QTY","Rate","Total"].map(h=>(
-                        <th key={h} style={{padding:"9px 14px",textAlign:h==="Description"?"left":"right",fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td style={{padding:"12px 14px"}}>
-                        <p style={{margin:0,fontWeight:700,fontSize:13,color:"#1e293b"}}>{selRow.item||selRow.customer}</p>
-                      </td>
-                      <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700,color:"#374151"}}>{selRow.qty||1}</td>
-                      {(()=>{
-                        const e2=Number(selRow.amount)||0,r2=shopId==="ros-india"?0.18:0.20,inc2=selRow.taxInclusive!==false;
-                        const sub2=inc2?parseFloat((e2/(1+r2)).toFixed(2)):e2;
-                        const grd2=parseFloat((sub2*(1+r2)).toFixed(2));
-                        return <>
-                          <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700,color:"#374151"}}>{fmt(shopId,sub2)}</td>
-                          <td style={{padding:"12px 14px",textAlign:"right",fontWeight:800,color:shop.accent}}>{fmt(shopId,grd2)}</td>
-                        </>;
-                      })()}
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
+              {(()=>{
+                const hasLines=Array.isArray(selRow.saleLines)&&selRow.saleLines.length>0;
+                const displayLines=hasLines
+                  ? selRow.saleLines
+                  : [{name:selRow.item||selRow.customer||"Item",qty:selRow.qty||1,price:(()=>{const a=Number(selRow.amount)||0,r=(selRow.taxRate!=null?selRow.taxRate:(shopId==="ros-india"?18:20))/100,inc=selRow.taxInclusive!==false;return inc?parseFloat((a/(1+r)).toFixed(2)):a;})()}];
+                const grandTotal=Number(selRow.amount)||0;
+                const discountAmt=Number(selRow.discount)||0;
+                const otherChargesAmt=Number(selRow.otherCharges)||0;
+                const taxRatePct=selRow.taxRate!=null?selRow.taxRate:(shopId==="ros-india"?18:20);
+                return(
+                  <div style={{border:"1px solid #e2e8f0",borderRadius:14,overflow:"hidden",marginBottom:20}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0"}}>
+                      <span style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>Line Items</span>
+                      <span style={{fontSize:12,color:"#94a3b8"}}>{displayLines.length} item{displayLines.length!==1?"s":""}</span>
+                    </div>
+                    <table style={{width:"100%",borderCollapse:"collapse"}}>
+                      <thead>
+                        <tr style={{background:"#f8fafc"}}>
+                          {["Description","QTY","Unit Price","Total"].map(h=>(
+                            <th key={h} style={{padding:"9px 14px",textAlign:h==="Description"?"left":"right",fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {displayLines.map((line,idx)=>{
+                          const q=parseFloat(line.qty)||1;
+                          const p=parseFloat(line.price)||0;
+                          const lineTotal=parseFloat((q*p).toFixed(2));
+                          return(
+                            <tr key={idx} style={{borderTop:"1px solid #f1f5f9",background:idx%2===0?"white":"#fafafa"}}>
+                              <td style={{padding:"11px 14px"}}>
+                                <p style={{margin:0,fontWeight:700,fontSize:13,color:"#1e293b"}}>{line.name||"Item "+(idx+1)}</p>
+                              </td>
+                              <td style={{padding:"11px 14px",textAlign:"right",fontWeight:600,color:"#374151"}}>{q}</td>
+                              <td style={{padding:"11px 14px",textAlign:"right",fontWeight:600,color:"#374151"}}>{fmt(shopId,p)}</td>
+                              <td style={{padding:"11px 14px",textAlign:"right",fontWeight:800,color:shop.accent}}>{fmt(shopId,lineTotal)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                    {/* Totals footer */}
+                    <div style={{padding:"12px 16px",borderTop:"1px solid #e2e8f0",background:"#f8fafc"}}>
+                      {discountAmt>0&&(
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                          <span style={{fontSize:12,color:"#dc2626"}}>Discount</span>
+                          <span style={{fontSize:12,fontWeight:600,color:"#dc2626"}}>− {fmt(shopId,discountAmt)}</span>
+                        </div>
+                      )}
+                      {otherChargesAmt>0&&(
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                          <span style={{fontSize:12,color:"#64748b"}}>{selRow.otherChargesLabel||"Other Charges"}</span>
+                          <span style={{fontSize:12,fontWeight:600,color:"#374151"}}>+ {fmt(shopId,otherChargesAmt)}</span>
+                        </div>
+                      )}
+                      {taxRatePct>0&&(
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                          <span style={{fontSize:12,color:"#64748b"}}>GST / Tax ({taxRatePct}%)</span>
+                          <span style={{fontSize:12,fontWeight:600,color:"#374151"}}>{fmt(shopId,parseFloat((grandTotal*(taxRatePct/100)/(1+taxRatePct/100)).toFixed(2)))}</span>
+                        </div>
+                      )}
+                      <div style={{display:"flex",justifyContent:"space-between",borderTop:"2px solid #0f172a",paddingTop:8}}>
+                        <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>Grand Total</span>
+                        <span style={{fontSize:15,fontWeight:900,color:shop.accent}}>{fmt(shopId,grandTotal)}</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* ── NOTES + TOTALS ── */}
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
@@ -3095,10 +3190,12 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     tag:         sale.tag||"",
     remarks:     sale.rem||sale.remarks||"",
     taxInclusive: sale.taxInclusive !== false,
-    taxRate:      sale.taxRate !== undefined ? sale.taxRate : (shopId==="ros-india" ? 18 : 20),
+    taxRate:      sale.taxRate !== undefined ? sale.taxRate : 0,
     phoneSavedOn: sale.phoneSavedOn||"UK 888",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+
+  const hasLines=Array.isArray(sale.saleLines)&&sale.saleLines.length>0;
 
   const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white",transition:"border-color 0.15s"};
   const fo=e=>e.target.style.borderColor=shop.accent;
@@ -3163,36 +3260,64 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       </div>
 
       <Divider title="Order Details"/>
+
+      {/* If this sale has multi-item lines, show them read-only */}
+      {hasLines&&(
+        <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
+          <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>Items (from original sale)</p>
+          <table style={{width:"100%",borderCollapse:"collapse"}}>
+            <thead><tr><th style={{textAlign:"left",fontSize:11,fontWeight:700,color:"#64748b",padding:"4px 8px"}}>Item</th><th style={{textAlign:"right",fontSize:11,fontWeight:700,color:"#64748b",padding:"4px 8px"}}>Qty</th><th style={{textAlign:"right",fontSize:11,fontWeight:700,color:"#64748b",padding:"4px 8px"}}>Price</th><th style={{textAlign:"right",fontSize:11,fontWeight:700,color:"#64748b",padding:"4px 8px"}}>Total</th></tr></thead>
+            <tbody>
+              {sale.saleLines.map((l,i)=>(
+                <tr key={i} style={{borderTop:"1px solid #f1f5f9"}}>
+                  <td style={{padding:"6px 8px",fontSize:12,fontWeight:600,color:"#1e293b"}}>{l.name}</td>
+                  <td style={{padding:"6px 8px",fontSize:12,textAlign:"right",color:"#374151"}}>{l.qty}</td>
+                  <td style={{padding:"6px 8px",fontSize:12,textAlign:"right",color:"#374151"}}>{shop.symbol}{parseFloat(l.price||0).toLocaleString()}</td>
+                  <td style={{padding:"6px 8px",fontSize:12,textAlign:"right",fontWeight:700,color:shop.accent}}>{shop.symbol}{parseFloat(((parseFloat(l.qty)||1)*(parseFloat(l.price)||0)).toFixed(2)).toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p style={{margin:"8px 0 0",fontSize:10,color:"#94a3b8",fontStyle:"italic"}}>To change items, delete this sale and create a new one.</p>
+        </div>
+      )}
+
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div style={{gridColumn:"1/-1"}}>
-          <label style={lbl}>Item / Product</label>
-          <input value={form.item} onChange={e=>set("item",e.target.value)} placeholder="Item name" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Quantity</label>
-          <input type="number" min="1" value={form.qty} onChange={e=>set("qty",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
+        {!hasLines&&(
+          <div style={{gridColumn:"1/-1"}}>
+            <label style={lbl}>Item / Product</label>
+            <input value={form.item} onChange={e=>set("item",e.target.value)} placeholder="Item name" style={inp} onFocus={fo} onBlur={bl}/>
+          </div>
+        )}
+        {!hasLines&&(
+          <div>
+            <label style={lbl}>Quantity</label>
+            <input type="number" min="1" value={form.qty} onChange={e=>set("qty",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
+          </div>
+        )}
         <div style={{gridColumn:"1/-1"}}>
           {/* GST TOGGLE + RATE */}
-          <div style={{background:form.taxInclusive?"#f0fdf4":"#eff6ff",border:"1px solid "+(form.taxInclusive?"#bbf7d0":"#bfdbfe"),borderRadius:10,padding:"12px 14px",marginBottom:10}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+          <div style={{background:form.taxRate===0?"#f8fafc":(form.taxInclusive?"#f0fdf4":"#eff6ff"),border:"1px solid "+(form.taxRate===0?"#e2e8f0":(form.taxInclusive?"#bbf7d0":"#bfdbfe")),borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
               <div>
-                <p style={{margin:0,fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>GST / Tax Calculation</p>
-                <p style={{margin:"2px 0 0",fontSize:12,fontWeight:700,color:form.taxInclusive?"#15803d":"#1d4ed8"}}>
-                  {form.taxInclusive?"Price includes tax — calculated backwards":"Price excludes tax — added on top"}
+                <p style={{margin:0,fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>GST / Tax</p>
+                <p style={{margin:"2px 0 0",fontSize:12,fontWeight:700,color:form.taxRate===0?"#94a3b8":(form.taxInclusive?"#15803d":"#1d4ed8")}}>
+                  {form.taxRate===0?"No tax applied":(form.taxInclusive?"Price includes tax — calculated backwards":"Tax added on top")}
                 </p>
               </div>
-              <div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}} onClick={()=>set("taxInclusive",!form.taxInclusive)}>
-                <span style={{fontSize:12,fontWeight:700,color:"#64748b"}}>{form.taxInclusive?"Inclusive":"Exclusive"}</span>
-                <div style={{width:44,height:24,borderRadius:999,background:form.taxInclusive?shop.accent:"#cbd5e1",position:"relative",transition:"background 0.2s",boxShadow:"inset 0 1px 3px rgba(0,0,0,0.15)"}}>
-                  <div style={{position:"absolute",top:3,left:form.taxInclusive?22:3,width:18,height:18,borderRadius:"50%",background:"white",transition:"left 0.2s",boxShadow:"0 1px 4px rgba(0,0,0,0.2)"}}/>
+              {form.taxRate>0&&(
+                <div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}} onClick={()=>set("taxInclusive",!form.taxInclusive)}>
+                  <span style={{fontSize:12,fontWeight:700,color:"#64748b"}}>{form.taxInclusive?"Inclusive":"Exclusive"}</span>
+                  <div style={{width:44,height:24,borderRadius:999,background:form.taxInclusive?shop.accent:"#cbd5e1",position:"relative",transition:"background 0.2s",boxShadow:"inset 0 1px 3px rgba(0,0,0,0.15)"}}>
+                    <div style={{position:"absolute",top:3,left:form.taxInclusive?22:3,width:18,height:18,borderRadius:"50%",background:"white",transition:"left 0.2s",boxShadow:"0 1px 4px rgba(0,0,0,0.2)"}}/>
+                  </div>
                 </div>
-              </div>
+              )}
             </div>
             {/* Tax Rate Buttons */}
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
+            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
               <span style={{fontSize:11,fontWeight:700,color:"#64748b",marginRight:4}}>Tax Rate:</span>
-              {[0,5,18,20].map(r=>(
+              {[0,5,10,18,20].map(r=>(
                 <button key={r} type="button" onClick={()=>set("taxRate",Number(r))}
                   style={{padding:"4px 12px",borderRadius:999,border:"2px solid "+(Number(form.taxRate)===r?shop.accent:"#e2e8f0"),
                     background:Number(form.taxRate)===r?shop.accent:"white",color:Number(form.taxRate)===r?"white":"#374151",
@@ -3207,7 +3332,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <div>
               <label style={lbl}>
-                Amount ({shop.symbol}) — {form.taxInclusive?"incl. tax":"excl. tax"}
+                Grand Total ({shop.symbol}) — {form.taxRate===0?"no tax":form.taxInclusive?"incl. tax":"excl. tax"}
               </label>
               <input type="number" value={form.amount} onChange={e=>set("amount",e.target.value)}
                 placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
@@ -3298,7 +3423,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...form,id:sale.id,ful:form.status,pay:form.payBy,rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn})}
+        <button onClick={()=>onSave({...form,id:sale.id,ful:form.status,pay:form.payBy,rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,saleLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
@@ -3962,18 +4087,21 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const _seq=String(_nextNum).padStart(4,"0");
   const autoInv=`ROS${_seq}${_fySuffix}`;
 
+  // ── Multi-item lines state ──
+  const blankLine=()=>({id:Date.now()+Math.random(),name:"",qty:"1",price:""});
+  const [lines,setLines]=useState([blankLine()]);
+
   const [form,setForm]=useState({
     date:        new Date().toISOString().slice(0,10),
     invoiceNo:   autoInv,
     invEditing:  false,
     customer:    "",
     contact:     "",
-    item:        "",
-    itemCustom:  "",
-    qty:         "1",
-    amount:      "",
-    taxInclusive: true,
-    taxRate:     shopId==="ros-india" ? 18 : 20,
+    taxInclusive: false,
+    taxRate:     0,
+    discount:    "",
+    otherCharges:"",
+    otherChargesLabel:"Other Charges",
     payBy:       "SHOP",
     shopInvoiceNo: "",
     status:      shopId==="ros-india" ? "ORDER NOT PLACED" : "PENDING",
@@ -3985,444 +4113,156 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
-  /* local customer list — seeded from live Supabase customers prop, grows if new ones added */
   const [customerList,setCustomerList]=useState(customers.length>0?[...customers]:[...CUSTOMERS]);
   const [showNewCust,setShowNewCust]=useState(false);
-  const [showAddItem,setShowAddItem]=useState(false);
-  const [newItemInput,setNewItemInput]=useState("");
-  /* Customer autocomplete */
   const [custAcOpen,setCustAcOpen]=useState(false);
   const [custAcMatches,setCustAcMatches]=useState([]);
 
-  const inp={
-    width:"100%",border:"1px solid #e2e8f0",borderRadius:9,
-    padding:"9px 13px",fontSize:13,outline:"none",
-    fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",
-    color:"#374151",background:"white",transition:"border-color 0.15s",
-  };
+  const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white",transition:"border-color 0.15s"};
   const fo=e=>e.target.style.borderColor=shop.accent;
   const bl=e=>e.target.style.borderColor="#e2e8f0";
   const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
-
-  const Divider=({title})=>(
-    <div style={{display:"flex",alignItems:"center",gap:8,margin:"6px 0 12px"}}>
-      <div style={{height:1,flex:1,background:"#f1f5f9"}}/>
-      <span style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap"}}>{title}</span>
-      <div style={{height:1,flex:1,background:"#f1f5f9"}}/>
-    </div>
-  );
+  const Divider=({title})=>(<div style={{display:"flex",alignItems:"center",gap:8,margin:"6px 0 12px"}}><div style={{height:1,flex:1,background:"#f1f5f9"}}/><span style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap"}}>{title}</span><div style={{height:1,flex:1,background:"#f1f5f9"}}/></div>);
 
   const needReturn=["RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED","RETURN REQUESTED","RETURN RECEIVED"].includes(form.status);
-  const useCustomItem=form.item==="__custom__";
+  const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","WORK IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
 
-  const handleAddCustomer=(newCust)=>{
-    setCustomerList(l=>[newCust,...l]);
-    set("customer",newCust.name);
-    set("contact",newCust.phone);
-    setShowNewCust(false);
+  const handleAddCustomer=(newCust)=>{setCustomerList(l=>[newCust,...l]);set("customer",newCust.name);set("contact",newCust.phone);setShowNewCust(false);};
+  const updateLine=(id,key,val)=>setLines(ls=>ls.map(l=>l.id===id?{...l,[key]:val}:l));
+  const addLine=()=>setLines(ls=>[...ls,blankLine()]);
+  const removeLine=(id)=>setLines(ls=>ls.length>1?ls.filter(l=>l.id!==id):ls);
+
+  const itemsSubtotal=parseFloat(lines.reduce((sum,l)=>{const q=parseFloat(l.qty)||0;const p=parseFloat(l.price)||0;return sum+(q*p);},0).toFixed(2));
+  const discountAmt=parseFloat(form.discount)||0;
+  const otherChargesAmt=parseFloat(form.otherCharges)||0;
+  const preGstTotal=parseFloat((itemsSubtotal-discountAmt+otherChargesAmt).toFixed(2));
+  const taxRate=(form.taxRate||0)/100;
+  const gstAmt=parseFloat((preGstTotal*taxRate).toFixed(2));
+  const grandTotal=parseFloat((preGstTotal+gstAmt).toFixed(2));
+
+  const handleSave=()=>{
+    const filledLines=lines.filter(l=>l.name.trim()||(parseFloat(l.price)>0));
+    const combinedItem=filledLines.map(l=>`${l.name}(x${l.qty})`).join(", ")||"Sale";
+    const combinedQty=filledLines.reduce((s,l)=>s+(parseFloat(l.qty)||0),0)||1;
+    onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel});
   };
 
-  /* Status colour map */
-  const statusColor={
-    "PENDING":"#a16207","FULFILLED":"#15803d",
-    "RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412",
-    "EXCHANGED":"#4338ca","REFUNDED":"#6b21a8",
-    "ORDER NOT PLACED":"#a16207","WORK IN PROGRESS":"#1d4ed8",
-    "PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e",
-    "RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46",
-    "NEGATIVE FEEDBACK RECEIVED":"#9f1239",
-  };
+  return(<>
+    {showNewCust&&(<div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setShowNewCust(false)}><div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.50)",backdropFilter:"blur(4px)"}}/><div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.25)",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",zIndex:81}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 22px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"12",borderRadius:"20px 20px 0 0"}}><h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>➕ New Customer</h3><button onClick={()=>setShowNewCust(false)} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button></div><div style={{padding:22}}><NewCustomerForm shop={shop} onSave={handleAddCustomer} onClose={()=>setShowNewCust(false)} customers={customerList}/></div></div></div>)}
 
+    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"78vh",overflowY:"auto",paddingRight:4}}>
 
-
-  return(
-    <>
-    {/* ── NEW CUSTOMER OVERLAY ── */}
-    {showNewCust&&(
-      <div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
-        onClick={()=>setShowNewCust(false)}>
-        <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.50)",backdropFilter:"blur(4px)"}}/>
-        <div style={{position:"relative",background:"white",borderRadius:20,
-          boxShadow:"0 32px 64px rgba(0,0,0,0.25)",width:"100%",maxWidth:500,
-          maxHeight:"90vh",overflowY:"auto",zIndex:81}}
-          onClick={e=>e.stopPropagation()}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-            padding:"16px 22px",borderBottom:"1px solid #f1f5f9",
-            background:shop.accent+"12",borderRadius:"20px 20px 0 0"}}>
-            <h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>➕ New Customer</h3>
-            <button onClick={()=>setShowNewCust(false)}
-              style={{width:30,height:30,borderRadius:"50%",border:"none",
-                background:"#f1f5f9",cursor:"pointer",fontSize:18,
-                color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
-          </div>
-          <div style={{padding:22}}>
-            <NewCustomerForm shop={shop} onSave={handleAddCustomer} onClose={()=>setShowNewCust(false)} customers={customerList}/>
-          </div>
-        </div>
-      </div>
-    )}
-
-    {/* ── MAIN FORM ── */}
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
-
-      {/* BASIC INFO */}
       <Divider title="Basic Info"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Date</label>
-          <input type="date" value={form.date} onChange={e=>set("date",e.target.value)}
-            style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
+        <div><label style={lbl}>Date</label><input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
         <div>
           <label style={lbl}>Invoice Number</label>
           <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            <input
-              value={form.invoiceNo}
-              readOnly={!form.invEditing}
-              onChange={e=>set("invoiceNo",e.target.value)}
-              style={{...inp,flex:1,
-                background:form.invEditing?"white":"#f8fafc",
-                fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,
-                color:shop.accent,
-                border:"1px solid "+(form.invEditing?shop.accent:"#e2e8f0"),
-              }}
-              onFocus={fo} onBlur={bl}/>
-            <button
-              onClick={()=>set("invEditing",!form.invEditing)}
-              title={form.invEditing?"Lock invoice number":"Edit invoice number"}
-              style={{flexShrink:0,width:34,height:34,borderRadius:8,cursor:"pointer",
-                border:"1px solid "+(form.invEditing?shop.accent:"#e2e8f0"),
-                background:form.invEditing?shop.accent:"#f8fafc",
-                color:form.invEditing?"white":"#64748b",
-                fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",
-                transition:"all 0.15s",}}>
-              {form.invEditing?"✓":"✏️"}
-            </button>
+            <input value={form.invoiceNo} readOnly={!form.invEditing} onChange={e=>set("invoiceNo",e.target.value)} style={{...inp,flex:1,background:form.invEditing?"white":"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,border:"1px solid "+(form.invEditing?shop.accent:"#e2e8f0")}} onFocus={fo} onBlur={bl}/>
+            <button onClick={()=>set("invEditing",!form.invEditing)} style={{flexShrink:0,width:34,height:34,borderRadius:8,cursor:"pointer",border:"1px solid "+(form.invEditing?shop.accent:"#e2e8f0"),background:form.invEditing?shop.accent:"#f8fafc",color:form.invEditing?"white":"#64748b",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}}>{form.invEditing?"✓":"✏️"}</button>
           </div>
           <p style={{margin:"3px 0 0",fontSize:10,color:"#94a3b8"}}>Auto-generated · ✏️ to edit</p>
         </div>
       </div>
 
-      {/* CUSTOMER */}
       <Divider title="Customer"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         <div style={{position:"relative"}}>
           <label style={lbl}>Customer Name</label>
-          <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            <input
-              value={form.customer}
-              onChange={e=>{
-                const val=e.target.value;
-                set("customer",val);
-                if(val.trim().length>=1){
-                  const q=val.trim().toLowerCase();
-                  const hits=customerList.filter(c=>c.name.toLowerCase().includes(q));
-                  setCustAcMatches(hits);
-                  setCustAcOpen(hits.length>0);
-                } else {
-                  setCustAcMatches([]);
-                  setCustAcOpen(false);
-                }
-              }}
-              placeholder="Type to search or enter new customer…"
-              style={{...inp,flex:1}}
-              onFocus={e=>{
-                fo(e);
-                if(form.customer.trim()&&custAcMatches.length) setCustAcOpen(true);
-              }}
-              onBlur={e=>{bl(e);setTimeout(()=>setCustAcOpen(false),180);}}
-              autoComplete="off"/>
-            {/* + add new customer */}
-            <button onClick={()=>setShowNewCust(true)}
-              title="Add new customer"
-              style={{flexShrink:0,width:34,height:34,borderRadius:8,cursor:"pointer",
-                border:"1px solid "+shop.accent,
-                background:shop.accent,color:"white",
-                fontSize:18,fontWeight:900,
-                display:"flex",alignItems:"center",justifyContent:"center",
-                boxShadow:"0 2px 8px "+shop.accent+"44",
-                transition:"all 0.15s",}}
-              onMouseEnter={e=>e.currentTarget.style.transform="scale(1.08)"}
-              onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
-              +
-            </button>
-          </div>
-          {/* ── autocomplete dropdown ── */}
-          {custAcOpen&&custAcMatches.length>0&&(
-            <div style={{
-              position:"absolute",top:"100%",left:0,zIndex:200,
-              minWidth:"100%",width:"max-content",maxWidth:420,
-              background:"white",border:"1px solid "+shop.accent+"55",
-              borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.16)",
-              maxHeight:260,overflowY:"auto",marginTop:4,
-            }}>
-              <div style={{padding:"6px 14px",background:shop.accentBg,borderBottom:"1px solid "+shop.accent+"22",borderRadius:"12px 12px 0 0"}}>
-                <span style={{fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.06em"}}>
-                  {custAcMatches.length} match{custAcMatches.length!==1?"es":""} — click to select
-                </span>
-              </div>
-              {custAcMatches.map((c,i)=>(
-                <div key={c.id||i}
-                  onMouseDown={()=>{
-                    set("customer",c.name);
-                    set("contact",c.phone||"");
-                    setCustAcOpen(false);
-                    setCustAcMatches([]);
-                  }}
-                  style={{
-                    padding:"10px 14px",cursor:"pointer",
-                    borderBottom:i<custAcMatches.length-1?"1px solid #f1f5f9":"none",
-                    transition:"background 0.1s",
-                  }}
-                  onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg}
-                  onMouseLeave={e=>e.currentTarget.style.background="white"}>
-                  <div style={{display:"flex",alignItems:"center",gap:10}}>
-                    <div style={{
-                      width:32,height:32,borderRadius:9,flexShrink:0,
-                      background:shop.sb,display:"flex",alignItems:"center",
-                      justifyContent:"center",color:"white",fontWeight:800,fontSize:13,
-                    }}>{c.name.charAt(0)}</div>
-                    <div style={{flex:1}}>
-                      <p style={{margin:0,fontWeight:700,fontSize:13,color:"#0f172a",
-                        whiteSpace:"nowrap"}}>{c.name}</p>
-                      <p style={{margin:0,fontSize:11,color:"#94a3b8",whiteSpace:"nowrap"}}>{c.phone||"No phone"}{c.tag?" · "+c.tag:""}</p>
-                    </div>
-                    <span style={{fontSize:10,fontWeight:700,color:shop.accent,
-                      background:shop.accentBg,border:"1px solid "+shop.accent+"33",
-                      borderRadius:999,padding:"2px 10px",flexShrink:0,marginLeft:8}}>Select</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <div>
-          <label style={lbl}>Contact Number</label>
-          <input value={form.contact} onChange={e=>set("contact",e.target.value)}
-            placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-      </div>
-
-      {/* ORDER DETAILS */}
-      <Divider title="Order Details"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div style={{gridColumn:"1/-1"}}>
-          <label style={lbl}>Item / Product</label>
-          {/* Quick-select saved item tags */}
-          {shopItems.length>0&&(
-            <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
-              {shopItems.map((itm,idx)=>{
-                // Guard: itm may be a string or a legacy {name,...} object
-                const label=typeof itm==="object"&&itm!==null?(itm.name||itm.label||"Item"):String(itm);
-                const value=typeof itm==="object"&&itm!==null?(itm.name||itm.label||""):String(itm);
-                return(
-                  <button key={idx} type="button"
-                    onClick={()=>set("item",value)}
-                    style={{
-                      padding:"5px 14px",borderRadius:999,fontSize:12,fontWeight:700,
-                      cursor:"pointer",fontFamily:"inherit",border:"1px solid",
-                      transition:"all 0.15s",
-                      background:form.item===value?shop.accent:"white",
-                      color:form.item===value?"white":shop.accentText,
-                      borderColor:form.item===value?shop.accent:shop.accent+"55",
-                    }}>{label}</button>
-                );
-              })}
-            </div>
-          )}
-          {/* Type item name + save button */}
           <div style={{display:"flex",gap:6}}>
-            <input
-              value={form.item}
-              onChange={e=>set("item",e.target.value)}
-              placeholder="Type item name…"
-              style={{...inp,flex:1}} onFocus={fo} onBlur={bl}/>
-            <button type="button"
-              title="Save item for quick access next time"
-              onClick={()=>{
-                if(form.item.trim()&&onAddShopItem){
-                  onAddShopItem(form.item.trim());
-                }
-              }}
-              style={{padding:"9px 14px",borderRadius:9,border:"1px solid "+shop.accent+"66",
-                background:shop.accentBg,color:shop.accentText,fontSize:12,fontWeight:700,
-                cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
-              ＋ Save
-            </button>
+            <input value={form.customer} onChange={e=>{set("customer",e.target.value);const q=e.target.value.trim().toLowerCase();if(q.length>=1){const m=customerList.filter(c=>c.name.toLowerCase().includes(q)).slice(0,8);setCustAcMatches(m);setCustAcOpen(m.length>0);}else{setCustAcOpen(false);setCustAcMatches([]);}}} onBlur={()=>setTimeout(()=>setCustAcOpen(false),180)} placeholder="Type customer name…" style={{...inp,flex:1}} onFocus={fo} autoComplete="off"/>
+            <button type="button" onClick={()=>setShowNewCust(true)} style={{flexShrink:0,width:34,height:34,borderRadius:8,cursor:"pointer",border:"1px solid "+shop.accent+"66",background:shop.accentBg,color:shop.accent,fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>+</button>
           </div>
+          {custAcOpen&&custAcMatches.length>0&&(<div style={{position:"absolute",top:"100%",left:0,zIndex:200,minWidth:"100%",width:"max-content",maxWidth:420,background:"white",border:"1px solid "+shop.accent+"55",borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.16)",maxHeight:260,overflowY:"auto",marginTop:4}}>
+            <div style={{padding:"6px 14px",background:shop.accentBg,borderBottom:"1px solid "+shop.accent+"22",borderRadius:"12px 12px 0 0"}}><span style={{fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.06em"}}>{custAcMatches.length} match{custAcMatches.length!==1?"es":""} — click to select</span></div>
+            {custAcMatches.map((c,i)=>(<div key={c.id||i} onMouseDown={()=>{set("customer",c.name);set("contact",c.phone||"");setCustAcOpen(false);setCustAcMatches([]);}} style={{padding:"10px 14px",cursor:"pointer",borderBottom:i<custAcMatches.length-1?"1px solid #f1f5f9":"none"}} onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg} onMouseLeave={e=>e.currentTarget.style.background="white"}><div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:32,height:32,borderRadius:9,flexShrink:0,background:shop.sb,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:13}}>{c.name.charAt(0)}</div><div style={{flex:1}}><p style={{margin:0,fontWeight:700,fontSize:13,color:"#0f172a",whiteSpace:"nowrap"}}>{c.name}</p><p style={{margin:0,fontSize:11,color:"#94a3b8",whiteSpace:"nowrap"}}>{c.phone||"No phone"}{c.tag?" · "+c.tag:""}</p></div><span style={{fontSize:10,fontWeight:700,color:shop.accent,background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:999,padding:"2px 10px",flexShrink:0,marginLeft:8}}>Select</span></div></div>))}
+          </div>)}
         </div>
+        <div><label style={lbl}>Contact Number</label><input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/></div>
+      </div>
+
+      <Divider title="Items"/>
+      <div style={{marginBottom:12}}>
+        {shopItems.length>0&&(<div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>{shopItems.map((itm,idx)=>{const label=typeof itm==="object"&&itm!==null?(itm.name||itm.label||"Item"):String(itm);const value=typeof itm==="object"&&itm!==null?(itm.name||itm.label||""):String(itm);return(<button key={idx} type="button" onClick={()=>{const emptyIdx=lines.findIndex(l=>!l.name.trim());if(emptyIdx>=0){updateLine(lines[emptyIdx].id,"name",value);}else{setLines(ls=>[...ls,{...blankLine(),name:value}]);}}} style={{padding:"4px 12px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",border:"1px solid "+shop.accent+"55",background:"white",color:shop.accentText,transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.color="white";}} onMouseLeave={e=>{e.currentTarget.style.background="white";e.currentTarget.style.color=shop.accentText;}}>+ {label}</button>);})}</div>)}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 80px 110px 32px",gap:6,marginBottom:4}}>
+          <span style={{...lbl,marginBottom:0}}>Item Name</span>
+          <span style={{...lbl,marginBottom:0}}>Qty</span>
+          <span style={{...lbl,marginBottom:0}}>Price ({shop.symbol})</span>
+          <span/>
+        </div>
+        {lines.map((line,idx)=>(<div key={line.id} style={{display:"grid",gridTemplateColumns:"1fr 80px 110px 32px",gap:6,marginBottom:6,alignItems:"center"}}>
+          <input value={line.name} onChange={e=>updateLine(line.id,"name",e.target.value)} placeholder={"Item "+(idx+1)} style={inp} onFocus={fo} onBlur={bl}/>
+          <input type="number" min="1" value={line.qty} onChange={e=>updateLine(line.id,"qty",e.target.value)} style={{...inp,textAlign:"center"}} onFocus={fo} onBlur={bl}/>
+          <input type="number" min="0" value={line.price} onChange={e=>updateLine(line.id,"price",e.target.value)} placeholder="0.00" style={{...inp,textAlign:"right"}} onFocus={fo} onBlur={bl}/>
+          <button type="button" onClick={()=>removeLine(line.id)} style={{width:32,height:36,borderRadius:8,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"inherit"}}>×</button>
+        </div>))}
+        <div style={{display:"flex",gap:8,alignItems:"center",marginTop:4}}>
+          <button type="button" onClick={addLine} style={{display:"flex",alignItems:"center",gap:5,padding:"7px 14px",borderRadius:8,border:"1px dashed "+shop.accent+"66",background:shop.accentBg,color:shop.accentText,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>＋ Add Item</button>
+          {lines.some(l=>l.name.trim())&&onAddShopItem&&(<button type="button" onClick={()=>{lines.filter(l=>l.name.trim()).forEach(l=>onAddShopItem(l.name.trim()));}} style={{padding:"7px 14px",borderRadius:8,border:"1px solid "+shop.accent+"44",background:"white",color:shop.accentText,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>💾 Save Items</button>)}
+        </div>
+      </div>
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+        <div><label style={lbl}>Discount ({shop.symbol})</label><input type="number" min="0" value={form.discount} onChange={e=>set("discount",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/></div>
         <div>
-          <label style={lbl}>Quantity</label>
-          <input type="number" min="1" value={form.qty} onChange={e=>set("qty",e.target.value)}
-            style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div style={{gridColumn:"1/-1"}}>
-          {/* GST TOGGLE */}
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-            background:form.taxInclusive?"#f0fdf4":"#eff6ff",
-            border:"1px solid "+(form.taxInclusive?"#bbf7d0":"#bfdbfe"),
-            borderRadius:10,padding:"10px 14px",marginBottom:10}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-              <div>
-                <p style={{margin:0,fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>GST / Tax Calculation</p>
-                <p style={{margin:"2px 0 0",fontSize:12,fontWeight:700,color:form.taxInclusive?"#15803d":"#1d4ed8"}}>
-                  {form.taxInclusive?"Price includes tax — calculated backwards":"Price excludes tax — added on top"}
-                </p>
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}} onClick={()=>set("taxInclusive",!form.taxInclusive)}>
-                <span style={{fontSize:12,fontWeight:700,color:"#64748b"}}>{form.taxInclusive?"Inclusive":"Exclusive"}</span>
-                <div style={{width:44,height:24,borderRadius:999,background:form.taxInclusive?shop.accent:"#cbd5e1",position:"relative",transition:"background 0.2s",boxShadow:"inset 0 1px 3px rgba(0,0,0,0.15)"}}>
-                  <div style={{position:"absolute",top:3,left:form.taxInclusive?22:3,width:18,height:18,borderRadius:"50%",background:"white",transition:"left 0.2s",boxShadow:"0 1px 4px rgba(0,0,0,0.2)"}}/>
-                </div>
-              </div>
-            </div>
-            {/* Tax Rate Buttons */}
-            <div style={{display:"flex",alignItems:"center",gap:6}}>
-              <span style={{fontSize:11,fontWeight:700,color:"#64748b",marginRight:4}}>Tax Rate:</span>
-              {[0,5,18,20].map(r=>(
-                <button key={r} type="button" onClick={()=>set("taxRate",r)}
-                  style={{padding:"4px 12px",borderRadius:999,border:"2px solid "+(form.taxRate===r?shop.accent:"#e2e8f0"),
-                    background:form.taxRate===r?shop.accent:"white",color:form.taxRate===r?"white":"#374151",
-                    fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>
-                  {r}%
-                </button>
-              ))}
-            </div>
+          <div style={{display:"flex",gap:6,alignItems:"flex-end",marginBottom:5}}>
+            <label style={{...lbl,marginBottom:0,flex:1}}>Other Charges ({shop.symbol})</label>
+            <input value={form.otherChargesLabel} onChange={e=>set("otherChargesLabel",e.target.value)} placeholder="Label" style={{fontSize:10,padding:"2px 6px",borderRadius:6,border:"1px solid #e2e8f0",outline:"none",fontFamily:"DM Sans,sans-serif",color:"#64748b",width:90}}/>
           </div>
-          {/* Amount + live breakdown */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <input type="number" min="0" value={form.otherCharges} onChange={e=>set("otherCharges",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+      </div>
+
+      <div style={{marginBottom:16}}>
+        <div style={{background:form.taxRate===0?"#f8fafc":(form.taxInclusive?"#f0fdf4":"#eff6ff"),border:"1px solid "+(form.taxRate===0?"#e2e8f0":(form.taxInclusive?"#bbf7d0":"#bfdbfe")),borderRadius:10,padding:"12px 14px"}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
             <div>
-              <label style={lbl}>Amount ({shop.symbol}) — {form.taxInclusive?"incl. tax":"excl. tax"}</label>
-              <input type="number" value={form.amount} onChange={e=>set("amount",e.target.value)}
-                placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+              <p style={{margin:0,fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>GST / Tax</p>
+              <p style={{margin:"2px 0 0",fontSize:12,fontWeight:700,color:form.taxRate===0?"#94a3b8":(form.taxInclusive?"#15803d":"#1d4ed8")}}>{form.taxRate===0?"No tax applied":(form.taxInclusive?"Price includes tax — calculated backwards":"Tax added on top of price")}</p>
             </div>
-            {form.amount&&Number(form.amount)>0&&(()=>{
-              const a=Number(form.amount);
-              const rate=(form.taxRate||0)/100;
-              const subtotal=form.taxInclusive?parseFloat((a/(1+rate)).toFixed(2)):a;
-              const tax=form.taxInclusive?parseFloat((a-subtotal).toFixed(2)):parseFloat((a*rate).toFixed(2));
-              const grand=form.taxInclusive?a:parseFloat((a+tax).toFixed(2));
-              return(
-                <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",border:"1px solid #e2e8f0"}}>
-                  <p style={{margin:"0 0 6px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>Tax Breakdown</p>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                    <span style={{fontSize:11,color:"#64748b"}}>Subtotal</span>
-                    <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>{shop.symbol}{subtotal.toLocaleString()}</span>
-                  </div>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                    <span style={{fontSize:11,color:"#64748b"}}>{(form.taxRate||0)===0?"No Tax":("Tax "+form.taxRate+"%")}</span>
-                    <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>{shop.symbol}{tax.toLocaleString()}</span>
-                  </div>
-                  <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid #e2e8f0",paddingTop:4,marginTop:4}}>
-                    <span style={{fontSize:12,fontWeight:800,color:"#0f172a"}}>Grand Total</span>
-                    <span style={{fontSize:12,fontWeight:900,color:shop.accent}}>{shop.symbol}{grand.toLocaleString()}</span>
-                  </div>
-                </div>
-              );
-            })()}
+            {form.taxRate>0&&(<div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}} onClick={()=>set("taxInclusive",!form.taxInclusive)}><span style={{fontSize:12,fontWeight:700,color:"#64748b"}}>{form.taxInclusive?"Inclusive":"Exclusive"}</span><div style={{width:44,height:24,borderRadius:999,background:form.taxInclusive?shop.accent:"#cbd5e1",position:"relative",transition:"background 0.2s",boxShadow:"inset 0 1px 3px rgba(0,0,0,0.15)"}}><div style={{position:"absolute",top:3,left:form.taxInclusive?22:3,width:18,height:18,borderRadius:"50%",background:"white",transition:"left 0.2s",boxShadow:"0 1px 4px rgba(0,0,0,0.2))"}}/></div></div>)}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+            <span style={{fontSize:11,fontWeight:700,color:"#64748b",marginRight:2}}>Tax Rate:</span>
+            {[0,5,10,18,20].map(r=>(<button key={r} type="button" onClick={()=>set("taxRate",r)} style={{padding:"4px 12px",borderRadius:999,border:"2px solid "+(form.taxRate===r?shop.accent:"#e2e8f0"),background:form.taxRate===r?shop.accent:"white",color:form.taxRate===r?"white":"#374151",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>{r}%</button>))}
           </div>
         </div>
       </div>
 
-  {/* PAYMENT */}
+      <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:12,padding:"14px 16px",marginBottom:16}}>
+        <p style={{margin:"0 0 10px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>Order Summary</p>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#64748b"}}>Items Subtotal</span><span style={{fontSize:13,fontWeight:600,color:"#374151"}}>{shop.symbol}{itemsSubtotal.toLocaleString()}</span></div>
+        {discountAmt>0&&(<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#dc2626"}}>Discount</span><span style={{fontSize:13,fontWeight:600,color:"#dc2626"}}>− {shop.symbol}{discountAmt.toLocaleString()}</span></div>)}
+        {otherChargesAmt>0&&(<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#64748b"}}>{form.otherChargesLabel||"Other Charges"}</span><span style={{fontSize:13,fontWeight:600,color:"#374151"}}>+ {shop.symbol}{otherChargesAmt.toLocaleString()}</span></div>)}
+        {form.taxRate>0&&(<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#64748b"}}>GST / Tax ({form.taxRate}%)</span><span style={{fontSize:13,fontWeight:600,color:"#374151"}}>+ {shop.symbol}{gstAmt.toLocaleString()}</span></div>)}
+        <div style={{display:"flex",justifyContent:"space-between",borderTop:"2px solid #0f172a",paddingTop:10,marginTop:8}}><span style={{fontSize:15,fontWeight:900,color:"#0f172a"}}>Grand Total</span><span style={{fontSize:17,fontWeight:900,color:shop.accent}}>{shop.symbol}{grandTotal.toLocaleString()}</span></div>
+      </div>
+
       <Divider title="Payment"/>
       <div style={{display:"grid",gridTemplateColumns:form.payBy==="SHOP"?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Payment By</label>
-          <select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>
-            {["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"].map(o=><option key={o}>{o}</option>)}
-          </select>
-        </div>
-        {form.payBy==="SHOP"&&(
-          <div>
-            <label style={lbl}>Shop Invoice No.</label>
-            <input
-              value={form.shopInvoiceNo||""}
-              onChange={e=>set("shopInvoiceNo",e.target.value)}
-              placeholder="e.g. 12345"
-              style={inp} onFocus={fo} onBlur={bl}/>
-          </div>
-        )}
+        <div><label style={lbl}>Payment By</label><select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"].map(o=><option key={o}>{o}</option>)}</select></div>
+        {form.payBy==="SHOP"&&(<div><label style={lbl}>Shop Invoice No.</label><input value={form.shopInvoiceNo||""} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 12345" style={inp} onFocus={fo} onBlur={bl}/></div>)}
       </div>
 
-      {/* DELIVERY */}
       <Divider title="Delivery"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#f8fafc",borderRadius:12,padding:"14px",border:"1px solid #e2e8f0"}}>
-        <div>
-          <label style={lbl}>Delivery Status</label>
-          <select value={form.status} onChange={e=>set("status",e.target.value)}
-            style={{...inp,color:statusColor[form.status]||"#374151",fontWeight:700}}>
-            {(shopId==="ros-india"
-              ? ["ORDER NOT PLACED","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]
-              : ["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]
-            ).map(o=>(
-              <option key={o} value={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label style={lbl}>Sent / Dispatch Date</label>
-          <input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)}
-            style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
+        <div><label style={lbl}>Delivery Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,color:statusColor[form.status]||"#374151",fontWeight:700}}>{(shopId==="ros-india"?["ORDER NOT PLACED","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o} value={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>))}</select></div>
+        <div><label style={lbl}>Sent / Dispatch Date</label><input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
       </div>
 
-      {/* RETURN / REFUND — conditional */}
-      {needReturn&&(
-        <>
-          <Divider title="Return / Refund"/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,
-            background:"#fff5f5",borderRadius:12,padding:"14px 14px",border:"1px solid #fecaca"}}>
-            <div>
-              <label style={{...lbl,color:"#dc2626"}}>Return Received Date</label>
-              <input type="date" value={form.returnRcvd} onChange={e=>set("returnRcvd",e.target.value)}
-                style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/>
-            </div>
-            <div>
-              <label style={{...lbl,color:"#dc2626"}}>Refunded Amount ({shop.symbol})</label>
-              <input type="number" value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)}
-                placeholder="0.00" style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/>
-            </div>
-          </div>
-        </>
-      )}
+      {needReturn&&(<><Divider title="Return / Refund"/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#fff5f5",borderRadius:12,padding:"14px 14px",border:"1px solid #fecaca"}}><div><label style={{...lbl,color:"#dc2626"}}>Return Received Date</label><input type="date" value={form.returnRcvd} onChange={e=>set("returnRcvd",e.target.value)} style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/></div><div><label style={{...lbl,color:"#dc2626"}}>Refunded Amount ({shop.symbol})</label><input type="number" value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/></div></div></>)}
 
-      {/* TAG + REMARKS */}
-      <div style={{marginBottom:12}}>
-        <label style={lbl}>Sale Type / Tag</label>
-        <select value={form.tag} onChange={e=>set("tag",e.target.value)} style={inp}>
-          <option value="">Select sale type…</option>
-          {["Normal Sale","Bulk Sale","Clearance Sale","Discounted Sale","Exchange Sale","Gift","Wholesale","Return Replacement","Sample Sale"].map(o=><option key={o}>{o}</option>)}
-        </select>
-      </div>
-      <div style={{marginBottom:16}}>
-        <label style={lbl}>Remarks</label>
-        <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)}
-          rows={2} placeholder="Any additional notes…"
-          style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
-      </div>
+      <div style={{marginBottom:12}}><label style={lbl}>Sale Type / Tag</label><select value={form.tag} onChange={e=>set("tag",e.target.value)} style={inp}><option value="">Select sale type…</option>{["Normal Sale","Bulk Sale","Clearance Sale","Discounted Sale","Exchange Sale","Gift","Wholesale","Return Replacement","Sample Sale"].map(o=><option key={o}>{o}</option>)}</select></div>
+      <div style={{marginBottom:16}}><label style={lbl}>Remarks</label><textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Any additional notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/></div>
 
-      {/* ACTIONS — sticky */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,
-        position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,
-        borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave(form)}
-          style={{padding:"12px 0",borderRadius:11,border:"none",
-            background:shop.accent,color:"white",fontWeight:800,fontSize:14,
-            cursor:"pointer",fontFamily:"inherit",
-            boxShadow:"0 4px 14px "+shop.accent+"44"}}>
-          💾 Save Sale
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
+        <button onClick={handleSave} style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
+          💾 Save Sale {grandTotal>0?"("+shop.symbol+grandTotal.toLocaleString()+")":""}
         </button>
-        <button onClick={onClose}
-          style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",
-            background:"white",color:"#374151",fontWeight:700,fontSize:14,
-            cursor:"pointer",fontFamily:"inherit"}}>
-          Cancel
-        </button>
+        <button onClick={onClose} style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
       </div>
     </div>
-    </>
-  );
+  </>);
 };
 
 /* =========================================================
