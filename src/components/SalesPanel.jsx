@@ -48,11 +48,20 @@ function getPeriodRange(period) {
 }
 
 function filterByPeriod(sales, period) {
+  if (period === "lifetime") return sales;
   const { start, end } = getPeriodRange(period);
-  if (!start && !end) return sales;
+  if (!start || !end) return sales;
+  // Parse range boundaries as local dates for comparison
+  const startParts = start.split("-"); // "YYYY-MM-DD"
+  const endParts   = end.split("-");
+  const startDate  = new Date(+startParts[0], +startParts[1]-1, +startParts[2]);
+  const endDate    = new Date(+endParts[0],   +endParts[1]-1,   +endParts[2]);
   return sales.filter(s => {
-    const dt = toSortableDate(s.date);
-    return dt >= start && dt <= end;
+    const d = safeParseDate(s.date);
+    if (!d || isNaN(d.getTime())) return false;
+    // Compare date-only (strip time) using local midnight
+    const saleDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    return saleDate >= startDate && saleDate <= endDate;
   });
 }
 
@@ -110,25 +119,15 @@ function toSortableDate(raw) {
 
 
 
-/* ── fmtDate: yyyy-mm-dd → DD-MM-YYYY for display ──────────────────
-   Supabase stores dates as yyyy-mm-dd (ISO).
-   This always produces DD-MM-YYYY regardless of what formatDate does. */
+/* ── fmtDate: any date format → DD/MM/YY for display ─────────────────── */
 function fmtDate(raw) {
   if (!raw) return "—";
-  const s = String(raw).trim();
-  // yyyy-mm-dd → DD/MM/YY
-  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (iso) return `${iso[3]}/${iso[2]}/${iso[1].slice(2)}`;
-  // M/D/YYYY or MM/DD/YYYY (imported sales format) → DD/MM/YY
-  const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-  if (us) return `${us[2].padStart(2,"0")}/${us[1].padStart(2,"0")}/${us[3].slice(2)}`;
-  // DD-MM-YYYY → DD/MM/YY
-  const dmy4 = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
-  if (dmy4) return `${dmy4[1]}/${dmy4[2]}/${dmy4[3].slice(2)}`;
-  // DD-MM-YY → DD/MM/YY
-  const dmy2 = s.match(/^(\d{2})-(\d{2})-(\d{2})$/);
-  if (dmy2) return `${dmy2[1]}/${dmy2[2]}/${dmy2[3]}`;
-  return s;
+  const d = safeParseDate(raw);
+  if (!d || isNaN(d.getTime())) return String(raw);
+  const day = String(d.getDate()).padStart(2, "0");
+  const mon = String(d.getMonth() + 1).padStart(2, "0");
+  const yr  = String(d.getFullYear()).slice(-2);
+  return `${day}/${mon}/${yr}`;
 }
 
 function buildRowsWithSeparators(sortedRows) {
@@ -280,8 +279,8 @@ export default function SalesPanel({
   /* ── Period range label ─────────────────────────────────────────────── */
   const { start, end } = getPeriodRange(salesPeriod);
   const rangeLabel = !start ? "All records"
-    : start === end ? (formatDate ? formatDate(start) : start)
-    : `${start} → ${end}`;
+    : start === end ? fmtDate(start)
+    : `${fmtDate(start)} → ${fmtDate(end)}`;
 
   const PERIODS = isStaff
     ? ["day", "week", "month"]
