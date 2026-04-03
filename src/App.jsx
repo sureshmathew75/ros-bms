@@ -710,8 +710,9 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   // Data loaded at App level and persisted in localStorage
 
   // ── Invoice computed vars ──
-  const _invTaxR    = invoiceRow ? ((invoiceRow.taxRate!==undefined?invoiceRow.taxRate:(shopId==="ros-india"?18:20))/100) : 0;
-  const _invInc     = invoiceRow ? invoiceRow.taxInclusive!==false : true;
+  // Use taxRate 0 as override — never apply tax if rate is 0
+  const _invTaxR    = invoiceRow ? ((invoiceRow.taxRate!==undefined&&invoiceRow.taxRate!==null?invoiceRow.taxRate:0)/100) : 0;
+  const _invInc     = _invTaxR===0 ? true : (invoiceRow ? invoiceRow.taxInclusive!==false : true);
   const _invEntered = invoiceRow ? Number(invoiceRow.amount)||0 : 0;
   const invSubtotal = _invInc ? parseFloat((_invEntered/(1+_invTaxR)).toFixed(2)) : _invEntered;
   const invTaxAmt   = parseFloat((invSubtotal*_invTaxR).toFixed(2));
@@ -1890,8 +1891,13 @@ return(
       {/* ══ PRINT STYLE + OVERLAY ══ */}
       {printMode&&invoiceRow&&(()=>{
         const inv=invoiceRow,sym=shop.symbol,total=Number(inv.amount)||0,isIndia=shopId==="ros-india";
-        const taxRate=(inv.taxRate!==undefined?inv.taxRate:(isIndia?18:20))/100,inclusive=inv.taxInclusive!==false,subtotal=inclusive?parseFloat((total/(1+taxRate)).toFixed(2)):total,taxAmt=parseFloat((subtotal*taxRate).toFixed(2)),grand=parseFloat((subtotal+taxAmt).toFixed(2)),cgst=parseFloat((taxAmt/2).toFixed(2));
-        const rPct=inv.taxRate!==undefined?inv.taxRate:(isIndia?18:20);
+        const rPct=inv.taxRate!==undefined&&inv.taxRate!==null?inv.taxRate:0;
+        const taxRate=rPct/100;
+        const inclusive=taxRate===0?true:inv.taxInclusive!==false;
+        const subtotal=inclusive?parseFloat((total/(1+taxRate)).toFixed(2)):total;
+        const taxAmt=parseFloat((subtotal*taxRate).toFixed(2));
+        const grand=parseFloat((subtotal+taxAmt).toFixed(2));
+        const cgst=parseFloat((taxAmt/2).toFixed(2));
         const tRows=rPct===0?[["Amount (no tax)",total]]:isIndia?[["Subtotal (excl. tax)",subtotal],["CGST ("+(rPct/2)+"%)",cgst],["SGST ("+(rPct/2)+"%)",cgst]]:[["Subtotal (excl. tax)",subtotal],["Tax ("+rPct+"%)",taxAmt]];
         const n=Math.round(total);const ons=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];const tns=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
         let wds="";if(n<20)wds=ons[n];else if(n<100)wds=tns[Math.floor(n/10)]+(n%10?" "+ons[n%10]:"");else if(n<1000)wds=ons[Math.floor(n/100)]+" Hundred"+(n%100?" "+tns[Math.floor((n%100)/10)]+(n%10?" "+ons[n%10]:""):"");else if(n<100000)wds=ons[Math.floor(n/1000)]+" Thousand";else wds=String(n);
@@ -2053,13 +2059,13 @@ return(
         const inv=pdfInv;
         const isInd=shopId==="ros-india";
         const sym=shop.symbol;
-        const tR=((inv.taxRate!==undefined?inv.taxRate:(isInd?18:20))/100);
-        const inc=inv.taxInclusive!==false;
+        const rPct=inv.taxRate!==undefined&&inv.taxRate!==null?inv.taxRate:0;
+        const tR=rPct/100;
+        const inc=tR===0?true:inv.taxInclusive!==false;
         const ent=Number(inv.amount)||0;
         const sub=inc?parseFloat((ent/(1+tR)).toFixed(2)):ent;
         const tax=parseFloat((sub*tR).toFixed(2));
         const grd=parseFloat((sub+tax).toFixed(2));
-        const rPct=inv.taxRate!==undefined?inv.taxRate:(isInd?18:20);
         const cgst=parseFloat((tax/2).toFixed(2));
         return(
           <div style={{position:"fixed",inset:0,zIndex:9999,background:"white",overflowY:"auto"}}>
@@ -2399,8 +2405,10 @@ return(
                   {invoiceRow&&(()=>{
                     const entered  = Number(invoiceRow.amount)||0;
                     const isIndia  = shopId==="ros-india";
-                    const taxRate  = (invoiceRow.taxRate !== undefined ? invoiceRow.taxRate : (isIndia ? 18 : 20)) / 100;
-                    const inclusive= invoiceRow.taxInclusive !== false;
+                    const rateDisplay = (invoiceRow.taxRate!==undefined&&invoiceRow.taxRate!==null ? invoiceRow.taxRate : 0);
+                    const taxRate  = rateDisplay / 100;
+                    // If taxRate is 0, always treat as inclusive (no tax added)
+                    const inclusive= taxRate===0 ? true : invoiceRow.taxInclusive !== false;
                     // subtotal = pre-tax amount; grand = total payable
                     const subtotal = inclusive
                       ? parseFloat((entered / (1 + taxRate)).toFixed(2))
@@ -2409,8 +2417,6 @@ return(
                     const grand    = parseFloat((subtotal + taxAmt).toFixed(2));
                     const cgst     = parseFloat((taxAmt / 2).toFixed(2));
                     const sgst     = parseFloat((taxAmt / 2).toFixed(2));
-                    // Always show full breakdown
-                    const rateDisplay = (invoiceRow.taxRate!==undefined?invoiceRow.taxRate:(isIndia?18:20));
                     const rows = rateDisplay===0
                       ? [["Amount (no tax)", entered]]
                       : isIndia
@@ -2427,10 +2433,10 @@ return(
                       {/* Tax mode badge */}
                       <div style={{marginBottom:8}}>
                         <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:999,
-                          background: inclusive?"#f0fdf4":"#eff6ff",
-                          color:      inclusive?"#15803d":"#1d4ed8",
-                          border:     "1px solid "+(inclusive?"#bbf7d0":"#bfdbfe")}}>
-                          {inclusive?"Tax Inclusive":"Tax Exclusive"} · {invoiceRow.taxRate!==undefined?invoiceRow.taxRate:(isIndia?18:20)}%
+                          background: rateDisplay===0?"#f8fafc":inclusive?"#f0fdf4":"#eff6ff",
+                          color:      rateDisplay===0?"#64748b":inclusive?"#15803d":"#1d4ed8",
+                          border:     "1px solid "+(rateDisplay===0?"#e2e8f0":inclusive?"#bbf7d0":"#bfdbfe")}}>
+                          {rateDisplay===0?"No Tax":(inclusive?"Tax Inclusive":"Tax Exclusive")+" · "+rateDisplay+"%"}
                         </span>
                       </div>
                       {rows.map(([k,v])=>(
