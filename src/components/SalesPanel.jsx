@@ -10,40 +10,77 @@ import { formatDate } from "../utils";
      lifetime → all records
    ───────────────────────────────────────────────────────────────────────── */
 
-/* ── Period helpers ─────────────────────────────────────────────────────── */
-const localISO = d => {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-};
+/* ── localISO: Date → "YYYY-MM-DD" using LOCAL date parts (no UTC shift) ── */
+function localISO(dt) {
+  const y = dt.getFullYear();
+  const mo = String(dt.getMonth() + 1).padStart(2, "0");
+  const d  = String(dt.getDate()).padStart(2, "0");
+  return `${y}-${mo}-${d}`;
+}
+
+/* ── safeParseDate: any date string → local JS Date, never shifts timezone ─
+   Handles: YYYY-MM-DD (Supabase ISO), DD/MM/YYYY, DD-MM-YYYY, DD/MM/YY,
+            DD-MM-YY. Always uses new Date(y,m,d) local constructor. ────── */
+function safeParseDate(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  let mo;
+  // YYYY-MM-DD  (ISO from Supabase / new sale form)
+  mo = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (mo) return new Date(+mo[1], +mo[2] - 1, +mo[3]);
+  // DD/MM/YYYY or DD-MM-YYYY  (UK 4-digit year)
+  mo = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (mo) return new Date(+mo[3], +mo[2] - 1, +mo[1]);
+  // DD/MM/YY or DD-MM-YY  (UK 2-digit year → 2000s)
+  mo = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})$/);
+  if (mo) { const y = +mo[3]; return new Date(y < 50 ? 2000 + y : 1900 + y, +mo[2] - 1, +mo[1]); }
+  return null;
+}
+
+/* ── toSortableDate: any date → "YYYY-MM-DD" for string comparison ──────── */
+function toSortableDate(raw) {
+  const dt = safeParseDate(raw);
+  if (!dt || isNaN(dt.getTime())) return "0000-00-00";
+  return localISO(dt);
+}
+
+/* ── fmtDate: any date → "DD/MM/YY" for display ────────────────────────── */
+function fmtDate(raw) {
+  if (!raw) return "—";
+  const dt = safeParseDate(raw);
+  if (!dt || isNaN(dt.getTime())) return String(raw);
+  const d  = String(dt.getDate()).padStart(2, "0");
+  const mo = String(dt.getMonth() + 1).padStart(2, "0");
+  const y  = String(dt.getFullYear()).slice(-2);
+  return `${d}/${mo}/${y}`;
+}
 
 function getPeriodRange(period) {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
   switch (period) {
-    case "day": {
-      const t = localISO(now);
-      return { start: t, end: t };
-    }
+    case "day":
+      return { start: localISO(now), end: localISO(now) };
     case "week": {
-      const dow = now.getDay();
-      const diff = dow === 0 ? -6 : 1 - dow;
-      const mon = new Date(y, m, d + diff);
-      const sun = new Date(y, m, d + diff + 6);
-      return { start: localISO(mon), end: localISO(sun) };
+      const dow  = now.getDay();                      // 0=Sun … 6=Sat
+      const diff = dow === 0 ? -6 : 1 - dow;          // offset to Monday
+      return {
+        start: localISO(new Date(y, m, d + diff)),
+        end:   localISO(new Date(y, m, d + diff + 6)),
+      };
     }
-    case "month": {
+    case "month":
       return {
         start: localISO(new Date(y, m, 1)),
         end:   localISO(new Date(y, m + 1, 0)),
       };
-    }
-  case "year": {
+    case "year": {
+      // UK Financial Year: 1 April → 31 March
+      // If we're in Jan-Mar, FY started previous calendar year
       const fy = m < 3 ? y - 1 : y;
       return { start: `${fy}-04-01`, end: `${fy + 1}-03-31` };
     }
-    default: return { start: null, end: null };
+    default: return { start: null, end: null };   // lifetime
   }
 }
 
@@ -51,86 +88,15 @@ function filterByPeriod(sales, period) {
   if (period === "lifetime") return sales;
   const { start, end } = getPeriodRange(period);
   if (!start || !end) return sales;
-  // Parse range boundaries as local dates for comparison
-  const startParts = start.split("-"); // "YYYY-MM-DD"
-  const endParts   = end.split("-");
-  const startDate  = new Date(+startParts[0], +startParts[1]-1, +startParts[2]);
-  const endDate    = new Date(+endParts[0],   +endParts[1]-1,   +endParts[2]);
   return sales.filter(s => {
-    const d = safeParseDate(s.date);
-    if (!d || isNaN(d.getTime())) return false;
-    // Compare date-only (strip time) using local midnight
-    const saleDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-    return saleDate >= startDate && saleDate <= endDate;
+    const dt = toSortableDate(s.date);
+    return dt >= start && dt <= end;
   });
 }
 
 /* ── Date / separator helpers ───────────────────────────────────────────── */
-/* ── safeParseDate: parse any date format to JS Date object ────────
-   Handles: yyyy-mm-dd (ISO), dd-mm-yyyy, dd/mm/yyyy, dd-mm-yy
-   ALWAYS uses local Date constructor — never new Date(string) which
-   shifts dates by timezone offset (e.g. BST causes -1 day bug). ── */
-function safeParseDate(raw) {
-  if (!raw) return null;
-  const s = String(raw).trim();
-  let m;
-  // yyyy-mm-dd (ISO from Supabase) — use local constructor, NOT new Date(s)
-  m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
-  // dd/mm/yyyy or dd-mm-yyyy (UK format)
-  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-  if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
-  // dd-mm-yy or dd/mm/yy (2-digit year → 2000s)
-  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})$/);
-  if (m) { const y = +m[3]; return new Date(y < 50 ? 2000 + y : 1900 + y, +m[2] - 1, +m[1]); }
-  return null;
-}
 
 function monthKey(dateStr) {
-  const d = safeParseDate(dateStr);
-  if (!d || isNaN(d.getTime())) return "";
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-function monthLabel(dateStr) {
-  const d = safeParseDate(dateStr);
-  if (!d || isNaN(d.getTime())) return "";
-  return d.toLocaleString("default", { month: "long", year: "numeric" });
-}
-function fyStartYear(dateStr) {
-  const d = safeParseDate(dateStr);
-  if (!d || isNaN(d.getTime())) return null;
-  return d.getMonth() < 3 ? d.getFullYear() - 1 : d.getFullYear();
-}
-function fyLabel(startYear) {
-  if (startYear === null || isNaN(startYear)) return "";
-  return `FY ${startYear}–${String(startYear + 1).slice(-2)}`;
-}
-
-/* ── toSortableDate: normalise any date format to yyyy-mm-dd for sorting ──
-   Uses local date parts to avoid UTC/BST timezone shift. ── */
-function toSortableDate(raw) {
-  const d = safeParseDate(raw);
-  if (!d || isNaN(d.getTime())) return "0000-00-00";
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, "0");
-  const day = String(d.getDate()).padStart(2, "0");
-  return `${y}-${m}-${day}`;
-}
-
-
-
-/* ── fmtDate: any date format → DD/MM/YY for display ─────────────────── */
-function fmtDate(raw) {
-  if (!raw) return "—";
-  const d = safeParseDate(raw);
-  if (!d || isNaN(d.getTime())) return String(raw);
-  const day = String(d.getDate()).padStart(2, "0");
-  const mon = String(d.getMonth() + 1).padStart(2, "0");
-  const yr  = String(d.getFullYear()).slice(-2);
-  return `${day}/${mon}/${yr}`;
-}
-
-function buildRowsWithSeparators(sortedRows) {
   const result = [];
   for (let i = 0; i < sortedRows.length; i++) {
     const curr = sortedRows[i];
@@ -224,24 +190,24 @@ export default function SalesPanel({
   const accentBg = shop?.accentBg || "#ecfdf5";
 
   /* ── Period-filtered sales ───────────────────────────────────────────── */
-  // KPI cards use ALL sales for the period (ignoring search/status filter)
+  // KPI cards: filter from ALL sales (not search/status filtered)
   const periodSales = useMemo(
     () => filterByPeriod(sales, salesPeriod),
     [sales, salesPeriod]
   );
-  // Table rows use filtSales (search + status filtered) then period filtered
+  // Table rows: filter from search+status filtered sales
   const periodFiltSales = useMemo(
     () => filterByPeriod(filtSales, salesPeriod),
     [filtSales, salesPeriod]
   );
 
-  /* ── KPI values — always across full period, ignoring status tab ─────── */
+  /* ── KPI values — across full period, all statuses ───────────────────── */
   const totalRev = periodSales.reduce((a, s) => a + (Number(s.amount) || 0), 0);
   const totalQty = periodSales.reduce((a, s) => a + (Number(s.qty)    || 1), 0);
   const avgOrder = periodSales.length > 0 ? Math.round(totalRev / periodSales.length) : 0;
   const fmtAmt   = v => fmt ? fmt(shopId, v) : `${shop?.symbol || "£"}${Number(v).toLocaleString()}`;
 
-  /* ── Status tab counts (based on period + search filtered) ──────────── */
+  /* ── Status tab counts (from period+search filtered) ─────────────────── */
   const tabCounts = useMemo(() => {
     const c = { ALL: periodFiltSales.length };
     (statusTabs || STATUS_TABS).forEach(t => {
@@ -252,7 +218,7 @@ export default function SalesPanel({
     return c;
   }, [periodFiltSales, statusTabs]);
 
-  /* ── Status-filtered rows for the table ─────────────────────────────── */
+  /* ── Status-filtered rows for table ─────────────────────────────────── */
   const statusFiltered = useMemo(() => {
     if (statusTab === "ALL") return periodFiltSales;
     return periodFiltSales.filter(s => (s.ful || s.status || "PENDING") === statusTab);
