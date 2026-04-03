@@ -11,12 +11,19 @@ import { formatDate } from "../utils";
    ───────────────────────────────────────────────────────────────────────── */
 
 /* ── Period helpers ─────────────────────────────────────────────────────── */
+const localISO = d => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+
 function getPeriodRange(period) {
   const now = new Date();
   const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
   switch (period) {
     case "day": {
-      const t = now.toISOString().slice(0, 10);
+      const t = localISO(now);
       return { start: t, end: t };
     }
     case "week": {
@@ -24,12 +31,12 @@ function getPeriodRange(period) {
       const diff = dow === 0 ? -6 : 1 - dow;
       const mon = new Date(y, m, d + diff);
       const sun = new Date(y, m, d + diff + 6);
-      return { start: mon.toISOString().slice(0, 10), end: sun.toISOString().slice(0, 10) };
+      return { start: localISO(mon), end: localISO(sun) };
     }
     case "month": {
       return {
-        start: new Date(y, m, 1).toISOString().slice(0, 10),
-        end:   new Date(y, m + 1, 0).toISOString().slice(0, 10),
+        start: localISO(new Date(y, m, 1)),
+        end:   localISO(new Date(y, m + 1, 0)),
       };
     }
   case "year": {
@@ -51,20 +58,22 @@ function filterByPeriod(sales, period) {
 
 /* ── Date / separator helpers ───────────────────────────────────────────── */
 /* ── safeParseDate: parse any date format to JS Date object ────────
-   Handles: yyyy-mm-dd (Supabase ISO), dd-mm-yyyy, dd-mm-yy ──────── */
+   Handles: yyyy-mm-dd (ISO), dd-mm-yyyy, dd/mm/yyyy, dd-mm-yy
+   ALWAYS uses local Date constructor — never new Date(string) which
+   shifts dates by timezone offset (e.g. BST causes -1 day bug). ── */
 function safeParseDate(raw) {
   if (!raw) return null;
   const s = String(raw).trim();
-  // yyyy-mm-dd (standard ISO from Supabase)
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(s);
-   const us = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-if (us) return new Date(Number(us[3]), Number(us[1]) - 1, Number(us[2]));
-  // dd-mm-yyyy
-  const dmy4 = s.match(/^(\d{1,2})-(\d{1,2})-(\d{4})$/);
-  if (dmy4) return new Date(`${dmy4[3]}-${dmy4[2].padStart(2,"0")}-${dmy4[1].padStart(2,"0")}`);
-  // dd-mm-yy (2-digit year → 2000s)
-  const dmy2 = s.match(/^(\d{1,2})-(\d{1,2})-(\d{2})$/);
-  if (dmy2) return new Date(`20${dmy2[3]}-${dmy2[2].padStart(2,"0")}-${dmy2[1].padStart(2,"0")}`);
+  let m;
+  // yyyy-mm-dd (ISO from Supabase) — use local constructor, NOT new Date(s)
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (m) return new Date(+m[1], +m[2] - 1, +m[3]);
+  // dd/mm/yyyy or dd-mm-yyyy (UK format)
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (m) return new Date(+m[3], +m[2] - 1, +m[1]);
+  // dd-mm-yy or dd/mm/yy (2-digit year → 2000s)
+  m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})$/);
+  if (m) { const y = +m[3]; return new Date(y < 50 ? 2000 + y : 1900 + y, +m[2] - 1, +m[1]); }
   return null;
 }
 
@@ -89,12 +98,14 @@ function fyLabel(startYear) {
 }
 
 /* ── toSortableDate: normalise any date format to yyyy-mm-dd for sorting ──
-   Stored as ISO (yyyy-mm-dd) from Supabase.
-   Also handles dd-mm-yyyy, dd/mm/yyyy, dd-mm-yy display formats. ── */
+   Uses local date parts to avoid UTC/BST timezone shift. ── */
 function toSortableDate(raw) {
   const d = safeParseDate(raw);
   if (!d || isNaN(d.getTime())) return "0000-00-00";
-  return d.toISOString().slice(0, 10);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
 }
 
 
