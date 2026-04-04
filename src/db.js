@@ -11,27 +11,29 @@ const today = () => new Date().toISOString().split('T')[0];
    ═══════════════════════════════════════════════════════════ */
 export const dbSaveSale = async (shopId, sale) => {
   if (!sb) return;
+  // Only include columns that exist in the Supabase sales table.
+  // Extra fields from the form (saleLines, invEditing, discount, etc.) are intentionally excluded.
   const payload = {
-    id:            sale.id,
+    id:            String(sale.id || ''),
     shop_id:       shopId,
-    customer:      sale.customer || '',
+    customer:      String(sale.customer || ''),
     amount:        Number(sale.amount) || 0,
-    status:        sale.status || '',
-    pay:           sale.pay || '',
-    ful:           sale.ful || '',
-    date:          sale.date || today(),
-    item:          sale.item || '',
-    qty:           sale.qty || '1',
-    contact:       sale.contact || '',
-    phone:         sale.phone || '',
-    address:       sale.address || '',
-    rem:           sale.rem || '',
+    status:        String(sale.status || ''),
+    pay:           String(sale.pay || ''),
+    ful:           String(sale.ful || ''),
+    date:          String(sale.date || today()),
+    item:          String(sale.item || ''),
+    qty:           String(sale.qty || '1'),
+    contact:       String(sale.contact || ''),
+    phone:         String(sale.phone || ''),
+    address:       String(sale.address || ''),
+    rem:           String(sale.rem || ''),
     tax_rate:      sale.taxRate !== undefined && sale.taxRate !== null ? Number(sale.taxRate) : 0,
     tax_inclusive: sale.taxInclusive !== false,
-    invoice_no:    sale.invoiceNo || sale.id,
+    invoice_no:    String(sale.invoiceNo || sale.id || ''),
   };
   const { error } = await sb.from('sales').upsert(payload, { onConflict: 'id,shop_id' });
-  if (error) console.error('❌ Save sale error:', error);
+  if (error) console.error('❌ Save sale error:', error.message || error);
   else console.log('✅ Sale saved:', sale.id);
 };
 
