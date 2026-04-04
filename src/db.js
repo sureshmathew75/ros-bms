@@ -26,9 +26,12 @@ export const dbSaveSale = async (shopId, sale) => {
     phone:         sale.phone || '',
     address:       sale.address || '',
     rem:           sale.rem || '',
-    tax_rate:      sale.taxRate || 20,
+    tax_rate:      sale.taxRate !== undefined && sale.taxRate !== null ? Number(sale.taxRate) : 0,
     tax_inclusive: sale.taxInclusive !== false,
     invoice_no:    sale.invoiceNo || sale.id,
+    discount:      Number(sale.discount) || 0,
+    other_charges: Number(sale.otherCharges) || 0,
+    other_charges_label: sale.otherChargesLabel || '',
   };
   const { error } = await sb.from('sales').upsert(payload, { onConflict: 'id,shop_id' });
   if (error) console.error('❌ Save sale error:', error);
@@ -79,9 +82,12 @@ export const dbLoadSales = async (shopId) => {
     phone:        r.phone || '',
     address:      r.address || '',
     rem:          r.rem || '',
-    taxRate:      r.tax_rate || 20,
+    taxRate:      r.tax_rate !== undefined && r.tax_rate !== null ? Number(r.tax_rate) : 0,
     taxInclusive: r.tax_inclusive !== false,
     invoiceNo:    r.invoice_no || r.id,
+    discount:     Number(r.discount) || 0,
+    otherCharges: Number(r.other_charges) || 0,
+    otherChargesLabel: r.other_charges_label || '',
   }));
   return mapped.sort((a, b) => parseDateMs(b.date) - parseDateMs(a.date));
 };
