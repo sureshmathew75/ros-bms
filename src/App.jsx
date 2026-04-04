@@ -247,6 +247,65 @@ const ShopLogo = ({ shopId, size = "card" }) => {
   );
 };
 
+/* ── Single source of truth for all shop stat figures ─────────────────────
+   Defined BEFORE ShopSelector and ShopDashboard so both can call it.
+────────────────────────────────────────────────────────────────────────── */
+const STAT_FULFILLED=new Set(["FULFILLED","EXCHANGED","REFUNDED","GOOD FEEDBACK","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]);
+const STAT_RETURNS  =new Set(["RTRN REQSTD","RETRN RCVD","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED"]);
+
+/* ── getSaleFY: returns FY start year for a sale using invoice suffix as ground truth ── */
+const getSaleFY=(sale)=>{
+  const id=String(sale.id||"");
+  const m=id.match(/^[A-Z]{2,3}(\d{4})(\d)$/);
+  if(m){
+    const suffix=+m[2];
+    const nowY=new Date().getFullYear();
+    const decade=Math.floor(nowY/10)*10;
+    let endY=decade+suffix;
+    if(endY-nowY>5)endY-=10;
+    if(nowY-endY>5)endY+=10;
+    return endY-1; // FY start year e.g. 2026 for FY26-27
+  }
+  // Fallback: derive from date
+  const dt=parseDate(sale.date);
+  if(!dt)return null;
+  return dt.getMonth()<3?dt.getFullYear()-1:dt.getFullYear();
+};
+
+const calcShopStats=(data=[])=>{
+  const now=new Date();
+  const y=now.getFullYear(),mo=now.getMonth(),d=now.getDate();
+  // Current FY start year: Apr-Dec → this year, Jan-Mar → last year
+  const curFYStart=mo<3?y-1:y;
+
+  // Current FY sales only (using invoice suffix as ground truth)
+  const curFYData=data.filter(s=>getSaleFY(s)===curFYStart);
+
+  const isToday=s=>{const dt=parseDate(s.date);return dt&&dt.getFullYear()===y&&dt.getMonth()===mo&&dt.getDate()===d;};
+  const isMonth=s=>{const dt=parseDate(s.date);return dt&&dt.getFullYear()===y&&dt.getMonth()===mo;};
+
+  const isRefunded=s=>(s.ful||s.status)==="REFUNDED";
+  const rev=(arr)=>arr.filter(s=>!isRefunded(s)).reduce((a,s)=>a+(Number(s.amount)||0),0);
+
+  // Month and today filtered within current FY only
+  const monthArr=curFYData.filter(s=>isMonth(s));
+  const todayArr=curFYData.filter(s=>isToday(s));
+
+  return {
+    todaySales:    rev(todayArr),
+    monthRev:      rev(monthArr),
+    monthOrders:   monthArr.length,
+    monthReturns:  monthArr.filter(s=>STAT_RETURNS.has(s.ful||s.status)).length,
+    monthRefunds:  monthArr.filter(s=>isRefunded(s)).reduce((a,s)=>a+(Number(s.refundAmt)||0),0),
+    // Pending: ALL time, all FY — unfulfilled is unfulfilled regardless of year
+    pendingOrders: data.filter(s=>!STAT_FULFILLED.has(s.ful||s.status)).length,
+    totalRev:      rev(data),
+    orders:        data.length,
+    fySales:       rev(curFYData),
+    fyOrders:      curFYData.length,
+  };
+};
+
 /* ════════════════════════════════════════════════════
    SHOP SELECTOR
 ════════════════════════════════════════════════════ */
@@ -257,27 +316,8 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
   // shopStats computed directly from salesData prop
 
-  // Calculate stats directly from salesData prop (always up to date)
-  const nowD=new Date();
-  const curYear=nowD.getFullYear();
-  const curMonth=nowD.getMonth();
   const shopStats={};
-  const RETURN_STATUSES=new Set(["RTRN REQSTD","RETRN RCVD","REFUNDED","RETURN REQUESTED","RETURN RECEIVED"]);
-  const FULFILLED_STATUSES=new Set(["FULFILLED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED","GOOD FEEDBACK"]);
-  SHOPS.forEach(shop=>{
-    const data=salesData[shop.id]||[];
-    const isThisMonth=str=>{const dt=parseDate(str);return dt&&dt.getFullYear()===curYear&&dt.getMonth()===curMonth;};
-    const isToday=str=>{const dt=parseDate(str);return dt&&dt.getFullYear()===curYear&&dt.getMonth()===curMonth&&dt.getDate()===nowD.getDate();};
-    const todayRev=data.filter(s=>isToday(s.date)).reduce((a,s)=>a+(s.amount||0),0);
-    const totalRev=data.reduce((a,s)=>a+(s.amount||0),0);
-    const pending=data.filter(s=>!FULFILLED_STATUSES.has(s.ful||s.status)).length;
-    const orders=data.length;
-    const monthSales=data.filter(s=>isThisMonth(s.date));
-    const monthRev=monthSales.reduce((a,s)=>a+(s.amount||0),0);
-    const monthOrders=monthSales.length;
-    const monthReturns=monthSales.filter(s=>RETURN_STATUSES.has(s.ful||s.status)).length;
-    shopStats[shop.id]={todaySales:todayRev,totalRev,pendingOrders:pending,orders,monthRev,monthOrders,monthReturns};
-  });
+  SHOPS.forEach(shop=>{shopStats[shop.id]=calcShopStats(salesData[shop.id]||[]);});
 
   useEffect(()=>{
     const h=()=>setIsMobile(window.innerWidth<768);
@@ -678,13 +718,10 @@ const parseDate=str=>{
   if(!str) return null;
   const s=String(str).trim();
   let m;
-  // YYYY-MM-DD (ISO — most common from Supabase)
   m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
   if(m) return new Date(+m[1],+m[2]-1,+m[3]);
-  // DD/MM/YYYY or DD-MM-YYYY (UK 4-digit year, 1-2 digit day/month)
   m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
   if(m) return new Date(+m[3],+m[2]-1,+m[1]);
-  // DD/MM/YY or DD-MM-YY (UK 2-digit year → 2000s)
   m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})$/);
   if(m){const y=+m[3];return new Date(y<50?2000+y:1900+y,+m[2]-1,+m[1]);}
   return null;
@@ -1273,26 +1310,13 @@ return(
           {tab==="dashboard"&&(()=>{
             const now=new Date();
             const todayStr=now.toISOString().slice(0,10);
-            const curMonth=now.getMonth();
-            const curYear=now.getFullYear();
-            // Financial Year: 1 April → 31 March
-            const fyStart=now.getMonth()<3
-              ? new Date(curYear-1,3,1) : new Date(curYear,3,1);
-
-            const isSameDay=d=>{const dt=parseDate(d);return dt&&dt.getFullYear()===curYear&&dt.getMonth()===curMonth&&dt.getDate()===now.getDate();};
-            const isSameMonth=d=>{const dt=parseDate(d);return dt&&dt.getMonth()===curMonth&&dt.getFullYear()===curYear;};
-            const isInFY=d=>{const dt=parseDate(d);return dt&&dt>=fyStart;};
-            const DASH_FULFILLED=new Set(["FULFILLED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED","GOOD FEEDBACK"]);
-
-            const todaySales   =sales.filter(s=>isSameDay(s.date)).reduce((a,s)=>a+(s.amount||0),0);
-            const monthSalesArr=sales.filter(s=>isSameMonth(s.date));
-            const monthSales   =monthSalesArr.reduce((a,s)=>a+(s.amount||0),0);
-            const fySales      =sales.filter(s=>isInFY(s.date)).reduce((a,s)=>a+(s.amount||0),0);
-            const pendingOrders=sales.filter(s=>!DASH_FULFILLED.has(s.ful||s.status)).length;
-            const monthReturns =monthSalesArr.filter(s=>["RTRN REQSTD","RETRN RCVD","EXCHANGED","RETURN REQUESTED","RETURN RECEIVED"].includes(s.ful||s.status)).length;
-            const monthRefunds =monthSalesArr.filter(s=>(s.ful||s.status)==="REFUNDED").reduce((a,s)=>a+(s.refundAmt||0),0);
-            const monthCount=monthSalesArr.length;
-            const fyCount=sales.filter(s=>isInFY(s.date)).length;
+            const st=calcShopStats(sales);
+            const todaySales=st.todaySales, monthSales=st.monthRev, monthCount=st.monthOrders;
+            const fySales=st.fySales, fyCount=st.fyOrders;
+            const pendingOrders=st.pendingOrders;
+            const monthReturns=st.monthReturns;
+            const monthRefunds=st.monthRefunds;
+            const fyStart=now.getMonth()<3?new Date(now.getFullYear()-1,3,1):new Date(now.getFullYear(),3,1);
             const kpis=[
               {
                 icon:"🛒", label:"Today's Sales", sub:"Live · "+todayStr,
