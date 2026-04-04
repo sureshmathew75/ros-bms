@@ -258,41 +258,24 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
   // shopStats computed directly from salesData prop
 
   // Calculate stats directly from salesData prop (always up to date)
-  const today=new Date().toISOString().split('T')[0];
   const nowD=new Date();
   const curYear=nowD.getFullYear();
   const curMonth=nowD.getMonth();
   const shopStats={};
   const RETURN_STATUSES=new Set(["RTRN REQSTD","RETRN RCVD","REFUNDED","RETURN REQUESTED","RETURN RECEIVED"]);
+  const FULFILLED_STATUSES=new Set(["FULFILLED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED","GOOD FEEDBACK"]);
   SHOPS.forEach(shop=>{
     const data=salesData[shop.id]||[];
-    // Parse date safely: handles YYYY-MM-DD, DD-MM-YYYY, DD-MM-YY (no timezone shift)
-    const parseLocalDate=str=>{
-      if(!str)return null;
-      const s=String(str).trim();
-      const iso=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-      if(iso)return{y:parseInt(iso[1],10),m:parseInt(iso[2],10)-1,d:parseInt(iso[3],10)};
-      // DD/MM/YYYY or DD-MM-YYYY
-      const dmy=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-      if(dmy)return{y:parseInt(dmy[3],10),m:parseInt(dmy[2],10)-1,d:parseInt(dmy[1],10)};
-      // DD/MM/YY or DD-MM-YY
-      const dmyy=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})$/);
-      if(dmyy){const y=parseInt(dmyy[3],10);return{y:y<50?2000+y:1900+y,m:parseInt(dmyy[2],10)-1,d:parseInt(dmyy[1],10)};}
-      return null;
-    };
-    const isThisMonth=str=>{const p=parseLocalDate(str);return p&&p.y===curYear&&p.m===curMonth;};
-    const isToday=str=>{const p=parseLocalDate(str);return p&&p.y===curYear&&p.m===curMonth&&p.d===nowD.getDate();};
+    const isThisMonth=str=>{const dt=parseDate(str);return dt&&dt.getFullYear()===curYear&&dt.getMonth()===curMonth;};
+    const isToday=str=>{const dt=parseDate(str);return dt&&dt.getFullYear()===curYear&&dt.getMonth()===curMonth&&dt.getDate()===nowD.getDate();};
     const todayRev=data.filter(s=>isToday(s.date)).reduce((a,s)=>a+(s.amount||0),0);
     const totalRev=data.reduce((a,s)=>a+(s.amount||0),0);
-    const FULFILLED_STATUSES=new Set(["FULFILLED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]);
     const pending=data.filter(s=>!FULFILLED_STATUSES.has(s.ful||s.status)).length;
     const orders=data.length;
-    // Month revenue — sales in the current calendar month
-    const monthRev=data.filter(s=>isThisMonth(s.date)).reduce((a,s)=>a+(s.amount||0),0);
-    // Current month orders
-    const monthOrders=data.filter(s=>isThisMonth(s.date)).length;
-    // Current month returns
-    const monthReturns=data.filter(s=>isThisMonth(s.date)&&RETURN_STATUSES.has(s.ful||s.status)).length;
+    const monthSales=data.filter(s=>isThisMonth(s.date));
+    const monthRev=monthSales.reduce((a,s)=>a+(s.amount||0),0);
+    const monthOrders=monthSales.length;
+    const monthReturns=monthSales.filter(s=>RETURN_STATUSES.has(s.ful||s.status)).length;
     shopStats[shop.id]={todaySales:todayRev,totalRev,pendingOrders:pending,orders,monthRev,monthOrders,monthReturns};
   });
 
@@ -1299,15 +1282,16 @@ return(
             const isSameDay=d=>{const dt=parseDate(d);return dt&&dt.getFullYear()===curYear&&dt.getMonth()===curMonth&&dt.getDate()===now.getDate();};
             const isSameMonth=d=>{const dt=parseDate(d);return dt&&dt.getMonth()===curMonth&&dt.getFullYear()===curYear;};
             const isInFY=d=>{const dt=parseDate(d);return dt&&dt>=fyStart;};
+            const DASH_FULFILLED=new Set(["FULFILLED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED","GOOD FEEDBACK"]);
 
             const todaySales   =sales.filter(s=>isSameDay(s.date)).reduce((a,s)=>a+(s.amount||0),0);
-            const monthSales   =sales.filter(s=>isSameMonth(s.date)).reduce((a,s)=>a+(s.amount||0),0);
+            const monthSalesArr=sales.filter(s=>isSameMonth(s.date));
+            const monthSales   =monthSalesArr.reduce((a,s)=>a+(s.amount||0),0);
             const fySales      =sales.filter(s=>isInFY(s.date)).reduce((a,s)=>a+(s.amount||0),0);
-            const pendingOrders=sales.filter(s=>s.pay==="Pending"||s.ful==="New"||s.ful==="Processing").length;
-            const monthReturns =sales.filter(s=>isSameMonth(s.date)&&(s.ful==="RTRN REQSTD"||s.ful==="RETRN RCVD"||s.ful==="EXCHANGED")).length;
-            const monthRefunds =sales.filter(s=>isSameMonth(s.date)&&(s.ful==="REFUNDED")).reduce((a,s)=>a+(s.refundAmt||0),0);
-
-            const monthCount=sales.filter(s=>isSameMonth(s.date)).length;
+            const pendingOrders=sales.filter(s=>!DASH_FULFILLED.has(s.ful||s.status)).length;
+            const monthReturns =monthSalesArr.filter(s=>["RTRN REQSTD","RETRN RCVD","EXCHANGED","RETURN REQUESTED","RETURN RECEIVED"].includes(s.ful||s.status)).length;
+            const monthRefunds =monthSalesArr.filter(s=>(s.ful||s.status)==="REFUNDED").reduce((a,s)=>a+(s.refundAmt||0),0);
+            const monthCount=monthSalesArr.length;
             const fyCount=sales.filter(s=>isInFY(s.date)).length;
             const kpis=[
               {
