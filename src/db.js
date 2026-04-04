@@ -12,7 +12,6 @@ const today = () => new Date().toISOString().split('T')[0];
 export const dbSaveSale = async (shopId, sale) => {
   if (!sb) return;
   // Only include columns that exist in the Supabase sales table.
-  // Extra fields from the form (saleLines, invEditing, discount, etc.) are intentionally excluded.
   const payload = {
     id:            String(sale.id || ''),
     shop_id:       shopId,
@@ -32,9 +31,21 @@ export const dbSaveSale = async (shopId, sale) => {
     tax_inclusive: sale.taxInclusive !== false,
     invoice_no:    String(sale.invoiceNo || sale.id || ''),
   };
-  const { error } = await sb.from('sales').upsert(payload, { onConflict: 'id,shop_id' });
-  if (error) console.error('❌ Save sale error:', error.message || error);
-  else console.log('✅ Sale saved:', sale.id);
+
+  // Try update first (for existing records), then insert (for new ones)
+  const { data: existing } = await sb.from('sales')
+    .select('id').eq('id', payload.id).eq('shop_id', shopId).maybeSingle();
+
+  if (existing) {
+    const { error } = await sb.from('sales').update(payload)
+      .eq('id', payload.id).eq('shop_id', shopId);
+    if (error) console.error('❌ Update sale error:', JSON.stringify(error));
+    else console.log('✅ Sale updated:', sale.id);
+  } else {
+    const { error } = await sb.from('sales').insert(payload);
+    if (error) console.error('❌ Insert sale error:', JSON.stringify(error));
+    else console.log('✅ Sale inserted:', sale.id);
+  }
 };
 
 /* Parse any date string to a comparable timestamp for sorting */
