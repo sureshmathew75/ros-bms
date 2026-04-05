@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef, useEffect as useEff } from "react";
 import { formatDate } from "../utils";
 /* ─────────────────────────────────────────────────────────────────────────
    SALES PANEL
@@ -296,6 +296,11 @@ export default function SalesPanel({
   const [hovCard, setHovCard] = useState(null);
   const [hovTab,  setHovTab]  = useState(null);
   const [reloading, setReloading] = useState(false);
+  /* Month picker state */
+  const [pickedMonth, setPickedMonth] = useState(null);   // "YYYY-MM" or null
+  const [pickerOpen,  setPickerOpen]  = useState(false);
+  const [pickerYear,  setPickerYear]  = useState(() => new Date().getFullYear());
+  const pickerRef = useRef(null);
   /* Use prop-driven status tab if provided, else fall back to local state */
   const [statusTabLocal, setStatusTabLocal] = useState("ALL");
   const statusTab    = statusFilter    ?? statusTabLocal;
@@ -304,16 +309,36 @@ export default function SalesPanel({
   const accent   = shop?.accent   || "#059669";
   const accentBg = shop?.accentBg || "#ecfdf5";
 
+  /* ── Close picker when clicking outside ─────────────────────────────── */
+  useEff(() => {
+    if (!pickerOpen) return;
+    const handler = e => { if (pickerRef.current && !pickerRef.current.contains(e.target)) setPickerOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [pickerOpen]);
+
+  /* ── Effective period: pickedMonth overrides salesPeriod ─────────────── */
+  const effectivePeriod = pickedMonth ? "picked" : salesPeriod;
+
+  /* ── Filter for picked month (YYYY-MM) ───────────────────────────────── */
+  const filterByPickedMonth = (arr, ym) => {
+    if (!ym) return arr;
+    const [py, pm] = ym.split("-").map(Number);
+    const start = `${py}-${String(pm).padStart(2,"0")}-01`;
+    const end   = localISO(new Date(py, pm, 0)); // last day of month
+    return arr.filter(s => { const dt = toSortableDate(s.date); return dt >= start && dt <= end; });
+  };
+
   /* ── Period-filtered sales ───────────────────────────────────────────── */
   // KPI cards: filter from ALL sales (not search/status filtered)
   const periodSales = useMemo(
-    () => filterByPeriod(sales, salesPeriod),
-    [sales, salesPeriod]
+    () => pickedMonth ? filterByPickedMonth(sales, pickedMonth) : filterByPeriod(sales, salesPeriod),
+    [sales, salesPeriod, pickedMonth]
   );
   // Table rows: filter from search+status filtered sales
   const periodFiltSales = useMemo(
-    () => filterByPeriod(filtSales, salesPeriod),
-    [filtSales, salesPeriod]
+    () => pickedMonth ? filterByPickedMonth(filtSales, pickedMonth) : filterByPeriod(filtSales, salesPeriod),
+    [filtSales, salesPeriod, pickedMonth]
   );
 
   /* ── Build per-FY breakdown from periodSales ─────────────────────────── */
@@ -384,10 +409,17 @@ export default function SalesPanel({
   );
 
   /* ── Period range label ─────────────────────────────────────────────── */
-  const { start, end } = getPeriodRange(salesPeriod);
-  const rangeLabel = !start ? "All records"
-    : start === end ? fmtDate(start)
-    : `${fmtDate(start)} → ${fmtDate(end)}`;
+  const rangeLabel = (() => {
+    if (pickedMonth) {
+      const [py, pm] = pickedMonth.split("-").map(Number);
+      const label = new Date(py, pm - 1, 1).toLocaleString("default", { month: "long", year: "numeric" });
+      return `${fmtDate(pickedMonth + "-01")} → ${fmtDate(localISO(new Date(py, pm, 0)))}`;
+    }
+    const { start, end } = getPeriodRange(salesPeriod);
+    return !start ? "All records"
+      : start === end ? fmtDate(start)
+      : `${fmtDate(start)} → ${fmtDate(end)}`;
+  })();
 
   const PERIODS = isStaff
     ? ["day", "week", "month"]
@@ -423,12 +455,12 @@ export default function SalesPanel({
           </p>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-          {/* Period selector */}
+          {/* Period selector pills */}
           <div style={{ display: "flex", background: "#f1f5f9", borderRadius: 10, padding: 3, gap: 2 }}>
             {PERIODS.map(p => {
-              const isActive = salesPeriod === p;
+              const isActive = !pickedMonth && salesPeriod === p;
               return (
-                <button key={p} onClick={() => setSalesPeriod(p)} title={PERIOD_META[p].desc}
+                <button key={p} onClick={() => { setSalesPeriod(p); setPickedMonth(null); setPickerOpen(false); }} title={PERIOD_META[p].desc}
                   style={{
                     padding: "5px 13px", borderRadius: 8, border: "none",
                     background: isActive ? accent : "transparent",
@@ -441,6 +473,90 @@ export default function SalesPanel({
                 </button>
               );
             })}
+          </div>
+
+          {/* ── Month Picker ── */}
+          <div ref={pickerRef} style={{ position: "relative" }}>
+            {/* Trigger button */}
+            <button
+              onClick={() => setPickerOpen(o => !o)}
+              title="Pick a specific month"
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "5px 12px", borderRadius: 8, border: "none",
+                background: pickedMonth ? accent : "#f1f5f9",
+                color: pickedMonth ? "white" : "#64748b",
+                fontWeight: 700, fontSize: 12,
+                cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
+                boxShadow: pickedMonth ? `0 2px 8px ${accent}44` : "none",
+                whiteSpace: "nowrap",
+              }}>
+              📅 {pickedMonth
+                ? new Date(+pickedMonth.split("-")[0], +pickedMonth.split("-")[1] - 1, 1)
+                    .toLocaleString("default", { month: "short", year: "numeric" })
+                : "Pick Month"}
+              {pickedMonth && (
+                <span
+                  onClick={e => { e.stopPropagation(); setPickedMonth(null); setPickerOpen(false); }}
+                  style={{ marginLeft: 2, opacity: 0.8, fontWeight: 900, fontSize: 13, lineHeight: 1 }}
+                  title="Clear">×</span>
+              )}
+            </button>
+
+            {/* Dropdown picker */}
+            {pickerOpen && (
+              <div style={{
+                position: "absolute", top: "calc(100% + 8px)", right: 0,
+                background: "white", borderRadius: 14,
+                border: "1px solid #e2e8f0",
+                boxShadow: "0 12px 40px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.08)",
+                padding: 16, zIndex: 200, minWidth: 260,
+              }}>
+                {/* Year navigation */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                  <button onClick={() => setPickerYear(y => y - 1)}
+                    style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
+                  <span style={{ fontWeight: 800, fontSize: 15, color: "#0f172a" }}>{pickerYear}</span>
+                  <button onClick={() => setPickerYear(y => y + 1)}
+                    style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
+                </div>
+                {/* Month grid — 4 columns */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+                  {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((mon, idx) => {
+                    const key = `${pickerYear}-${String(idx + 1).padStart(2, "0")}`;
+                    const isSelected = pickedMonth === key;
+                    const isCurrentMonth = key === localISO(new Date()).slice(0, 7);
+                    return (
+                      <button key={key}
+                        onClick={() => { setPickedMonth(key); setPickerOpen(false); }}
+                        style={{
+                          padding: "8px 4px", borderRadius: 8, border: isCurrentMonth ? `1px solid ${accent}` : "1px solid transparent",
+                          background: isSelected ? accent : isCurrentMonth ? `${accent}12` : "#f8fafc",
+                          color: isSelected ? "white" : isCurrentMonth ? accent : "#374151",
+                          fontWeight: isSelected || isCurrentMonth ? 700 : 500,
+                          fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+                          transition: "all 0.12s",
+                        }}
+                        onMouseEnter={e => { if (!isSelected) { e.currentTarget.style.background = `${accent}20`; e.currentTarget.style.color = accent; }}}
+                        onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.background = isCurrentMonth ? `${accent}12` : "#f8fafc"; e.currentTarget.style.color = isCurrentMonth ? accent : "#374151"; }}}>
+                        {mon}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Quick jump to current month */}
+                <button
+                  onClick={() => { const now = new Date(); setPickerYear(now.getFullYear()); setPickedMonth(localISO(now).slice(0, 7)); setPickerOpen(false); }}
+                  style={{
+                    marginTop: 10, width: "100%", padding: "7px 0", borderRadius: 8,
+                    border: `1px solid ${accent}33`, background: `${accent}10`,
+                    color: accent, fontWeight: 700, fontSize: 12,
+                    cursor: "pointer", fontFamily: "inherit",
+                  }}>
+                  ↩ This Month
+                </button>
+              </div>
+            )}
           </div>
           <button onClick={() => setModal("import-sales")}
             style={{
