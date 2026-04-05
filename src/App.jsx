@@ -2960,7 +2960,31 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
           const ful=statusRaw||(shopId==="ros-india"?"ORDER NOT PLACED":"PENDING");
           imported.push({
             id, customer,
-            date:        get(row,idxDate)||new Date().toISOString().slice(0,10),
+            date: (()=>{
+              const raw = get(row,idxDate);
+              if (!raw) return new Date().toISOString().slice(0,10);
+              // Parse whatever format Excel/CSV gives (DD/MM/YY, MM/DD/YYYY, YYYY-MM-DD etc)
+              // and normalise to ISO YYYY-MM-DD for consistent storage
+              const dt = parseDate(raw);
+              if (dt && !isNaN(dt.getTime())) {
+                const y = dt.getFullYear();
+                const m = String(dt.getMonth()+1).padStart(2,"0");
+                const d = String(dt.getDate()).padStart(2,"0");
+                return `${y}-${m}-${d}`;
+              }
+              // Fallback: if parseDate fails, try to detect and fix MM/DD/YYYY (US Excel export)
+              const us = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+              if (us) {
+                // Ambiguous: if first number > 12 it must be a day (DD/MM/YYYY)
+                // if second number > 12 it must be a day (MM/DD/YYYY)
+                const a = +us[1], b = +us[2], yr = +us[3];
+                if (a > 12) return `${yr}-${String(b).padStart(2,"0")}-${String(a).padStart(2,"0")}`;
+                if (b > 12) return `${yr}-${String(a).padStart(2,"0")}-${String(b).padStart(2,"0")}`;
+                // Both ≤ 12 — assume DD/MM/YYYY (UK)
+                return `${yr}-${String(b).padStart(2,"0")}-${String(a).padStart(2,"0")}`;
+              }
+              return raw; // last resort — keep as-is
+            })(),
             addressee:   get(row,idxAddressee),
             address:     get(row,idxAddress),
             contact:     get(row,idxContact),
