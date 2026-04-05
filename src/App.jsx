@@ -955,6 +955,7 @@ return(
         .sb-nav-btn:hover .sb-tooltip{opacity:1;}
         @media(max-width:768px){
           .mob-hide{display:none!important;}
+          .mob-show{display:inline!important;}
           .mob-topbar{height:54px!important;padding:0 12px!important;}
           .mob-main{padding:10px 10px 80px!important;}
           .mob-quick-grid{grid-template-columns:repeat(3,1fr)!important;gap:8px!important;}
@@ -1263,10 +1264,9 @@ return(
               <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search…"
                 style={{border:"none",background:"transparent",outline:"none",fontSize:13,color:"#374151",width:140,fontFamily:"inherit"}}/>
             </div>
-            {/* All Shops button — hidden for staff and on mobile */}
+            {/* All Shops button — hidden for staff only, icon-only on mobile */}
             {user?.role!=="staff"&&(
               <button onClick={onBack}
-                className="mob-hide"
                 style={{display:"flex",alignItems:"center",gap:7,
                   padding:"7px 14px",borderRadius:10,
                   border:"1px solid "+shop.accent+"44",
@@ -1275,9 +1275,10 @@ return(
                   cursor:"pointer",fontFamily:"inherit",
                   transition:"all 0.15s",whiteSpace:"nowrap",
                 }}
+                title="Back to All Shops"
                 onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.color="white";e.currentTarget.style.borderColor=shop.accent;}}
                 onMouseLeave={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accentText;e.currentTarget.style.borderColor=shop.accent+"44";}}>
-                🏪 All Shops
+                🏪<span className="mob-hide"> All Shops</span>
               </button>
             )}
             {/* Notification bell */}
