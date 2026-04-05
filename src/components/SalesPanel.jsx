@@ -324,9 +324,13 @@ export default function SalesPanel({
   const filterByPickedMonth = (arr, ym) => {
     if (!ym) return arr;
     const [py, pm] = ym.split("-").map(Number);
-    const start = `${py}-${String(pm).padStart(2,"0")}-01`;
-    const end   = localISO(new Date(py, pm, 0)); // last day of month
-    return arr.filter(s => { const dt = toSortableDate(s.date); return dt >= start && dt <= end; });
+    // pm is 1-indexed (1=Jan … 12=Dec)
+    // Compare using local Date objects to avoid any string format ambiguity
+    return arr.filter(s => {
+      const dt = safeParseDate(s.date);
+      if (!dt || isNaN(dt.getTime())) return false;
+      return dt.getFullYear() === py && (dt.getMonth() + 1) === pm;
+    });
   };
 
   /* ── Period-filtered sales ───────────────────────────────────────────── */
@@ -412,8 +416,9 @@ export default function SalesPanel({
   const rangeLabel = (() => {
     if (pickedMonth) {
       const [py, pm] = pickedMonth.split("-").map(Number);
-      const label = new Date(py, pm - 1, 1).toLocaleString("default", { month: "long", year: "numeric" });
-      return `${fmtDate(pickedMonth + "-01")} → ${fmtDate(localISO(new Date(py, pm, 0)))}`;
+      const firstDay = new Date(py, pm - 1, 1);
+      const lastDay  = new Date(py, pm, 0);
+      return `${localISO(firstDay).split("-").reverse().slice(0,2).join("/")}/${String(py).slice(-2)} → ${localISO(lastDay).split("-").reverse().slice(0,2).join("/")}/${String(py).slice(-2)}`;
     }
     const { start, end } = getPeriodRange(salesPeriod);
     return !start ? "All records"
