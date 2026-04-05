@@ -31,9 +31,12 @@ function safeParseDate(raw) {
   // DD/MM/YYYY or DD-MM-YYYY  (UK 4-digit year)
   mo = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
   if (mo) return new Date(+mo[3], +mo[2] - 1, +mo[1]);
-  // DD/MM/YY or DD-MM-YY  (UK 2-digit year → 2000s)
-  mo = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})$/);
+  // DD/MM/YY with SLASH — manual UK entry format (DD first)
+  mo = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
   if (mo) { const y = +mo[3]; return new Date(y < 50 ? 2000 + y : 1900 + y, +mo[2] - 1, +mo[1]); }
+  // MM-DD-YY with HYPHEN — imported spreadsheet format (MM first)
+  mo = s.match(/^(\d{1,2})-(\d{1,2})-(\d{2})$/);
+  if (mo) { const y = +mo[3]; return new Date(y < 50 ? 2000 + y : 1900 + y, +mo[1] - 1, +mo[2]); }
   return null;
 }
 
@@ -328,8 +331,6 @@ export default function SalesPanel({
   const filterByPickedMonth = (arr, ym) => {
     if (!ym) return arr;
     const [py, pm] = ym.split("-").map(Number);
-    // pm is 1-indexed (1=Jan … 12=Dec)
-    // Compare using local Date objects to avoid any string format ambiguity
     return arr.filter(s => {
       const dt = safeParseDate(s.date);
       if (!dt || isNaN(dt.getTime())) return false;
