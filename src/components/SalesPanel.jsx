@@ -339,7 +339,7 @@ export default function SalesPanel({
       });
   }, [periodSales]);
 
-  const fmtAmt = v => fmt ? fmt(shopId, v) : `${shop?.symbol || "£"}${Number(v).toLocaleString()}`;
+  const fmtAmt = v => fmt ? fmt(shopId, v) : `${shop?.symbol || "£"}${(Number(v)||0).toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
   const totalRev = periodSales.reduce((a, s) => a + (Number(s.amount) || 0), 0);
 
   /* ── Status tab counts (from period+search filtered) ─────────────────── */
@@ -840,7 +840,7 @@ export default function SalesPanel({
                     {/* Amount */}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <span style={{ fontWeight: 800, fontSize: 13, color: "#0f172a" }}>
-                        {fmt ? fmt(shopId, s.amount) : `${shop?.symbol || "£"}${Number(s.amount).toLocaleString()}`}
+                        {fmt ? fmt(shopId, s.amount) : `${shop?.symbol || "£"}${(Number(s.amount)||0).toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}`}
                       </span>
                     </td>
                     {/* Payment */}
