@@ -299,7 +299,11 @@ export default function SalesPanel({
   /* Month picker state */
   const [pickedMonth, setPickedMonth] = useState(null);   // "YYYY-MM" or null
   const [pickerOpen,  setPickerOpen]  = useState(false);
-  const [pickerYear,  setPickerYear]  = useState(() => new Date().getFullYear());
+  const [pickerYear,  setPickerYear]  = useState(() => {
+    // Default to FY start year — most historical sales live there
+    const now = new Date();
+    return now.getMonth() < 3 ? now.getFullYear() - 1 : now.getFullYear();
+  });
   const pickerRef = useRef(null);
   /* Use prop-driven status tab if provided, else fall back to local state */
   const [statusTabLocal, setStatusTabLocal] = useState("ALL");
@@ -333,7 +337,27 @@ export default function SalesPanel({
     });
   };
 
-  /* ── Period-filtered sales ───────────────────────────────────────────── */
+  /* ── Set of YYYY-MM strings that have at least one sale (for picker highlights) */
+  const salesMonthSet = useMemo(() => {
+    const s = new Set();
+    sales.forEach(sale => {
+      const dt = safeParseDate(sale.date);
+      if (dt && !isNaN(dt.getTime())) {
+        s.add(`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}`);
+      }
+    });
+    return s;
+  }, [sales]);
+
+  /* ── Years that have sales (for the picker year nav) */
+  const salesYears = useMemo(() => {
+    const ys = new Set();
+    sales.forEach(sale => {
+      const dt = safeParseDate(sale.date);
+      if (dt && !isNaN(dt.getTime())) ys.add(dt.getFullYear());
+    });
+    return [...ys].sort((a,b) => b - a); // descending
+  }, [sales]);
   // KPI cards: filter from ALL sales (not search/status filtered)
   const periodSales = useMemo(
     () => pickedMonth ? filterByPickedMonth(sales, pickedMonth) : filterByPeriod(sales, salesPeriod),
@@ -521,7 +545,21 @@ export default function SalesPanel({
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
                   <button onClick={() => setPickerYear(y => y - 1)}
                     style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
-                  <span style={{ fontWeight: 800, fontSize: 15, color: "#0f172a" }}>{pickerYear}</span>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                    <span style={{ fontWeight: 800, fontSize: 15, color: "#0f172a" }}>{pickerYear}</span>
+                    {/* Dots for years that have sales */}
+                    <div style={{ display: "flex", gap: 4 }}>
+                      {salesYears.map(yr => (
+                        <button key={yr} onClick={() => setPickerYear(yr)}
+                          title={`Go to ${yr}`}
+                          style={{
+                            width: 8, height: 8, borderRadius: "50%", border: "none", padding: 0,
+                            cursor: "pointer",
+                            background: yr === pickerYear ? accent : `${accent}44`,
+                          }} />
+                      ))}
+                    </div>
+                  </div>
                   <button onClick={() => setPickerYear(y => y + 1)}
                     style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
                 </div>
@@ -531,20 +569,26 @@ export default function SalesPanel({
                     const key = `${pickerYear}-${String(idx + 1).padStart(2, "0")}`;
                     const isSelected = pickedMonth === key;
                     const isCurrentMonth = key === localISO(new Date()).slice(0, 7);
+                    const hasSales = salesMonthSet.has(key);
                     return (
                       <button key={key}
                         onClick={() => { setPickedMonth(key); setPickerOpen(false); }}
                         style={{
-                          padding: "8px 4px", borderRadius: 8, border: isCurrentMonth ? `1px solid ${accent}` : "1px solid transparent",
-                          background: isSelected ? accent : isCurrentMonth ? `${accent}12` : "#f8fafc",
-                          color: isSelected ? "white" : isCurrentMonth ? accent : "#374151",
-                          fontWeight: isSelected || isCurrentMonth ? 700 : 500,
-                          fontSize: 12, cursor: "pointer", fontFamily: "inherit",
-                          transition: "all 0.12s",
+                          padding: "8px 4px", borderRadius: 8,
+                          border: isSelected ? `2px solid ${accent}` : isCurrentMonth ? `1px solid ${accent}` : "1px solid transparent",
+                          background: isSelected ? accent : isCurrentMonth ? `${accent}12` : hasSales ? `${accent}08` : "#f8fafc",
+                          color: isSelected ? "white" : isCurrentMonth ? accent : hasSales ? "#374151" : "#cbd5e1",
+                          fontWeight: isSelected || isCurrentMonth ? 700 : hasSales ? 600 : 400,
+                          fontSize: 12, cursor: hasSales ? "pointer" : "default",
+                          fontFamily: "inherit", transition: "all 0.12s",
+                          position: "relative",
                         }}
-                        onMouseEnter={e => { if (!isSelected) { e.currentTarget.style.background = `${accent}20`; e.currentTarget.style.color = accent; }}}
-                        onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.background = isCurrentMonth ? `${accent}12` : "#f8fafc"; e.currentTarget.style.color = isCurrentMonth ? accent : "#374151"; }}}>
+                        onMouseEnter={e => { if (!isSelected && hasSales) { e.currentTarget.style.background = `${accent}20`; e.currentTarget.style.color = accent; }}}
+                        onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.background = isSelected ? accent : isCurrentMonth ? `${accent}12` : hasSales ? `${accent}08` : "#f8fafc"; e.currentTarget.style.color = isSelected ? "white" : isCurrentMonth ? accent : hasSales ? "#374151" : "#cbd5e1"; }}}>
                         {mon}
+                        {hasSales && !isSelected && (
+                          <span style={{ position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%)", width: 4, height: 4, borderRadius: "50%", background: accent, display: "block" }} />
+                        )}
                       </button>
                     );
                   })}
