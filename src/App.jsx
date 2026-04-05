@@ -20,7 +20,7 @@ import {
   STAGE_ACCENT,
   STAGE_THEME
 } from "./constants";
-import { formatDate } from "./utils";
+import { formatCurrency, formatDate, formatNumber } from "./utils";
 import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
@@ -132,11 +132,10 @@ const PIE_D=[];
 /* ─── helpers ───────────────────────────────────────── */
 const fmt=(sid,n)=>{
   const s=SHOPS.find(x=>x.id===sid);
-  const num=Number(n)||0;
-  if(!s) return num.toFixed(2);
+  if(!s)return n;
   return s.currency === "INR"
-    ? "₹" + num.toLocaleString("en-IN", {minimumFractionDigits:2, maximumFractionDigits:2})
-    : "£" + num.toLocaleString("en-GB", {minimumFractionDigits:2, maximumFractionDigits:2});
+  ? formatCurrency(n)
+  : "£" + Number(n).toLocaleString("en-GB");
 };
 
 const BSTYLE={
@@ -340,7 +339,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
         name:c.name,
         sub:c.phone,
         badge:c.tag,
-        right:c.spend.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2}),
+        right:c.spend.toLocaleString(),
         rightSub:"total spend",
       })),
     },
@@ -491,8 +490,8 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
                       {staffLocked
                         ? <p style={{margin:0,fontSize:18,fontWeight:700,color:"rgba(255,255,255,0.30)",letterSpacing:2,fontFamily:"'Arimo',Arial,sans-serif"}}>●●●</p>
                         : <p style={{margin:0,fontSize:26,fontWeight:700,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif"}}>{shop.id==="ros-india"
-                            ? "₹"+(Number(shopStats[shop.id]?.todaySales||0)||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2})
-                            : "£"+(Number(shopStats[shop.id]?.todaySales||0)||0).toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+                            ? formatCurrency(shopStats[shop.id]?.todaySales||0)
+                            : "£"+formatNumber(shopStats[shop.id]?.todaySales||0)}</p>
                       }
                     </div>
                     {/* Divider */}
@@ -503,8 +502,8 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
                       {staffLocked
                         ? <p style={{margin:0,fontSize:18,fontWeight:700,color:"rgba(255,255,255,0.30)",letterSpacing:2,fontFamily:"'Arimo',Arial,sans-serif"}}>●●●</p>
                         : <p style={{margin:0,fontSize:26,fontWeight:700,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif"}}>{shop.id==="ros-india"
-                            ? "₹"+(Number(shopStats[shop.id]?.monthRev||0)||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2})
-                            : "£"+(Number(shopStats[shop.id]?.monthRev||0)||0).toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+                            ? formatCurrency(shopStats[shop.id]?.monthRev||0)
+                            : "£"+formatNumber(shopStats[shop.id]?.monthRev||0)}</p>
                       }
                     </div>
                   </div>
@@ -583,25 +582,25 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
             },
             {
               icon:"🇬🇧", label:"Sales Volume UK", sub:"Selections + Hairlines",
-              display:"£"+(Number(ukLiveRev)||0).toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2}), suffix:"lifetime",
+              display:"£"+formatNumber(ukLiveRev), suffix:"lifetime",
               grad:"linear-gradient(135deg,#0e7490 0%,#06b6d4 50%,#67e8f9 100%)",
               glow:"rgba(6,182,212,0.35)", shine:"rgba(255,255,255,0.15)",
             },
             {
               icon:"🇮🇳", label:"Sales Volume India", sub:"ROS India",
-              display:"₹"+(Number(inLiveRev)||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2}), suffix:"lifetime",
+              display:formatCurrency(inLiveRev), suffix:"lifetime",
               grad:"linear-gradient(135deg,#9d174d 0%,#e95597 50%,#f9a8d4 100%)",
               glow:"rgba(233,85,151,0.35)", shine:"rgba(255,255,255,0.15)",
             },
             {
               icon:"📦", label:"Purchases UK", sub:"Selections + Hairlines",
-              display:"£"+(Number(sumTot(ukPurch)||0).toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})), suffix:"lifetime",
+              display:"£"+formatNumber(sumTot(ukPurch)), suffix:"lifetime",
               grad:"linear-gradient(135deg,#5b21b6 0%,#7c3aed 50%,#a78bfa 100%)",
               glow:"rgba(124,58,237,0.35)", shine:"rgba(255,255,255,0.15)",
             },
             {
               icon:"🛒", label:"Purchases India", sub:"ROS India",
-              display:"₹"+(Number(sumTot(inPurch)||0).toLocaleString("en-IN",{minimumFractionDigits:2,maximumFractionDigits:2})), suffix:"lifetime",
+              display:formatCurrency(sumTot(inPurch)), suffix:"lifetime",
               grad:"linear-gradient(135deg,#92400e 0%,#d97706 50%,#fcd34d 100%)",
               glow:"rgba(217,119,6,0.35)", shine:"rgba(255,255,255,0.15)",
             },
@@ -2059,21 +2058,21 @@ return(
                             <td style={{padding:"12px",color:"#64748b",fontSize:12}}>{idx+1}</td>
                             <td style={{padding:"12px",fontWeight:700}}>{line.name||"Item "+(idx+1)}</td>
                             <td style={{padding:"12px",textAlign:"right",fontWeight:700}}>{q}</td>
-                            <td style={{padding:"12px",textAlign:"right",fontWeight:700}}>{sym}{p.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-                            <td style={{padding:"12px",textAlign:"right",fontWeight:800,color:shop.accent}}>{sym}{lineTotal.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                            <td style={{padding:"12px",textAlign:"right",fontWeight:700}}>{sym}{p.toLocaleString()}</td>
+                            <td style={{padding:"12px",textAlign:"right",fontWeight:800,color:shop.accent}}>{sym}{lineTotal.toLocaleString()}</td>
                           </tr>
                         );
                       })}
                       {pdfDiscountAmt>0&&(
                         <tr style={{borderBottom:"1px solid #f1f5f9"}}>
                           <td colSpan={4} style={{padding:"8px 12px",textAlign:"right",fontSize:12,color:"#dc2626",fontWeight:600}}>Discount</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:"#dc2626"}}>− {sym}{pdfDiscountAmt.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:"#dc2626"}}>− {sym}{pdfDiscountAmt.toLocaleString()}</td>
                         </tr>
                       )}
                       {pdfOtherChargesAmt>0&&(
                         <tr style={{borderBottom:"1px solid #f1f5f9"}}>
                           <td colSpan={4} style={{padding:"8px 12px",textAlign:"right",fontSize:12,color:"#64748b",fontWeight:600}}>{inv.otherChargesLabel||"Other Charges"}</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:"#374151"}}>+ {sym}{pdfOtherChargesAmt.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                          <td style={{padding:"8px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:"#374151"}}>+ {sym}{pdfOtherChargesAmt.toLocaleString()}</td>
                         </tr>
                       )}
                     </tbody>
@@ -2099,17 +2098,17 @@ return(
                   {tRows.map(([k,v])=>(
                     <div key={k} style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
                       <span style={{fontSize:13,color:"#64748b"}}>{k}</span>
-                      <span style={{fontSize:13,fontWeight:600}}>{v===0?sym+"0.00":sym+Number(v).toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                      <span style={{fontSize:13,fontWeight:600}}>{v===0?sym+"0.00":sym+Number(v).toLocaleString()}</span>
                     </div>
                   ))}
                   <div style={{borderTop:"2px solid #0f172a",paddingTop:10,marginTop:4}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
                       <span style={{fontSize:15,fontWeight:900}}>GRAND TOTAL</span>
-                      <span style={{fontSize:17,fontWeight:900,color:shop.accent}}>{sym}{(grand||total).toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                      <span style={{fontSize:17,fontWeight:900,color:shop.accent}}>{sym}{(grand||total).toLocaleString()}</span>
                     </div>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
                       <span style={{fontSize:12,color:"#64748b"}}>Amount Paid:</span>
-                      <span style={{fontSize:12,fontWeight:700,color:"#15803d"}}>{sym}{(grand||total).toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                      <span style={{fontSize:12,fontWeight:700,color:"#15803d"}}>{sym}{(grand||total).toLocaleString()}</span>
                     </div>
                     <div style={{display:"flex",justifyContent:"space-between"}}>
                       <span style={{fontSize:12,color:"#64748b"}}>Balance Due:</span>
@@ -2240,8 +2239,8 @@ return(
                     <td style={{padding:"12px 14px",fontSize:13,color:"#64748b"}}>1</td>
                     <td style={{padding:"12px 14px",fontWeight:700}}>{inv.item||"Product / Service"}</td>
                     <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700}}>{inv.qty||1}</td>
-                    <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700}}>{sym}{sub.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-                    <td style={{padding:"12px 14px",textAlign:"right",fontWeight:800,color:shop.accent}}>{sym}{grd.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                    <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700}}>{sym}{sub.toLocaleString()}</td>
+                    <td style={{padding:"12px 14px",textAlign:"right",fontWeight:800,color:shop.accent}}>{sym}{grd.toLocaleString()}</td>
                   </tr>
                 </tbody>
               </table>
@@ -2249,26 +2248,26 @@ return(
               <div style={{display:"flex",justifyContent:"flex-end",marginBottom:24}}>
                 <div style={{width:300}}>
                   {rPct===0
-                    ? <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}><span style={{color:"#64748b"}}>Amount (no tax)</span><span style={{fontWeight:600}}>{sym}{sub.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>
+                    ? <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}><span style={{color:"#64748b"}}>Amount (no tax)</span><span style={{fontWeight:600}}>{sym}{sub.toLocaleString()}</span></div>
                     : isInd
                       ? <>
-                          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}><span style={{color:"#64748b"}}>Subtotal (excl. tax)</span><span style={{fontWeight:600}}>{sym}{sub.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>
-                          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}><span style={{color:"#64748b"}}>CGST ({rPct/2}%)</span><span style={{fontWeight:600}}>{sym}{cgst.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>
-                          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}><span style={{color:"#64748b"}}>SGST ({rPct/2}%)</span><span style={{fontWeight:600}}>{sym}{cgst.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>
+                          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}><span style={{color:"#64748b"}}>Subtotal (excl. tax)</span><span style={{fontWeight:600}}>{sym}{sub.toLocaleString()}</span></div>
+                          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}><span style={{color:"#64748b"}}>CGST ({rPct/2}%)</span><span style={{fontWeight:600}}>{sym}{cgst.toLocaleString()}</span></div>
+                          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}><span style={{color:"#64748b"}}>SGST ({rPct/2}%)</span><span style={{fontWeight:600}}>{sym}{cgst.toLocaleString()}</span></div>
                         </>
                       : <>
-                          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}><span style={{color:"#64748b"}}>Subtotal (excl. tax)</span><span style={{fontWeight:600}}>{sym}{sub.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>
-                          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}><span style={{color:"#64748b"}}>Tax ({rPct}%)</span><span style={{fontWeight:600}}>{sym}{tax.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>
+                          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}><span style={{color:"#64748b"}}>Subtotal (excl. tax)</span><span style={{fontWeight:600}}>{sym}{sub.toLocaleString()}</span></div>
+                          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}><span style={{color:"#64748b"}}>Tax ({rPct}%)</span><span style={{fontWeight:600}}>{sym}{tax.toLocaleString()}</span></div>
                         </>
                   }
                   <div style={{borderTop:"2px solid #0f172a",paddingTop:10,marginTop:4}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
                       <span style={{fontSize:16,fontWeight:900}}>GRAND TOTAL</span>
-                      <span style={{fontSize:18,fontWeight:900,color:shop.accent}}>{sym}{grd.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                      <span style={{fontSize:18,fontWeight:900,color:shop.accent}}>{sym}{grd.toLocaleString()}</span>
                     </div>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
                       <span style={{fontSize:11,color:"#64748b"}}>Amount Paid</span>
-                      <span style={{fontSize:11,fontWeight:700,color:"#15803d"}}>{sym}{grd.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                      <span style={{fontSize:11,fontWeight:700,color:"#15803d"}}>{sym}{grd.toLocaleString()}</span>
                     </div>
                     <div style={{display:"flex",justifyContent:"space-between"}}>
                       <span style={{fontSize:11,color:"#64748b"}}>Balance Due</span>
@@ -2960,31 +2959,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
           const ful=statusRaw||(shopId==="ros-india"?"ORDER NOT PLACED":"PENDING");
           imported.push({
             id, customer,
-            date: (()=>{
-              const raw = get(row,idxDate);
-              if (!raw) return new Date().toISOString().slice(0,10);
-              // Parse whatever format Excel/CSV gives (DD/MM/YY, MM/DD/YYYY, YYYY-MM-DD etc)
-              // and normalise to ISO YYYY-MM-DD for consistent storage
-              const dt = parseDate(raw);
-              if (dt && !isNaN(dt.getTime())) {
-                const y = dt.getFullYear();
-                const m = String(dt.getMonth()+1).padStart(2,"0");
-                const d = String(dt.getDate()).padStart(2,"0");
-                return `${y}-${m}-${d}`;
-              }
-              // Fallback: if parseDate fails, try to detect and fix MM/DD/YYYY (US Excel export)
-              const us = raw.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-              if (us) {
-                // Ambiguous: if first number > 12 it must be a day (DD/MM/YYYY)
-                // if second number > 12 it must be a day (MM/DD/YYYY)
-                const a = +us[1], b = +us[2], yr = +us[3];
-                if (a > 12) return `${yr}-${String(b).padStart(2,"0")}-${String(a).padStart(2,"0")}`;
-                if (b > 12) return `${yr}-${String(a).padStart(2,"0")}-${String(b).padStart(2,"0")}`;
-                // Both ≤ 12 — assume DD/MM/YYYY (UK)
-                return `${yr}-${String(b).padStart(2,"0")}-${String(a).padStart(2,"0")}`;
-              }
-              return raw; // last resort — keep as-is
-            })(),
+            date:        get(row,idxDate)||new Date().toISOString().slice(0,10),
             addressee:   get(row,idxAddressee),
             address:     get(row,idxAddress),
             contact:     get(row,idxContact),
@@ -3394,6 +3369,10 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
           <label style={lbl}>Customer Name</label>
           <select value={form.customer} onChange={e=>set("customer",e.target.value)} style={inp}>
             <option value="">Select customer…</option>
+            {/* If the sale's customer is not in the CRM (e.g. imported), show them as a selectable option */}
+            {form.customer && !customers.some(c=>c.name===form.customer) && (
+              <option value={form.customer}>{form.customer} (imported)</option>
+            )}
             {customers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
           </select>
         </div>
@@ -3422,8 +3401,8 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
                 <tr key={i} style={{borderTop:"1px solid #f1f5f9"}}>
                   <td style={{padding:"6px 8px",fontSize:12,fontWeight:600,color:"#1e293b"}}>{l.name}</td>
                   <td style={{padding:"6px 8px",fontSize:12,textAlign:"right",color:"#374151"}}>{l.qty}</td>
-                  <td style={{padding:"6px 8px",fontSize:12,textAlign:"right",color:"#374151"}}>{shop.symbol}{parseFloat(l.price||0).toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
-                  <td style={{padding:"6px 8px",fontSize:12,textAlign:"right",fontWeight:700,color:shop.accent}}>{shop.symbol}{parseFloat(((parseFloat(l.qty)||1)*(parseFloat(l.price)||0)).toFixed(2)).toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</td>
+                  <td style={{padding:"6px 8px",fontSize:12,textAlign:"right",color:"#374151"}}>{shop.symbol}{parseFloat(l.price||0).toLocaleString()}</td>
+                  <td style={{padding:"6px 8px",fontSize:12,textAlign:"right",fontWeight:700,color:shop.accent}}>{shop.symbol}{parseFloat(((parseFloat(l.qty)||1)*(parseFloat(l.price)||0)).toFixed(2)).toLocaleString()}</td>
                 </tr>
               ))}
             </tbody>
@@ -3499,15 +3478,15 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
                   <p style={{margin:"0 0 6px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>Tax Breakdown</p>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
                     <span style={{fontSize:11,color:"#64748b"}}>Subtotal</span>
-                    <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>{shop.symbol}{subtotal.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                    <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>{shop.symbol}{subtotal.toLocaleString()}</span>
                   </div>
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
                     <span style={{fontSize:11,color:"#64748b"}}>{(form.taxRate||0)===0?"No Tax":("Tax "+form.taxRate+"%")}</span>
-                    <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>{shop.symbol}{tax.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                    <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>{shop.symbol}{tax.toLocaleString()}</span>
                   </div>
                   <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid #e2e8f0",paddingTop:4,marginTop:4}}>
                     <span style={{fontSize:12,fontWeight:800,color:"#0f172a"}}>Grand Total</span>
-                    <span style={{fontSize:12,fontWeight:900,color:shop.accent}}>{shop.symbol}{grand.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+                    <span style={{fontSize:12,fontWeight:900,color:shop.accent}}>{shop.symbol}{grand.toLocaleString()}</span>
                   </div>
                 </div>
               );
@@ -4381,11 +4360,11 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
 
       <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:12,padding:"14px 16px",marginBottom:16}}>
         <p style={{margin:"0 0 10px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>Order Summary</p>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#64748b"}}>Items Subtotal</span><span style={{fontSize:13,fontWeight:600,color:"#374151"}}>{shop.symbol}{itemsSubtotal.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>
-        {discountAmt>0&&(<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#dc2626"}}>Discount</span><span style={{fontSize:13,fontWeight:600,color:"#dc2626"}}>− {shop.symbol}{discountAmt.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>)}
-        {otherChargesAmt>0&&(<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#64748b"}}>{form.otherChargesLabel||"Other Charges"}</span><span style={{fontSize:13,fontWeight:600,color:"#374151"}}>+ {shop.symbol}{otherChargesAmt.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>)}
-        {form.taxRate>0&&(<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#64748b"}}>GST / Tax ({form.taxRate}%)</span><span style={{fontSize:13,fontWeight:600,color:"#374151"}}>+ {shop.symbol}{gstAmt.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>)}
-        <div style={{display:"flex",justifyContent:"space-between",borderTop:"2px solid #0f172a",paddingTop:10,marginTop:8}}><span style={{fontSize:15,fontWeight:900,color:"#0f172a"}}>Grand Total</span><span style={{fontSize:17,fontWeight:900,color:shop.accent}}>{shop.symbol}{grandTotal.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</span></div>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#64748b"}}>Items Subtotal</span><span style={{fontSize:13,fontWeight:600,color:"#374151"}}>{shop.symbol}{itemsSubtotal.toLocaleString()}</span></div>
+        {discountAmt>0&&(<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#dc2626"}}>Discount</span><span style={{fontSize:13,fontWeight:600,color:"#dc2626"}}>− {shop.symbol}{discountAmt.toLocaleString()}</span></div>)}
+        {otherChargesAmt>0&&(<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#64748b"}}>{form.otherChargesLabel||"Other Charges"}</span><span style={{fontSize:13,fontWeight:600,color:"#374151"}}>+ {shop.symbol}{otherChargesAmt.toLocaleString()}</span></div>)}
+        {form.taxRate>0&&(<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#64748b"}}>GST / Tax ({form.taxRate}%)</span><span style={{fontSize:13,fontWeight:600,color:"#374151"}}>+ {shop.symbol}{gstAmt.toLocaleString()}</span></div>)}
+        <div style={{display:"flex",justifyContent:"space-between",borderTop:"2px solid #0f172a",paddingTop:10,marginTop:8}}><span style={{fontSize:15,fontWeight:900,color:"#0f172a"}}>Grand Total</span><span style={{fontSize:17,fontWeight:900,color:shop.accent}}>{shop.symbol}{grandTotal.toLocaleString()}</span></div>
       </div>
 
       <Divider title="Payment"/>
@@ -4407,7 +4386,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
         <button onClick={handleSave} style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
-          💾 Save Sale {grandTotal>0?"("+shop.symbol+grandTotal.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})+")":""}
+          💾 Save Sale {grandTotal>0?"("+shop.symbol+grandTotal.toLocaleString()+")":""}
         </button>
         <button onClick={onClose} style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
       </div>
@@ -4592,7 +4571,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                   {l:"WhatsApp",      v:viewCust.whatsapp||"—",      ic:"💬"},
                   {l:"Email",         v:viewCust.email||"—",         ic:"📧"},
                   {l:"Purchases",     v:viewCust.purchases||0,        ic:"🛒"},
-                  {l:"Total Spend",   v:(viewCust.spend>=10000?"₹":"£")+(viewCust.spend||0).toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2}), ic:"💰"},
+                  {l:"Total Spend",   v:(viewCust.spend>=10000?"₹":"£")+(viewCust.spend||0).toLocaleString(), ic:"💰"},
                   {l:"Last Order",    v:viewCust.last||"—",           ic:"📅"},
                   {l:"Addressee",     v:viewCust.addressee||"—",      ic:"🏷"},
                 ].map((f,i)=>(
@@ -4792,7 +4771,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                   </td>
                   <td style={{padding:"13px 16px"}}>
                     <span style={{fontFamily:"DM Mono,monospace",fontSize:13,fontWeight:700,color:"#0f172a"}}>
-                      {c.spend>=10000?("₹"+c.spend.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})):("£"+c.spend.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2}))}
+                      {c.spend>=10000?("₹"+c.spend.toLocaleString()):("£"+c.spend.toLocaleString())}
                     </span>
                   </td>
                   <td style={{padding:"13px 16px",fontSize:12,color:"#64748b"}}>{c.last}</td>
