@@ -11,15 +11,15 @@ const today = () => new Date().toISOString().split('T')[0];
    ═══════════════════════════════════════════════════════════ */
 export const dbSaveSale = async (shopId, sale) => {
   if (!sb) return;
-  // Only include columns that exist in the Supabase sales table.
-  const payload = {
+
+  // Core columns — guaranteed to exist in every Supabase sales table
+  const core = {
     id:            String(sale.id || ''),
     shop_id:       shopId,
     customer:      String(sale.customer || ''),
     amount:        Number(sale.amount) || 0,
-    status:        String(sale.status || ''),
+    status:        String(sale.ful || sale.status || ''),
     pay:           String(sale.pay || ''),
-    ful:           String(sale.ful || ''),
     date:          String(sale.date || today()),
     item:          String(sale.item || ''),
     qty:           String(sale.qty || '1'),
@@ -32,19 +32,45 @@ export const dbSaveSale = async (shopId, sale) => {
     invoice_no:    String(sale.invoiceNo || sale.id || ''),
   };
 
-  // Try update first (for existing records), then insert (for new ones)
-  const { data: existing } = await sb.from('sales')
-    .select('id').eq('id', payload.id).eq('shop_id', shopId).maybeSingle();
+  // Extended columns — added later; sent only if table supports them
+  const extended = {
+    ful:                 String(sale.ful || sale.status || ''),
+    sent_date:           String(sale.sentDate || ''),
+    refund_amt:          Number(sale.refundAmt) || 0,
+    addressee:           String(sale.addressee || ''),
+    discount:            Number(sale.discount) || 0,
+    other_charges:       Number(sale.otherCharges) || 0,
+    other_charges_label: String(sale.otherChargesLabel || 'Other Charges'),
+    re:                  String(sale.re || ''),
+    tag:                 String(sale.tag || ''),
+  };
 
-  if (existing) {
-    const { error } = await sb.from('sales').update(payload)
-      .eq('id', payload.id).eq('shop_id', shopId);
-    if (error) console.error('❌ Update sale error:', JSON.stringify(error));
-    else console.log('✅ Sale updated:', sale.id);
+  const payload = { ...core, ...extended };
+
+  // Check if record already exists
+  const { data: existing } = await sb.from('sales')
+    .select('id').eq('id', core.id).eq('shop_id', shopId).maybeSingle();
+
+  const upsert = async (data) => {
+    if (existing) {
+      return sb.from('sales').update(data).eq('id', core.id).eq('shop_id', shopId);
+    } else {
+      return sb.from('sales').insert(data);
+    }
+  };
+
+  // Try full payload first, fall back to core-only if extended columns missing
+  let { error } = await upsert(payload);
+  if (error) {
+    console.warn('⚠️ Full payload failed, retrying with core columns only:', error.message);
+    ({ error } = await upsert(core));
+  }
+
+  if (error) {
+    console.error('❌ Sale save error:', JSON.stringify(error));
+    throw error;
   } else {
-    const { error } = await sb.from('sales').insert(payload);
-    if (error) console.error('❌ Insert sale error:', JSON.stringify(error));
-    else console.log('✅ Sale inserted:', sale.id);
+    console.log('✅ Sale saved:', sale.id);
   }
 };
 
@@ -84,7 +110,6 @@ export const dbLoadSales = async (shopId) => {
     amount:       Number(r.amount) || 0,
     status:       r.status || '',
     pay:          r.pay || '',
-    ful:          r.ful || '',
     date:         r.date || '',
     item:         r.item || '',
     qty:          r.qty || '1',
@@ -95,6 +120,15 @@ export const dbLoadSales = async (shopId) => {
     taxRate:      r.tax_rate !== undefined && r.tax_rate !== null ? Number(r.tax_rate) : 0,
     taxInclusive: r.tax_inclusive !== false,
     invoiceNo:    r.invoice_no || r.id,
+    ful:          r.ful || r.status || '',
+    sentDate:     r.sent_date || '',
+    refundAmt:    Number(r.refund_amt) || 0,
+    addressee:    r.addressee || '',
+    discount:     Number(r.discount) || 0,
+    otherCharges: Number(r.other_charges) || 0,
+    otherChargesLabel: r.other_charges_label || 'Other Charges',
+    re:           r.re || '',
+    tag:          r.tag || '',
   }));
   return mapped.sort((a, b) => parseDateMs(b.date) - parseDateMs(a.date));
 };
