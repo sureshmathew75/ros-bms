@@ -19,7 +19,6 @@ export const dbSaveSale = async (shopId, sale) => {
     amount:        Number(sale.amount) || 0,
     status:        String(sale.status || ''),
     pay:           String(sale.pay || ''),
-    ful:           String(sale.ful || ''),
     date:          String(sale.date || today()),
     item:          String(sale.item || ''),
     qty:           String(sale.qty || '1'),
@@ -30,6 +29,15 @@ export const dbSaveSale = async (shopId, sale) => {
     tax_rate:      sale.taxRate !== undefined && sale.taxRate !== null ? Number(sale.taxRate) : 0,
     tax_inclusive: sale.taxInclusive !== false,
     invoice_no:    String(sale.invoiceNo || sale.id || ''),
+    ful:           String(sale.ful || sale.status || ''),
+    sent_date:     String(sale.sentDate || ''),
+    refund_amt:    Number(sale.refundAmt) || 0,
+    addressee:     String(sale.addressee || ''),
+    discount:      Number(sale.discount) || 0,
+    other_charges: Number(sale.otherCharges) || 0,
+    other_charges_label: String(sale.otherChargesLabel || 'Other Charges'),
+    re:            String(sale.re || ''),
+    tag:           String(sale.tag || ''),
   };
 
   // Try update first (for existing records), then insert (for new ones)
@@ -95,6 +103,15 @@ export const dbLoadSales = async (shopId) => {
     taxRate:      r.tax_rate !== undefined && r.tax_rate !== null ? Number(r.tax_rate) : 0,
     taxInclusive: r.tax_inclusive !== false,
     invoiceNo:    r.invoice_no || r.id,
+    ful:          r.ful || r.status || '',
+    sentDate:     r.sent_date || '',
+    refundAmt:    Number(r.refund_amt) || 0,
+    addressee:    r.addressee || '',
+    discount:     Number(r.discount) || 0,
+    otherCharges: Number(r.other_charges) || 0,
+    otherChargesLabel: r.other_charges_label || 'Other Charges',
+    re:           r.re || '',
+    tag:          r.tag || '',
   }));
   return mapped.sort((a, b) => parseDateMs(b.date) - parseDateMs(a.date));
 };

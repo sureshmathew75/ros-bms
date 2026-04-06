@@ -21,7 +21,7 @@ import {
   STAGE_THEME
 } from "./constants";
 import { formatCurrency, formatDate, formatNumber } from "./utils";
-import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer } from "./db";
+import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -764,6 +764,16 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [pdfInv,setPdfInv]=useState(null);
   const [statusFilter,setStatusFilter]=useState("ALL");
   const invoicePrintRef=useRef(null);
+  const [purchData,setPurchData]=useState([]);
+  const [expData,setExpData]=useState([]);
+  const [logData,setLogData]=useState([]);
+
+  // Load purchases, expenses, logistics from Supabase on mount
+  useEffect(()=>{
+    dbLoadPurchases(shopId).then(d=>{if(d)setPurchData(d);}).catch(()=>{});
+    dbLoadExpenses(shopId).then(d=>{if(d)setExpData(d);}).catch(()=>{});
+    dbLoadLogistics(shopId).then(d=>{if(d)setLogData(d);}).catch(()=>{});
+  },[shopId]);
 
   useEffect(()=>{
     const h=()=>setIsMobile(window.innerWidth<768);
@@ -784,9 +794,9 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
 
   const shop=SHOPS.find(s=>s.id===shopId);
   const sales=salesData[shopId]||[];
-  const purch=PURCH_SEED[shopId]||[];
-  const exps=EXP_SEED[shopId]||[];
-  const logs=LOG_SEED[shopId]||[];
+  const purch=purchData||[];
+  const exps=expData||[];
+  const logs=logData||[];
   const lowStk=PRODUCTS.filter(p=>p.stock<=p.min);
   const totRev=sales.filter(s=>s.pay==="Paid").reduce((a,s)=>a+s.amount,0);
   const pendAmt=sales.filter(s=>s.pay==="Pending").reduce((a,s)=>a+s.amount,0);
