@@ -870,7 +870,13 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings");
 
   const filtSales=sales.filter(s=>{
-    const matchSearch=s.id.toLowerCase().includes(search.toLowerCase())||s.customer.toLowerCase().includes(search.toLowerCase());
+    const q=search.toLowerCase();
+    const matchSearch=!q||
+      (s.id||"").toLowerCase().includes(q)||
+      (s.customer||"").toLowerCase().includes(q)||
+      (s.tag||"").toLowerCase().includes(q)||
+      (s.rem||"").toLowerCase().includes(q)||
+      (s.item||"").toLowerCase().includes(q);
     const matchStatus=statusFilter==="ALL"||(s.ful||s.status||"")===statusFilter;
     return matchSearch&&matchStatus;
   });
@@ -2807,7 +2813,7 @@ return(
                 <div style={{border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 16px"}}>
                   <p style={{margin:"0 0 8px",fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>Notes</p>
                   <p style={{margin:0,fontSize:13,color:"#64748b",fontStyle:selRow.rem?"normal":"italic"}}>{selRow.rem||"—"}</p>
-                  {selRow.tag&&<div style={{marginTop:10}}><Badge l={selRow.tag}/></div>}
+                  {selRow.tag&&<div style={{marginTop:10,display:"flex",flexWrap:"wrap",gap:4}}>{parseTags(selRow.tag).map(t=><Badge key={t} l={t}/>)}</div>}
                 </div>
                 {/* totals */}
                 <div style={{border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 16px"}}>
@@ -3359,6 +3365,57 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
 /* ══════════════════════════════════════════════════════
    NEW PURCHASE FORM
 ══════════════════════════════════════════════════════ */
+/* ── TagPicker: multi-tag chip selector used in EditSaleForm & NewSaleForm ── */
+const SALE_TAG_PRESETS=["Normal Sale","Budget Friendly","Bulk Sale","Clearance Sale","Discounted Sale","Exchange Sale","Gift","Wholesale","Return Replacement","Sample Sale"];
+const parseTags=str=>str?str.split(",").map(t=>t.trim()).filter(Boolean):[];
+const joinTags=arr=>arr.join(", ");
+const TagPicker=({value,onChange,accent,accentBg,inp,fo,bl,lbl})=>{
+  const tags=parseTags(value);
+  const [custom,setCustom]=React.useState("");
+  const toggle=(tag)=>{
+    const next=tags.includes(tag)?tags.filter(t=>t!==tag):[...tags,tag];
+    onChange(joinTags(next));
+  };
+  const addCustom=()=>{
+    const t=custom.trim();
+    if(!t)return;
+    if(!tags.includes(t)) onChange(joinTags([...tags,t]));
+    setCustom("");
+  };
+  return(
+    <div style={{marginBottom:12}}>
+      <label style={lbl}>Sale Type / Tags</label>
+      <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
+        {SALE_TAG_PRESETS.map(tag=>{
+          const active=tags.includes(tag);
+          return(
+            <button key={tag} type="button" onClick={()=>toggle(tag)} style={{
+              padding:"4px 12px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",
+              border:active?"2px solid "+accent:"1px solid #e2e8f0",
+              background:active?accent:"white",
+              color:active?"white":"#475569",
+              transition:"all 0.12s",
+            }}>{tag}</button>
+          );
+        })}
+      </div>
+      {tags.filter(t=>!SALE_TAG_PRESETS.includes(t)).map(t=>(
+        <span key={t} style={{display:"inline-flex",alignItems:"center",gap:4,padding:"3px 10px",borderRadius:999,fontSize:11,fontWeight:700,background:accentBg,color:accent,border:"1px solid "+accent+"44",marginRight:4,marginBottom:4}}>
+          {t}
+          <span onClick={()=>toggle(t)} style={{cursor:"pointer",fontWeight:900,fontSize:13,lineHeight:1,opacity:0.7}}>×</span>
+        </span>
+      ))}
+      <div style={{display:"flex",gap:6,marginTop:4}}>
+        <input value={custom} onChange={e=>setCustom(e.target.value)}
+          onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addCustom();}}}
+          placeholder="Add custom tag… (press Enter)" style={{...inp,flex:1,fontSize:12}}
+          onFocus={fo} onBlur={bl}/>
+        <button type="button" onClick={addCustom} style={{padding:"0 14px",borderRadius:9,border:"none",background:accent,color:"white",fontWeight:700,fontSize:12,cursor:"pointer"}}>+ Add</button>
+      </div>
+    </div>
+  );
+};
+
 const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
   const [form,setForm]=useState({
     id:          sale.id||"",
@@ -3601,16 +3658,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
         </>
       )}
 
-      <div style={{marginBottom:12}}>
-        <label style={lbl}>Sale Type / Tag</label>
-        <select value={["Normal Sale","Budget Friendly","Bulk Sale","Clearance Sale","Discounted Sale","Exchange Sale","Gift","Wholesale","Return Replacement","Sample Sale"].includes(form.tag)||form.tag===""?form.tag:"Custom…"} onChange={e=>{if(e.target.value==="Custom…")set("tag","");else set("tag",e.target.value);}} style={inp}>
-          <option value="">Select sale type…</option>
-          {["Normal Sale","Budget Friendly","Bulk Sale","Clearance Sale","Discounted Sale","Exchange Sale","Gift","Wholesale","Return Replacement","Sample Sale","Custom…"].map(o=><option key={o}>{o}</option>)}
-        </select>
-        {(form.tag!==""&&!["Normal Sale","Budget Friendly","Bulk Sale","Clearance Sale","Discounted Sale","Exchange Sale","Gift","Wholesale","Return Replacement","Sample Sale"].includes(form.tag))&&(
-          <input value={form.tag} onChange={e=>set("tag",e.target.value)} placeholder="Enter custom tag…" style={{...inp,marginTop:6}} onFocus={fo} onBlur={bl}/>
-        )}
-      </div>
+      <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
       <div style={{marginBottom:16}}>
         <label style={lbl}>Remarks</label>
         <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Any additional notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
@@ -4447,7 +4495,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
 
       {needReturn&&(<><Divider title="Return / Refund"/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#fff5f5",borderRadius:12,padding:"14px 14px",border:"1px solid #fecaca"}}><div><label style={{...lbl,color:"#dc2626"}}>Return Received Date</label><input type="date" value={form.returnRcvd} onChange={e=>set("returnRcvd",e.target.value)} style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/></div><div><label style={{...lbl,color:"#dc2626"}}>Refunded Amount ({shop.symbol})</label><input type="number" value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/></div></div></>)}
 
-      <div style={{marginBottom:12}}><label style={lbl}>Sale Type / Tag</label><select value={["Normal Sale","Budget Friendly","Bulk Sale","Clearance Sale","Discounted Sale","Exchange Sale","Gift","Wholesale","Return Replacement","Sample Sale"].includes(form.tag)||form.tag===""?form.tag:"Custom…"} onChange={e=>{if(e.target.value==="Custom…")set("tag","");else set("tag",e.target.value);}} style={inp}><option value="">Select sale type…</option>{["Normal Sale","Budget Friendly","Bulk Sale","Clearance Sale","Discounted Sale","Exchange Sale","Gift","Wholesale","Return Replacement","Sample Sale","Custom…"].map(o=><option key={o}>{o}</option>)}</select>{(form.tag!==""&&!["Normal Sale","Budget Friendly","Bulk Sale","Clearance Sale","Discounted Sale","Exchange Sale","Gift","Wholesale","Return Replacement","Sample Sale"].includes(form.tag))&&(<input value={form.tag} onChange={e=>set("tag",e.target.value)} placeholder="Enter custom tag…" style={{...inp,marginTop:6}} onFocus={fo} onBlur={bl}/>)}</div>
+      <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
       <div style={{marginBottom:16}}><label style={lbl}>Remarks</label><textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Any additional notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/></div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
