@@ -5379,9 +5379,10 @@ const LoginScreen=({onLogin,users})=>{
     setErr("");
     if(np.length===4){
       setTimeout(()=>{
-        if(np===selUser.pin){
+        const liveUser=users.find(x=>x.id===selUser.id)||selUser;
+        if(np===liveUser.pin){
           setSuccess(true);
-          setTimeout(()=>onLogin(selUser),420);
+          setTimeout(()=>onLogin(liveUser),420);
         } else {
           setShake(true);
           setErr("Incorrect PIN — try again");
