@@ -30,6 +30,15 @@ export const dbSaveSale = async (shopId, sale) => {
     tax_rate:      sale.taxRate !== undefined && sale.taxRate !== null ? Number(sale.taxRate) : 0,
     tax_inclusive: sale.taxInclusive !== false,
     invoice_no:    String(sale.invoiceNo || sale.id || ''),
+    ful:           String(sale.ful || sale.status || ''),
+    sent_date:     String(sale.sentDate || ''),
+    refund_amt:    Number(sale.refundAmt) || 0,
+    addressee:     String(sale.addressee || ''),
+    discount:      Number(sale.discount) || 0,
+    other_charges: Number(sale.otherCharges) || 0,
+    other_charges_label: String(sale.otherChargesLabel || 'Other Charges'),
+    re:            String(sale.re || ''),
+    tag:           String(sale.tag || ''),
   };
 
   // Extended columns — added later; sent only if table supports them

@@ -21,7 +21,7 @@ import {
   STAGE_THEME
 } from "./constants";
 import { formatCurrency, formatDate, formatNumber } from "./utils";
-import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer } from "./db";
+import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -743,6 +743,41 @@ const parseLegacyItems=(itemStr,qty,subtotal)=>{
   return [{name:itemStr,qty:q,price:parseFloat(((subtotal||0)/q).toFixed(2)),estimated:false}];
 };
 
+/* ── normaliseSale: shared helper used by App (bulk load) and ShopDashboard (reload) ── */
+const normaliseSale=(s)=>{
+  if(!s) return s;
+  let rawItem = s.item || "";
+  let decodedLines = null;
+  let displayItem = rawItem;
+  if(rawItem.startsWith("__LINES__:")){
+    const nlIdx = rawItem.indexOf("\n");
+    const jsonPart = nlIdx >= 0 ? rawItem.slice(10, nlIdx) : rawItem.slice(10);
+    displayItem = nlIdx >= 0 ? rawItem.slice(nlIdx + 1) : "";
+    try { decodedLines = JSON.parse(jsonPart); } catch { decodedLines = null; }
+  }
+  const taxRate = s.taxRate !== undefined ? s.taxRate : s.tax_rate !== undefined ? s.tax_rate : 0;
+  const rateNum = Number(taxRate) || 0;
+  const taxInclusive = rateNum === 0 ? true
+                     : s.taxInclusive !== undefined ? s.taxInclusive !== false
+                     : s.tax_inclusive !== undefined ? s.tax_inclusive !== false
+                     : true;
+  let saleLines = decodedLines || s.saleLines || s.sale_lines || null;
+  if(typeof saleLines === "string"){try{saleLines=JSON.parse(saleLines);}catch{saleLines=null;}}
+  const discount = Number(s.discount !== undefined ? s.discount : s.discount_amt || 0) || 0;
+  const otherCharges = Number(s.otherCharges !== undefined ? s.otherCharges : s.other_charges || 0) || 0;
+  const otherChargesLabel = s.otherChargesLabel || s.other_charges_label || "Other Charges";
+  return {
+    ...s,
+    item:             displayItem,
+    taxRate:          rateNum,
+    taxInclusive:     taxInclusive,
+    saleLines:        Array.isArray(saleLines) ? saleLines : null,
+    discount,
+    otherCharges,
+    otherChargesLabel,
+  };
+};
+
 const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":"dashboard");
   const [hov,setHov]=useState(null);
@@ -764,6 +799,31 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [pdfInv,setPdfInv]=useState(null);
   const [statusFilter,setStatusFilter]=useState("ALL");
   const invoicePrintRef=useRef(null);
+  const [purchData,setPurchData]=useState([]);
+  const [expData,setExpData]=useState([]);
+  const [logData,setLogData]=useState([]);
+
+  // Load purchases, expenses, logistics from Supabase on mount
+  useEffect(()=>{
+    dbLoadPurchases(shopId).then(d=>{if(d)setPurchData(d);}).catch(()=>{});
+    dbLoadExpenses(shopId).then(d=>{if(d)setExpData(d);}).catch(()=>{});
+    dbLoadLogistics(shopId).then(d=>{if(d)setLogData(d);}).catch(()=>{});
+  },[shopId]);
+
+  // Re-fetch this shop's sales on mount — ensures data is fresh after page refresh
+  useEffect(()=>{
+    dbLoadSales(shopId).then(data=>{
+      if(!data) return;
+      setSalesData(prev=>({...prev,[shopId]:data.map(normaliseSale)}));
+    }).catch(()=>{});
+  },[shopId]);
+
+  // Manual reload handler — wired to the 🔄 button in SalesPanel
+  const handleReloadSales = useCallback(async ()=>{
+    const data = await dbLoadSales(shopId).catch(()=>null);
+    if(!data) return;
+    setSalesData(prev=>({...prev,[shopId]:data.map(normaliseSale)}));
+  },[shopId,setSalesData]);
 
   useEffect(()=>{
     const h=()=>setIsMobile(window.innerWidth<768);
@@ -784,9 +844,9 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
 
   const shop=SHOPS.find(s=>s.id===shopId);
   const sales=salesData[shopId]||[];
-  const purch=PURCH_SEED[shopId]||[];
-  const exps=EXP_SEED[shopId]||[];
-  const logs=LOG_SEED[shopId]||[];
+  const purch=purchData||[];
+  const exps=expData||[];
+  const logs=logData||[];
   const lowStk=PRODUCTS.filter(p=>p.stock<=p.min);
   const totRev=sales.filter(s=>s.pay==="Paid").reduce((a,s)=>a+s.amount,0);
   const pendAmt=sales.filter(s=>s.pay==="Pending").reduce((a,s)=>a+s.amount,0);
@@ -1682,6 +1742,7 @@ return(
                 openMenu={openMenu}
                 onImport={()=>setModal("import-sales")}
                 onExport={()=>setModal("export-sales")}
+                onReload={handleReloadSales}
                 search={search}
                 sales={sales}
                 salesPeriod={salesPeriod}
@@ -5610,54 +5671,6 @@ export default function App(){
   // Load from Supabase on mount - Supabase is single source of truth
   useEffect(()=>{
     const shops=["ros-selections","ros-hairlines","ros-india"];
-    // Normalise a sale record from Supabase.
-    // Handles: snake_case → camelCase, __LINES__ encoding in item field,
-    // taxRate defaulting to 0, JSON field parsing.
-    const normaliseSale=(s)=>{
-      if(!s) return s;
-
-      // ── Decode __LINES__ from item field (encoded by addSale for Supabase persistence) ──
-      let rawItem = s.item || "";
-      let decodedLines = null;
-      let displayItem = rawItem;
-      if(rawItem.startsWith("__LINES__:")){
-        const nlIdx = rawItem.indexOf("\n");
-        const jsonPart = nlIdx >= 0 ? rawItem.slice(10, nlIdx) : rawItem.slice(10);
-        displayItem = nlIdx >= 0 ? rawItem.slice(nlIdx + 1) : "";
-        try { decodedLines = JSON.parse(jsonPart); } catch { decodedLines = null; }
-      }
-
-      // ── taxRate: prefer explicitly saved value, then snake_case, then 0 ──
-      const taxRate = s.taxRate !== undefined ? s.taxRate
-                    : s.tax_rate !== undefined ? s.tax_rate
-                    : 0;
-      const rateNum = Number(taxRate) || 0;
-
-      // ── taxInclusive: if rate is 0 always true (no tax), else use saved value ──
-      const taxInclusive = rateNum === 0 ? true
-                         : s.taxInclusive !== undefined ? s.taxInclusive !== false
-                         : s.tax_inclusive !== undefined ? s.tax_inclusive !== false
-                         : true;
-
-      // ── saleLines: prefer decoded from item, then any existing field ──
-      let saleLines = decodedLines || s.saleLines || s.sale_lines || null;
-      if(typeof saleLines === "string"){try{saleLines=JSON.parse(saleLines);}catch{saleLines=null;}}
-
-      const discount = Number(s.discount !== undefined ? s.discount : s.discount_amt || 0) || 0;
-      const otherCharges = Number(s.otherCharges !== undefined ? s.otherCharges : s.other_charges || 0) || 0;
-      const otherChargesLabel = s.otherChargesLabel || s.other_charges_label || "Other Charges";
-
-      return {
-        ...s,
-        item:             displayItem,
-        taxRate:          rateNum,
-        taxInclusive:     taxInclusive,
-        saleLines:        Array.isArray(saleLines) ? saleLines : null,
-        discount,
-        otherCharges,
-        otherChargesLabel,
-      };
-    };
     shops.forEach(sid=>{
       dbLoadSales(sid).then(data=>{
         if(!data) return;
