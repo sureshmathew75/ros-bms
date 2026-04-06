@@ -5548,7 +5548,23 @@ export default function App(){
   // Always start logged-out — login page shown on every fresh load
   const [user,setUser]=useState(null);
   const [shop,setShop]=useState(null);
-  const [users,setUsers]=useState(INITIAL_USERS);
+  const [users,setUsers]=useState(()=>{
+    try{
+      const s=localStorage.getItem("ros_users");
+      if(s){
+        const parsed=JSON.parse(s);
+        if(Array.isArray(parsed)&&parsed.length>0) return parsed;
+      }
+    }catch{}
+    return INITIAL_USERS;
+  });
+  const setUsersPersist=(updater)=>{
+    setUsers(prev=>{
+      const next=typeof updater==="function"?updater(prev):updater;
+      try{localStorage.setItem("ros_users",JSON.stringify(next));}catch{}
+      return next;
+    });
+  };
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
   const [customers,setCustomers]=useState([]);
@@ -5685,7 +5701,7 @@ export default function App(){
       {settingsOpen&&user?.role==="superadmin"&&(
         <SettingsPanel
           users={users}
-          setUsers={setUsers}
+          setUsers={setUsersPersist}
           currentUser={user}
           onClose={()=>setSettingsOpen(false)}/>
       )}
