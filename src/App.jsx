@@ -3366,7 +3366,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
    NEW PURCHASE FORM
 ══════════════════════════════════════════════════════ */
 /* ── TagPicker: multi-tag chip selector used in EditSaleForm & NewSaleForm ── */
-const SALE_TAG_PRESETS=["Normal Sale","Budget Friendly","Bulk Sale","Clearance Sale","Discounted Sale","Exchange Sale","Gift","Wholesale","Return Replacement","Sample Sale"];
+const SALE_TAG_PRESETS=["Advance Sale","Budget Friendly","Bulk Sale","Discounted Sale","Exchange Sale","Final Payment Sale","Normal Sale"];
 const parseTags=str=>str?str.split(",").map(t=>t.trim()).filter(Boolean):[];
 const joinTags=arr=>arr.join(", ");
 const TagPicker=({value,onChange,accent,accentBg,inp,fo,bl,lbl})=>{
