@@ -39,6 +39,7 @@ export const dbSaveSale = async (shopId, sale) => {
     other_charges_label: String(sale.otherChargesLabel || 'Other Charges'),
     re:            String(sale.re || ''),
     tag:           String(sale.tag || ''),
+    phone_saved_on: String(sale.phoneSavedOn || 'UK 888'),
   };
 
   // Extended columns — added later; sent only if table supports them
@@ -138,6 +139,7 @@ export const dbLoadSales = async (shopId) => {
     otherChargesLabel: r.other_charges_label || 'Other Charges',
     re:           r.re || '',
     tag:          r.tag || '',
+    phoneSavedOn: r.phone_saved_on || 'UK 888',
   }));
   return mapped.sort((a, b) => parseDateMs(b.date) - parseDateMs(a.date));
 };
