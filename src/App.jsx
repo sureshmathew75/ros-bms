@@ -905,7 +905,7 @@ const addSale = async (form) => {
   // Update UI instantly
   setSalesData(d => ({...d, [shopId]: [newSale, ...d[shopId]]}));
   setModal(null);
-  const _usedNum = parseInt((nid||"0").match(/^ROS(\d{4})\d$/)?.[1]||"0")||0;
+  const _usedNum = parseInt((nid||"0").match(/^(?:ROS|IND)(\d{4})\d$/)?.[1]||"0")||0;
   if(_usedNum >= 1313) { try { localStorage.setItem("ros_lastInv_"+shopId, String(_usedNum)); } catch{} }
   dbSaveSale(shopId, newSale).catch(err => console.error("❌ Supabase save failed:", err));
   // Auto-save/update customer record
@@ -1859,7 +1859,7 @@ return(
               });
               if (fySales.length === 0) return 1312;
               const nums = fySales.map(s => {
-                const m = (s.id||"").match(/^ROS(\d{4})\d$/);
+                const m = (s.id||"").match(/^(?:ROS|IND)(\d{4})\d$/);
                 return m ? parseInt(m[1]) : 0;
               }).filter(n => n >= 1313 && n <= 9999);
             })()}
@@ -4275,7 +4275,8 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
  const _stored=()=>{try{const v=localStorage.getItem("ros_lastInv_"+shopId);return v?parseInt(v)||1312:1312;}catch{return 1312;}};
   const _nextNum=_stored()+1;
   const _seq=String(_nextNum).padStart(4,"0");
-  const autoInv=`ROS${_seq}${_fySuffix}`;
+  const _pfx = shopId==="ros-india" ? "IND" : "ROS";
+  const autoInv=`${_pfx}${_seq}${_fySuffix}`;
 
   // ── Multi-item lines state ──
   const blankLine=()=>({id:Date.now()+Math.random(),name:"",qty:"1",price:""});
