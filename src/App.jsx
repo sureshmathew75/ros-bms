@@ -169,6 +169,7 @@ const BSTYLE={
   Wholesale:        {bg:"#f3e8ff",c:"#7e22ce",b:"#e9d5ff"},
   "New Customer":   {bg:"#cffafe",c:"#0e7490",b:"#a5f3fc"},
   Regular:          {bg:"#f1f5f9",c:"#475569",b:"#e2e8f0"},
+  "Budget Friendly": {bg:"#f0fdf4",c:"#15803d",b:"#bbf7d0"},
 };
 
 // Row background colour per delivery status
@@ -3602,10 +3603,13 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
 
       <div style={{marginBottom:12}}>
         <label style={lbl}>Sale Type / Tag</label>
-        <select value={form.tag} onChange={e=>set("tag",e.target.value)} style={inp}>
+        <select value={["Normal Sale","Budget Friendly","Bulk Sale","Clearance Sale","Discounted Sale","Exchange Sale","Gift","Wholesale","Return Replacement","Sample Sale"].includes(form.tag)||form.tag===""?form.tag:"Custom…"} onChange={e=>{if(e.target.value==="Custom…")set("tag","");else set("tag",e.target.value);}} style={inp}>
           <option value="">Select sale type…</option>
-          {["Normal Sale","Bulk Sale","Clearance Sale","Discounted Sale","Exchange Sale","Gift","Wholesale","Return Replacement","Sample Sale"].map(o=><option key={o}>{o}</option>)}
+          {["Normal Sale","Budget Friendly","Bulk Sale","Clearance Sale","Discounted Sale","Exchange Sale","Gift","Wholesale","Return Replacement","Sample Sale","Custom…"].map(o=><option key={o}>{o}</option>)}
         </select>
+        {(form.tag!==""&&!["Normal Sale","Budget Friendly","Bulk Sale","Clearance Sale","Discounted Sale","Exchange Sale","Gift","Wholesale","Return Replacement","Sample Sale"].includes(form.tag))&&(
+          <input value={form.tag} onChange={e=>set("tag",e.target.value)} placeholder="Enter custom tag…" style={{...inp,marginTop:6}} onFocus={fo} onBlur={bl}/>
+        )}
       </div>
       <div style={{marginBottom:16}}>
         <label style={lbl}>Remarks</label>
@@ -4443,7 +4447,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
 
       {needReturn&&(<><Divider title="Return / Refund"/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#fff5f5",borderRadius:12,padding:"14px 14px",border:"1px solid #fecaca"}}><div><label style={{...lbl,color:"#dc2626"}}>Return Received Date</label><input type="date" value={form.returnRcvd} onChange={e=>set("returnRcvd",e.target.value)} style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/></div><div><label style={{...lbl,color:"#dc2626"}}>Refunded Amount ({shop.symbol})</label><input type="number" value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/></div></div></>)}
 
-      <div style={{marginBottom:12}}><label style={lbl}>Sale Type / Tag</label><select value={form.tag} onChange={e=>set("tag",e.target.value)} style={inp}><option value="">Select sale type…</option>{["Normal Sale","Bulk Sale","Clearance Sale","Discounted Sale","Exchange Sale","Gift","Wholesale","Return Replacement","Sample Sale"].map(o=><option key={o}>{o}</option>)}</select></div>
+      <div style={{marginBottom:12}}><label style={lbl}>Sale Type / Tag</label><select value={["Normal Sale","Budget Friendly","Bulk Sale","Clearance Sale","Discounted Sale","Exchange Sale","Gift","Wholesale","Return Replacement","Sample Sale"].includes(form.tag)||form.tag===""?form.tag:"Custom…"} onChange={e=>{if(e.target.value==="Custom…")set("tag","");else set("tag",e.target.value);}} style={inp}><option value="">Select sale type…</option>{["Normal Sale","Budget Friendly","Bulk Sale","Clearance Sale","Discounted Sale","Exchange Sale","Gift","Wholesale","Return Replacement","Sample Sale","Custom…"].map(o=><option key={o}>{o}</option>)}</select>{(form.tag!==""&&!["Normal Sale","Budget Friendly","Bulk Sale","Clearance Sale","Discounted Sale","Exchange Sale","Gift","Wholesale","Return Replacement","Sample Sale"].includes(form.tag))&&(<input value={form.tag} onChange={e=>set("tag",e.target.value)} placeholder="Enter custom tag…" style={{...inp,marginTop:6}} onFocus={fo} onBlur={bl}/>)}</div>
       <div style={{marginBottom:16}}><label style={lbl}>Remarks</label><textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Any additional notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/></div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
