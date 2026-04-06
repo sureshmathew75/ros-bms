@@ -92,7 +92,6 @@ export const dbLoadSales = async (shopId) => {
     amount:       Number(r.amount) || 0,
     status:       r.status || '',
     pay:          r.pay || '',
-    ful:          r.ful || '',
     date:         r.date || '',
     item:         r.item || '',
     qty:          r.qty || '1',
