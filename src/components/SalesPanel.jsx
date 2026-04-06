@@ -858,10 +858,10 @@ export default function SalesPanel({
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
             <thead>
               <tr style={{ background: "#f8fafc" }}>
-                {["Invoice", "Date", "Customer", "Item", "Amount", "Payment", "Status", "Actions"]
+                {["Invoice", "Date", "Customer", "Item", "Amount", "Payment", "Status", "Tags", "Actions"]
                   .map((h, i) => (
                     <th key={h} style={{
-                      padding: "11px 16px", textAlign: i >= 4 ? "right" : "left",
+                      padding: "11px 16px", textAlign: (i >= 4 && i !== 7) ? "right" : "left",
                       fontSize: 11, fontWeight: 800, color: "#94a3b8",
                       textTransform: "uppercase", letterSpacing: "0.06em",
                       borderBottom: "1px solid #f1f5f9", whiteSpace: "nowrap",
@@ -876,7 +876,7 @@ export default function SalesPanel({
               {/* Empty state */}
               {rowsWithSeparators.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ padding: "52px 16px", textAlign: "center" }}>
+                  <td colSpan={9} style={{ padding: "52px 16px", textAlign: "center" }}>
                     <div style={{ fontSize: 36, marginBottom: 10 }}>🛒</div>
                     <p style={{ margin: 0, fontWeight: 700, color: "#94a3b8", fontSize: 14 }}>
                       No {statusTab !== "ALL" ? activeTabCfg.label.toLowerCase() + " " : ""}sales found
@@ -896,7 +896,7 @@ export default function SalesPanel({
                 if (row._type === "fy") {
                   return (
                     <tr key={`fy-${row._fyStart}-${idx}`}>
-                      <td colSpan={8} style={{ padding: 0 }}>
+                      <td colSpan={9} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", gap: 10,
                           padding: "9px 16px",
@@ -928,7 +928,7 @@ export default function SalesPanel({
                 if (row._type === "month") {
                   return (
                     <tr key={`month-${row._monthKey}-${idx}`}>
-                      <td colSpan={8} style={{ padding: 0 }}>
+                      <td colSpan={9} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", gap: 10,
                           padding: "6px 16px",
@@ -1016,6 +1016,21 @@ export default function SalesPanel({
                     {/* Status */}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <Badge l={ful} />
+                    </td>
+                    {/* Tags */}
+                    <td style={{ padding: "8px 16px" }}>
+                      {s.tag ? (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
+                          {s.tag.split(",").map(t => t.trim()).filter(Boolean).map(t => (
+                            <span key={t} style={{
+                              display: "inline-block", padding: "2px 8px",
+                              borderRadius: 999, fontSize: 10, fontWeight: 700,
+                              background: `${accent}12`, color: accent,
+                              border: `1px solid ${accent}30`, whiteSpace: "nowrap",
+                            }}>{t}</span>
+                          ))}
+                        </div>
+                      ) : <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>}
                     </td>
                     {/* Actions */}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
