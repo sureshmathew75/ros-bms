@@ -3617,7 +3617,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...form,id:sale.id,ful:form.status,pay:form.payBy,rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,saleLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel})}
+        <button onClick={()=>onSave({...form,id:sale.id,ful:form.status,pay:form.payBy,rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,saleLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
