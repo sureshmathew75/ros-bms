@@ -3473,6 +3473,29 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
 
   const hasLines=Array.isArray(sale.saleLines)&&sale.saleLines.length>0;
 
+  // Editable saleLines state (for multi-item sales)
+  const [editLines,setEditLines]=useState(()=>
+    hasLines ? sale.saleLines.map(l=>({...l})) : []
+  );
+  const setLine=(i,k,v)=>setEditLines(prev=>{
+    const next=[...prev];
+    next[i]={...next[i],[k]:v};
+    // Auto-recalculate grand total from lines
+    const total=next.reduce((s,l)=>s+(parseFloat(l.qty||1)*parseFloat(l.price||0)),0);
+    setForm(f=>({...f,amount:parseFloat(total.toFixed(2))}));
+    return next;
+  });
+  const addLine=()=>setEditLines(prev=>{
+    const next=[...prev,{name:"",qty:1,price:""}];
+    return next;
+  });
+  const removeLine=(i)=>setEditLines(prev=>{
+    const next=prev.filter((_,idx)=>idx!==i);
+    const total=next.reduce((s,l)=>s+(parseFloat(l.qty||1)*parseFloat(l.price||0)),0);
+    setForm(f=>({...f,amount:parseFloat(total.toFixed(2))}));
+    return next;
+  });
+
   const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white",transition:"border-color 0.15s"};
   const fo=e=>e.target.style.borderColor=shop.accent;
   const bl=e=>e.target.style.borderColor="#e2e8f0";
@@ -3543,24 +3566,48 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
 
       <Divider title="Order Details"/>
 
-      {/* If this sale has multi-item lines, show them read-only */}
+      {/* Editable multi-item lines */}
       {hasLines&&(
         <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
-          <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>Items (from original sale)</p>
-          <table style={{width:"100%",borderCollapse:"collapse"}}>
-            <thead><tr><th style={{textAlign:"left",fontSize:11,fontWeight:700,color:"#64748b",padding:"4px 8px"}}>Item</th><th style={{textAlign:"right",fontSize:11,fontWeight:700,color:"#64748b",padding:"4px 8px"}}>Qty</th><th style={{textAlign:"right",fontSize:11,fontWeight:700,color:"#64748b",padding:"4px 8px"}}>Price</th><th style={{textAlign:"right",fontSize:11,fontWeight:700,color:"#64748b",padding:"4px 8px"}}>Total</th></tr></thead>
-            <tbody>
-              {sale.saleLines.map((l,i)=>(
-                <tr key={i} style={{borderTop:"1px solid #f1f5f9"}}>
-                  <td style={{padding:"6px 8px",fontSize:12,fontWeight:600,color:"#1e293b"}}>{l.name}</td>
-                  <td style={{padding:"6px 8px",fontSize:12,textAlign:"right",color:"#374151"}}>{l.qty}</td>
-                  <td style={{padding:"6px 8px",fontSize:12,textAlign:"right",color:"#374151"}}>{shop.symbol}{parseFloat(l.price||0).toLocaleString()}</td>
-                  <td style={{padding:"6px 8px",fontSize:12,textAlign:"right",fontWeight:700,color:shop.accent}}>{shop.symbol}{parseFloat(((parseFloat(l.qty)||1)*(parseFloat(l.price)||0)).toFixed(2)).toLocaleString()}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p style={{margin:"8px 0 0",fontSize:10,color:"#94a3b8",fontStyle:"italic"}}>To change items, delete this sale and create a new one.</p>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+            <p style={{margin:0,fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>Items</p>
+            <button type="button" onClick={addLine}
+              style={{fontSize:11,fontWeight:700,color:shop.accent,background:shop.accentBg,border:"1px solid "+shop.accent+"44",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontFamily:"inherit"}}>
+              + Add Item
+            </button>
+          </div>
+          {/* Column headers */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 60px 90px 70px 28px",gap:4,marginBottom:4}}>
+            {["Item","Qty","Price","Total",""].map((h,i)=>(
+              <span key={i} style={{fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.04em",textAlign:i>0?"right":"left",paddingRight:i===3?4:0}}>{h}</span>
+            ))}
+          </div>
+          {editLines.map((l,i)=>{
+            const lineTotal=parseFloat(((parseFloat(l.qty)||1)*(parseFloat(l.price)||0)).toFixed(2));
+            return(
+              <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 60px 90px 70px 28px",gap:4,marginBottom:6,alignItems:"center"}}>
+                <input value={l.name} onChange={e=>setLine(i,"name",e.target.value)}
+                  placeholder="Item name"
+                  style={{...inp,fontSize:12,padding:"6px 9px"}} onFocus={fo} onBlur={bl}/>
+                <input type="number" min="1" value={l.qty} onChange={e=>setLine(i,"qty",e.target.value)}
+                  style={{...inp,fontSize:12,padding:"6px 6px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
+                <input type="number" min="0" step="0.01" value={l.price} onChange={e=>setLine(i,"price",e.target.value)}
+                  placeholder="0.00"
+                  style={{...inp,fontSize:12,padding:"6px 6px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
+                <span style={{fontSize:12,fontWeight:700,color:shop.accent,textAlign:"right",paddingRight:4}}>
+                  {shop.symbol}{lineTotal.toLocaleString()}
+                </span>
+                <button type="button" onClick={()=>removeLine(i)}
+                  title="Remove item"
+                  style={{width:24,height:24,borderRadius:6,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,padding:0,fontFamily:"inherit"}}>
+                  ×
+                </button>
+              </div>
+            );
+          })}
+          {editLines.length===0&&(
+            <p style={{margin:"4px 0 0",fontSize:11,color:"#94a3b8",fontStyle:"italic"}}>No items — click "+ Add Item" to add one.</p>
+          )}
         </div>
       )}
 
@@ -3724,7 +3771,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...form,id:sale.id,ful:form.status,pay:form.payBy,rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,saleLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt})}
+        <button onClick={()=>onSave({...form,id:sale.id,ful:form.status,pay:form.payBy,rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
