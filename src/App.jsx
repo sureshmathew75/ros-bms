@@ -2719,10 +2719,41 @@ return(
                       {fmt(shopId,Number(selRow.amount)||0)}
                     </span>
                   </div>
-                  {selRow.sentDate&&<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                    <span style={{fontSize:12,color:"#64748b"}}>Dispatch</span>
-                    <span style={{fontSize:12,fontWeight:600,color:"#1e293b"}}>{formatDate(selRow.sentDate)}</span>
-                  </div>}
+                  {/* Fulfillment Timeline */}
+                  {(()=>{
+                    const hasDispatch=!!selRow.sentDate;
+                    const hasReturnReq=!!selRow.returnReqDate;
+                    const hasReturnRcvd=!!selRow.returnRcvd;
+                    const hasRefund=!!selRow.refundAmt&&Number(selRow.refundAmt)>0;
+                    const timelineItems=[
+                      hasDispatch&&{icon:"🚚",label:"Dispatched",date:formatDate(selRow.sentDate),color:"#15803d",bg:"#f0fdf4",border:"#bbf7d0"},
+                      hasReturnReq&&{icon:"↩️",label:"Return Requested",date:formatDate(selRow.returnReqDate),color:"#c2410c",bg:"#fff7ed",border:"#fed7aa"},
+                      hasReturnRcvd&&{icon:"📬",label:"Return Received",date:formatDate(selRow.returnRcvd),color:"#991b1b",bg:"#fff5f5",border:"#fecaca"},
+                      hasRefund&&{icon:"💸",label:"Refunded",date:fmt(shopId,Number(selRow.refundAmt)),color:"#6b21a8",bg:"#f5f3ff",border:"#ddd6fe"},
+                    ].filter(Boolean);
+                    if(timelineItems.length===0)return null;
+                    return(
+                      <div style={{marginTop:10}}>
+                        {timelineItems.map((item,i)=>(
+                          <div key={i} style={{display:"flex",alignItems:"center",gap:10,marginBottom:i<timelineItems.length-1?6:0}}>
+                            {i<timelineItems.length-1&&(
+                              <div style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",width:24,flexShrink:0}}>
+                                <div style={{width:24,height:24,borderRadius:"50%",background:item.bg,border:"1.5px solid "+item.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12}}>{item.icon}</div>
+                                <div style={{width:2,height:10,background:"#e2e8f0",margin:"1px 0"}}/>
+                              </div>
+                            )}
+                            {i===timelineItems.length-1&&(
+                              <div style={{width:24,height:24,borderRadius:"50%",background:item.bg,border:"1.5px solid "+item.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,flexShrink:0}}>{item.icon}</div>
+                            )}
+                            <div style={{flex:1,background:item.bg,border:"1px solid "+item.border,borderRadius:8,padding:"5px 10px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                              <span style={{fontSize:11,fontWeight:700,color:item.color}}>{item.label}</span>
+                              <span style={{fontSize:11,fontWeight:600,color:item.color}}>{item.date}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    );
+                  })()}
                 </div>
               </div>
 
@@ -3429,6 +3460,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     payBy:       sale.pay||"SHOP",
     status:      (sale.ful||sale.status||"PENDING").toUpperCase(),
     sentDate:    sale.sentDate||"",
+    returnReqDate: sale.returnReqDate||"",
     returnRcvd:  sale.returnRcvd||"",
     refundAmt:   sale.refundAmt||"",
     tag:         sale.tag||"",
@@ -3453,7 +3485,9 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     </div>
   );
 
-  const needReturn=["RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED","RETURN REQUESTED","RETURN RECEIVED"].includes(form.status);
+  const isReturnRequested=["RETURN REQUESTED","RTRN REQSTD"].includes(form.status);
+  const isReturnReceived=["RETURN RECEIVED","RETRN RCVD"].includes(form.status);
+  const isRefundOnly=["EXCHANGED","REFUNDED"].includes(form.status);
   const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","WORK IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
   const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
@@ -3642,17 +3676,42 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
         </div>
       </div>
 
-      {needReturn&&(
+      {isReturnRequested&&(
         <>
-          <Divider title="Return / Refund"/>
+          <Divider title="Return Request"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#fff7ed",borderRadius:12,padding:"14px",border:"1px solid #fed7aa"}}>
+            <div>
+              <label style={{...lbl,color:"#c2410c"}}>↩️ Return Request Date</label>
+              <input type="date" value={form.returnReqDate} onChange={e=>set("returnReqDate",e.target.value)} style={{...inp,border:"1px solid #fed7aa"}} onFocus={fo} onBlur={bl}/>
+              <p style={{margin:"6px 0 0",fontSize:11,color:"#92400e"}}>Record when the customer requested this return. Mark as <strong>Return Received</strong> once the item arrives back.</p>
+            </div>
+          </div>
+        </>
+      )}
+
+      {isReturnReceived&&(
+        <>
+          <Divider title="Return Received"/>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#fff5f5",borderRadius:12,padding:"14px",border:"1px solid #fecaca"}}>
             <div>
-              <label style={{...lbl,color:"#dc2626"}}>Return Received Date</label>
+              <label style={{...lbl,color:"#dc2626"}}>📬 Return Received Date</label>
               <input type="date" value={form.returnRcvd} onChange={e=>set("returnRcvd",e.target.value)} style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/>
             </div>
             <div>
-              <label style={{...lbl,color:"#dc2626"}}>Refunded Amount ({shop.symbol})</label>
+              <label style={{...lbl,color:"#dc2626"}}>💸 Refunded Amount ({shop.symbol})</label>
               <input type="number" value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/>
+            </div>
+          </div>
+        </>
+      )}
+
+      {isRefundOnly&&(
+        <>
+          <Divider title="Refund"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#f5f3ff",borderRadius:12,padding:"14px",border:"1px solid #ddd6fe"}}>
+            <div>
+              <label style={{...lbl,color:"#6b21a8"}}>💸 Refunded Amount ({shop.symbol})</label>
+              <input type="number" value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #ddd6fe"}} onFocus={fo} onBlur={bl}/>
             </div>
           </div>
         </>
@@ -3665,7 +3724,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...form,id:sale.id,ful:form.status,pay:form.payBy,rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,saleLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact})}
+        <button onClick={()=>onSave({...form,id:sale.id,ful:form.status,pay:form.payBy,rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,saleLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
@@ -4349,6 +4408,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     shopInvoiceNo: "",
     status:      shopId==="ros-india" ? "ORDER NOT PLACED" : "PENDING",
     sentDate:    "",
+    returnReqDate: "",
     returnRcvd:  "",
     refundAmt:   "",
     tag:         "",
@@ -4367,7 +4427,9 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
   const Divider=({title})=>(<div style={{display:"flex",alignItems:"center",gap:8,margin:"6px 0 12px"}}><div style={{height:1,flex:1,background:"#f1f5f9"}}/><span style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap"}}>{title}</span><div style={{height:1,flex:1,background:"#f1f5f9"}}/></div>);
 
-  const needReturn=["RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED","RETURN REQUESTED","RETURN RECEIVED"].includes(form.status);
+  const isReturnRequested=["RETURN REQUESTED","RTRN REQSTD"].includes(form.status);
+  const isReturnReceived=["RETURN RECEIVED","RETRN RCVD"].includes(form.status);
+  const isRefundOnly=["EXCHANGED","REFUNDED"].includes(form.status);
   const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","WORK IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
 
   const handleAddCustomer=(newCust)=>{setCustomerList(l=>[newCust,...l]);set("customer",newCust.name);set("contact",newCust.phone);setShowNewCust(false);};
@@ -4493,7 +4555,46 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
         <div><label style={lbl}>Sent / Dispatch Date</label><input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
       </div>
 
-      {needReturn&&(<><Divider title="Return / Refund"/><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#fff5f5",borderRadius:12,padding:"14px 14px",border:"1px solid #fecaca"}}><div><label style={{...lbl,color:"#dc2626"}}>Return Received Date</label><input type="date" value={form.returnRcvd} onChange={e=>set("returnRcvd",e.target.value)} style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/></div><div><label style={{...lbl,color:"#dc2626"}}>Refunded Amount ({shop.symbol})</label><input type="number" value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/></div></div></>)}
+      {isReturnRequested&&(
+        <>
+          <Divider title="Return Request"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#fff7ed",borderRadius:12,padding:"14px",border:"1px solid #fed7aa"}}>
+            <div>
+              <label style={{...lbl,color:"#c2410c"}}>↩️ Return Request Date</label>
+              <input type="date" value={form.returnReqDate} onChange={e=>set("returnReqDate",e.target.value)} style={{...inp,border:"1px solid #fed7aa"}} onFocus={fo} onBlur={bl}/>
+              <p style={{margin:"6px 0 0",fontSize:11,color:"#92400e"}}>Record when the customer requested this return. Mark as <strong>Return Received</strong> once the item arrives back.</p>
+            </div>
+          </div>
+        </>
+      )}
+
+      {isReturnReceived&&(
+        <>
+          <Divider title="Return Received"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#fff5f5",borderRadius:12,padding:"14px",border:"1px solid #fecaca"}}>
+            <div>
+              <label style={{...lbl,color:"#dc2626"}}>📬 Return Received Date</label>
+              <input type="date" value={form.returnRcvd} onChange={e=>set("returnRcvd",e.target.value)} style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/>
+            </div>
+            <div>
+              <label style={{...lbl,color:"#dc2626"}}>💸 Refunded Amount ({shop.symbol})</label>
+              <input type="number" value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/>
+            </div>
+          </div>
+        </>
+      )}
+
+      {isRefundOnly&&(
+        <>
+          <Divider title="Refund"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#f5f3ff",borderRadius:12,padding:"14px",border:"1px solid #ddd6fe"}}>
+            <div>
+              <label style={{...lbl,color:"#6b21a8"}}>💸 Refunded Amount ({shop.symbol})</label>
+              <input type="number" value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #ddd6fe"}} onFocus={fo} onBlur={bl}/>
+            </div>
+          </div>
+        </>
+      )}
 
       <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
       <div style={{marginBottom:16}}><label style={lbl}>Remarks</label><textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Any additional notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/></div>
