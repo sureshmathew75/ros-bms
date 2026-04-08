@@ -1012,6 +1012,14 @@ export default function SalesPanel({
                     {/* Payment */}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <Badge l={s.pay || "SHOP"} />
+                      {(s.pay === "SHOP" || !s.pay) && s.shop_invoice && (
+                        <div style={{
+                          fontSize: 10, fontFamily: "DM Mono,monospace",
+                          color: "#64748b", marginTop: 3, whiteSpace: "nowrap",
+                        }}>
+                          {s.shop_invoice}
+                        </div>
+                      )}
                     </td>
                     {/* Status */}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
