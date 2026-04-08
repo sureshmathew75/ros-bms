@@ -43,6 +43,12 @@ export const dbSaveSale = async (shopId, sale) => {
     tag:           String(sale.tag || ''),
     phone_saved_on:  String(sale.phoneSavedOn || 'UK 888'),
     shop_invoice_no: String(sale.shopInvoiceNo || ''),
+    refund_date:     String(sale.refundDate || ''),
+    exchange_date:   String(sale.exchangeDate || ''),
+    adj_type:        String(sale.adjType || ''),
+    adj_amt:         Number(sale.adjAmt) || 0,
+    adj_date:        String(sale.adjDate || ''),
+    adj_note:        String(sale.adjNote || ''),
   };
 
   // Extended columns — added later; sent only if table supports them
@@ -146,8 +152,14 @@ export const dbLoadSales = async (shopId) => {
     otherChargesLabel: r.other_charges_label || 'Other Charges',
     re:           r.re || '',
     tag:          r.tag || '',
-    phoneSavedOn: r.phone_saved_on || 'UK 888',
+    phoneSavedOn:  r.phone_saved_on || 'UK 888',
     shopInvoiceNo: r.shop_invoice_no || '',
+    refundDate:    r.refund_date || '',
+    exchangeDate:  r.exchange_date || '',
+    adjType:       r.adj_type || '',
+    adjAmt:        Number(r.adj_amt) || 0,
+    adjDate:       r.adj_date || '',
+    adjNote:       r.adj_note || '',
   }));
   return mapped.sort((a, b) => parseDateMs(b.date) - parseDateMs(a.date));
 };

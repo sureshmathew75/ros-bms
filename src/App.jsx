@@ -3458,17 +3458,22 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     qty:         sale.qty||"1",
     amount:      sale.amount||"",
     payBy:       sale.pay||"SHOP",
-    shopInvoiceNo: sale.shopInvoiceNo||"",
     status:      (sale.ful||sale.status||"PENDING").toUpperCase(),
     sentDate:    sale.sentDate||"",
     returnReqDate: sale.returnReqDate||"",
     returnRcvd:  sale.returnRcvd||"",
     refundAmt:   sale.refundAmt||"",
+    refundDate:  sale.refundDate||"",
+    exchangeDate: sale.exchangeDate||"",
     tag:         sale.tag||"",
     remarks:     sale.rem||sale.remarks||"",
     taxInclusive: sale.taxInclusive !== false,
     taxRate:      sale.taxRate !== undefined ? sale.taxRate : 0,
     phoneSavedOn: sale.phoneSavedOn||"UK 888",
+    adjType:     sale.adjType||"",
+    adjAmt:      sale.adjAmt||"",
+    adjDate:     sale.adjDate||"",
+    adjNote:     sale.adjNote||"",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -3511,7 +3516,8 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
 
   const isReturnRequested=["RETURN REQUESTED","RTRN REQSTD"].includes(form.status);
   const isReturnReceived=["RETURN RECEIVED","RETRN RCVD"].includes(form.status);
-  const isRefundOnly=["EXCHANGED","REFUNDED"].includes(form.status);
+  const isExchanged=form.status==="EXCHANGED";
+  const isRefunded=form.status==="REFUNDED";
   const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","WORK IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
   const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
@@ -3697,19 +3703,11 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       </div>
 
       <Divider title="Payment"/>
-      <div style={{display:"grid",gridTemplateColumns:form.payBy==="SHOP"?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Payment By</label>
-          <select value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
-            {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
-          </select>
-        </div>
-        {form.payBy==="SHOP"&&(
-          <div>
-            <label style={lbl}>Shop Invoice No.</label>
-            <input value={form.shopInvoiceNo||""} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 12345" style={inp} onFocus={fo} onBlur={bl}/>
-          </div>
-        )}
+      <div style={{marginBottom:16}}>
+        <label style={lbl}>Payment By</label>
+        <select value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
+          {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
+        </select>
       </div>
 
       <Divider title="Delivery"/>
@@ -3748,23 +3746,35 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       {isReturnReceived&&(
         <>
           <Divider title="Return Received"/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#fff5f5",borderRadius:12,padding:"14px",border:"1px solid #fecaca"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#fff5f5",borderRadius:12,padding:"14px",border:"1px solid #fecaca"}}>
             <div>
               <label style={{...lbl,color:"#dc2626"}}>📬 Return Received Date</label>
               <input type="date" value={form.returnRcvd} onChange={e=>set("returnRcvd",e.target.value)} style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/>
-            </div>
-            <div>
-              <label style={{...lbl,color:"#dc2626"}}>💸 Refunded Amount ({shop.symbol})</label>
-              <input type="number" value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/>
             </div>
           </div>
         </>
       )}
 
-      {isRefundOnly&&(
+      {isExchanged&&(
+        <>
+          <Divider title="Exchange"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#eef2ff",borderRadius:12,padding:"14px",border:"1px solid #c7d2fe"}}>
+            <div>
+              <label style={{...lbl,color:"#4338ca"}}>🔄 Exchange Item Sent Date</label>
+              <input type="date" value={form.exchangeDate} onChange={e=>set("exchangeDate",e.target.value)} style={{...inp,border:"1px solid #c7d2fe"}} onFocus={fo} onBlur={bl}/>
+            </div>
+          </div>
+        </>
+      )}
+
+      {isRefunded&&(
         <>
           <Divider title="Refund"/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#f5f3ff",borderRadius:12,padding:"14px",border:"1px solid #ddd6fe"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#f5f3ff",borderRadius:12,padding:"14px",border:"1px solid #ddd6fe"}}>
+            <div>
+              <label style={{...lbl,color:"#6b21a8"}}>📅 Refund Date</label>
+              <input type="date" value={form.refundDate} onChange={e=>set("refundDate",e.target.value)} style={{...inp,border:"1px solid #ddd6fe"}} onFocus={fo} onBlur={bl}/>
+            </div>
             <div>
               <label style={{...lbl,color:"#6b21a8"}}>💸 Refunded Amount ({shop.symbol})</label>
               <input type="number" value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #ddd6fe"}} onFocus={fo} onBlur={bl}/>
@@ -3773,6 +3783,36 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
         </>
       )}
 
+      <Divider title="Post-Sale Adjustment"/>
+      <div style={{background:"#fffbeb",borderRadius:12,padding:"14px",border:"1px solid #fde68a",marginBottom:16}}>
+        <p style={{margin:"0 0 10px",fontSize:11,color:"#92400e",fontWeight:600}}>🔧 Use this section to record any discount or partial refund given after the sale (e.g. damaged item, defect).</p>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+          <div>
+            <label style={{...lbl,color:"#92400e"}}>Adjustment Type</label>
+            <select value={form.adjType} onChange={e=>set("adjType",e.target.value)} style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}>
+              <option value="">-- None --</option>
+              <option value="Discount">Discount</option>
+              <option value="Partial Refund">Partial Refund</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label style={{...lbl,color:"#92400e"}}>Adjustment Date</label>
+            <input type="date" value={form.adjDate} onChange={e=>set("adjDate",e.target.value)} style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div>
+            <label style={{...lbl,color:"#92400e"}}>💰 Adjustment Amount ({shop.symbol})</label>
+            <input type="number" value={form.adjAmt} onChange={e=>set("adjAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
+          </div>
+          <div>
+            <label style={{...lbl,color:"#92400e"}}>📝 Reason / Note</label>
+            <input type="text" value={form.adjNote} onChange={e=>set("adjNote",e.target.value)} placeholder="e.g. damaged zip, colour mismatch…" style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
+          </div>
+        </div>
+      </div>
+
       <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
       <div style={{marginBottom:16}}>
         <label style={lbl}>Remarks</label>
@@ -3780,7 +3820,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...form,id:sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt})}
+        <button onClick={()=>onSave({...form,id:sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||""})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
