@@ -286,7 +286,7 @@ const calcShopStats=(data=[])=>{
   const isMonth=s=>{const dt=parseDate(s.date);return dt&&dt.getFullYear()===y&&dt.getMonth()===mo;};
 
   const isRefunded=s=>(s.ful||s.status)==="REFUNDED";
-  const rev=(arr)=>arr.filter(s=>!isRefunded(s)).reduce((a,s)=>a+(Number(s.amount)||0),0);
+  const rev=(arr)=>arr.filter(s=>!isRefunded(s)).reduce((a,s)=>a+(Number(s.amount)||0)-(Number(s.adjAmt)||0),0);
 
   // Month and today filtered within current FY only
   const monthArr=curFYData.filter(s=>isMonth(s));
@@ -839,9 +839,10 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const _invTaxR    = invoiceRow ? ((invoiceRow.taxRate!==undefined&&invoiceRow.taxRate!==null?invoiceRow.taxRate:0)/100) : 0;
   const _invInc     = _invTaxR===0 ? true : (invoiceRow ? invoiceRow.taxInclusive!==false : true);
   const _invEntered = invoiceRow ? Number(invoiceRow.amount)||0 : 0;
+  const _invAdjAmt  = invoiceRow ? Number(invoiceRow.adjAmt)||0 : 0;
   const invSubtotal = _invInc ? parseFloat((_invEntered/(1+_invTaxR)).toFixed(2)) : _invEntered;
   const invTaxAmt   = parseFloat((invSubtotal*_invTaxR).toFixed(2));
-  const invGrand    = parseFloat((invSubtotal+invTaxAmt).toFixed(2));
+  const invGrand    = parseFloat((invSubtotal+invTaxAmt-_invAdjAmt).toFixed(2));
 
   const shop=SHOPS.find(s=>s.id===shopId);
   const sales=salesData[shopId]||[];
@@ -2029,14 +2030,15 @@ return(
       {/* ══ PRINT STYLE + OVERLAY ══ */}
       {printMode&&invoiceRow&&(()=>{
         const inv=invoiceRow,sym=shop.symbol,total=Number(inv.amount)||0,isIndia=shopId==="ros-india";
+        const invAdjAmt=Number(inv.adjAmt)||0;
         const rPct=inv.taxRate!==undefined&&inv.taxRate!==null?inv.taxRate:0;
         const taxRate=rPct/100;
         const inclusive=taxRate===0?true:inv.taxInclusive!==false;
         const subtotal=inclusive?parseFloat((total/(1+taxRate)).toFixed(2)):total;
         const taxAmt=parseFloat((subtotal*taxRate).toFixed(2));
-        const grand=parseFloat((subtotal+taxAmt).toFixed(2));
+        const grand=parseFloat((subtotal+taxAmt-invAdjAmt).toFixed(2));
         const cgst=parseFloat((taxAmt/2).toFixed(2));
-        const tRows=rPct===0?[["Amount (no tax)",total]]:isIndia?[["Subtotal (excl. tax)",subtotal],["CGST ("+(rPct/2)+"%)",cgst],["SGST ("+(rPct/2)+"%)",cgst]]:[["Subtotal (excl. tax)",subtotal],["Tax ("+rPct+"%)",taxAmt]];
+        const tRows=[...(rPct===0?[["Amount (no tax)",total]]:isIndia?[["Subtotal (excl. tax)",subtotal],["CGST ("+(rPct/2)+"%)","cgst],["SGST ("+(rPct/2)+"%)",cgst]]:["Subtotal (excl. tax)",subtotal],["Tax ("+rPct+"%)",taxAmt]]),...(invAdjAmt>0?[["Post-Sale Adj. ("+(inv.adjType||"Adjustment")+")",-invAdjAmt]]:[]),["Grand Total",grand]];
         const n=Math.round(total);const ons=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];const tns=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
         let wds="";if(n<20)wds=ons[n];else if(n<100)wds=tns[Math.floor(n/10)]+(n%10?" "+ons[n%10]:"");else if(n<1000)wds=ons[Math.floor(n/100)]+" Hundred"+(n%100?" "+tns[Math.floor((n%100)/10)]+(n%10?" "+ons[n%10]:""):"");else if(n<100000)wds=ons[Math.floor(n/1000)]+" Thousand";else wds=String(n);
         return(
@@ -2208,9 +2210,10 @@ return(
         const tR=rPct/100;
         const inc=tR===0?true:inv.taxInclusive!==false;
         const ent=Number(inv.amount)||0;
+        const pdfAdjAmt=Number(inv.adjAmt)||0;
         const sub=inc?parseFloat((ent/(1+tR)).toFixed(2)):ent;
         const tax=parseFloat((sub*tR).toFixed(2));
-        const grd=parseFloat((sub+tax).toFixed(2));
+        const grd=parseFloat((sub+tax-pdfAdjAmt).toFixed(2));
         const cgst=parseFloat((tax/2).toFixed(2));
         return(
           <div style={{position:"fixed",inset:0,zIndex:9999,background:"white",overflowY:"auto"}}>
@@ -2556,6 +2559,7 @@ return(
                 <div>
                   {invoiceRow&&(()=>{
                     const entered  = Number(invoiceRow.amount)||0;
+                    const previewAdjAmt = Number(invoiceRow.adjAmt)||0;
                     const isIndia  = shopId==="ros-india";
                     const rateDisplay = (invoiceRow.taxRate!==undefined&&invoiceRow.taxRate!==null ? invoiceRow.taxRate : 0);
                     const taxRate  = rateDisplay / 100;
@@ -2566,7 +2570,7 @@ return(
                       ? parseFloat((entered / (1 + taxRate)).toFixed(2))
                       : entered;
                     const taxAmt   = parseFloat((subtotal * taxRate).toFixed(2));
-                    const grand    = parseFloat((subtotal + taxAmt).toFixed(2));
+                    const grand    = parseFloat((subtotal + taxAmt - previewAdjAmt).toFixed(2));
                     const cgst     = parseFloat((taxAmt / 2).toFixed(2));
                     const sgst     = parseFloat((taxAmt / 2).toFixed(2));
                     const rows = rateDisplay===0
@@ -2581,6 +2585,8 @@ return(
                             ["Subtotal (excl. tax)", subtotal],
                             ["Tax ("+rateDisplay+"%)", taxAmt],
                           ];
+                    const adjRows=previewAdjAmt>0?[["Post-Sale Adj. ("+(invoiceRow.adjType||"Adjustment")+")",-previewAdjAmt]]:[];
+                    const allRows=[...rows,...adjRows];
                     return <>
                       {/* Tax mode badge */}
                       <div style={{marginBottom:8}}>
@@ -2591,10 +2597,10 @@ return(
                           {rateDisplay===0?"No Tax":(inclusive?"Tax Inclusive":"Tax Exclusive")+" · "+rateDisplay+"%"}
                         </span>
                       </div>
-                      {rows.map(([k,v])=>(
+                      {allRows.map(([k,v])=>(
                         <div key={k} style={{display:"flex",justifyContent:"space-between",marginBottom:7}}>
-                          <span style={{fontSize:13,color:"#64748b"}}>{k}</span>
-                          <span style={{fontSize:13,fontWeight:600,color:"#374151"}}>{fmt(shopId,v)}</span>
+                          <span style={{fontSize:13,color:v<0?"#d97706":"#64748b"}}>{k}</span>
+                          <span style={{fontSize:13,fontWeight:600,color:v<0?"#d97706":"#374151"}}>{v<0?"\u2212 "+fmt(shopId,Math.abs(v)):fmt(shopId,v)}</span>
                         </div>
                       ))}
                       <div style={{borderTop:"2px solid #0f172a",paddingTop:10,marginTop:6}}>
@@ -2702,7 +2708,7 @@ return(
                   <div style={{display:"flex",justifyContent:"space-between"}}>
                     <span style={{fontSize:12,color:"#64748b"}}>Amount</span>
                     <span style={{fontSize:14,fontWeight:900,color:shop.accent}}>
-                      {fmt(shopId,Number(selRow.amount)||0)}
+                      {fmt(shopId,(Number(selRow.amount)||0)-(Number(selRow.adjAmt)||0))}
                     </span>
                   </div>
                 </div>
@@ -2716,7 +2722,7 @@ return(
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
                     <span style={{fontSize:12,color:"#64748b"}}>Total</span>
                     <span style={{fontSize:14,fontWeight:900,color:shop.accent}}>
-                      {fmt(shopId,Number(selRow.amount)||0)}
+                      {fmt(shopId,(Number(selRow.amount)||0)-(Number(selRow.adjAmt)||0))}
                     </span>
                   </div>
                   {/* Fulfillment Timeline */}
@@ -2760,7 +2766,7 @@ return(
               {/* ── LINE ITEMS ── */}
               {(()=>{
                 const hasLines=Array.isArray(selRow.saleLines)&&selRow.saleLines.length>0;
-                const grandTotal=Number(selRow.amount)||0;
+                const grandTotal=(Number(selRow.amount)||0)-(Number(selRow.adjAmt)||0);
                 const discountAmt=Number(selRow.discount)||0;
                 const otherChargesAmt=Number(selRow.otherCharges)||0;
                 const taxRatePct=selRow.taxRate!=null?selRow.taxRate:0;
@@ -2829,6 +2835,12 @@ return(
                           <span style={{fontSize:12,fontWeight:600,color:"#374151"}}>{fmt(shopId,parseFloat((grandTotal*(taxRatePct/100)/(1+taxRatePct/100)).toFixed(2)))}</span>
                         </div>
                       )}
+                      {(Number(selRow.adjAmt)||0)>0&&(
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                          <span style={{fontSize:12,color:"#d97706"}}>{selRow.adjType||"Adjustment"}</span>
+                          <span style={{fontSize:12,fontWeight:600,color:"#d97706"}}>\u2212 {fmt(shopId,Number(selRow.adjAmt)||0)}</span>
+                        </div>
+                      )}
                       <div style={{display:"flex",justifyContent:"space-between",borderTop:"2px solid #0f172a",paddingTop:8}}>
                         <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>Grand Total</span>
                         <span style={{fontSize:15,fontWeight:900,color:shop.accent}}>{fmt(shopId,grandTotal)}</span>
@@ -2849,7 +2861,7 @@ return(
                 {/* totals */}
                 <div style={{border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 16px"}}>
                   {(()=>{
-                    const amt=Number(selRow.amount)||0;
+                    const amt=(Number(selRow.amount)||0)-(Number(selRow.adjAmt)||0);
                     const rPct=selRow.taxRate!=null?selRow.taxRate:0;
                     const r=rPct/100;
                     // amount is always the final grand total as entered/saved
@@ -2881,6 +2893,12 @@ return(
                         <span style={{fontSize:12,color:"#64748b"}}>Balance Due</span>
                         <span style={{fontSize:12,fontWeight:700,color:"#15803d"}}>{shop.symbol}0</span>
                       </div>
+                      {(Number(selRow.adjAmt)||0)>0&&(
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                          <span style={{fontSize:12,color:"#d97706"}}>{selRow.adjType||"Adjustment"}</span>
+                          <span style={{fontSize:12,fontWeight:600,color:"#d97706"}}>\u2212 {fmt(shopId,Number(selRow.adjAmt)||0)}</span>
+                        </div>
+                      )}
                       <div style={{display:"flex",justifyContent:"space-between"}}>
                         <span style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>Grand Total</span>
                         <span style={{fontSize:16,fontWeight:900,color:shop.accent}}>{fmt(shopId,amt)}</span>
