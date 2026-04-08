@@ -1,5991 +1,1105 @@
-import React, { useState, useEffect, useCallback, useRef } from "react";
-import CommandPalette from "./components/CommandPalette";
-import AnalyticsPanel from "./components/AnalyticsPanel";
-import DocumentsPanel from "./components/DocumentsPanel";
-import ExpensesPanel from "./components/ExpensesPanel";
-import InvoicesPanel from "./components/InvoicesPanel";
-import LogisticsPanel from "./components/LogisticsPanel";
-import ProductsPanel from "./components/ProductsPanel";
-import PurchasesPanel from "./components/PurchasesPanel";
-import ReportsPanel from "./components/ReportsPanel";
-import SalesPanel from "./components/SalesPanel";
-import SuppliersPanel from "./components/SuppliersPanel";
-import {
-  L_SEL,
-  L_HAIR,
-  L_IND,
-  STAGE_CFG,
-  STAFF_CFG,
-  AVATAR_STYLES,
-  STAGE_ACCENT,
-  STAGE_THEME
-} from "./constants";
-import { formatCurrency, formatDate, formatNumber } from "./utils";
-import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic } from "./db";
-/* =========================================================
-   CONFIG / CONSTANTS
-   ========================================================= */
+import { useState, useMemo, useRef, useEffect as useEff } from "react";
+import { formatDate } from "../utils";
+/* ─────────────────────────────────────────────────────────────────────────
+   SALES PANEL
+   Period definitions:
+     day      → today only
+     week     → Monday–Sunday of current ISO week
+     month    → 1st–last of current calendar month
+     year     → Financial Year: 1 April → 31 March
+     lifetime → all records
+   ───────────────────────────────────────────────────────────────────────── */
 
-/* ─────────────────────────────────────────────────────
-   SHOP THEMES  — bright, readable, professional
-   Sidebar: light-tinted, coloured but NEVER dark enough
-   to hide white text. We use a mid-saturation colour
-   with crisp white text and bright accent highlights.
-───────────────────────────────────────────────────── */
-/* =========================================================
-   CRM / DATA STRUCTURES
-   ========================================================= */
-const SHOPS = [
-  {
-    id:"ros-selections", name:"ROS Selections UK", short:"Selections",
-    flag:"🇬🇧", currency:"GBP", symbol:"£", logo:L_SEL,
-    tagline:"Buy with Confidence",
-    todaySales:0, pendingOrders:0, stockValue:"—", monthRevenue:0,
-    // Sidebar: rich emerald — readable white text
-    sb:"linear-gradient(160deg,#059669 0%,#10b981 60%,#34d399 100%)",
-    cardBg:"linear-gradient(135deg,#059669 0%,#34d399 100%)",
-    sbActive:"rgba(255,255,255,0.22)", sbActiveBorder:"#ffffff",
-    sbText:"rgba(255,255,255,0.90)", sbMuted:"rgba(255,255,255,0.60)",
-    sbHover:"rgba(255,255,255,0.10)",
-    // Page accent
-    accent:"#059669", accentBg:"#ecfdf5", accentText:"#065f46",
-    accentBtn:"#059669", accentBtnHover:"#047857",
-    // KPI icon bg tints
-    k:["#059669","#0d9488","#0891b2","#ef4444","#8b5cf6","#f59e0b"],
-    chartLine:"#059669", chartFill:"#d1fae5",
-    pie:["#059669","#10b981","#34d399","#6ee7b7"],
-    quickCards:[
-      {l:"NEW SALE",      ic:"🛒", g:"linear-gradient(135deg,#10b981 0%,#059669 100%)"},
-      {l:"NEW PURCHASE",  ic:"📦", g:"linear-gradient(135deg,#14b8a6 0%,#0d9488 100%)"},
-      {l:"ADD CUSTOMER",  ic:"👤", g:"linear-gradient(135deg,#38bdf8 0%,#0284c7 100%)"},
-      {l:"ADD PRODUCT",   ic:"➕", g:"linear-gradient(135deg,#84cc16 0%,#65a30d 100%)"},
-      {l:"RECORD EXPENSE",ic:"💳", g:"linear-gradient(135deg,#fb923c 0%,#ea580c 100%)"},
-      {l:"GEN REPORT",    ic:"📋", g:"linear-gradient(135deg,#94a3b8 0%,#64748b 100%)"},
-    ],
-  },
-  {
-    id:"ros-hairlines", name:"ROS Hairlines UK", short:"Hairlines",
-    flag:"🇬🇧", currency:"GBP", symbol:"£", logo:L_HAIR,
-    tagline:"Reclaim Your Inner Confidence",
-    todaySales:0, pendingOrders:0, stockValue:"—", monthRevenue:0,
-    // Sidebar: slate gray — matches card colour scheme
-    sb:"linear-gradient(160deg,#1e293b 0%,#334155 50%,#475569 100%)",
-    cardBg:"linear-gradient(135deg,#334155 0%,#475569 60%,#64748b 100%)",
-    sbActive:"rgba(255,255,255,0.20)", sbActiveBorder:"#ffffff",
-    sbText:"rgba(255,255,255,0.92)", sbMuted:"rgba(255,255,255,0.60)",
-    sbHover:"rgba(255,255,255,0.10)",
-    // accent: slate-400 tones for buttons, highlights, borders
-    accent:"#64748b", accentBg:"#f1f5f9", accentText:"#1e293b",
-    accentBtn:"#475569", accentBtnHover:"#334155",
-    k:["#475569","#64748b","#334155","#ef4444","#8b5cf6","#f59e0b"],
-    chartLine:"#64748b", chartFill:"#e2e8f0",
-    pie:["#334155","#475569","#64748b","#94a3b8"],
-    quickCards:[
-      {l:"NEW SALE",      ic:"🛒", g:"linear-gradient(135deg,#64748b 0%,#334155 100%)"},
-      {l:"NEW PURCHASE",  ic:"📦", g:"linear-gradient(135deg,#475569 0%,#1e293b 100%)"},
-      {l:"ADD CUSTOMER",  ic:"👤", g:"linear-gradient(135deg,#94a3b8 0%,#64748b 100%)"},
-      {l:"ADD PRODUCT",   ic:"➕", g:"linear-gradient(135deg,#6366f1 0%,#4f46e5 100%)"},
-      {l:"RECORD EXPENSE",ic:"💳", g:"linear-gradient(135deg,#f59e0b 0%,#d97706 100%)"},
-      {l:"GEN REPORT",    ic:"📋", g:"linear-gradient(135deg,#374151 0%,#111827 100%)"},
-    ],
-  },
-  {
-    id:"ros-india", name:"ROS INDIA", short:"India",
-    flag:"🇮🇳", currency:"INR", symbol:"₹", logo:L_IND,
-    tagline:"Be Confident with Indian Style",
-    todaySales:0, pendingOrders:0, stockValue:"—", monthRevenue:0,
-    // Sidebar: deep navy (#00143c) → rose (#dc5078) — exact logo colours
-    sb:"linear-gradient(160deg,#1a0a2e 0%,#7d1a4a 50%,#e95597 100%)",
-    cardBg:"linear-gradient(135deg,#e95597 0%,#c73d80 100%)",
-    sbActive:"rgba(255,255,255,0.22)", sbActiveBorder:"#ffffff",
-    sbText:"rgba(255,255,255,0.95)", sbMuted:"rgba(255,255,255,0.62)",
-    sbHover:"rgba(255,255,255,0.10)",
-    // accent = the rose from the logo
-    accent:"#e95597", accentBg:"#fef0f7", accentText:"#7d1047",
-    accentBtn:"#e95597", accentBtnHover:"#c73d80",
-    k:["#e95597","#c73d80","#1a0a2e","#f472b6","#7c3aed","#d97706"],
-    chartLine:"#e95597", chartFill:"#fde8f3",
-    pie:["#e95597","#1a0a2e","#f472b6","#7d1a4a"],
-    quickCards:[
-      {l:"NEW SALE",      ic:"🛒", g:"linear-gradient(135deg,#f472b6 0%,#e95597 100%)"},
-      {l:"NEW PURCHASE",  ic:"📦", g:"linear-gradient(135deg,#7d1a4a 0%,#1a0a2e 100%)"},
-      {l:"ADD CUSTOMER",  ic:"👤", g:"linear-gradient(135deg,#c084fc 0%,#7c3aed 100%)"},
-      {l:"ADD PRODUCT",   ic:"➕", g:"linear-gradient(135deg,#f97316 0%,#c2410c 100%)"},
-      {l:"RECORD EXPENSE",ic:"💳", g:"linear-gradient(135deg,#fbbf24 0%,#d97706 100%)"},
-      {l:"GEN REPORT",    ic:"📋", g:"linear-gradient(135deg,#64748b 0%,#334155 100%)"},
-    ],
-  },
-];
+/* ── localISO: Date → "YYYY-MM-DD" using LOCAL date parts (no UTC shift) ── */
+function localISO(dt) {
+  const y = dt.getFullYear();
+  const mo = String(dt.getMonth() + 1).padStart(2, "0");
+  const d  = String(dt.getDate()).padStart(2, "0");
+  return `${y}-${mo}-${d}`;
+}
 
-/* ─── seed data ─────────────────────────────────────── */
-const CUSTOMERS = [];
-const SUPPLIERS=[];
-const PRODUCTS=[];
-const AGENTS=[];
-const SALES_SEED={"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
-const PURCH_SEED={"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
-const EXP_SEED={"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
-const LOG_SEED={"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
-const MONTHLY=[];
-const PIE_D=[];
+/* ── safeParseDate: any date string → local JS Date, never shifts timezone ─
+   Handles: YYYY-MM-DD (Supabase ISO), DD/MM/YYYY, DD-MM-YYYY, DD/MM/YY,
+            DD-MM-YY. Always uses new Date(y,m,d) local constructor. ────── */
+function safeParseDate(raw) {
+  if (!raw) return null;
+  const s = String(raw).trim();
+  let mo;
+  // YYYY-MM-DD  (ISO from Supabase / new sale form)
+  mo = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (mo) return new Date(+mo[1], +mo[2] - 1, +mo[3]);
+  // DD/MM/YYYY or DD-MM-YYYY  (UK 4-digit year)
+  mo = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (mo) return new Date(+mo[3], +mo[2] - 1, +mo[1]);
+  // DD/MM/YY with SLASH — manual UK entry format (DD first)
+  mo = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/);
+  if (mo) { const y = +mo[3]; return new Date(y < 50 ? 2000 + y : 1900 + y, +mo[2] - 1, +mo[1]); }
+  // MM-DD-YY with HYPHEN — imported spreadsheet format (MM first)
+  mo = s.match(/^(\d{1,2})-(\d{1,2})-(\d{2})$/);
+  if (mo) { const y = +mo[3]; return new Date(y < 50 ? 2000 + y : 1900 + y, +mo[1] - 1, +mo[2]); }
+  return null;
+}
 
-/* ─── helpers ───────────────────────────────────────── */
-const fmt=(sid,n)=>{
-  const s=SHOPS.find(x=>x.id===sid);
-  if(!s)return n;
-  return s.currency === "INR"
-  ? formatCurrency(n)
-  : "£" + Number(n).toLocaleString("en-GB");
-};
+/* ── toSortableDate: any date → "YYYY-MM-DD" for string comparison ──────── */
+function toSortableDate(raw) {
+  const dt = safeParseDate(raw);
+  if (!dt || isNaN(dt.getTime())) return "0000-00-00";
+  return localISO(dt);
+}
 
-const BSTYLE={
-  // ── Delivery statuses ──
-  "PENDING":                  {bg:"#fef9c3",c:"#a16207",b:"#fde047"},
-  "FULFILLED":                {bg:"#dcfce7",c:"#15803d",b:"#bbf7d0"},
-  "GOOD FEEDBACK":            {bg:"#d1fae5",c:"#065f46",b:"#6ee7b7"},
-  "RTRN REQSTD":              {bg:"#ffedd5",c:"#c2410c",b:"#fed7aa"},
-  "RETRN RCVD":               {bg:"#fee2e2",c:"#991b1b",b:"#fca5a5"},
-  "EXCHANGED":                {bg:"#e0e7ff",c:"#4338ca",b:"#c7d2fe"},
-  "REFUNDED":                 {bg:"#f3e4ff",c:"#7e22ce",b:"#d8b4fe"},
-  // ── India-specific delivery statuses ──
-  "ORDER NOT PLACED":         {bg:"#fef9c3",c:"#a16207",b:"#fde047"},
-  "WORK IN PROGRESS":         {bg:"#dbeafe",c:"#1d4ed8",b:"#bfdbfe"},
-  "PHOTO GIVEN TO CUSTOMER":  {bg:"#e0f2fe",c:"#0369a1",b:"#bae6fd"},
-  "AWAITING TRACKING INFO.":  {bg:"#fef3c7",c:"#92400e",b:"#fcd34d"},
-  "RETURN REQUESTED":         {bg:"#ffedd5",c:"#c2410c",b:"#fed7aa"},
-  "RETURN RECEIVED":          {bg:"#fee2e2",c:"#991b1b",b:"#fca5a5"},
-  "GOOD FEEDBACK RECEIVED":   {bg:"#d1fae5",c:"#065f46",b:"#6ee7b7"},
-  "NEGATIVE FEEDBACK RECEIVED":{bg:"#ffe4e6",c:"#9f1239",b:"#fda4af"},
-  // ── Legacy support ──
-  "DISPATCHED":     {bg:"#e0e7ff",c:"#4338ca",b:"#c7d2fe"},
-  "DELIVERED":      {bg:"#dcfce7",c:"#15803d",b:"#bbf7d0"},
-  // ── Payment ──
-  Paid:             {bg:"#dcfce7",c:"#15803d",b:"#bbf7d0"},
-  Pending:          {bg:"#fef9c3",c:"#a16207",b:"#fde047"},
-  Partial:          {bg:"#ffedd5",c:"#c2410c",b:"#fed7aa"},
-  SHOP:             {bg:"#dbeafe",c:"#1d4ed8",b:"#bfdbfe"},
-  // ── Customer tags ──
-  VIP:              {bg:"#fef9c3",c:"#854d0e",b:"#fde047"},
-  Wholesale:        {bg:"#f3e8ff",c:"#7e22ce",b:"#e9d5ff"},
-  "New Customer":   {bg:"#cffafe",c:"#0e7490",b:"#a5f3fc"},
-  Regular:          {bg:"#f1f5f9",c:"#475569",b:"#e2e8f0"},
-  "Budget Friendly": {bg:"#f0fdf4",c:"#15803d",b:"#bbf7d0"},
-};
+/* ── fmtDate: any date → "DD/MM/YY" for display ────────────────────────── */
+function fmtDate(raw) {
+  if (!raw) return "—";
+  const dt = safeParseDate(raw);
+  if (!dt || isNaN(dt.getTime())) return String(raw);
+  const d  = String(dt.getDate()).padStart(2, "0");
+  const mo = String(dt.getMonth() + 1).padStart(2, "0");
+  const y  = String(dt.getFullYear()).slice(-2);
+  return `${d}/${mo}/${y}`;
+}
 
-// Row background colour per delivery status
-const STATUS_ROW_BG={
-  "PENDING":                   "#fffbeb",
-  "FULFILLED":                 "#f0fdf4",
-  "GOOD FEEDBACK":             "#ecfdf5",
-  "RTRN REQSTD":               "#fff7ed",
-  "RETRN RCVD":                "#fef2f2",
-  "EXCHANGED":                 "#eef2ff",
-  "REFUNDED":                  "#faf5ff",
-  // India-specific
-  "ORDER NOT PLACED":          "#fffbeb",
-  "WORK IN PROGRESS":          "#eff6ff",
-  "PHOTO GIVEN TO CUSTOMER":   "#f0f9ff",
-  "AWAITING TRACKING INFO.":   "#fffbeb",
-  "RETURN REQUESTED":          "#fff7ed",
-  "RETURN RECEIVED":           "#fef2f2",
-  "GOOD FEEDBACK RECEIVED":    "#ecfdf5",
-  "NEGATIVE FEEDBACK RECEIVED":"#fff1f2",
-};
-const Badge=({l})=>{
-  const b=BSTYLE[l]||{bg:"#f1f5f9",c:"#475569",b:"#e2e8f0"};
-  return <span style={{display:"inline-flex",alignItems:"center",padding:"2px 10px",borderRadius:999,fontSize:11,fontWeight:700,background:b.bg,color:b.c,border:"1px solid "+b.b}}>{l}</span>;
-};
-const Modal=({title,onClose,accent,children})=>(
-  <div style={{position:"fixed",inset:0,zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
-    <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(6px)"}}/>
-    <div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.20)",width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"18px 24px",borderBottom:"1px solid #f1f5f9",background:accent+"12",borderRadius:"20px 20px 0 0"}}>
-        <h3 style={{margin:0,fontSize:16,fontWeight:800,color:"#0f172a"}}>{title}</h3>
-        <button onClick={onClose} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:20,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>×</button>
-      </div>
-      <div style={{padding:24}}>{children}</div>
-    </div>
-  </div>
-);
+/* ── fmtDateForSale: like fmtDate but corrects year using invoice suffix ───
+   If the stored date year conflicts with the FY implied by the invoice
+   suffix, derive the correct year from the suffix instead.
+   e.g. date="2026-04-12", id="ROS24356" (suffix=6 → FY25-26 → year 2025)
+   → displays "12/04/25" not "12/04/26"                                   ── */
+function fmtDateForSale(sale) {
+  if (!sale) return "—";
+  const raw = sale.date;
+  const dt = safeParseDate(raw);
+  if (!dt || isNaN(dt.getTime())) return raw ? String(raw) : "—";
 
-/* ─── Per-shop logo image map — uses the same imports as shop.logo ─── */
-const SHOP_LOGO_SRC = {
-  "ros-selections": L_SEL,
-  "ros-hairlines":  L_HAIR,
-  "ros-india":      L_IND,
-};
+  const id = String(sale.id || "");
+  const rosMatch = id.match(/^[A-Z]{2,3}(\d{4})(\d)$/);
+  if (rosMatch) {
+    const suffix = +rosMatch[2];
+    const nowYear = new Date().getFullYear();
+    const decade  = Math.floor(nowYear / 10) * 10;
+    let fyEndYear = decade + suffix;
+    if (fyEndYear - nowYear > 5) fyEndYear -= 10;
+    if (nowYear - fyEndYear > 5) fyEndYear += 10;
+    const fyStartYr = fyEndYear - 1; // e.g. 2026 for FY25-26
 
-/* size: "card" (large, on coloured bg) | "sidebar" (small, on gradient bg) */
-const ShopLogo = ({ shopId, size = "card" }) => {
-  const src = SHOP_LOGO_SRC[shopId];
-  if (!src) return null;
-  const isCard = size === "card";
-  return (
-    <div style={{
-      background: "white",
-      borderRadius: isCard ? 10 : 8,
-      padding: isCard ? "4px 8px" : "3px 5px",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      boxShadow: isCard
-        ? "0 2px 8px rgba(0,0,0,0.15)"
-        : "0 2px 8px rgba(0,0,0,0.20),inset 0 1px 0 rgba(255,255,255,0.30)",
-      flexShrink: 0,
-    }}>
-      <img
-        src={src}
-        alt={shopId}
-        style={{
-          height: isCard ? 40 : 32,
-          width: "auto",
-          maxWidth: isCard ? 100 : 80,
-          objectFit: "contain",
-          display: "block",
-        }}
-      />
-    </div>
-  );
-};
+    // The date month/day are likely correct; only fix the year
+    // A sale in FY fyStartYr-fyEndYear should have year = fyStartYr (Apr-Dec)
+    // or fyEndYear (Jan-Mar)
+    const storedMonth = dt.getMonth(); // 0-indexed
+    const correctYear = storedMonth >= 3 ? fyStartYr : fyEndYear;
+    const storedYear  = dt.getFullYear();
 
-/* ── Single source of truth for all shop stat figures ─────────────────────
-   Defined BEFORE ShopSelector and ShopDashboard so both can call it.
-────────────────────────────────────────────────────────────────────────── */
-const STAT_FULFILLED=new Set(["FULFILLED","EXCHANGED","REFUNDED","GOOD FEEDBACK","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]);
-const STAT_RETURNS  =new Set(["RTRN REQSTD","RETRN RCVD","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED"]);
+    if (storedYear !== correctYear) {
+      // Year is wrong — display with corrected year
+      const d  = String(dt.getDate()).padStart(2, "0");
+      const mo = String(dt.getMonth() + 1).padStart(2, "0");
+      const y  = String(correctYear).slice(-2);
+      return `${d}/${mo}/${y}`;
+    }
+  }
+  // No correction needed — display as stored
+  const d  = String(dt.getDate()).padStart(2, "0");
+  const mo = String(dt.getMonth() + 1).padStart(2, "0");
+  const y  = String(dt.getFullYear()).slice(-2);
+  return `${d}/${mo}/${y}`;
+}
 
-/* ── getSaleFY: returns FY start year for a sale using invoice suffix as ground truth ── */
-const getSaleFY=(sale)=>{
-  const id=String(sale.id||"");
-  const m=id.match(/^[A-Z]{2,3}(\d{4})(\d)$/);
-  if(m){
-    const suffix=+m[2];
-    const nowY=new Date().getFullYear();
-    const decade=Math.floor(nowY/10)*10;
-    let endY=decade+suffix;
-    if(endY-nowY>5)endY-=10;
-    if(nowY-endY>5)endY+=10;
-    return endY-1; // FY start year e.g. 2026 for FY26-27
+function getPeriodRange(period) {
+  const now = new Date();
+  const y = now.getFullYear(), m = now.getMonth(), d = now.getDate();
+  switch (period) {
+    case "day":
+      return { start: localISO(now), end: localISO(now) };
+    case "week": {
+      const dow  = now.getDay();                      // 0=Sun … 6=Sat
+      const diff = dow === 0 ? -6 : 1 - dow;          // offset to Monday
+      return {
+        start: localISO(new Date(y, m, d + diff)),
+        end:   localISO(new Date(y, m, d + diff + 6)),
+      };
+    }
+    case "month":
+      return {
+        start: localISO(new Date(y, m, 1)),
+        end:   localISO(new Date(y, m + 1, 0)),
+      };
+    case "year": {
+      // UK Financial Year: 1 April → 31 March
+      // If we're in Jan-Mar, FY started previous calendar year
+      const fy = m < 3 ? y - 1 : y;
+      return { start: `${fy}-04-01`, end: `${fy + 1}-03-31` };
+    }
+    default: return { start: null, end: null };   // lifetime
+  }
+}
+
+function filterByPeriod(sales, period) {
+  if (period === "lifetime") return sales;
+
+  if (period === "year") {
+    const now = new Date();
+    const nowY = now.getFullYear();
+    const nowM = now.getMonth(); // 0-indexed
+    // Current FY: Apr 1 YYYY → Mar 31 (YYYY+1)
+    // If Jan/Feb/Mar → FY started previous year
+    const fyStartYr = nowM < 3 ? nowY - 1 : nowY;
+    const fyEndYear  = fyStartYr + 1;
+    const fySuffix   = String(fyEndYear).slice(-1); // e.g. "7" for 2026-27
+
+    const fyStart = new Date(fyStartYr, 3, 1);  // Apr 1 of start year
+    const fyEnd   = new Date(fyEndYear, 2, 31); // Mar 31 of end year
+
+    return sales.filter(s => {
+      const id = String(s.id || "");
+      // ROS pattern: 3 letters + 4 digits + 1 suffix digit
+      const rosMatch = id.match(/^[A-Z]{2,3}(\d{4})(\d)$/);
+      if (rosMatch) {
+        // Suffix digit is ground truth for FY
+        return rosMatch[2] === fySuffix;
+      }
+      // For non-ROS IDs (imported, SI-, SH-, IN-): use date
+      const dt = safeParseDate(s.date);
+      if (!dt || isNaN(dt.getTime())) return false;
+      const d = new Date(dt.getFullYear(), dt.getMonth(), dt.getDate());
+      return d >= fyStart && d <= fyEnd;
+    });
+  }
+
+  const { start, end } = getPeriodRange(period);
+  if (!start || !end) return sales;
+  return sales.filter(s => {
+    const dt = toSortableDate(s.date);
+    return dt >= start && dt <= end;
+  });
+}
+
+/* ── Date / separator helpers ───────────────────────────────────────────── */
+
+function monthKey(dateStr) {
+  const d = safeParseDate(dateStr);
+  if (!d || isNaN(d.getTime())) return "";
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+function monthLabel(dateStr) {
+  const d = safeParseDate(dateStr);
+  if (!d || isNaN(d.getTime())) return "";
+  return d.toLocaleString("default", { month: "long", year: "numeric" });
+}
+function fyStartYear(dateStrOrSale) {
+  const id = dateStrOrSale && typeof dateStrOrSale === "object" ? dateStrOrSale.id : null;
+  const dateStr = dateStrOrSale && typeof dateStrOrSale === "object" ? dateStrOrSale.date : dateStrOrSale;
+
+  // Use invoice suffix as ground truth when available
+  if (id) {
+    const rosMatch = String(id).match(/^[A-Z]{2,3}(\d{4})(\d)$/);
+    if (rosMatch) {
+      const suffix = +rosMatch[2];
+      // suffix = last digit of FY end year
+      // Work out full end year relative to current year
+      const nowYear = new Date().getFullYear();
+      const decade  = Math.floor(nowYear / 10) * 10;
+      let endYear = decade + suffix;
+      if (endYear - nowYear > 5) endYear -= 10;
+      if (nowYear - endYear > 5) endYear += 10;
+      return endYear - 1; // FY start year
+    }
   }
   // Fallback: derive from date
-  const dt=parseDate(sale.date);
-  if(!dt)return null;
-  return dt.getMonth()<3?dt.getFullYear()-1:dt.getFullYear();
-};
+  const d = safeParseDate(dateStr);
+  if (!d || isNaN(d.getTime())) return null;
+  return d.getMonth() < 3 ? d.getFullYear() - 1 : d.getFullYear();
+}
+function fyLabel(startYear) {
+  if (startYear === null || isNaN(startYear)) return "";
+  return `FY ${startYear}–${String(startYear + 1).slice(-2)}`;
+}
 
-const calcShopStats=(data=[])=>{
-  const now=new Date();
-  const y=now.getFullYear(),mo=now.getMonth(),d=now.getDate();
-  // Current FY start year: Apr-Dec → this year, Jan-Mar → last year
-  const curFYStart=mo<3?y-1:y;
-
-  // Current FY sales only (using invoice suffix as ground truth)
-  const curFYData=data.filter(s=>getSaleFY(s)===curFYStart);
-
-  const isToday=s=>{const dt=parseDate(s.date);return dt&&dt.getFullYear()===y&&dt.getMonth()===mo&&dt.getDate()===d;};
-  const isMonth=s=>{const dt=parseDate(s.date);return dt&&dt.getFullYear()===y&&dt.getMonth()===mo;};
-
-  const isRefunded=s=>(s.ful||s.status)==="REFUNDED";
-  const rev=(arr)=>arr.filter(s=>!isRefunded(s)).reduce((a,s)=>a+(Number(s.amount)||0)-(Number(s.adjAmt)||0),0);
-
-  // Month and today filtered within current FY only
-  const monthArr=curFYData.filter(s=>isMonth(s));
-  const todayArr=curFYData.filter(s=>isToday(s));
-
-  return {
-    todaySales:    rev(todayArr),
-    monthRev:      rev(monthArr),
-    monthOrders:   monthArr.length,
-    monthReturns:  monthArr.filter(s=>STAT_RETURNS.has(s.ful||s.status)).length,
-    monthRefunds:  monthArr.filter(s=>isRefunded(s)).reduce((a,s)=>a+(Number(s.refundAmt)||0),0),
-    // Pending: ALL time, all FY — unfulfilled is unfulfilled regardless of year
-    pendingOrders: data.filter(s=>!STAT_FULFILLED.has(s.ful||s.status)).length,
-    totalRev:      rev(data),
-    orders:        data.length,
-    fySales:       rev(curFYData),
-    fyOrders:      curFYData.length,
-  };
-};
-
-/* ════════════════════════════════════════════════════
-   SHOP SELECTOR
-════════════════════════════════════════════════════ */
-const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
-  const [hov,setHov]=useState(null);
-  const [cmd,setCmd]=useState(false);
-  const [statHov,setStatHov]=useState(null);
-  const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
-  // shopStats computed directly from salesData prop
-
-  const shopStats={};
-  SHOPS.forEach(shop=>{shopStats[shop.id]=calcShopStats(salesData[shop.id]||[]);});
-
-  useEffect(()=>{
-    const h=()=>setIsMobile(window.innerWidth<768);
-    window.addEventListener("resize",h);
-    return()=>window.removeEventListener("resize",h);
-  },[]);
-  useEffect(()=>{
-    const h=e=>{if(e.key==="/"){e.preventDefault();setCmd(true);}if(e.key==="Escape")setCmd(false);};
-    window.addEventListener("keydown",h);
-    return()=>window.removeEventListener("keydown",h);
-  },[]);
-
-  /* stat panel data */
-  const STAT_PANELS={
-    customers:{
-      icon:"👥",label:"Customers",value:CUSTOMERS.length,color:"#2563eb",bg:"#eff6ff",border:"#bfdbfe",
-      rows:CUSTOMERS.map(c=>({
-        avatar:c.name.charAt(0),
-        name:c.name,
-        sub:c.phone,
-        badge:c.tag,
-        right:c.spend.toLocaleString(),
-        rightSub:"total spend",
-      })),
-    },
-    products:{
-      icon:"🏷️",label:"Products",value:PRODUCTS.length,color:"#059669",bg:"#ecfdf5",border:"#a7f3d0",
-      rows:PRODUCTS.map(p=>({
-        avatar:"📦",
-        name:p.name,
-        sub:p.sku+" · "+p.cat,
-        badge:p.stock<=p.min?"Low Stock":null,
-        right:"£"+p.sell,
-        rightSub:"sell price",
-      })),
-    },
-    suppliers:{
-      icon:"🏭",label:"Suppliers",value:SUPPLIERS.length,color:"#7c3aed",bg:"#f5f3ff",border:"#ddd6fe",
-      rows:SUPPLIERS.map(s=>({
-        avatar:"🏭",
-        name:s.name,
-        sub:s.contact+" · "+s.phone,
-        badge:s.terms,
-        right:s.category,
-        rightSub:"category",
-      })),
-    },
-    agents:{
-      icon:"🚚",label:"Logistics",value:AGENTS.length,color:"#d97706",bg:"#fffbeb",border:"#fde68a",
-      rows:AGENTS.map(a=>({
-        avatar:"🚚",
-        name:a.name,
-        sub:a.type+" · "+a.contact,
-        badge:a.type,
-        right:"Track →",
-        rightSub:"",
-      })),
-    },
-  };
-
-  return(
-    <div style={{minHeight:"100vh",background:"#f0f4f8",fontFamily:"\'DM Sans\',system-ui,sans-serif"}} onClick={()=>statHov&&setStatHov(null)}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&family=Arimo:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-
-      {/* ── header ── */}
-      <header style={{background:"white",borderBottom:"1px solid #e2e8f0",height:isMobile?52:60,display:"flex",alignItems:"center",padding:isMobile?"0 14px":"0 32px",justifyContent:"space-between",boxShadow:"0 1px 4px rgba(0,0,0,0.06)",position:"sticky",top:0,zIndex:40}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <div style={{width:36,height:36,borderRadius:11,background:"linear-gradient(135deg,#2563eb,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px rgba(37,99,235,0.30)",flexShrink:0}}>
-            <span style={{color:"white",fontWeight:900,fontSize:17}}>R</span>
-          </div>
-          <div>
-            <span style={{fontWeight:900,fontSize:15,color:"#0f172a",letterSpacing:"-0.3px"}}>ROS</span>
-            {!isMobile&&<span style={{fontWeight:400,fontSize:14,color:"#94a3b8",marginLeft:8}}>Business Management</span>}
-          </div>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:isMobile?8:14}}>
-          {!isMobile&&<span style={{fontSize:10,fontWeight:600,color:"#94a3b8",letterSpacing:"0.04em"}}>
-            Developed by <strong style={{color:"#2563eb"}}>ROS Nexus</strong>
-          </span>}
-          {!isMobile&&<button onClick={()=>setCmd(true)} style={{display:"flex",alignItems:"center",gap:8,background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"7px 16px",color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-            🔍 Search… <kbd style={{background:"#e2e8f0",borderRadius:4,padding:"1px 7px",fontSize:11,marginLeft:4}}>/</kbd>
-          </button>}
-          {user?.role==="superadmin"&&(
-            <button onClick={onOpenSettings}
-              style={{display:"flex",alignItems:"center",gap:6,padding:isMobile?"7px 10px":"7px 14px",
-                background:"linear-gradient(135deg,#1d4ed8,#7c3aed)",border:"none",
-                borderRadius:10,cursor:"pointer",color:"white",fontSize:12,fontWeight:700,
-                fontFamily:"inherit",boxShadow:"0 2px 8px rgba(37,99,235,0.35)"}}>
-              ⚙️{!isMobile&&" Settings"}
-            </button>
-          )}
-          <div style={{display:"flex",alignItems:"center",gap:8,padding:"4px 10px 4px 4px",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:999,cursor:"pointer"}}
-            onClick={onLogout} title="Logout">
-            <div style={{width:28,height:28,borderRadius:"50%",background:user?.avatar||"linear-gradient(135deg,#2563eb,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11,flexShrink:0}}>
-              {user?.initials||"A"}
-            </div>
-            {!isMobile&&<span style={{fontSize:13,fontWeight:600,color:"#374151"}}>{user?.name||"Admin"}</span>}
-            {!isMobile&&<span style={{fontSize:10,color:"#94a3b8",marginLeft:2}}>· Logout</span>}
-            {isMobile&&<span style={{fontSize:11,color:"#94a3b8",fontWeight:600}}>Out</span>}
-          </div>
-        </div>
-      </header>
-
-      <main style={{maxWidth:1160,margin:"0 auto",padding:isMobile?"16px 14px 60px":"60px 24px 80px"}}>
-
-        {/* ── hero ── */}
-        <div style={{textAlign:"center",marginBottom:isMobile?24:52}}>
-          <div style={{display:"inline-flex",alignItems:"center",gap:6,background:"white",border:"1px solid #e2e8f0",borderRadius:999,padding:"5px 16px",fontSize:12,fontWeight:700,color:"#64748b",marginBottom:16,boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
-            <span style={{width:6,height:6,borderRadius:"50%",background:"#22c55e",display:"inline-block"}}/>
-            3 Active Workspaces
-          </div>
-          <h1 style={{fontSize:isMobile?26:42,fontWeight:900,color:"#0f172a",letterSpacing:isMobile?"-0.5px":"-1.5px",lineHeight:1.1,margin:"0 0 10px"}}>ROS Business Management System</h1>
-          <p style={{fontSize:isMobile?13:15,color:"#64748b",margin:0}}>Choose a shop to manage sales, purchases, logistics and analytics.</p>
-  
-<p></p>
-<p style={{fontSize:isMobile?7:9,color:"#64748b",lineHeight:1.1,margin:0}}>Developed by ROS Nexus</p>
-        </div>
-
-        {/* ── 3 shop cards ── */}
-        <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:isMobile?14:24,marginBottom:isMobile?24:48}}>
-          {SHOPS.filter(sh=>user?.role==="superadmin"||user?.role==="admin"||(user?.shops||[]).includes(sh.id)).map(shop=>{
-            const h=hov===shop.id;
-            const isStaff=user?.role==="staff";
-            const staffLocked=isStaff&&!(user?.shops||[]).includes(shop.id);
-            return(
-              <div key={shop.id}
-                onClick={()=>!staffLocked&&onSelect(shop.id)}
-                onMouseEnter={()=>!staffLocked&&setHov(shop.id)}
-                onMouseLeave={()=>setHov(null)}
-                style={{borderRadius:22,overflow:"hidden",cursor:staffLocked?"not-allowed":"pointer",
-                  transform:h?"translateY(-5px) scale(1.012)":"none",
-                  transition:"all 0.22s cubic-bezier(.4,0,.2,1)",
-                  boxShadow:h?"0 20px 48px -8px "+shop.accent+"44,0 4px 16px rgba(0,0,0,0.08)":"0 2px 12px rgba(0,0,0,0.08)",
-                  background:"white",
-                  border:h?"2px solid "+shop.accent+"55":"2px solid transparent",
-                  opacity:staffLocked?0.45:1,
-                  filter:staffLocked?"grayscale(0.6)":"none",
-                }}>
-
-                {/* ── coloured top section ── */}
-                <div style={{background:shop.cardBg||shop.sb,padding:"22px 22px 18px",position:"relative",overflow:"hidden"}}>
-                  <div style={{position:"absolute",top:-24,right:-24,width:100,height:100,borderRadius:"50%",background:"rgba(255,255,255,0.10)"}}/>
-                  <div style={{position:"absolute",bottom:-16,left:8,width:64,height:64,borderRadius:"50%",background:"rgba(255,255,255,0.07)"}}/>
-
-                  {/* ── WORKSPACE AVATAR ROW ── */}
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,position:"relative",zIndex:1}}>
-                    {/* Left: logo badge + name */}
-                    <div style={{display:"flex",alignItems:"center",gap:10}}>
-                      {/* logo badge — unique per shop */}
-                      <ShopLogo shopId={shop.id} size="card" />
-                    </div>
-                    {/* Right: country flag badge */}
-                    <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
-                      <span style={{fontSize:28,filter:"drop-shadow(0 1px 3px rgba(0,0,0,0.20))"}}>{shop.flag}</span>
-                      <span style={{fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.80)",letterSpacing:"0.06em",textTransform:"uppercase"}}>{shop.currency}</span>
-                    </div>
-                  </div>
-
-                  {/* shop name — clearly readable on colour */}
-                  <div style={{position:"relative",zIndex:1,marginBottom:14}}>
-                    <p style={{margin:"0 0 2px",fontSize:17,fontWeight:700,color:"white",letterSpacing:"0.04em",textShadow:"0 1px 3px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif",textTransform:"uppercase"}}>{shop.name}</p>
-                    <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.65)",fontStyle:"italic"}}>{shop.tagline}</p>
-                  </div>
-
-                  {/* revenue split: Today | Month */}
-                  <div style={{position:"relative",zIndex:1,display:"flex",alignItems:"stretch",gap:0}}>
-                    {/* Today's Revenue */}
-                    <div style={{flex:1,paddingRight:12}}>
-                      <p style={{margin:"0 0 2px",fontSize:9,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Today's Revenue</p>
-                      {staffLocked
-                        ? <p style={{margin:0,fontSize:18,fontWeight:700,color:"rgba(255,255,255,0.30)",letterSpacing:2,fontFamily:"'Arimo',Arial,sans-serif"}}>●●●</p>
-                        : <p style={{margin:0,fontSize:26,fontWeight:700,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif"}}>{shop.id==="ros-india"
-                            ? formatCurrency(shopStats[shop.id]?.todaySales||0)
-                            : "£"+formatNumber(shopStats[shop.id]?.todaySales||0)}</p>
-                      }
-                    </div>
-                    {/* Divider */}
-                    <div style={{width:1,background:"rgba(255,255,255,0.25)",margin:"2px 0"}}/>
-                    {/* Month Revenue */}
-                    <div style={{flex:1,paddingLeft:12}}>
-                      <p style={{margin:"0 0 2px",fontSize:9,color:"rgba(255,255,255,0.65)",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.07em"}}>Month Revenue</p>
-                      {staffLocked
-                        ? <p style={{margin:0,fontSize:18,fontWeight:700,color:"rgba(255,255,255,0.30)",letterSpacing:2,fontFamily:"'Arimo',Arial,sans-serif"}}>●●●</p>
-                        : <p style={{margin:0,fontSize:26,fontWeight:700,color:"white",letterSpacing:"-0.5px",textShadow:"0 1px 4px rgba(0,0,0,0.18)",fontFamily:"'Arimo',Arial,sans-serif"}}>{shop.id==="ros-india"
-                            ? formatCurrency(shopStats[shop.id]?.monthRev||0)
-                            : "£"+formatNumber(shopStats[shop.id]?.monthRev||0)}</p>
-                      }
-                    </div>
-                  </div>
-                </div>
-
-                {/* ── white lower section ── */}
-                <div style={{padding:"18px 20px 20px"}}>
-                  {staffLocked?(
-                    <div style={{textAlign:"center",padding:"12px 0 8px"}}>
-                      <span style={{fontSize:18}}>🔒</span>
-                      <p style={{margin:"6px 0 0",fontSize:11,fontWeight:700,color:"#94a3b8"}}>No Access</p>
-                    </div>
-                  ):(
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
-                      {[
-                        {l:"Orders",    v:shopStats[shop.id]?.monthOrders||0,  sub:"this month"},
-                        {l:"Pending",   v:shopStats[shop.id]?.pendingOrders||0, sub:"unfulfilled"},
-                        {l:"Returns",   v:shopStats[shop.id]?.monthReturns||0,  sub:"this month"},
-                      ].map((s,i)=>(
-                        <div key={i} style={{textAlign:"center",background:shop.accentBg,borderRadius:10,padding:"9px 5px",border:"1px solid "+shop.accent+"18"}}>
-                          <p style={{margin:0,fontWeight:900,fontSize:16,color:shop.accentText}}>{s.v}</p>
-                          <p style={{margin:"2px 0 0",fontSize:10,color:shop.accent,fontWeight:700}}>{s.l}</p>
-                          <p style={{margin:"1px 0 0",fontSize:9,color:shop.accent+"99",fontWeight:500}}>{s.sub}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                  <button disabled={staffLocked} style={{
-                    width:"100%",padding:"12px 0",borderRadius:12,border:"none",
-                    cursor:staffLocked?"not-allowed":"pointer",
-                    background:staffLocked?"#f1f5f9":h?shop.sb:shop.accentBg,
-                    color:staffLocked?"#cbd5e1":h?"white":shop.accentText,
-                    fontWeight:800,fontSize:14,transition:"all 0.2s",fontFamily:"inherit",
-                    boxShadow:(!staffLocked&&h)?"0 4px 14px "+shop.accent+"44":"none",
-                  }}>
-                    {staffLocked?"🔒 Restricted":"Enter Workspace →"}
-                  </button>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        {/* ── LIFETIME STATS — admin only ── */}
-        {user?.role!=="staff"&&(()=>{
-          const sumAmt=arr=>arr.reduce((a,x)=>a+(x.amount||0),0);
-          const sumTot=arr=>arr.reduce((a,x)=>a+(x.total||0),0);
-          // Use live data from shopStats
-          const ukLiveRev=(shopStats["ros-selections"]?.totalRev||0)+(shopStats["ros-hairlines"]?.totalRev||0);
-          const inLiveRev=shopStats["ros-india"]?.totalRev||0;
-          const ukPendingOrders=(shopStats["ros-selections"]?.pendingOrders||0)+(shopStats["ros-hairlines"]?.pendingOrders||0);
-          const inPendingOrders=shopStats["ros-india"]?.pendingOrders||0;
-          const ukSales=[];const inSales=[];
-          const ukPurch=[];const inPurch=[];
-          const playBell=()=>{
-            try{
-              const ctx=new(window.AudioContext||window.webkitAudioContext)();
-              const o=ctx.createOscillator();
-              const g=ctx.createGain();
-              o.connect(g); g.connect(ctx.destination);
-              o.type="sine";
-              o.frequency.setValueAtTime(880,ctx.currentTime);
-              o.frequency.exponentialRampToValueAtTime(660,ctx.currentTime+0.15);
-              g.gain.setValueAtTime(0.18,ctx.currentTime);
-              g.gain.exponentialRampToValueAtTime(0.0001,ctx.currentTime+0.35);
-              o.start(ctx.currentTime);
-              o.stop(ctx.currentTime+0.35);
-            }catch(e){}
-          };
-          const tiles=[
-            {
-              icon:"👥", label:"Total Customers", sub:"Lifetime · All Shops",
-              display:CUSTOMERS.length.toString(), suffix:"",
-              grad:"linear-gradient(135deg,#1d4ed8 0%,#3b82f6 50%,#60a5fa 100%)",
-              glow:"rgba(59,130,246,0.35)", shine:"rgba(255,255,255,0.15)",
-            },
-            {
-              icon:"🇬🇧", label:"Sales Volume UK", sub:"Selections + Hairlines",
-              display:"£"+formatNumber(ukLiveRev), suffix:"lifetime",
-              grad:"linear-gradient(135deg,#0e7490 0%,#06b6d4 50%,#67e8f9 100%)",
-              glow:"rgba(6,182,212,0.35)", shine:"rgba(255,255,255,0.15)",
-            },
-            {
-              icon:"🇮🇳", label:"Sales Volume India", sub:"ROS India",
-              display:formatCurrency(inLiveRev), suffix:"lifetime",
-              grad:"linear-gradient(135deg,#9d174d 0%,#e95597 50%,#f9a8d4 100%)",
-              glow:"rgba(233,85,151,0.35)", shine:"rgba(255,255,255,0.15)",
-            },
-            {
-              icon:"📦", label:"Purchases UK", sub:"Selections + Hairlines",
-              display:"£"+formatNumber(sumTot(ukPurch)), suffix:"lifetime",
-              grad:"linear-gradient(135deg,#5b21b6 0%,#7c3aed 50%,#a78bfa 100%)",
-              glow:"rgba(124,58,237,0.35)", shine:"rgba(255,255,255,0.15)",
-            },
-            {
-              icon:"🛒", label:"Purchases India", sub:"ROS India",
-              display:formatCurrency(sumTot(inPurch)), suffix:"lifetime",
-              grad:"linear-gradient(135deg,#92400e 0%,#d97706 50%,#fcd34d 100%)",
-              glow:"rgba(217,119,6,0.35)", shine:"rgba(255,255,255,0.15)",
-            },
-          ];
-          return(
-            <div style={{marginBottom:0}}>
-              {/* ── toggle header ── */}
-              <div
-                onClick={()=>setStatHov(statHov==="open"?"closed":"open")}
-                style={{
-                  display:"flex",alignItems:"center",justifyContent:"space-between",
-                  background:"white",borderRadius:statHov==="open"?"16px 16px 0 0":"16px",
-                  padding:"14px 22px",cursor:"pointer",
-                  border:"1px solid #e2e8f0",
-                  borderBottom:statHov==="open"?"1px solid #f1f5f9":"1px solid #e2e8f0",
-                  boxShadow:"0 2px 8px rgba(0,0,0,0.05)",
-                  transition:"border-radius 0.3s",
-                  userSelect:"none",
-                }}>
-                <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <div style={{width:32,height:32,borderRadius:9,background:"linear-gradient(135deg,#1d4ed8,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:15}}>📊</div>
-                  <div>
-                    <p style={{margin:0,fontWeight:800,fontSize:14,color:"#0f172a",letterSpacing:"-0.2px"}}>Lifetime Business Overview</p>
-                    <p style={{margin:0,fontSize:11,color:"#94a3b8",fontWeight:500}}>All-time totals across every workspace</p>
-                  </div>
-                </div>
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <span style={{fontSize:11,fontWeight:700,color:"#64748b",background:"#f1f5f9",borderRadius:999,padding:"3px 10px"}}>
-                    {statHov==="open"?"Hide":"Show"} Stats
-                  </span>
-                  <div style={{
-                    width:28,height:28,borderRadius:"50%",background:"#f1f5f9",
-                    display:"flex",alignItems:"center",justifyContent:"center",
-                    fontSize:13,transition:"transform 0.3s",
-                    transform:statHov==="open"?"rotate(180deg)":"rotate(0deg)",
-                  }}>▼</div>
-                </div>
-              </div>
-
-              {/* ── cards panel ── */}
-              <div style={{
-                overflow:"hidden",
-                maxHeight:statHov==="open"?"260px":"0px",
-                transition:"max-height 0.4s cubic-bezier(0.4,0,0.2,1)",
-                background:"white",
-                borderRadius:"0 0 16px 16px",
-                border:statHov==="open"?"1px solid #e2e8f0":"none",
-                borderTop:"none",
-                boxShadow:statHov==="open"?"0 4px 16px rgba(0,0,0,0.06)":"none",
-              }}>
-                <div style={{
-                  display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:16,
-                  padding:"20px 20px 20px",
-                }}>
-                  {tiles.map((t,i)=>{
-                    const isHov=hov==="stat-"+i;
-                    return(
-                      <div key={i}
-                        onMouseEnter={()=>{setHov("stat-"+i);playBell();}}
-                        onMouseLeave={()=>setHov(null)}
-                        style={{
-                          borderRadius:16,padding:"18px 16px 16px",
-                          background:t.grad,
-                          position:"relative",overflow:"hidden",
-                          cursor:"default",
-                          transform:isHov?"translateY(-4px) scale(1.03)":"none",
-                          transition:"all 0.22s cubic-bezier(0.4,0,0.2,1)",
-                          boxShadow:isHov
-                            ?"0 16px 36px -4px "+t.glow+", 0 4px 12px rgba(0,0,0,0.10)"
-                            :"0 4px 14px "+t.glow+", 0 1px 4px rgba(0,0,0,0.06)",
-                        }}>
-                        {/* decorative circles */}
-                        <div style={{position:"absolute",top:-20,right:-20,width:80,height:80,borderRadius:"50%",background:t.shine,pointerEvents:"none"}}/>
-                        <div style={{position:"absolute",bottom:-14,left:-10,width:50,height:50,borderRadius:"50%",background:"rgba(255,255,255,0.08)",pointerEvents:"none"}}/>
-                        {/* icon */}
-                        <div style={{fontSize:22,marginBottom:10,filter:"drop-shadow(0 1px 3px rgba(0,0,0,0.2))"}}>{t.icon}</div>
-                        {/* value */}
-                        <p style={{
-                          margin:"0 0 4px",fontSize:22,fontWeight:700,color:"white",
-                          letterSpacing:"-0.5px",lineHeight:1,
-                          fontFamily:"'Arimo',Arial,sans-serif",
-                          textShadow:"0 1px 4px rgba(0,0,0,0.18)",
-                        }}>{t.display}</p>
-                        {/* label */}
-                        <p style={{
-                          margin:"0 0 2px",fontSize:12,fontWeight:700,color:"rgba(255,255,255,0.95)",
-                          fontFamily:"'Arimo',Arial,sans-serif",letterSpacing:"0.01em",
-                        }}>{t.label}</p>
-                        {/* sub */}
-                        <p style={{margin:0,fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:500}}>{t.sub}</p>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-          );
-        })()}
-</main>
-<CommandPalette cmd={cmd} setCmd={setCmd} />
-</div>
-);
-};
-/* ── parseLegacyItems ──────────────────────────────────────────
-   Splits old combined item strings like "SALWAR(x1), BLOUSE(x1)"
-   into separate line rows. Prices are split equally (estimated)
-   because individual prices weren't stored in old records.
-────────────────────────────────────────────────────────────── */
-/* ── parseDate ─────────────────────────────────────────────────
-   Robust date parser: handles YYYY-MM-DD, DD-MM-YYYY, DD/MM/YYYY,
-   DD-MM-YY. Returns a local Date or null. Never uses new Date(str)
-   directly which misparses non-ISO formats.
-────────────────────────────────────────────────────────────── */
-const parseDate=str=>{
-  if(!str) return null;
-  const s=String(str).trim();
-  let m;
-  m=s.match(/^(\d{4})-(\d{2})-(\d{2})/);
-  if(m) return new Date(+m[1],+m[2]-1,+m[3]);
-  m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-  if(m) return new Date(+m[3],+m[2]-1,+m[1]);
-  m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2})$/);
-  if(m){const y=+m[3];return new Date(y<50?2000+y:1900+y,+m[2]-1,+m[1]);}
-  return null;
-};
-
-const parseLegacyItems=(itemStr,qty,subtotal)=>{
-  if(!itemStr) return [{name:"Product/Service",qty:qty||1,price:subtotal||0,estimated:false}];
-  if(itemStr.includes("(x")){
-    const parts=itemStr.split(",").map(s=>s.trim()).filter(Boolean);
-    const parsed=parts.map(part=>{
-      const m=part.match(/^(.+?)\(x(\d+)\)$/);
-      return m?{name:m[1].trim(),qty:parseInt(m[2])||1}:{name:part,qty:1};
-    });
-    const totalQty=parsed.reduce((s,l)=>s+l.qty,0)||1;
-    const unitPrice=parseFloat(((subtotal||0)/totalQty).toFixed(2));
-    return parsed.map(l=>({...l,price:unitPrice,estimated:true}));
-  }
-  const q=parseFloat(qty)||1;
-  return [{name:itemStr,qty:q,price:parseFloat(((subtotal||0)/q).toFixed(2)),estimated:false}];
-};
-
-/* ── normaliseSale: shared helper used by App (bulk load) and ShopDashboard (reload) ── */
-const normaliseSale=(s)=>{
-  if(!s) return s;
-  let rawItem = s.item || "";
-  let decodedLines = null;
-  let displayItem = rawItem;
-  if(rawItem.startsWith("__LINES__:")){
-    const nlIdx = rawItem.indexOf("\n");
-    const jsonPart = nlIdx >= 0 ? rawItem.slice(10, nlIdx) : rawItem.slice(10);
-    displayItem = nlIdx >= 0 ? rawItem.slice(nlIdx + 1) : "";
-    try { decodedLines = JSON.parse(jsonPart); } catch { decodedLines = null; }
-  }
-  const taxRate = s.taxRate !== undefined ? s.taxRate : s.tax_rate !== undefined ? s.tax_rate : 0;
-  const rateNum = Number(taxRate) || 0;
-  const taxInclusive = rateNum === 0 ? true
-                     : s.taxInclusive !== undefined ? s.taxInclusive !== false
-                     : s.tax_inclusive !== undefined ? s.tax_inclusive !== false
-                     : true;
-  let saleLines = decodedLines || s.saleLines || s.sale_lines || null;
-  if(typeof saleLines === "string"){try{saleLines=JSON.parse(saleLines);}catch{saleLines=null;}}
-  const discount = Number(s.discount !== undefined ? s.discount : s.discount_amt || 0) || 0;
-  const otherCharges = Number(s.otherCharges !== undefined ? s.otherCharges : s.other_charges || 0) || 0;
-  const otherChargesLabel = s.otherChargesLabel || s.other_charges_label || "Other Charges";
-  return {
-    ...s,
-    item:             displayItem,
-    taxRate:          rateNum,
-    taxInclusive:     taxInclusive,
-    saleLines:        Array.isArray(saleLines) ? saleLines : null,
-    discount,
-    otherCharges,
-    otherChargesLabel,
-  };
-};
-
-const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems})=>{
-  const [tab,setTab]=useState(user?.role==="staff"?"sales":"dashboard");
-  const [hov,setHov]=useState(null);
-  const [search,setSearch]=useState("");
-  const [modal,setModal]=useState(null);
-  const [selRow,setSelRow]=useState(null);
-  const [confirmDelete,setConfirmDelete]=useState(false);
-  const [editRow,setEditRow]=useState(null);
-  const [selCustomer,setSelCustomer]=useState(null);
-  const [openMenu,setOpenMenu]=useState(null);
-  const [invoiceRow,setInvoiceRow]=useState(null);
-  const [printMode,setPrintMode]=useState(false);
-  // salesData, setSalesData, customers, setCustomers all received as props from App
-  const [coll,setColl]=useState(false);
-  const [mobileOpen,setMobileOpen]=useState(false);
-  const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
-  const [pdfMode,setPdfMode]=useState(false);
-  const [salesPeriod,setSalesPeriodRaw]=useState("month");
-  const [pdfInv,setPdfInv]=useState(null);
-  const [statusFilter,setStatusFilter]=useState("ALL");
-  const invoicePrintRef=useRef(null);
-  const [purchData,setPurchData]=useState([]);
-  const [expData,setExpData]=useState([]);
-  const [logData,setLogData]=useState([]);
-
-  // Load purchases, expenses, logistics from Supabase on mount
-  useEffect(()=>{
-    dbLoadPurchases(shopId).then(d=>{if(d)setPurchData(d);}).catch(()=>{});
-    dbLoadExpenses(shopId).then(d=>{if(d)setExpData(d);}).catch(()=>{});
-    dbLoadLogistics(shopId).then(d=>{if(d)setLogData(d);}).catch(()=>{});
-  },[shopId]);
-
-  // Re-fetch this shop's sales on mount — ensures data is fresh after page refresh
-  useEffect(()=>{
-    dbLoadSales(shopId).then(data=>{
-      if(!data) return;
-      setSalesData(prev=>({...prev,[shopId]:data.map(normaliseSale)}));
-    }).catch(()=>{});
-  },[shopId]);
-
-  // Manual reload handler — wired to the 🔄 button in SalesPanel
-  const handleReloadSales = useCallback(async ()=>{
-    const data = await dbLoadSales(shopId).catch(()=>null);
-    if(!data) return;
-    setSalesData(prev=>({...prev,[shopId]:data.map(normaliseSale)}));
-  },[shopId,setSalesData]);
-
-  useEffect(()=>{
-    const h=()=>setIsMobile(window.innerWidth<768);
-    window.addEventListener("resize",h);
-    return()=>window.removeEventListener("resize",h);
-  },[]);
-
-  // Data loaded at App level and persisted in localStorage
-
-  // ── Invoice computed vars ──
-  // Use taxRate 0 as override — never apply tax if rate is 0
-  const _invTaxR    = invoiceRow ? ((invoiceRow.taxRate!==undefined&&invoiceRow.taxRate!==null?invoiceRow.taxRate:0)/100) : 0;
-  const _invInc     = _invTaxR===0 ? true : (invoiceRow ? invoiceRow.taxInclusive!==false : true);
-  const _invEntered = invoiceRow ? Number(invoiceRow.amount)||0 : 0;
-  const _invAdjAmt  = invoiceRow ? Number(invoiceRow.adjAmt)||0 : 0;
-  const invSubtotal = _invInc ? parseFloat((_invEntered/(1+_invTaxR)).toFixed(2)) : _invEntered;
-  const invTaxAmt   = parseFloat((invSubtotal*_invTaxR).toFixed(2));
-  const invGrand    = parseFloat((invSubtotal+invTaxAmt-_invAdjAmt).toFixed(2));
-
-  const shop=SHOPS.find(s=>s.id===shopId);
-  const sales=salesData[shopId]||[];
-  const purch=purchData||[];
-  const exps=expData||[];
-  const logs=logData||[];
-  const lowStk=PRODUCTS.filter(p=>p.stock<=p.min);
-  const totRev=sales.filter(s=>s.pay==="Paid").reduce((a,s)=>a+s.amount,0);
-  const pendAmt=sales.filter(s=>s.pay==="Pending").reduce((a,s)=>a+s.amount,0);
-  const totExp=exps.reduce((a,e)=>a+e.amount,0);
-
-  const NAV=[
-    {id:"dashboard",l:"Dashboard",ic:"⊞"},
-    {id:"sales",    l:"Sales",    ic:"🛒"},
-    {id:"purchases",l:"Purchases",ic:"📦"},
-    {id:"logistics",l:"Logistics",ic:"🚚"},
-    {id:"customers",l:"Customers",ic:"👥"},
-    {id:"suppliers",l:"Suppliers",ic:"🏭"},
-    {id:"agents",   l:"Agents",   ic:"🤝"},
-    {id:"products", l:"Products", ic:"🏷️"},
-    {id:"invoices", l:"Invoices", ic:"🧾"},
-    {id:"expenses", l:"Expenses", ic:"💳"},
-    {id:"documents",l:"Documents",ic:"📎"},
-    {id:"analytics",l:"Analytics",ic:"📊"},
-    {id:"reports",  l:"Reports",  ic:"📋"},
-  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings");
-
-  const filtSales=sales.filter(s=>{
-    const q=search.toLowerCase();
-    const matchSearch=!q||
-      (s.id||"").toLowerCase().includes(q)||
-      (s.customer||"").toLowerCase().includes(q)||
-      (s.tag||"").toLowerCase().includes(q)||
-      (s.rem||"").toLowerCase().includes(q)||
-      (s.item||"").toLowerCase().includes(q);
-    const matchStatus=statusFilter==="ALL"||(s.ful||s.status||"")===statusFilter;
-    return matchSearch&&matchStatus;
-  });
-
-const addSale = async (form) => {
-  const pfx = {["ros-selections"]:"SI",["ros-hairlines"]:"SH",["ros-india"]:"IN"}[shopId];
-  const nid = form.invoiceNo || `${pfx}-${Date.now().toString().slice(-6)}`;
-
-  // Encode saleLines into the item field so it survives Supabase round-trip
-  // without needing a new column. Format: "__LINES__:{json}\n{displayText}"
-  const saleLines = Array.isArray(form.saleLines)&&form.saleLines.length>0 ? form.saleLines : null;
-  const displayItem = form.itemCustom || form.item || "";
-  const encodedItem = saleLines
-    ? `__LINES__:${JSON.stringify(saleLines)}\n${displayItem}`
-    : displayItem;
-
-    const newSale = {
-    id: nid, ...form,
-    amount:       Number(form.amount) || 0,
-    taxRate:      form.taxRate !== undefined && form.taxRate !== null ? form.taxRate : 0,
-    taxInclusive: form.taxRate===0 ? true : form.taxInclusive !== false,
-    contact:  form.contact || "",
-    phone:    form.contact || "",
-    address:  form.address || "",
-    qty:      form.qty || "1",
-    item:     encodedItem,
-    ful:      form.status || "PENDING",
-    pay:      form.payBy || "SHOP",
-    rem:      form.remarks || "",
-    // Keep saleLines in memory object for immediate display
-    saleLines: saleLines,
-  };
-  // Update UI instantly
-  setSalesData(d => ({...d, [shopId]: [newSale, ...d[shopId]]}));
-  setModal(null);
-  const _usedNum = parseInt((nid||"0").match(/^(?:ROS|IND)(\d{4})\d$/)?.[1]||"0")||0;
-  if(_usedNum >= 1313) { try { localStorage.setItem("ros_lastInv_"+shopId, String(_usedNum)); } catch{} }
-  dbSaveSale(shopId, newSale).catch(err => console.error("❌ Supabase save failed:", err));
-  // Auto-save/update customer record
-  if(form.customer){
-    const existing=customers.find(c=>c.name===form.customer);
-    const custId=existing?.id||("CUST-"+Date.now().toString().slice(-6));
-    const updatedCust={
-      id: custId,
-      name: form.customer,
-      phone: form.contact||existing?.phone||"",
-      whatsapp: form.contact||existing?.whatsapp||"",
-      address: form.address||existing?.address||"",
-      tag: existing?.tag||"New Customer",
-      notes: existing?.notes||"",
-      purchases: (existing?.purchases||0)+1,
-      spend: (existing?.spend||0)+(Number(form.amount)||0),
-      last: new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}),
-    };
-    setCustomers(prev=>{
-      const idx=prev.findIndex(c=>c.name===form.customer);
-      if(idx>=0){const n=[...prev];n[idx]=updatedCust;return n;}
-      return [...prev,updatedCust];
-    });
-    dbSaveCustomer(shopId, updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
-  }
-};
-  const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
-
-  const setSalesPeriod=(p)=>{
-    if(user?.role==="staff"&&(p==="year"||p==="lifetime"))return;
-    setSalesPeriodRaw(p);
-  };
-  const showPdf=(inv)=>{setPdfInv(inv);setPdfMode(true);};
-  const handlePrint=useCallback((inv)=>{
-    const el=document.getElementById('invoice-content');
-    if(!el){
-      // If pdfMode overlay not open yet, open it first then print
-      setPdfInv(inv);
-      setPdfMode(true);
-      setTimeout(()=>{
-        const el2=document.getElementById('invoice-content');
-        if(!el2)return;
-        const invoiceHTML=el2.outerHTML;
-        const accentColor=inv._shop_accent||'#059669';
-        const printWindow=window.open('','_blank');
-        if(!printWindow){alert('Please allow popups for this site.');return;}
-        printWindow.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/>
-<title>Invoice ${inv.id}</title>
-<style>
-  *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  body{font-family:Arial,sans-serif;font-size:13px;padding:20px;background:white;color:#0f172a;margin:0;}
-  img{max-height:48px;object-fit:contain;}
-  table{width:100%;border-collapse:collapse;}
-  th{background:#0f172a!important;color:#fff!important;padding:9px 13px;font-size:11px;font-weight:800;}
-  td{padding:10px 13px;border-bottom:1px solid #e2e8f0;}
-  div[style*="box-shadow"]{box-shadow:none!important;}
-  @page{size:A4;margin:20mm;}
-  @media print{body{padding:0;}}
-</style></head><body>${invoiceHTML}</body></html>`);
-        printWindow.document.close();
-        printWindow.focus();
-        setTimeout(()=>{
-          printWindow.print();
-          printWindow.onafterprint=()=>printWindow.close();
-        },500);
-      },400);
-      return;
+function buildRowsWithSeparators(sortedRows) {
+  const result = [];
+  for (let i = 0; i < sortedRows.length; i++) {
+    const curr = sortedRows[i];
+    const prev = sortedRows[i - 1];
+    if (prev) {
+      const prevFY = fyStartYear(prev);   // pass full sale object
+      const currFY = fyStartYear(curr);
+      const prevMK = monthKey(prev.date);
+      const currMK = monthKey(curr.date);
+      if (prevFY !== currFY)
+        result.push({ _type: "fy", _fyStart: currFY, _label: fyLabel(currFY) });
+      if (prevMK !== currMK)
+        result.push({ _type: "month", _monthKey: currMK, _label: monthLabel(curr.date) });
     }
-    const invoiceHTML=el.outerHTML;
-    const printWindow=window.open('','_blank');
-    if(!printWindow){alert('Please allow popups for this site.');return;}
-    printWindow.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/>
-<title>Invoice ${inv.id}</title>
-<style>
-  *{box-sizing:border-box;-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-  body{font-family:Arial,sans-serif;font-size:13px;padding:20px;background:white;color:#0f172a;margin:0;}
-  img{max-height:48px;object-fit:contain;}
-  table{width:100%;border-collapse:collapse;}
-  th{background:#0f172a!important;color:#fff!important;padding:9px 13px;font-size:11px;font-weight:800;}
-  td{padding:10px 13px;border-bottom:1px solid #e2e8f0;}
-  div[style*="box-shadow"]{box-shadow:none!important;}
-  @page{size:A4;margin:20mm;}
-  @media print{body{padding:0;}}
-</style></head><body>${invoiceHTML}</body></html>`);
-    printWindow.document.close();
-    printWindow.focus();
-    setTimeout(()=>{
-      printWindow.print();
-      printWindow.onafterprint=()=>printWindow.close();
-    },500);
-  },[shop,shopId]);
-
-
-return(
-    <div style={{display:"flex",minHeight:"100vh",background:"#f0f4f8",fontFamily:"'DM Sans',system-ui,sans-serif"}}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&family=Arimo:wght@400;500;600;700&display=swap" rel="stylesheet"/>
-      <style>{`
-        .sb-nav-btn:hover .sb-label{opacity:1!important;}
-        .sb-nav-btn{position:relative;}
-        .sb-tooltip{
-          position:absolute;left:calc(100% + 10px);top:50%;transform:translateY(-50%);
-          background:rgba(15,23,42,0.92);color:white;padding:4px 10px;border-radius:7px;
-          font-size:11px;font-weight:700;white-space:nowrap;pointer-events:none;
-          opacity:0;transition:opacity 0.15s;z-index:999;
-          box-shadow:0 4px 12px rgba(0,0,0,0.25);
-        }
-        .sb-nav-btn:hover .sb-tooltip{opacity:1;}
-        @media(max-width:768px){
-          .mob-hide{display:none!important;}
-          .mob-show{display:inline!important;}
-          .mob-topbar{height:54px!important;padding:0 12px!important;}
-          .mob-main{padding:10px 10px 80px!important;}
-          .mob-quick-grid{grid-template-columns:repeat(3,1fr)!important;gap:8px!important;}
-          .mob-quick-card-inner{padding:12px 6px 10px!important;}
-          .mob-quick-icon{width:36px!important;height:36px!important;font-size:16px!important;margin-bottom:6px!important;}
-          .mob-quick-label{font-size:10px!important;}
-          .mob-quick-desc{display:none!important;}
-          .mob-kpi-grid{grid-template-columns:repeat(2,1fr)!important;gap:10px!important;}
-          .mob-kpi-card{aspect-ratio:unset!important;min-height:130px!important;border-radius:14px!important;}
-          .mob-table-wrap{overflow-x:auto!important;-webkit-overflow-scrolling:touch!important;}
-          .mob-selector-header{height:auto!important;padding:8px 12px!important;flex-wrap:wrap!important;gap:6px!important;}
-          .mob-selector-right{gap:6px!important;}
-          .mob-shop-grid{grid-template-columns:1fr!important;gap:14px!important;}
-          .mob-shop-card-top{padding:18px 16px 14px!important;}
-          .mob-shop-name{font-size:18px!important;}
-          .mob-stats-grid{grid-template-columns:repeat(2,1fr)!important;}
-          .mob-hero-title{font-size:26px!important;letter-spacing:-0.5px!important;}
-          .mob-hero-sub{font-size:13px!important;}
-          .mob-hero-section{margin-bottom:24px!important;}
-          .mob-main-padding{padding:20px 14px 60px!important;}
-        }
-      `}</style>
-
-      {/* ══ MOBILE OVERLAY BACKDROP ══ */}
-      {isMobile&&mobileOpen&&(
-        <div onClick={()=>setMobileOpen(false)} style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.5)",zIndex:39}}/>
-      )}
-
-      {/* ══ SIDEBAR ══ */}
-      <aside style={{
-        width:isMobile?260:(coll?72:240),
-        transition:"transform 0.28s cubic-bezier(0.4,0,0.2,1),width 0.28s cubic-bezier(0.4,0,0.2,1)",
-        background:shop.sb,
-        display:"flex",flexDirection:"column",
-        position:isMobile?"fixed":"sticky",
-        top:0,left:0,height:"100vh",flexShrink:0,zIndex:40,
-        overflow:"hidden",
-        boxShadow:"4px 0 24px rgba(0,0,0,0.22)",
-        transform:isMobile?(mobileOpen?"translateX(0)":"translateX(-100%)"):"none",
-      }}>
-
-        {/* ── brand / logo area ── */}
-        <div style={{
-          padding:"0 12px",height:64,
-          display:"flex",alignItems:"center",
-          justifyContent:coll?"center":"space-between",
-          borderBottom:"1px solid rgba(255,255,255,0.12)",
-          flexShrink:0,
-        }}>
-          <div style={{display:"flex",alignItems:"center",gap:10,overflow:"hidden"}}>
-            {/* logo badge */}
-            {/* logo badge — unique per shop */}
-            <ShopLogo shopId={shop.id} size="sidebar" />
-            {/* name — fades out when collapsed */}
-            <div style={{
-              overflow:"hidden",
-              maxWidth:coll?0:160,
-              opacity:coll?0:1,
-              transition:"max-width 0.28s cubic-bezier(0.4,0,0.2,1), opacity 0.20s",
-              whiteSpace:"nowrap",
-            }}>
-              <p style={{margin:0,fontWeight:800,fontSize:13,color:"white",letterSpacing:"-0.2px",lineHeight:1.2}}>{shop.name}</p>
-              <p style={{margin:0,fontSize:9,color:"rgba(255,255,255,0.50)",fontWeight:500,letterSpacing:"0.04em",textTransform:"uppercase"}}>{shop.currency} · {shop.flag}</p>
-            </div>
-          </div>
-          {/* collapse toggle — only when expanded */}
-          {!coll&&(
-            <button onClick={()=>setColl(true)}
-              style={{
-                width:26,height:26,borderRadius:8,border:"1px solid rgba(255,255,255,0.20)",
-                background:"rgba(255,255,255,0.10)",cursor:"pointer",
-                display:"flex",alignItems:"center",justifyContent:"center",
-                color:"rgba(255,255,255,0.70)",fontSize:12,flexShrink:0,
-                transition:"all 0.15s",
-              }}
-              onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.22)";e.currentTarget.style.color="white";}}
-              onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.10)";e.currentTarget.style.color="rgba(255,255,255,0.70)";}}>
-              ‹‹
-            </button>
-          )}
-          {/* expand button when collapsed */}
-          {coll&&(
-            <button onClick={()=>setColl(false)}
-              style={{
-                position:"absolute",bottom:-1,left:0,right:0,height:28,
-                border:"none",borderTop:"1px solid rgba(255,255,255,0.12)",
-                background:"rgba(255,255,255,0.07)",cursor:"pointer",
-                display:"flex",alignItems:"center",justifyContent:"center",
-                color:"rgba(255,255,255,0.60)",fontSize:11,
-                transition:"all 0.15s",
-              }}
-              onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.15)";e.currentTarget.style.color="white";}}
-              onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.07)";e.currentTarget.style.color="rgba(255,255,255,0.60)";}}>
-              ››
-            </button>
-          )}
-        </div>
-
-        {/* ── nav sections ── */}
-        <nav style={{flex:1,padding:"10px 8px 6px",overflowY:"auto",overflowX:"hidden",scrollbarWidth:"none"}}>
-          {/* group labels */}
-          {[
-            {label:"MAIN",    ids:["dashboard","sales","purchases"]},
-            {label:"MANAGE",  ids:["logistics","customers","suppliers","agents","products"]},
-            {label:"FINANCE", ids:["invoices","expenses"]},
-            {label:"INSIGHTS",ids:["documents","analytics","reports"]},
-          ].map(group=>{
-            const groupItems=NAV.filter(n=>group.ids.includes(n.id));
-            if(groupItems.length===0)return null;
-            return(
-              <div key={group.label} style={{marginBottom:6}}>
-                {/* section label — hidden when collapsed */}
-                <div style={{
-                  overflow:"hidden",
-                  maxHeight:coll?0:20,
-                  opacity:coll?0:1,
-                  transition:"max-height 0.25s, opacity 0.20s",
-                  marginBottom:coll?0:4,
-                  paddingLeft:10,
-                }}>
-                  <span style={{fontSize:9,fontWeight:800,color:"rgba(255,255,255,0.58)",letterSpacing:"0.10em",textTransform:"uppercase"}}>
-                    {group.label}
-                  </span>
-                </div>
-                {/* nav buttons */}
-                {groupItems.map(n=>{
-                  const active=tab===n.id;
-                  return(
-                    <button key={n.id}
-                      className="sb-nav-btn"
-                      onClick={()=>{setTab(n.id);if(isMobile)setMobileOpen(false);}}
-                      style={{
-                        display:"flex",alignItems:"center",
-                        gap:coll?0:10,
-                        width:"100%",
-                        height:40,
-                        padding:coll?"0":"0 10px",
-                        justifyContent:coll?"center":"flex-start",
-                        borderRadius:10,
-                        border:active?"1px solid rgba(255,255,255,0.30)":"1px solid transparent",
-                        cursor:"pointer",
-                        marginBottom:2,
-                        position:"relative",
-                        background:active?"rgba(255,255,255,0.28)":"transparent",
-                        boxShadow:active?"0 2px 12px rgba(0,0,0,0.18),inset 0 1px 0 rgba(255,255,255,0.20)":"none",
-                        transition:"all 0.15s",
-                        fontFamily:"inherit",
-                      }}
-                      onMouseEnter={e=>{
-                        if(!active){
-                          e.currentTarget.style.background="rgba(255,255,255,0.15)";
-                          e.currentTarget.style.border="1px solid rgba(255,255,255,0.18)";
-                        }
-                      }}
-                      onMouseLeave={e=>{
-                        if(!active){
-                          e.currentTarget.style.background="transparent";
-                          e.currentTarget.style.border="1px solid transparent";
-                        }
-                      }}>
-
-                      {/* active pill indicator */}
-                      {active&&(
-                        <div style={{
-                          position:"absolute",left:0,top:"50%",transform:"translateY(-50%)",
-                          width:4,height:24,borderRadius:"0 4px 4px 0",
-                          background:"white",
-                          boxShadow:"0 0 10px rgba(255,255,255,0.9)",
-                        }}/>
-                      )}
-
-                      {/* icon container */}
-                      <div style={{
-                        width:32,height:32,borderRadius:9,flexShrink:0,
-                        display:"flex",alignItems:"center",justifyContent:"center",
-                        background:active?"rgba(255,255,255,0.22)":"transparent",
-                        transition:"background 0.15s",
-                        fontSize:16,
-                      }}>
-                        {n.ic}
-                      </div>
-
-                      {/* label */}
-                      <span className="sb-label" style={{
-                        fontSize:13,
-                        fontWeight:active?800:600,
-                        color:"#ffffff",
-                        whiteSpace:"nowrap",overflow:"hidden",
-                        maxWidth:coll?0:140,
-                        opacity:coll?0:active?1:0.85,
-                        transition:"max-width 0.28s cubic-bezier(0.4,0,0.2,1), opacity 0.18s",
-                        letterSpacing:active?"-0.2px":"0",
-                        textShadow:active?"0 1px 4px rgba(0,0,0,0.20)":"none",
-                      }}>{n.l}</span>
-
-                      {/* tooltip when collapsed */}
-                      {coll&&<div className="sb-tooltip">{n.l}</div>}
-                    </button>
-                  );
-                })}
-              </div>
-            );
-          })}
-        </nav>
-
-        {/* ── user info + all shops footer ── */}
-        <div style={{padding:"8px",borderTop:"1px solid rgba(255,255,255,0.12)",flexShrink:0}}>
-          {/* user row */}
-          <div style={{
-            display:"flex",alignItems:"center",gap:9,
-            padding:coll?"8px 0":"8px 10px",
-            justifyContent:coll?"center":"flex-start",
-            borderRadius:10,
-            background:"rgba(255,255,255,0.08)",
-            marginBottom:6,
-            overflow:"hidden",
-          }}>
-            <div style={{
-              width:30,height:30,borderRadius:9,flexShrink:0,
-              background:user?.avatar||"rgba(255,255,255,0.25)",
-              display:"flex",alignItems:"center",justifyContent:"center",
-              color:"white",fontWeight:800,fontSize:11,
-              boxShadow:"0 2px 6px rgba(0,0,0,0.20)",
-            }}>{user?.initials||"A"}</div>
-            <div style={{
-              overflow:"hidden",
-              maxWidth:coll?0:140,opacity:coll?0:1,
-              transition:"max-width 0.28s cubic-bezier(0.4,0,0.2,1),opacity 0.18s",
-              whiteSpace:"nowrap",
-            }}>
-              <p style={{margin:0,fontSize:12,fontWeight:700,color:"white",lineHeight:1.3}}>{user?.name||"Admin"}</p>
-              <p style={{margin:0,fontSize:9,color:"rgba(255,255,255,0.45)",textTransform:"capitalize",fontWeight:500}}>{user?.role==="staff"?"Staff":"Administrator"}</p>
-            </div>
-          </div>
-
-          {/* all shops button */}
-          <button onClick={onBack}
-            className="sb-nav-btn"
-            style={{
-              display:"flex",alignItems:"center",gap:9,
-              width:"100%",height:40,
-              padding:coll?"0":"0 10px",
-              justifyContent:coll?"center":"flex-start",
-              borderRadius:10,border:"1px solid rgba(255,255,255,0.18)",
-              cursor:"pointer",
-              background:"rgba(255,255,255,0.10)",
-              color:"white",fontSize:13,fontWeight:700,
-              fontFamily:"inherit",
-              transition:"all 0.15s",
-              overflow:"hidden",
-            }}
-            onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.20)";e.currentTarget.style.borderColor="rgba(255,255,255,0.35)";}}
-            onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.10)";e.currentTarget.style.borderColor="rgba(255,255,255,0.18)";}}>
-            <span style={{fontSize:16,flexShrink:0}}>🏪</span>
-            <span style={{
-              maxWidth:coll?0:140,opacity:coll?0:1,
-              transition:"max-width 0.28s cubic-bezier(0.4,0,0.2,1),opacity 0.18s",
-              whiteSpace:"nowrap",overflow:"hidden",
-            }}>All Shops</span>
-            <span style={{
-              marginLeft:"auto",fontSize:13,opacity:0.60,flexShrink:0,
-              maxWidth:coll?0:20,overflow:"hidden",
-              transition:"max-width 0.28s",
-            }}>↩</span>
-            {coll&&<div className="sb-tooltip">All Shops</div>}
-          </button>
-        </div>
-      </aside>
-
-      {/* ══ MAIN ══ */}
-      <div style={{flex:1,display:"flex",flexDirection:"column",minWidth:0}}>
-
-        {/* topbar */}
-        <header className="mob-topbar" style={{
-          background:"linear-gradient(90deg,"+shop.accent+"18 0%,white 40%)",
-          borderBottom:"1px solid "+shop.accent+"22",
-          height:64,display:"flex",alignItems:"center",padding:"0 28px",
-          justifyContent:"space-between",position:"sticky",top:0,zIndex:30,
-          boxShadow:"0 2px 12px "+shop.accent+"14",
-        }}>
-          <div style={{display:"flex",alignItems:"center",gap:14}}>
-            <button onClick={()=>isMobile?setMobileOpen(o=>!o):setColl(c=>!c)}
-              style={{width:36,height:36,borderRadius:10,border:"1px solid "+shop.accent+"33",background:shop.accentBg,cursor:"pointer",fontSize:15,color:shop.accent,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}}
-              onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.color="white";}}
-              onMouseLeave={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accent;}}>
-              ☰
-            </button>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <div style={{width:3,height:28,borderRadius:999,background:shop.sb}}/>
-              <div>
-                <h1 style={{margin:0,fontSize:16,fontWeight:900,color:"#0f172a",letterSpacing:"-0.01em"}}>{NAV.find(n=>n.id===tab)?.l||"Dashboard"}</h1>
-                <p style={{margin:0,fontSize:11,color:"#94a3b8",fontWeight:500}}>{shop.name} · {shop.currency}</p>
-              </div>
-            </div>
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            {/* ROS Nexus credit - hidden on mobile */}
-            <span className="mob-hide" style={{fontSize:10,fontWeight:600,color:shop.accent+"99",letterSpacing:"0.04em",marginRight:4,whiteSpace:"nowrap"}}>
-              Developed by <strong style={{fontWeight:800,color:shop.accent}}>ROS Nexus</strong>
-            </span>
-            {/* Search - hidden on mobile */}
-            <div className="mob-hide" style={{display:"flex",alignItems:"center",gap:8,background:"white",border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"8px 14px",transition:"all 0.2s"}}
-              onFocus={e=>{e.currentTarget.style.border="1px solid "+shop.accent+"66";e.currentTarget.style.boxShadow="0 0 0 3px "+shop.accent+"15";}}
-              onBlur={e=>{e.currentTarget.style.border="1px solid "+shop.accent+"33";e.currentTarget.style.boxShadow="none";}}>
-              <span style={{color:shop.accent,fontSize:13}}>🔍</span>
-              <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search…"
-                style={{border:"none",background:"transparent",outline:"none",fontSize:13,color:"#374151",width:140,fontFamily:"inherit"}}/>
-            </div>
-            {/* All Shops button — hidden for staff only, icon-only on mobile */}
-            {user?.role!=="staff"&&(
-              <button onClick={onBack}
-                style={{display:"flex",alignItems:"center",gap:7,
-                  padding:"7px 14px",borderRadius:10,
-                  border:"1px solid "+shop.accent+"44",
-                  background:shop.accentBg,
-                  color:shop.accentText,fontSize:12,fontWeight:700,
-                  cursor:"pointer",fontFamily:"inherit",
-                  transition:"all 0.15s",whiteSpace:"nowrap",
-                }}
-                title="Back to All Shops"
-                onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.color="white";e.currentTarget.style.borderColor=shop.accent;}}
-                onMouseLeave={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accentText;e.currentTarget.style.borderColor=shop.accent+"44";}}>
-                🏪<span className="mob-hide"> All Shops</span>
-              </button>
-            )}
-            {/* Notification bell */}
-            <button style={{position:"relative",width:38,height:38,borderRadius:11,border:"1px solid "+shop.accent+"33",background:shop.accentBg,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,transition:"all 0.15s"}}
-              onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.borderColor=shop.accent;}}
-              onMouseLeave={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.borderColor=shop.accent+"33";}}>
-              🔔
-              <span style={{position:"absolute",top:8,right:8,width:7,height:7,background:"#ef4444",borderRadius:"50%",border:"2px solid white"}}/>
-            </button>
-            {/* User avatar + logout */}
-            <div style={{display:"flex",alignItems:"center",gap:8,background:"white",border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"5px 10px 5px 5px",cursor:"pointer",boxShadow:"0 2px 8px rgba(0,0,0,0.06)"}}
-              onClick={onLogout}
-              title="Click to logout"
-              onMouseEnter={e=>{e.currentTarget.style.background=shop.accentBg;}}
-              onMouseLeave={e=>{e.currentTarget.style.background="white";}}>
-              <div style={{width:30,height:30,borderRadius:9,background:user?.avatar||shop.sb,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:12,flexShrink:0}}>
-                {user?.initials||"A"}
-              </div>
-              <div className="mob-hide">
-                <p style={{margin:0,fontSize:12,fontWeight:700,color:"#0f172a",lineHeight:1.2}}>{user?.name||"Admin"}</p>
-                <p style={{margin:0,fontSize:9,color:shop.accent,fontWeight:600,textTransform:"capitalize"}}>{user?.role==="staff"?"Staff":"Admin"} · Logout</p>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <main className="mob-main" style={{flex:1,padding:24,overflowY:"auto"}}>
-
-          {/* ─── DASHBOARD ─── */}
-          {tab==="dashboard"&&(()=>{
-            const now=new Date();
-            const todayStr=now.toISOString().slice(0,10);
-            const st=calcShopStats(sales);
-            const todaySales=st.todaySales, monthSales=st.monthRev, monthCount=st.monthOrders;
-            const fySales=st.fySales, fyCount=st.fyOrders;
-            const pendingOrders=st.pendingOrders;
-            const monthReturns=st.monthReturns;
-            const monthRefunds=st.monthRefunds;
-            const fyStart=now.getMonth()<3?new Date(now.getFullYear()-1,3,1):new Date(now.getFullYear(),3,1);
-            const kpis=[
-              {
-                icon:"🛒", label:"Today's Sales", sub:"Live · "+todayStr,
-                value:fmt(shopId,todaySales),
-                accent:"#3b82f6", dark:"#1d4ed8",
-                grad:"linear-gradient(145deg,#1e3a8a 0%,#1d4ed8 45%,#3b82f6 100%)",
-                glow:"rgba(59,130,246,0.45)",
-                trend:"up", trendVal:todaySales>0?"+active":"—",
-                tagGreen:todaySales>0, tag:todaySales>0?"● Live":"○ No Sales",
-                progress:Math.min(100,Math.round((todaySales/(shop.todaySales||1))*100)),
-              },
-              {
-                icon:"📅", label:"Monthly Sales", sub:now.toLocaleString("default",{month:"long",year:"numeric"}),
-                value:fmt(shopId,monthSales),
-                accent:"#06b6d4", dark:"#0e7490",
-                grad:"linear-gradient(145deg,#164e63 0%,#0e7490 45%,#06b6d4 100%)",
-                glow:"rgba(6,182,212,0.45)",
-                trend:"up", trendVal:monthCount+" orders",
-                tagGreen:true, tag:monthCount+" Orders",
-                progress:Math.min(100,Math.round((monthSales/(shop.monthRevenue||1))*100)),
-              },
-              {
-                icon:"📈", label:"Financial Year", sub:"1 Apr "+fyStart.getFullYear()+" – 31 Mar "+(fyStart.getFullYear()+1),
-                value:fmt(shopId,fySales),
-                accent:"#10b981", dark:"#065f46",
-                grad:"linear-gradient(145deg,#064e3b 0%,#065f46 45%,#059669 100%)",
-                glow:"rgba(5,150,105,0.45)",
-                trend:"up", trendVal:fyCount+" orders",
-                tagGreen:true, tag:fyCount+" Orders",
-                progress:Math.min(100,Math.round((fySales/((shop.monthRevenue||1)*12))*100)),
-              },
-              {
-                icon:"⏳", label:"Pending Orders", sub:"Awaiting fulfilment",
-                value:pendingOrders.toString(),
-                accent:"#f59e0b", dark:"#92400e",
-                grad:"linear-gradient(145deg,#78350f 0%,#92400e 45%,#d97706 100%)",
-                glow:"rgba(217,119,6,0.45)",
-                trend:pendingOrders>0?"warn":"ok", trendVal:pendingOrders>0?"Needs action":"All clear",
-                tagGreen:pendingOrders===0, tag:pendingOrders>0?"⚠ Action":"✓ Clear",
-                progress:Math.min(100,pendingOrders*20),
-              },
-              {
-                icon:"↩️", label:"Returns This Month", sub:"Returned / Exchanged",
-                value:monthReturns.toString(),
-                accent:"#e95597", dark:"#9d174d",
-                grad:"linear-gradient(145deg,#831843 0%,#9d174d 45%,#e95597 100%)",
-                glow:"rgba(233,85,151,0.45)",
-                trend:monthReturns>0?"warn":"ok", trendVal:monthReturns===0?"None this month":monthReturns+" return"+(monthReturns>1?"s":""),
-                tagGreen:monthReturns===0, tag:monthReturns===0?"✓ None":"↩ Returned",
-                progress:Math.min(100,monthReturns*25),
-              },
-              {
-                icon:"💸", label:"Refunds This Month", sub:"Total refunded value",
-                value:monthRefunds>0?fmt(shopId,monthRefunds):"—",
-                accent:"#a78bfa", dark:"#5b21b6",
-                grad:"linear-gradient(145deg,#2e1065 0%,#5b21b6 45%,#7c3aed 100%)",
-                glow:"rgba(124,58,237,0.45)",
-                trend:monthRefunds>0?"warn":"ok", trendVal:monthRefunds===0?"None this month":"Refunded",
-                tagGreen:monthRefunds===0, tag:monthRefunds===0?"✓ None":"💸 Issued",
-                progress:Math.min(100,monthRefunds>0?60:0),
-              },
-            ];
-
-            const quickActions=[
-              {l:"New Sale",      ic:"🛒", desc:"Record a sale",       g:shop.quickCards[0].g, action:()=>setModal("new-sale")},
-              {l:"New Purchase",  ic:"📦", desc:"Log a purchase",      g:shop.quickCards[1].g, action:()=>setModal("new-purchase")},
-              {l:"Add Customer",  ic:"👤", desc:"Register customer",   g:shop.quickCards[2].g, action:()=>setTab("customers")},
-              {l:"Add Product",   ic:"➕", desc:"List a product",      g:shop.quickCards[3].g, action:()=>setTab("products")},
-              {l:"Record Expense",ic:"💳", desc:"Log an expense",      g:shop.quickCards[4].g, action:()=>setTab("expenses")},
-              {l:"Gen. Report",   ic:"📋", desc:"View reports",        g:shop.quickCards[5].g, action:()=>setTab("reports")},
-            ];
-
-            return(
-              <div>
-                {/* ── QUICK ACTION CARDS ── */}
-                <div className="mob-quick-grid" style={{display:"grid",gridTemplateColumns:isMobile?"repeat(3,1fr)":"repeat(6,1fr)",gap:isMobile?8:12,marginBottom:24}}>
-                  {quickActions.map((q,i)=>{
-                    const isH=hov==="qa-"+i;
-                    return(
-                      <div key={i}
-                        onClick={q.action}
-                        onMouseEnter={()=>setHov("qa-"+i)}
-                        onMouseLeave={()=>setHov(null)}
-                        style={{
-                          borderRadius:16,overflow:"hidden",cursor:"pointer",
-                          background:q.g,position:"relative",
-                          transform:isH?"translateY(-4px) scale(1.04)":"translateY(0) scale(1)",
-                          transition:"all 0.2s cubic-bezier(0.34,1.56,0.64,1)",
-                          boxShadow:isH
-                            ?"0 14px 28px -4px rgba(0,0,0,0.25),0 4px 10px rgba(0,0,0,0.12)"
-                            :"0 3px 10px rgba(0,0,0,0.12)",
-                        }}>
-                        {/* shimmer overlay on hover */}
-                        <div style={{
-                          position:"absolute",inset:0,
-                          background:isH?"linear-gradient(135deg,rgba(255,255,255,0.18) 0%,transparent 60%)":"transparent",
-                          transition:"background 0.2s",pointerEvents:"none",zIndex:0,
-                        }}/>
-                        {/* mesh dots */}
-                        <div style={{
-                          position:"absolute",inset:0,zIndex:0,pointerEvents:"none",
-                          backgroundImage:"radial-gradient(rgba(255,255,255,0.12) 1px,transparent 1px)",
-                          backgroundSize:"14px 14px",
-                        }}/>
-                        <div className="mob-quick-card-inner" style={{position:"relative",zIndex:1,padding:"16px 12px 14px",textAlign:"center"}}>
-                          {/* icon circle */}
-                          <div className="mob-quick-icon" style={{
-                            width:44,height:44,borderRadius:"50%",margin:"0 auto 10px",
-                            background:"rgba(255,255,255,0.20)",
-                            backdropFilter:"blur(6px)",
-                            display:"flex",alignItems:"center",justifyContent:"center",
-                            fontSize:20,
-                            boxShadow:"0 2px 8px rgba(0,0,0,0.15),inset 0 1px 0 rgba(255,255,255,0.25)",
-                            transform:isH?"scale(1.12)":"scale(1)",
-                            transition:"transform 0.2s cubic-bezier(0.34,1.56,0.64,1)",
-                          }}>{q.ic}</div>
-                          {/* label */}
-                          <p className="mob-quick-label" style={{
-                            margin:"0 0 2px",fontSize:11,fontWeight:800,color:"white",
-                            letterSpacing:"0.04em",textTransform:"uppercase",
-                            fontFamily:"'Arimo',Arial,sans-serif",
-                            textShadow:"0 1px 4px rgba(0,0,0,0.20)",
-                          }}>{q.l}</p>
-                          {/* desc */}
-                          <p className="mob-quick-desc" style={{
-                            margin:0,fontSize:9,color:"rgba(255,255,255,0.65)",
-                            fontWeight:500,
-                          }}>{q.desc}</p>
-                        </div>
-                        {/* bottom accent line */}
-                        <div style={{
-                          height:3,
-                          background:isH?"rgba(255,255,255,0.55)":"rgba(255,255,255,0.20)",
-                          transition:"background 0.2s",
-                        }}/>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* ── 6 KPI CARDS — 9:16 portrait ratio ── */}
-                <div className="mob-kpi-grid" style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(6,1fr)",gap:isMobile?10:14,marginBottom:28}}>
-                  {kpis.map((k,i)=>{
-                    const isH=hov==="kpi-"+i;
-                    return(
-                      <div key={i} className="mob-kpi-card"
-                        onMouseEnter={()=>setHov("kpi-"+i)}
-                        onMouseLeave={()=>setHov(null)}
-                        style={{
-                          borderRadius:isMobile?14:18,overflow:"hidden",
-                          background:k.grad,
-                          position:"relative",
-                          cursor:"default",
-                          aspectRatio:isMobile?"unset":"9/16",
-                          minHeight:isMobile?120:undefined,
-                          display:"flex",flexDirection:"column",
-                          transform:isH?"translateY(-6px) scale(1.03)":"translateY(0) scale(1)",
-                          transition:"all 0.25s cubic-bezier(0.34,1.56,0.64,1)",
-                          boxShadow:isH
-                            ?"0 22px 44px -8px "+k.glow+",0 6px 18px rgba(0,0,0,0.14)"
-                            :"0 5px 18px "+k.glow+",0 2px 5px rgba(0,0,0,0.07)",
-                        }}>
-
-                        {/* mesh grid overlay */}
-                        <div style={{
-                          position:"absolute",inset:0,zIndex:0,pointerEvents:"none",
-                          backgroundImage:"radial-gradient(rgba(255,255,255,0.10) 1px,transparent 1px)",
-                          backgroundSize:"16px 16px",
-                        }}/>
-
-                        {/* glowing orb bottom-right */}
-                        <div style={{
-                          position:"absolute",bottom:-50,right:-50,width:130,height:130,
-                          borderRadius:"50%",background:"rgba(255,255,255,0.07)",
-                          pointerEvents:"none",zIndex:0,filter:"blur(24px)",
-                        }}/>
-
-                        {/* glowing orb top-left */}
-                        <div style={{
-                          position:"absolute",top:-30,left:-30,width:90,height:90,
-                          borderRadius:"50%",background:"rgba(255,255,255,0.09)",
-                          pointerEvents:"none",zIndex:0,filter:"blur(18px)",
-                        }}/>
-
-                        {/* large watermark icon */}
-                        <div style={{
-                          position:"absolute",bottom:20,right:-8,fontSize:72,lineHeight:1,
-                          opacity:isH?0.20:0.08,pointerEvents:"none",zIndex:0,
-                          transition:"opacity 0.3s,transform 0.3s",
-                          transform:isH?"scale(1.12) rotate(-8deg)":"scale(1) rotate(0deg)",
-                        }}>{k.icon}</div>
-
-                        {/* ── TOP SECTION: icon + tag ── */}
-                        <div style={{position:"relative",zIndex:1,padding:"16px 14px 0",flex:"0 0 auto"}}>
-                          {/* status tag top-right */}
-                          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}>
-                            <span style={{
-                              fontSize:9,fontWeight:800,padding:"3px 9px",borderRadius:999,
-                              background:k.tagGreen?"rgba(255,255,255,0.20)":"rgba(220,38,38,0.35)",
-                              color:"white",letterSpacing:"0.06em",textTransform:"uppercase",
-                              border:"1px solid rgba(255,255,255,0.18)",
-                              backdropFilter:"blur(4px)",
-                            }}>{k.tag}</span>
-                          </div>
-
-                          {/* icon badge */}
-                          <div style={{
-                            width:46,height:46,borderRadius:14,marginBottom:16,
-                            background:"rgba(255,255,255,0.16)",
-                            backdropFilter:"blur(10px)",
-                            display:"flex",alignItems:"center",justifyContent:"center",
-                            fontSize:22,
-                            boxShadow:"0 4px 12px rgba(0,0,0,0.15),inset 0 1px 0 rgba(255,255,255,0.25)",
-                            transform:isH?"scale(1.08)":"scale(1)",
-                            transition:"transform 0.25s cubic-bezier(0.34,1.56,0.64,1)",
-                          }}>{k.icon}</div>
-                        </div>
-
-                        {/* ── MIDDLE SECTION: value + label + sub ── */}
-                        <div style={{position:"relative",zIndex:1,padding:"0 14px",flex:"1 1 auto",display:"flex",flexDirection:"column",justifyContent:"center"}}>
-                          {/* value */}
-                          <p style={{
-                            margin:"0 0 4px",
-                            fontSize:k.value.length>7?18:24,
-                            fontWeight:800,color:"white",
-                            letterSpacing:"-0.5px",lineHeight:1,
-                            fontFamily:"'Arimo',Arial,sans-serif",
-                            textShadow:"0 2px 10px rgba(0,0,0,0.25)",
-                          }}>{k.value}</p>
-
-                          {/* label */}
-                          <p style={{
-                            margin:"0 0 3px",fontSize:12,fontWeight:700,
-                            color:"rgba(255,255,255,0.95)",
-                            fontFamily:"'Arimo',Arial,sans-serif",
-                            letterSpacing:"0.01em",lineHeight:1.3,
-                          }}>{k.label}</p>
-
-                          {/* sub */}
-                          <p style={{
-                            margin:0,fontSize:9,
-                            color:"rgba(255,255,255,0.52)",fontWeight:500,
-                            lineHeight:1.4,
-                          }}>{k.sub}</p>
-                        </div>
-
-                        {/* ── BOTTOM SECTION: divider + trend + progress ── */}
-                        <div style={{position:"relative",zIndex:1,flex:"0 0 auto"}}>
-                          {/* divider */}
-                          <div style={{height:"1px",background:"rgba(255,255,255,0.12)",margin:"0 14px 10px"}}/>
-
-                          {/* trend row */}
-                          <div style={{display:"flex",alignItems:"center",gap:5,padding:"0 14px 12px"}}>
-                            <span style={{
-                              fontSize:10,fontWeight:800,
-                              color:k.trend==="up"?"#86efac":k.trend==="ok"?"#86efac":"#fca5a5",
-                            }}>
-                              {k.trend==="up"?"▲":k.trend==="ok"?"✓":"▼"}
-                            </span>
-                            <span style={{fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:600,lineHeight:1.3}}>{k.trendVal}</span>
-                          </div>
-
-                          {/* progress bar */}
-                          <div style={{height:4,background:"rgba(0,0,0,0.22)"}}>
-                            <div style={{
-                              height:"100%",
-                              width:isH?k.progress+"%":"0%",
-                              background:"rgba(255,255,255,0.60)",
-                              borderRadius:"0 3px 3px 0",
-                              transition:"width 0.65s cubic-bezier(0.4,0,0.2,1) 0.08s",
-                              boxShadow:"0 0 10px rgba(255,255,255,0.55)",
-                            }}/>
-                          </div>
-                        </div>
-
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* ── RECENT SALES TABLE ── */}
-                <div style={{background:"white",borderRadius:16,border:"1px solid #f1f5f9",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",marginBottom:24,overflow:"hidden"}}>
-                  <div style={{padding:"16px 20px",borderBottom:"1px solid #f1f5f9",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                    <div>
-                      <p style={{margin:0,fontWeight:800,fontSize:15,color:"#0f172a"}}>Recent Sales</p>
-                      <p style={{margin:0,fontSize:11,color:"#94a3b8",fontWeight:500}}>Latest {Math.min(5,sales.length)} transactions</p>
-                    </div>
-                    <button onClick={()=>setTab("sales")} style={{fontSize:12,fontWeight:700,color:shop.accent,background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:8,padding:"5px 12px",cursor:"pointer",fontFamily:"inherit"}}>View All →</button>
-                  </div>
-                  <table style={{width:"100%",borderCollapse:"collapse"}}>
-                    <thead>
-                      <tr style={{background:"#f8fafc"}}>
-                        {["ID","Customer","Amount","Status","Date"].map(h=>(
-                          <th key={h} style={{padding:"10px 16px",textAlign:"left",fontSize:11,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sales.slice(0,5).map((s,i)=>(
-                        <tr key={s.id} style={{borderTop:"1px solid #f1f5f9",background:STATUS_ROW_BG[s.ful||s.status]||(i%2===0?"white":"#fafafa")}}>
-                          <td style={{padding:"11px 16px",fontSize:12,fontWeight:700,color:shop.accent}}>{s.id}</td>
-                          <td style={{padding:"11px 16px",fontSize:13,color:"#374151",fontWeight:600}}>{s.customer}</td>
-                          <td style={{padding:"11px 16px",fontSize:13,fontWeight:800,color:"#0f172a"}}>{fmt(shopId,s.amount)}</td>
-                          <td style={{padding:"11px 16px"}}><Badge l={s.ful||s.status||"PENDING"}/></td>
-                          <td style={{padding:"11px 16px",fontSize:12,color:"#94a3b8"}}>{s.date}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* ── LOW STOCK ALERT ── */}
-                {lowStk.length>0&&(
-                  <div style={{background:"#fff7ed",borderRadius:14,border:"1px solid #fed7aa",padding:"14px 18px",display:"flex",alignItems:"center",gap:12}}>
-                    <span style={{fontSize:22}}>⚠️</span>
-                    <div>
-                      <p style={{margin:0,fontWeight:800,fontSize:13,color:"#c2410c"}}>{lowStk.length} product{lowStk.length>1?"s":""} low on stock</p>
-                      <p style={{margin:0,fontSize:11,color:"#ea580c"}}>{lowStk.map(p=>p.name).join(" · ")}</p>
-                    </div>
-                    <button onClick={()=>setTab("products")} style={{marginLeft:"auto",fontSize:12,fontWeight:700,color:"#c2410c",background:"white",border:"1px solid #fed7aa",borderRadius:8,padding:"5px 12px",cursor:"pointer",fontFamily:"inherit"}}>View Products →</button>
-                  </div>
-                )}
-              </div>
-            );
-          })()}
-
-          {/* ─── SALES ─── */}
-          {tab==="sales"&&(()=>{
-            const indiaStatuses=[
-              {key:"ALL",                        label:"All",         emoji:"🗂️"},
-              {key:"ORDER NOT PLACED",           label:"Not Placed",  emoji:"🕐"},
-              {key:"WORK IN PROGRESS",           label:"In Progress", emoji:"🔧"},
-              {key:"PHOTO GIVEN TO CUSTOMER",    label:"Photo Sent",  emoji:"📸"},
-              {key:"AWAITING TRACKING INFO.",    label:"Awaiting",    emoji:"📦"},
-              {key:"FULFILLED",                  label:"Fulfilled",   emoji:"✅"},
-              {key:"RETURN REQUESTED",           label:"Rtn Req",     emoji:"↩️"},
-              {key:"RETURN RECEIVED",            label:"Rtn Rcvd",    emoji:"📬"},
-              {key:"EXCHANGED",                  label:"Exchanged",   emoji:"🔄"},
-              {key:"REFUNDED",                   label:"Refunded",    emoji:"💸"},
-              {key:"GOOD FEEDBACK RECEIVED",     label:"👍 Positive", emoji:"🌟"},
-              {key:"NEGATIVE FEEDBACK RECEIVED", label:"👎 Negative", emoji:"⚠️"},
-            ];
-            const otherStatuses=[
-              {key:"ALL",           label:"All",       emoji:"🗂️"},
-              {key:"PENDING",       label:"Pending",   emoji:"⏳"},
-              {key:"FULFILLED",     label:"Fulfilled", emoji:"✅"},
-              {key:"GOOD FEEDBACK", label:"Good FB",   emoji:"🌟"},
-              {key:"RTRN REQSTD",   label:"Rtn Req",   emoji:"↩️"},
-              {key:"RETRN RCVD",    label:"Rtn Rcvd",  emoji:"📬"},
-              {key:"EXCHANGED",     label:"Exchanged", emoji:"🔄"},
-              {key:"REFUNDED",      label:"Refunded",  emoji:"💸"},
-            ];
-            const statusTabs=shopId==="ros-india"?indiaStatuses:otherStatuses;
-            return(
-              <SalesPanel
-                Badge={Badge}
-                customers={customers}
-                filtSales={filtSales}
-                fmt={fmt}
-                formatDate={formatDate}
-                parseDate={parseDate}
-                openMenu={openMenu}
-                onImport={()=>setModal("import-sales")}
-                onExport={()=>setModal("export-sales")}
-                onReload={handleReloadSales}
-                search={search}
-                sales={sales}
-                salesPeriod={salesPeriod}
-                setEditRow={setEditRow}
-                setInvoiceRow={setInvoiceRow}
-                setModal={setModal}
-                setOpenMenu={setOpenMenu}
-                setSalesData={setSalesData}
-                setSearch={setSearch}
-                setSelCustomer={setSelCustomer}
-                setSelRow={setSelRow}
-                setSalesPeriod={setSalesPeriod}
-                shop={shop}
-                shopId={shopId}
-                TD={TD}
-                user={user}
-                isStaff={user?.role==="staff"}
-                statusRowBg={STATUS_ROW_BG}
-                statusFilter={statusFilter}
-                setStatusFilter={setStatusFilter}
-                statusTabs={statusTabs}
-              />
-            );
-          })()}
-
-          {/* ─── PURCHASES ─── */}
-          {tab==="purchases"&&(
-            <PurchasesPanel
-              Badge={Badge}
-              fmt={fmt}
-              onExport={()=>setModal("export-purchases")}
-              onImport={()=>setModal("import-purchases")}
-              onNewPurchase={()=>setModal("new-purchase")}
-              purch={purch}
-              shop={shop}
-              shopId={shopId}
-            />
-          )}
-
-          {/* ─── CUSTOMERS ─── */}
-          {tab==="customers"&&(
-            <CustomersPanel Badge={Badge} customers={customers} search={search} shop={shop} setCustomers={setCustomers} user={user} dbDeleteCustomer={dbDeleteCustomer}/>
-          )}
-
-          {/* ─── SUPPLIERS ─── */}
-          {tab==="suppliers"&&(
-            <SuppliersPanel shop={shop} suppliers={SUPPLIERS}/>
-          )}
-
-          {/* ─── PRODUCTS ─── */}
-          {tab==="products"&&(
-            <ProductsPanel lowStk={lowStk} products={PRODUCTS} shop={shop}/>
-          )}
-
-          {/* ─── LOGISTICS ─── */}
-          {tab==="logistics"&&(
-            <LogisticsPanel logs={logs} onNewShipment={()=>setModal("new-shipment")} shop={shop}/>
-          )}
-
-          {/* ─── AGENTS ─── */}
-          {tab==="agents"&&(
-            <AgentsPanel agents={AGENTS} shop={shop}/>
-          )}
-
-          {/* ─── EXPENSES ─── */}
-          {tab==="expenses"&&(
-            <ExpensesPanel exps={exps} fmt={fmt} shop={shop} shopId={shopId} totExp={totExp}/>
-          )}
-
-          {/* ─── DOCUMENTS ─── */}
-          {tab==="documents"&&(
-            <DocumentsPanel shop={shop}/>
-          )}
-
-          {tab==="analytics"&&(
-            <AnalyticsPanel
-              customers={customers}
-              fmt={fmt}
-              MONTHLY={MONTHLY}
-              sales={sales}
-              shop={shop}
-              shopId={shopId}
-              totRev={totRev}
-            />
-          )}
-          {/* REPORTS */}
-          {tab==="reports"&&(
-            <ReportsPanel shop={shop} showPdf={showPdf} sales={sales} customers={customers} fmt={fmt} shopId={shopId} exps={exps} purch={purch}/>
-          )}
-
-          {/* INVOICES placeholder */}
-          {tab==="invoices"&&(
-            <InvoicesPanel shop={shop}/>
-          )}
-        </main>
-      </div>
-
-      {/* MODALS */}
-      {modal==="new-sale"&&(
-        <Modal title="✨ New Sale" onClose={()=>setModal(null)} accent={shop.accent}>
-          <NewSaleForm
-            shopId={shopId} shop={shop}
-            onSave={addSale} onClose={()=>setModal(null)}
-           lastInvoiceNum={(() => {
-              try {
-                const stored = localStorage.getItem("ros_lastInv_"+shopId);
-                if (stored) return parseInt(stored)||1312;
-              } catch{}
-              const now = new Date();
-              const fyStart = now.getMonth() >= 3 ? new Date(now.getFullYear(), 3, 1) : new Date(now.getFullYear() - 1, 3, 1);
-              const fySales = sales.filter(s => {
-                const dt = parseDate(s.date);
-                return dt && !isNaN(dt.getTime()) && dt >= fyStart;
-              });
-              if (fySales.length === 0) return 1312;
-              const nums = fySales.map(s => {
-                const m = (s.id||"").match(/^(?:ROS|IND)(\d{4})\d$/);
-                return m ? parseInt(m[1]) : 0;
-              }).filter(n => n >= 1313 && n <= 9999);
-            })()}
-            customers={customers}
-            shopItems={(shopItems||{})[shopId]||[]}
-            onAddShopItem={(item)=>{
-              const current=(shopItems||{})[shopId]||[];
-              const updated={...(shopItems||{}),[shopId]:[...new Set([...current,item])]};
-              if(saveShopItems) saveShopItems(updated);
-            }}
-          />
-        </Modal>
-      )}
-      {/* ── IMPORT MODAL — SALES ── */}
-      {modal==="import-sales"&&user?.role!=="staff"&&(
-        <Modal title="⬇ Import Sales" onClose={()=>setModal(null)} accent={shop.accent}>
-          <ImportExportPanel type="import" entity="Sales" shop={shop} shopId={shopId} onClose={()=>setModal(null)}
-            onSave={async (rows)=>{
-              // Upsert ALL imported rows — updates existing + inserts new
-              if(rows.length===0){setModal(null);return;}
-
-              // Update UI: merge rows — imported takes priority over existing
-              setSalesData(prev=>{
-                const existingMap=new Map((prev[shopId]||[]).map(s=>[s.id,s]));
-                rows.forEach(r=>existingMap.set(r.id,{...existingMap.get(r.id)||{},...r}));
-                return {...prev,[shopId]:Array.from(existingMap.values())};
-              });
-              setModal(null);
-
-              // Save ALL rows to Supabase in batches of 50
-              const BATCH=50;
-              for(let i=0;i<rows.length;i+=BATCH){
-                const batch=rows.slice(i,i+BATCH);
-                await Promise.all(batch.map(sale=>dbSaveSale(shopId,sale).catch(e=>console.error("Save failed:",sale.id,e))));
-              }
-              console.log(`✅ Import complete: ${rows.length} rows sent to Supabase`);
-            }}/>
-        </Modal>
-      )}
-
-      {/* ── EXPORT MODAL — SALES ── */}
-      {modal==="export-sales"&&user?.role!=="staff"&&(
-        <Modal title="⬆ Export Sales" onClose={()=>setModal(null)} accent={shop.accent}>
-          <ImportExportPanel type="export" entity="Sales" shop={shop} shopId={shopId} data={sales} onClose={()=>setModal(null)}/>
-        </Modal>
-      )}
-
-      {/* ── IMPORT MODAL — PURCHASES ── */}
-      {modal==="import-purchases"&&(
-        <Modal title="⬇ Import Purchases" onClose={()=>setModal(null)} accent={shop.accent}>
-          <ImportExportPanel type="import" entity="Purchases" shop={shop} onClose={()=>setModal(null)}/>
-        </Modal>
-      )}
-
-      {/* ── EXPORT MODAL — PURCHASES ── */}
-      {modal==="export-purchases"&&(
-        <Modal title="⬆ Export Purchases" onClose={()=>setModal(null)} accent={shop.accent}>
-          <ImportExportPanel type="export" entity="Purchases" shop={shop} data={purch} onClose={()=>setModal(null)}/>
-        </Modal>
-      )}
-
-      {/* ── CUSTOMER DETAIL MODAL ── */}
-      {selCustomer&&(
-        <Modal title={"👤 "+selCustomer.name} onClose={()=>setSelCustomer(null)} accent={shop.accent}>
-          <div style={{display:"flex",flexDirection:"column",gap:0}}>
-            {/* header strip */}
-            <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"14px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:14}}>
-              <div style={{width:48,height:48,borderRadius:"50%",background:shop.accent,display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,flexShrink:0}}>
-                {selCustomer.name.charAt(0)}
-              </div>
-              <div>
-                <p style={{margin:0,fontWeight:900,fontSize:16,color:"#0f172a"}}>{selCustomer.name}</p>
-                <p style={{margin:0,fontSize:12,color:shop.accent,fontWeight:600}}>{selCustomer.tag||"Customer"}</p>
-              </div>
-            </div>
-
-            {/* detail grid */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-              {[
-                ["📞 Phone",      selCustomer.phone],
-                ["💬 WhatsApp",   selCustomer.whatsapp],
-                ["📦 Orders",     selCustomer.purchases],
-                ["💰 Total Spend",fmt(shopId,selCustomer.spend)],
-                ["🗓 Last Purchase",formatDate(selCustomer.last)],
-                ["🏷 Tag",        selCustomer.tag||"—"],
-              ].map(([k,v])=>(
-                <div key={k} style={{background:"#f8fafc",borderRadius:10,padding:"10px 14px"}}>
-                  <p style={{margin:0,fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:3}}>{k}</p>
-                  <p style={{margin:0,fontSize:13,fontWeight:700,color:"#1e293b"}}>{v||"—"}</p>
-                </div>
-              ))}
-            </div>
-
-            {/* address */}
-            <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 14px",marginBottom:12}}>
-              <p style={{margin:0,fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:3}}>📍 Address</p>
-              <p style={{margin:0,fontSize:13,color:"#1e293b"}}>{selCustomer.address||"—"}</p>
-            </div>
-
-            {/* notes */}
-            {selCustomer.notes&&(
-              <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"10px 14px",marginBottom:12}}>
-                <p style={{margin:0,fontSize:10,fontWeight:700,color:"#92400e",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:3}}>📝 Notes</p>
-                <p style={{margin:0,fontSize:13,color:"#92400e"}}>{selCustomer.notes}</p>
-              </div>
-            )}
-
-            <button onClick={()=>setSelCustomer(null)}
-              style={{width:"100%",padding:"11px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit",marginTop:4}}>
-              Close
-            </button>
-          </div>
-        </Modal>
-      )}
-
-      {/* ── EDIT SALE MODAL ── */}
-      {modal==="edit-sale"&&editRow&&(
-        <Modal title={"✏️ Edit Sale — "+editRow.id} onClose={()=>{setModal(null);setEditRow(null);}} accent={shop.accent}>
-          <EditSaleForm
-            shopId={shopId} shop={shop} sale={editRow} customers={customers}
-            onSave={(updated)=>{
-              // Update UI instantly so sales list reflects new status immediately
-              setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>x.id===updated.id?{...x,...updated}:x)}));
-              setModal(null);setEditRow(null);
-              // Persist to Supabase then reload to confirm sync
-              dbSaveSale(shopId,updated).then(()=>{
-                dbLoadSales(shopId).then(data=>{
-                  if(data) setSalesData(prev=>({...prev,[shopId]:data.map(s=>{
-                    if(!s) return s;
-                    let rawItem=s.item||"",decodedLines=null,displayItem=rawItem;
-                    if(rawItem.startsWith("__LINES__:")){const nl=rawItem.indexOf("\n");const jp=nl>=0?rawItem.slice(10,nl):rawItem.slice(10);displayItem=nl>=0?rawItem.slice(nl+1):"";try{decodedLines=JSON.parse(jp);}catch{decodedLines=null;}}
-                    const tr=Number(s.taxRate!==undefined?s.taxRate:s.tax_rate!==undefined?s.tax_rate:0)||0;
-                    const ti=tr===0?true:(s.taxInclusive!==undefined?s.taxInclusive!==false:true);
-                    let sl=decodedLines||s.saleLines||s.sale_lines||null;
-                    if(typeof sl==="string"){try{sl=JSON.parse(sl);}catch{sl=null;}}
-                    return {...s,item:displayItem,taxRate:tr,taxInclusive:ti,saleLines:Array.isArray(sl)?sl:null,discount:Number(s.discount||s.discount_amt)||0,otherCharges:Number(s.otherCharges||s.other_charges)||0};
-                  })}));
-                }).catch(()=>{});
-              }).catch(err=>console.error("❌ Edit save failed:",err));
-            }}
-            onClose={()=>{setModal(null);setEditRow(null);}}
-          />
-        </Modal>
-      )}
-
-      {/* ── NEW SHIPMENT MODAL ── */}
-      {modal==="new-shipment"&&(
-        <Modal title="🚚 New Shipment" onClose={()=>setModal(null)} accent={shop.accent}>
-          <NewShipmentForm shopId={shopId} shop={shop} purch={purch} onSave={()=>setModal(null)} onClose={()=>setModal(null)}/>
-        </Modal>
-      )}
-
-      {/* ── NEW PURCHASE MODAL ── */}
-      {modal==="new-purchase"&&(
-        <Modal title="📦 New Purchase" onClose={()=>setModal(null)} accent={shop.accent}>
-          <NewPurchaseForm shopId={shopId} shop={shop} lastPurchNum={purch.length>0?parseInt((purch[0].id||"0").replace(/[^0-9]/g,""))||700:700} onSave={(form)=>{setModal(null);}} onClose={()=>setModal(null)}/>
-        </Modal>
-      )}
-
-      {/* ══ PRINT STYLE + OVERLAY ══ */}
-      {printMode&&invoiceRow&&(()=>{
-        const inv=invoiceRow,sym=shop.symbol,total=Number(inv.amount)||0,isIndia=shopId==="ros-india";
-        const invAdjAmt=Number(inv.adjAmt)||0;
-        const rPct=inv.taxRate!==undefined&&inv.taxRate!==null?inv.taxRate:0;
-        const taxRate=rPct/100;
-        const inclusive=taxRate===0?true:inv.taxInclusive!==false;
-        const subtotal=inclusive?parseFloat((total/(1+taxRate)).toFixed(2)):total;
-        const taxAmt=parseFloat((subtotal*taxRate).toFixed(2));
-        const grand=parseFloat((subtotal+taxAmt-invAdjAmt).toFixed(2));
-        const cgst=parseFloat((taxAmt/2).toFixed(2));
-        const tRows=[...(rPct===0?[["Amount (no tax)",total]]:isIndia?[["Subtotal (excl. tax)",subtotal],["CGST ("+(rPct/2)+"%)","cgst],["SGST ("+(rPct/2)+"%)",cgst]]:["Subtotal (excl. tax)",subtotal],["Tax ("+rPct+"%)",taxAmt]]),...(invAdjAmt>0?[["Post-Sale Adj. ("+(inv.adjType||"Adjustment")+")",-invAdjAmt]]:[]),["Grand Total",grand]];
-        const n=Math.round(total);const ons=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];const tns=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
-        let wds="";if(n<20)wds=ons[n];else if(n<100)wds=tns[Math.floor(n/10)]+(n%10?" "+ons[n%10]:"");else if(n<1000)wds=ons[Math.floor(n/100)]+" Hundred"+(n%100?" "+tns[Math.floor((n%100)/10)]+(n%10?" "+ons[n%10]:""):"");else if(n<100000)wds=ons[Math.floor(n/1000)]+" Thousand";else wds=String(n);
-        return(
-          <div id="ros-print-overlay" style={{position:"fixed",inset:0,zIndex:9999,background:"white",overflowY:"auto",padding:"0"}}>
-            <style>{`@media print{#ros-print-toolbar{display:none!important;}#ros-print-overlay{position:static!important;}@page{size:A4;margin:12mm;}}`}</style>
-
-            {/* Toolbar — hidden on print */}
-            <div id="ros-print-toolbar" style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 24px",background:"#0f172a",position:"sticky",top:0,zIndex:2}}>
-              <span style={{color:"white",fontWeight:700,fontSize:14}}>📄 Invoice {inv.id} — Print Preview</span>
-              <div style={{display:"flex",gap:10}}>
-                <button onClick={()=>showPdf(inv)}
-                style={{padding:"8px 20px",borderRadius:8,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer"}}>🖨 Print / Save as PDF</button>
-                <button onClick={()=>setPrintMode(false)} style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#334155",color:"white",fontWeight:700,fontSize:13,cursor:"pointer"}}>✕ Close</button>
-              </div>
-            </div>
-
-            {/* A4 Invoice body */}
-            <div id="ros-invoice-printbody" style={{maxWidth:794,margin:"24px auto",padding:"40px 48px",fontFamily:"Arial,sans-serif",fontSize:13,color:"#0f172a",background:"white",boxShadow:"0 4px 32px rgba(0,0,0,0.12)"}}>
-
-              {/* Header */}
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-                <div>
-                  <img src={shop.logo} alt={shop.name} style={{height:44,objectFit:"contain",marginBottom:6,background:"white",borderRadius:6,padding:"2px 6px",border:"1px solid #e2e8f0"}}/>
-                  <div style={{fontSize:11,color:"#64748b"}}>{isIndia?"123, Fashion Street, Mumbai - 400001":"12 Oxford Street, London UK"}</div>
-                  {isIndia&&<div style={{fontSize:11,color:"#64748b",fontWeight:700}}>GSTIN: 27AABCU9603R1ZX</div>}
-                </div>
-                <div style={{textAlign:"right"}}>
-                  <div style={{fontSize:28,fontWeight:900,color:shop.accent+"44",letterSpacing:2}}>TAX INVOICE</div>
-                  <div style={{fontSize:12,marginTop:4}}>Invoice #: <strong style={{fontFamily:"monospace"}}>{inv.id}</strong></div>
-                  <div style={{fontSize:12}}>Date: <strong>{formatDate(inv.date)}</strong></div>
-                  <span style={{display:"inline-block",marginTop:6,background:"#dcfce7",color:"#15803d",fontWeight:700,fontSize:12,padding:"2px 12px",borderRadius:999}}>Paid</span>
-                </div>
-              </div>
-
-              <hr style={{border:"none",borderTop:"2px solid #0f172a",margin:"14px 0 18px"}}/>
-
-              {/* Bill To + Payment Info */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24,marginBottom:20}}>
-                <div>
-                  <div style={{fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Bill To</div>
-                  <div style={{fontWeight:800,fontSize:15,marginBottom:3}}>{inv.customer}</div>
-                  <div style={{fontSize:12,color:"#64748b",marginBottom:2}}>{inv.address||"—"}</div>
-                  <div style={{fontSize:12,color:"#64748b"}}>Phone: <strong>{inv.phone||inv.contact||"—"}</strong></div>
-                </div>
-                <div>
-                  <div style={{fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Payment Info</div>
-                  {(isIndia?[["Bank","ROS India Bank"],["A/C No","50100234567890"],["IFSC","BARB0MUMBAI"],["Method",inv.pay||"—"]]:[["Bank","Barclays UK"],["Sort Code","20-45-67"],["Account No","12345678"],["Method",inv.pay||"—"]]).map(([k,v])=>(
-                    <div key={k} style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                      <span style={{fontSize:12,color:"#64748b"}}>{k}:</span>
-                      <span style={{fontSize:12,fontWeight:700}}>{v}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Line Items */}
-              {(()=>{
-                const hasLines=Array.isArray(inv.saleLines)&&inv.saleLines.length>0;
-                const pdfDiscountAmt=Number(inv.discount)||0;
-                const pdfOtherChargesAmt=Number(inv.otherCharges)||0;
-                const pdfLines=hasLines
-                  ? inv.saleLines
-                  : parseLegacyItems(inv.item,inv.qty,subtotal);
-                const pdfHasEstimated=!hasLines&&pdfLines.some(l=>l.estimated);
-                return(<>
-                  {pdfHasEstimated&&(
-                    <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:6,padding:"6px 10px",marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
-                      <span style={{fontSize:11}}>⚠️</span>
-                      <span style={{fontSize:9,color:"#92400e",fontWeight:600}}>Unit prices are estimated equally — sale recorded before individual item pricing. Edit &amp; re-enter to set correct individual prices.</span>
-                    </div>
-                  )}
-                  <table style={{width:"100%",borderCollapse:"collapse",marginBottom:20}}>
-                    <thead>
-                      <tr style={{background:"#0f172a",color:"white"}}>
-                        {["SR.","DESCRIPTION","QTY","UNIT PRICE","TOTAL"].map((h,i)=>(
-                          <th key={h} style={{padding:"9px 12px",textAlign:i>1?"right":"left",fontSize:11,fontWeight:800,letterSpacing:"0.05em"}}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {pdfLines.map((line,idx)=>{
-                        const q=parseFloat(line.qty)||1;
-                        const p=parseFloat(line.price)||0;
-                        const lineTotal=parseFloat((q*p).toFixed(2));
-                        return(
-                          <tr key={idx} style={{borderBottom:"1px solid #e2e8f0",background:idx%2===0?"white":"#fafafa"}}>
-                            <td style={{padding:"12px",color:"#64748b",fontSize:12}}>{idx+1}</td>
-                            <td style={{padding:"12px",fontWeight:700}}>{line.name||"Item "+(idx+1)}</td>
-                            <td style={{padding:"12px",textAlign:"right",fontWeight:700}}>{q}</td>
-                            <td style={{padding:"12px",textAlign:"right",fontWeight:700}}>{sym}{p.toLocaleString()}</td>
-                            <td style={{padding:"12px",textAlign:"right",fontWeight:800,color:shop.accent}}>{sym}{lineTotal.toLocaleString()}</td>
-                          </tr>
-                        );
-                      })}
-                      {pdfDiscountAmt>0&&(
-                        <tr style={{borderBottom:"1px solid #f1f5f9"}}>
-                          <td colSpan={4} style={{padding:"8px 12px",textAlign:"right",fontSize:12,color:"#dc2626",fontWeight:600}}>Discount</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:"#dc2626"}}>− {sym}{pdfDiscountAmt.toLocaleString()}</td>
-                        </tr>
-                      )}
-                      {pdfOtherChargesAmt>0&&(
-                        <tr style={{borderBottom:"1px solid #f1f5f9"}}>
-                          <td colSpan={4} style={{padding:"8px 12px",textAlign:"right",fontSize:12,color:"#64748b",fontWeight:600}}>{inv.otherChargesLabel||"Other Charges"}</td>
-                          <td style={{padding:"8px 12px",textAlign:"right",fontSize:12,fontWeight:700,color:"#374151"}}>+ {sym}{pdfOtherChargesAmt.toLocaleString()}</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </>);
-              })()}
-
-              {/* Amount in words + Totals */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
-                <div>
-                  <div style={{fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Amount in Words</div>
-                  <div style={{fontSize:13,fontStyle:"italic",fontWeight:600,marginBottom:14}}>{wds} Only</div>
-                  <div style={{background:"#f8fafc",borderRadius:8,padding:"10px 12px",border:"1px solid #e2e8f0"}}>
-                    <div style={{fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:5}}>Terms & Conditions</div>
-                    <div style={{fontSize:11,color:"#64748b",lineHeight:1.7}}>
-                      • Goods once sold will not be taken back.<br/>
-                      • All payments are non-refundable unless stated.<br/>
-                      • Subject to {isIndia?"Mumbai":"London"} jurisdiction only.
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  {tRows.map(([k,v])=>(
-                    <div key={k} style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
-                      <span style={{fontSize:13,color:"#64748b"}}>{k}</span>
-                      <span style={{fontSize:13,fontWeight:600}}>{v===0?sym+"0.00":sym+Number(v).toLocaleString()}</span>
-                    </div>
-                  ))}
-                  <div style={{borderTop:"2px solid #0f172a",paddingTop:10,marginTop:4}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
-                      <span style={{fontSize:15,fontWeight:900}}>GRAND TOTAL</span>
-                      <span style={{fontSize:17,fontWeight:900,color:shop.accent}}>{sym}{(grand||total).toLocaleString()}</span>
-                    </div>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                      <span style={{fontSize:12,color:"#64748b"}}>Amount Paid:</span>
-                      <span style={{fontSize:12,fontWeight:700,color:"#15803d"}}>{sym}{(grand||total).toLocaleString()}</span>
-                    </div>
-                    <div style={{display:"flex",justifyContent:"space-between"}}>
-                      <span style={{fontSize:12,color:"#64748b"}}>Balance Due:</span>
-                      <span style={{fontSize:12,fontWeight:700,color:"#dc2626"}}>{sym}0</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div style={{borderTop:"1px solid #e2e8f0",paddingTop:14,display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
-                <div style={{fontSize:11,color:"#94a3b8"}}>Thank you for your business with {shop.name}!</div>
-                <div style={{textAlign:"right"}}>
-                  <div style={{height:36,borderBottom:"1px solid #0f172a",width:140,marginBottom:4}}/>
-                  <div style={{fontSize:11,color:"#64748b"}}>Authorised Signature</div>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ══ PDF / PRINT OVERLAY ══ */}
-      {pdfMode&&pdfInv&&(()=>{
-        const inv=pdfInv;
-        const isInd=shopId==="ros-india";
-        const sym=shop.symbol;
-        const rPct=inv.taxRate!==undefined&&inv.taxRate!==null?inv.taxRate:0;
-        const tR=rPct/100;
-        const inc=tR===0?true:inv.taxInclusive!==false;
-        const ent=Number(inv.amount)||0;
-        const pdfAdjAmt=Number(inv.adjAmt)||0;
-        const sub=inc?parseFloat((ent/(1+tR)).toFixed(2)):ent;
-        const tax=parseFloat((sub*tR).toFixed(2));
-        const grd=parseFloat((sub+tax-pdfAdjAmt).toFixed(2));
-        const cgst=parseFloat((tax/2).toFixed(2));
-        return(
-          <div style={{position:"fixed",inset:0,zIndex:9999,background:"white",overflowY:"auto"}}>
-            <style>{`
-              @media print {
-                body { -webkit-print-color-adjust:exact; print-color-adjust:exact; }
-              }
-            `}</style>
-            {/* Toolbar */}
-            <div id="pdf-toolbar" style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 24px",background:"#0f172a",position:"sticky",top:0,zIndex:2}}>
-              <span style={{color:"white",fontWeight:700,fontSize:14}}>📄 Invoice {inv.id}</span>
-              <div style={{display:"flex",gap:10}}>
-                <button onClick={()=>handlePrint(inv)}
-                  style={{padding:"8px 18px",borderRadius:8,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer"}}>
-                  🖨 Print
-                </button>
-                <button onClick={()=>{
-                    const el=invoicePrintRef.current;
-                    if(!el){alert('Invoice not ready');return;}
-                    const load=(src)=>new Promise((res,rej)=>{
-                      if(window.html2pdf){res();return;}
-                      const s=document.createElement('script');
-                      s.src=src;s.onload=res;s.onerror=rej;
-                      document.head.appendChild(s);
-                    });
-                    load('https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js')
-                    .then(()=>{
-                      window.html2pdf().set({
-                        margin:0.4,
-                        filename:'Invoice-'+inv.id+'.pdf',
-                        image:{type:'jpeg',quality:0.98},
-                        html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff'},
-                        jsPDF:{unit:'in',format:'a4',orientation:'portrait'}
-                      }).from(el).save();
-                    }).catch(()=>alert('Could not load PDF library. Check your internet connection.'));
-                  }}
-                  style={{padding:"8px 18px",borderRadius:8,border:"none",background:"#1e293b",color:"white",fontWeight:800,fontSize:13,cursor:"pointer"}}>
-                  ⬇ PDF
-                </button>
-                <button onClick={()=>{setPdfMode(false);setPdfInv(null);}}
-                  style={{padding:"8px 16px",borderRadius:8,border:"none",background:"#334155",color:"white",fontWeight:700,fontSize:13,cursor:"pointer"}}>
-                  ✕ Close
-                </button>
-              </div>
-            </div>
-            {/* A4 Invoice */}
-            <div id="invoice-content" ref={invoicePrintRef} style={{maxWidth:794,margin:"24px auto",padding:"40px 48px",fontFamily:"Arial,sans-serif",fontSize:13,color:"#0f172a",background:"white",boxShadow:"0 4px 32px rgba(0,0,0,0.12)"}}>
-              {/* Header */}
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-                <div>
-                  <img src={shop.logo} alt={shop.name} style={{height:48,objectFit:"contain",marginBottom:6}}/>
-                  <div style={{fontSize:11,color:"#64748b"}}>{isInd?"Mumbai, India":"London, United Kingdom"}</div>
-                  <div style={{fontSize:11,color:"#64748b"}}>{isInd?"GST: 27AAAAA0000A1Z5":"VAT No: GB123456789"}</div>
-                </div>
-                <div style={{textAlign:"right"}}>
-                  <div style={{fontSize:26,fontWeight:900,color:"#0f172a",letterSpacing:"-0.03em"}}>INVOICE</div>
-                  <div style={{fontSize:13,fontWeight:700,color:"#64748b"}}>#{inv.id}</div>
-                  <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>Date: {inv.date||new Date().toLocaleDateString("en-GB")}</div>
-                  <div style={{marginTop:6,display:"inline-block",background:inc?"#f0fdf4":"#eff6ff",color:inc?"#15803d":"#1d4ed8",padding:"2px 10px",borderRadius:999,fontSize:10,fontWeight:700,border:"1px solid "+(inc?"#bbf7d0":"#bfdbfe")}}>
-                    {inc?"Tax Inclusive":"Tax Exclusive"} · {rPct}%
-                  </div>
-                </div>
-              </div>
-              <div style={{borderTop:"2px solid #0f172a",marginBottom:20}}/>
-              {/* Bill To + Bank */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
-                <div style={{background:"#f8fafc",borderRadius:10,padding:14}}>
-                  <div style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Bill To</div>
-                  <div style={{fontWeight:700,fontSize:14}}>{inv.customer||"—"}</div>
-                  <div style={{fontSize:12,color:"#64748b",marginTop:4}}>{inv.address||""}</div>
-                  <div style={{fontSize:12,color:"#64748b"}}>{inv.phone||inv.contact||""}</div>
-                </div>
-                <div style={{background:"#f8fafc",borderRadius:10,padding:14}}>
-                  <div style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Payment Details</div>
-                  {(isInd?[["Bank","State Bank of India"],["A/C No","98765432101"],["IFSC","SBIN0001234"]]:
-                    [["Bank","Barclays Bank UK"],["Account No","12345678"],["Sort Code","20-00-00"]]).map(([k,v])=>(
-                    <div key={k} style={{display:"flex",justifyContent:"space-between",fontSize:12,marginBottom:3}}>
-                      <span style={{color:"#64748b"}}>{k}</span><span style={{fontWeight:700}}>{v}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              {/* Line Items */}
-              <table style={{width:"100%",borderCollapse:"collapse",marginBottom:20}}>
-                <thead>
-                  <tr style={{background:"#0f172a",color:"white"}}>
-                    {["SR.","DESCRIPTION","QTY","RATE (excl. tax)","TOTAL"].map((h,hi)=>(
-                      <th key={h} style={{padding:"10px 14px",textAlign:hi<2?"left":"right",fontSize:11,fontWeight:800,letterSpacing:"0.06em"}}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr style={{borderBottom:"1px solid #e2e8f0"}}>
-                    <td style={{padding:"12px 14px",fontSize:13,color:"#64748b"}}>1</td>
-                    <td style={{padding:"12px 14px",fontWeight:700}}>{inv.item||"Product / Service"}</td>
-                    <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700}}>{inv.qty||1}</td>
-                    <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700}}>{sym}{sub.toLocaleString()}</td>
-                    <td style={{padding:"12px 14px",textAlign:"right",fontWeight:800,color:shop.accent}}>{sym}{grd.toLocaleString()}</td>
-                  </tr>
-                </tbody>
-              </table>
-              {/* Totals */}
-              <div style={{display:"flex",justifyContent:"flex-end",marginBottom:24}}>
-                <div style={{width:300}}>
-                  {rPct===0
-                    ? <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}><span style={{color:"#64748b"}}>Amount (no tax)</span><span style={{fontWeight:600}}>{sym}{sub.toLocaleString()}</span></div>
-                    : isInd
-                      ? <>
-                          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}><span style={{color:"#64748b"}}>Subtotal (excl. tax)</span><span style={{fontWeight:600}}>{sym}{sub.toLocaleString()}</span></div>
-                          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}><span style={{color:"#64748b"}}>CGST ({rPct/2}%)</span><span style={{fontWeight:600}}>{sym}{cgst.toLocaleString()}</span></div>
-                          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}><span style={{color:"#64748b"}}>SGST ({rPct/2}%)</span><span style={{fontWeight:600}}>{sym}{cgst.toLocaleString()}</span></div>
-                        </>
-                      : <>
-                          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}><span style={{color:"#64748b"}}>Subtotal (excl. tax)</span><span style={{fontWeight:600}}>{sym}{sub.toLocaleString()}</span></div>
-                          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}><span style={{color:"#64748b"}}>Tax ({rPct}%)</span><span style={{fontWeight:600}}>{sym}{tax.toLocaleString()}</span></div>
-                        </>
-                  }
-                  <div style={{borderTop:"2px solid #0f172a",paddingTop:10,marginTop:4}}>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                      <span style={{fontSize:16,fontWeight:900}}>GRAND TOTAL</span>
-                      <span style={{fontSize:18,fontWeight:900,color:shop.accent}}>{sym}{grd.toLocaleString()}</span>
-                    </div>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                      <span style={{fontSize:11,color:"#64748b"}}>Amount Paid</span>
-                      <span style={{fontSize:11,fontWeight:700,color:"#15803d"}}>{sym}{grd.toLocaleString()}</span>
-                    </div>
-                    <div style={{display:"flex",justifyContent:"space-between"}}>
-                      <span style={{fontSize:11,color:"#64748b"}}>Balance Due</span>
-                      <span style={{fontSize:11,fontWeight:700,color:"#dc2626"}}>{sym}0</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              {/* Footer */}
-              <div style={{borderTop:"1px solid #e2e8f0",paddingTop:14,display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
-                <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>Thank you for your business with {shop.name}!</p>
-                <div style={{textAlign:"right"}}>
-                  <div style={{height:40,borderBottom:"1px solid #0f172a",width:140,marginBottom:4}}/>
-                  <p style={{margin:0,fontSize:11,color:"#64748b"}}>Authorised Signature</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* ══ INVOICE PREVIEW MODAL ══ */}
-      {invoiceRow&&(
-        <div style={{position:"fixed",inset:0,zIndex:70,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"16px",overflowY:"auto"}}
-          onClick={()=>setInvoiceRow(null)}>
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(5px)"}}/>
-          <div style={{position:"relative",background:"white",borderRadius:16,boxShadow:"0 32px 80px rgba(0,0,0,0.28)",width:"100%",maxWidth:720,zIndex:71,marginTop:8,marginBottom:8}}
-            onClick={e=>e.stopPropagation()}>
-
-            {/* ── TOOLBAR ── */}
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"12px 20px",borderBottom:"1px solid #f1f5f9",background:"#f8fafc",borderRadius:"16px 16px 0 0"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <span style={{fontSize:16}}>📄</span>
-                <span style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>Invoice Preview: {invoiceRow.id}</span>
-              </div>
-              <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                <button onClick={()=>handlePrint(invoiceRow)}
-                  style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-                  🖨 Print
-                </button>
-                <button onClick={()=>{
-                    setPdfInv(invoiceRow);setPdfMode(true);
-                    setTimeout(()=>{
-                      const el=document.getElementById('invoice-content');
-                      if(!el)return;
-                      const load=(src)=>new Promise((res,rej)=>{if(window.html2pdf){res();return;}const s=document.createElement('script');s.src=src;s.onload=res;s.onerror=rej;document.head.appendChild(s);});
-                      load('https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js')
-                      .then(()=>{
-                        window.html2pdf().set({
-                          margin:[10,10,10,10],
-                          filename:'Invoice-'+invoiceRow.id+'.pdf',
-                          image:{type:'jpeg',quality:0.98},
-                          html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false},
-                          jsPDF:{unit:'mm',format:'a4',orientation:'portrait'}
-                        }).from(el).save();
-                      }).catch(()=>{});
-                    },600);
-                  }}
-                  style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-                  ⬇ PDF
-                </button>
-                <button onClick={()=>{
-                    const subject=encodeURIComponent("Invoice "+invoiceRow.id+" from "+shop.name);
-                    const body=encodeURIComponent(
-                      "Dear "+invoiceRow.customer+",\n\n"+
-                      "Please find your invoice details below:\n\n"+
-                      "Invoice No: "+invoiceRow.id+"\n"+
-                      "Date: "+formatDate(invoiceRow.date)+"\n"+
-                      "Amount: "+fmt(shopId,invoiceRow.amount)+"\n\n"+
-                      "Status: PAID\n\n"+
-                      "Thank you for your business with "+shop.name+"!\n\n"+
-                      "Regards,\n"+shop.name
-                    );
-                    window.open("mailto:?subject="+subject+"&body="+body);
-                  }}
-                  style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px "+shop.accent+"44"}}>
-                  ✉ Send Email
-                </button>
-                <button onClick={()=>setInvoiceRow(null)}
-                  style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
-              </div>
-            </div>
-
-            {/* ── INVOICE BODY ── */}
-            <div id="ros-invoice-print" style={{padding:"32px 40px",background:"white",borderRadius:"0 0 16px 16px"}}>
-
-              {/* Header: company logo + TAX INVOICE */}
-              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
-                <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                  {/* Logo in white rounded box */}
-                  <div style={{background:"white",border:"1px solid #e2e8f0",borderRadius:10,padding:"6px 12px",display:"inline-flex",alignItems:"center",boxShadow:"0 1px 4px rgba(0,0,0,0.08)",alignSelf:"flex-start"}}>
-                    <img src={shop.logo} alt={shop.name} style={{height:36,width:"auto",maxWidth:180,objectFit:"contain",display:"block"}}/>
-                  </div>
-                  <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:900,color:"#0f172a"}}>{shop.name}</h1>
-                  <p style={{margin:"0 0 2px",fontSize:12,color:"#64748b"}}>
-                    {shopId==="ros-india"?"123, Fashion Street, Mumbai - 400001":"12 Oxford Street, London, UK"}
-                  </p>
-                  {shopId==="ros-india"&&<p style={{margin:0,fontSize:12,color:"#64748b",fontWeight:700}}>GSTIN: 27AABCU9603R1ZX</p>}
-                </div>
-                <div style={{textAlign:"right"}}>
-                  <p style={{margin:0,fontSize:26,fontWeight:900,color:shop.accent+"33",letterSpacing:2,textTransform:"uppercase"}}>TAX INVOICE</p>
-                  <p style={{margin:"6px 0 2px",fontSize:12,color:"#64748b"}}>Invoice #: <strong style={{color:"#0f172a",fontFamily:"DM Mono,monospace"}}>{invoiceRow.id}</strong></p>
-                  <p style={{margin:"0 0 6px",fontSize:12,color:"#64748b"}}>Date: <strong style={{color:"#0f172a"}}>{formatDate(invoiceRow.date)}</strong></p>
-                  <span style={{background:"#dcfce7",color:"#15803d",fontWeight:800,fontSize:12,padding:"3px 12px",borderRadius:999}}>Paid</span>
-                </div>
-              </div>
-
-              <hr style={{border:"none",borderTop:"2px solid #0f172a",margin:"16px 0 20px"}}/>
-
-              {/* Bill To + Payment Info */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24,marginBottom:24}}>
-                <div>
-                  <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.07em"}}>Bill To</p>
-                  <p style={{margin:"0 0 3px",fontWeight:800,fontSize:15,color:"#0f172a"}}>{invoiceRow.customer}</p>
-                  {invoiceRow.address&&<p style={{margin:"0 0 3px",fontSize:12,color:"#64748b"}}>{invoiceRow.address}</p>}
-                  <p style={{margin:0,fontSize:12,color:"#64748b"}}>Phone: <strong>{invoiceRow.phone||invoiceRow.contact||"—"}</strong></p>
-                </div>
-                <div>
-                  <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.07em"}}>Payment Info</p>
-                  {[
-                    shopId==="ros-india"?["Bank:","ROS India Bank"]:["Bank:","Barclays UK"],
-                    shopId==="ros-india"?["A/C No:","50100234567890"]:["Sort Code:","20-45-67"],
-                    shopId==="ros-india"?["IFSC:","BARB0MUMBAI"]:["Account No:","12345678"],
-                    ["Method:",invoiceRow.pay||"—"],
-                  ].map(([k,v])=>(
-                    <div key={k} style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                      <span style={{fontSize:12,color:"#64748b"}}>{k}</span>
-                      <span style={{fontSize:12,fontWeight:700,color:"#0f172a"}}>{v}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Line Items table */}
-              {(()=>{
-                const hasLines=Array.isArray(invoiceRow.saleLines)&&invoiceRow.saleLines.length>0;
-                const invDiscountAmt=Number(invoiceRow.discount)||0;
-                const invOtherChargesAmt=Number(invoiceRow.otherCharges)||0;
-                const invLines=hasLines
-                  ? invoiceRow.saleLines
-                  : parseLegacyItems(invoiceRow.item,invoiceRow.qty,invSubtotal);
-                const invHasEstimated=!hasLines&&invLines.some(l=>l.estimated);
-                return(<>
-                  {invHasEstimated&&(
-                    <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8,padding:"8px 12px",marginBottom:8,display:"flex",alignItems:"center",gap:8}}>
-                      <span style={{fontSize:12}}>⚠️</span>
-                      <span style={{fontSize:10,color:"#92400e",fontWeight:600}}>Unit prices are estimated equally — sale recorded before individual item pricing. Edit &amp; re-enter the sale to set correct individual prices.</span>
-                    </div>
-                  )}
-                  <table style={{width:"100%",borderCollapse:"collapse",marginBottom:20}}>
-                    <thead>
-                      <tr style={{background:"#0f172a",color:"white"}}>
-                        {["SR.","DESCRIPTION","QTY","UNIT PRICE","TOTAL"].map((h,hi)=>(
-                          <th key={h} style={{padding:"10px 14px",textAlign:hi===0||hi===1?"left":"right",fontSize:11,fontWeight:800,letterSpacing:"0.06em"}}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {invLines.map((line,idx)=>{
-                        const q=parseFloat(line.qty)||1;
-                        const p=parseFloat(line.price)||0;
-                        const lineTotal=parseFloat((q*p).toFixed(2));
-                        return(
-                          <tr key={idx} style={{borderBottom:"1px solid #e2e8f0",background:idx%2===0?"white":"#fafafa"}}>
-                            <td style={{padding:"12px 14px",fontSize:13,color:"#64748b"}}>{idx+1}</td>
-                            <td style={{padding:"12px 14px"}}>
-                              <p style={{margin:0,fontWeight:700,fontSize:13,color:"#0f172a"}}>{line.name||"Item "+(idx+1)}</p>
-                            </td>
-                            <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700}}>{q}</td>
-                            <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700}}>{fmt(shopId,p)}</td>
-                            <td style={{padding:"12px 14px",textAlign:"right",fontWeight:800,color:shop.accent}}>{fmt(shopId,lineTotal)}</td>
-                          </tr>
-                        );
-                      })}
-                      {invDiscountAmt>0&&(
-                        <tr style={{borderBottom:"1px solid #f1f5f9"}}>
-                          <td colSpan={4} style={{padding:"8px 14px",textAlign:"right",fontSize:12,color:"#dc2626",fontWeight:600}}>Discount</td>
-                          <td style={{padding:"8px 14px",textAlign:"right",fontSize:12,fontWeight:700,color:"#dc2626"}}>− {fmt(shopId,invDiscountAmt)}</td>
-                        </tr>
-                      )}
-                      {invOtherChargesAmt>0&&(
-                        <tr style={{borderBottom:"1px solid #f1f5f9"}}>
-                          <td colSpan={4} style={{padding:"8px 14px",textAlign:"right",fontSize:12,color:"#64748b",fontWeight:600}}>{invoiceRow.otherChargesLabel||"Other Charges"}</td>
-                          <td style={{padding:"8px 14px",textAlign:"right",fontSize:12,fontWeight:700,color:"#374151"}}>+ {fmt(shopId,invOtherChargesAmt)}</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </>);
-              })()}
-
-              {/* Amount in words + Totals */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
-                <div>
-                  <p style={{margin:"0 0 6px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.07em"}}>Amount in Words</p>
-                  <p style={{margin:"0 0 16px",fontSize:13,fontStyle:"italic",fontWeight:600,color:"#374151"}}>
-                    {(()=>{
-                      const n=Math.round(invGrand||0);
-                      const ones=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];
-                      const tens=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
-                      if(n===0)return "Zero";
-                      if(n<20)return ones[n];
-                      if(n<100)return tens[Math.floor(n/10)]+(n%10?" "+ones[n%10]:"");
-                      if(n<1000)return ones[Math.floor(n/100)]+" Hundred"+(n%100?" "+tens[Math.floor((n%100)/10)]+(n%10?" "+ones[n%10]:""):"");
-                      if(n<100000)return ones[Math.floor(n/1000)]+" Thousand"+(n%1000?" "+tens[Math.floor((n%1000)/100)]:"");
-                      return n+" Only";
-                    })()} Only
-                  </p>
-                  <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 14px",border:"1px solid #e2e8f0"}}>
-                    <p style={{margin:"0 0 4px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.07em"}}>Terms & Conditions</p>
-                    <ul style={{margin:0,paddingLeft:16,fontSize:11,color:"#64748b",lineHeight:1.7}}>
-                      <li>Goods once sold will not be taken back.</li>
-                      <li>All payments are non-refundable unless stated.</li>
-                      <li>Subject to {shopId==="ros-india"?"Mumbai":"London"} jurisdiction only.</li>
-                    </ul>
-                  </div>
-                </div>
-                <div>
-                  {invoiceRow&&(()=>{
-                    const entered  = Number(invoiceRow.amount)||0;
-                    const previewAdjAmt = Number(invoiceRow.adjAmt)||0;
-                    const isIndia  = shopId==="ros-india";
-                    const rateDisplay = (invoiceRow.taxRate!==undefined&&invoiceRow.taxRate!==null ? invoiceRow.taxRate : 0);
-                    const taxRate  = rateDisplay / 100;
-                    // If taxRate is 0, always treat as inclusive (no tax added)
-                    const inclusive= taxRate===0 ? true : invoiceRow.taxInclusive !== false;
-                    // subtotal = pre-tax amount; grand = total payable
-                    const subtotal = inclusive
-                      ? parseFloat((entered / (1 + taxRate)).toFixed(2))
-                      : entered;
-                    const taxAmt   = parseFloat((subtotal * taxRate).toFixed(2));
-                    const grand    = parseFloat((subtotal + taxAmt - previewAdjAmt).toFixed(2));
-                    const cgst     = parseFloat((taxAmt / 2).toFixed(2));
-                    const sgst     = parseFloat((taxAmt / 2).toFixed(2));
-                    const rows = rateDisplay===0
-                      ? [["Amount (no tax)", entered]]
-                      : isIndia
-                        ? [
-                            ["Subtotal (excl. tax)", subtotal],
-                            ["CGST ("+(rateDisplay/2)+"%)", cgst],
-                            ["SGST ("+(rateDisplay/2)+"%)", sgst],
-                          ]
-                        : [
-                            ["Subtotal (excl. tax)", subtotal],
-                            ["Tax ("+rateDisplay+"%)", taxAmt],
-                          ];
-                    const adjRows=previewAdjAmt>0?[["Post-Sale Adj. ("+(invoiceRow.adjType||"Adjustment")+")",-previewAdjAmt]]:[];
-                    const allRows=[...rows,...adjRows];
-                    return <>
-                      {/* Tax mode badge */}
-                      <div style={{marginBottom:8}}>
-                        <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:999,
-                          background: rateDisplay===0?"#f8fafc":inclusive?"#f0fdf4":"#eff6ff",
-                          color:      rateDisplay===0?"#64748b":inclusive?"#15803d":"#1d4ed8",
-                          border:     "1px solid "+(rateDisplay===0?"#e2e8f0":inclusive?"#bbf7d0":"#bfdbfe")}}>
-                          {rateDisplay===0?"No Tax":(inclusive?"Tax Inclusive":"Tax Exclusive")+" · "+rateDisplay+"%"}
-                        </span>
-                      </div>
-                      {allRows.map(([k,v])=>(
-                        <div key={k} style={{display:"flex",justifyContent:"space-between",marginBottom:7}}>
-                          <span style={{fontSize:13,color:v<0?"#d97706":"#64748b"}}>{k}</span>
-                          <span style={{fontSize:13,fontWeight:600,color:v<0?"#d97706":"#374151"}}>{v<0?"\u2212 "+fmt(shopId,Math.abs(v)):fmt(shopId,v)}</span>
-                        </div>
-                      ))}
-                      <div style={{borderTop:"2px solid #0f172a",paddingTop:10,marginTop:6}}>
-                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                          <span style={{fontSize:16,fontWeight:900,color:"#0f172a"}}>GRAND TOTAL</span>
-                          <span style={{fontSize:18,fontWeight:900,color:shop.accent}}>{fmt(shopId,invGrand)}</span>
-                        </div>
-                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                          <span style={{fontSize:12,color:"#64748b"}}>Amount Paid:</span>
-                          <span style={{fontSize:12,fontWeight:700,color:"#15803d"}}>{fmt(shopId,invGrand)}</span>
-                        </div>
-                        <div style={{display:"flex",justifyContent:"space-between"}}>
-                          <span style={{fontSize:12,color:"#64748b"}}>Balance Due:</span>
-                          <span style={{fontSize:12,fontWeight:700,color:"#dc2626"}}>{shop.symbol}0</span>
-                        </div>
-                      </div>
-                    </>;
-                  })()}
-                </div>
-              </div>
-
-              {/* Footer */}
-              <div style={{borderTop:"1px solid #e2e8f0",paddingTop:14,display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
-                <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>Thank you for your business with {shop.name}!</p>
-                <div style={{textAlign:"right"}}>
-                  <div style={{height:40,borderBottom:"1px solid #0f172a",width:140,marginBottom:4}}/>
-                  <p style={{margin:0,fontSize:11,color:"#64748b"}}>Authorised Signature</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {selRow&&(
-        <div style={{position:"fixed",inset:0,zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}
-          onClick={()=>{setSelRow(null);setConfirmDelete(false);}}>
-          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(4px)"}}/>
-          <div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.22)",width:"100%",maxWidth:680,maxHeight:"90vh",overflowY:"auto",zIndex:61}}
-            onClick={e=>e.stopPropagation()}>
-
-            {/* ── HEADER ── */}
-            <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",padding:"18px 24px 14px",borderBottom:"1px solid #f1f5f9"}}>
-              <div>
-                <h2 style={{margin:0,fontSize:18,fontWeight:900,color:"#0f172a"}}>Sale Details</h2>
-                <div style={{display:"flex",alignItems:"center",gap:10,marginTop:5}}>
-                  <span style={{fontSize:12,color:"#64748b",fontFamily:"DM Mono,monospace",fontWeight:600}}>📄 {selRow.id}</span>
-                  <span style={{fontSize:12,color:"#94a3b8"}}>·</span>
-                  <span style={{fontSize:12,color:"#64748b"}}>📅 {formatDate(selRow.date)}</span>
-                </div>
-              </div>
-              <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                <button onClick={()=>{setInvoiceRow(selRow);setSelRow(null);}}
-                  style={{padding:"7px 16px",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
-                  👁 View Invoice
-                </button>
-                <button onClick={()=>{setEditRow(selRow);setSelRow(null);setModal("edit-sale");}}
-                  style={{padding:"7px 16px",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6,boxShadow:"0 3px 10px "+shop.accent+"44"}}>
-                  ✏️ Edit
-                </button>
-                {user?.role!=="staff"&&(
-                  <button onClick={()=>setConfirmDelete(true)}
-                    style={{padding:"7px 14px",borderRadius:9,border:"1px solid #fca5a5",
-                      background:"#fff5f5",color:"#dc2626",fontWeight:700,fontSize:13,
-                      cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
-                    🗑 Delete
-                  </button>
-                )}
-                <button onClick={()=>{setSelRow(null);setConfirmDelete(false);}}
-                  style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
-              </div>
-            </div>
-
-            <div style={{padding:"18px 24px"}}>
-
-              {/* ── 3-PANEL ROW ── */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:20}}>
-
-                {/* CUSTOMER */}
-                <div style={{border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 16px"}}>
-                  <p style={{margin:"0 0 10px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em",display:"flex",alignItems:"center",gap:5}}>
-                    👤 Customer
-                  </p>
-                  <p style={{margin:"0 0 4px",fontWeight:800,fontSize:14,color:"#0f172a"}}>{selRow.customer}</p>
-                  <p style={{margin:"0 0 4px",fontSize:12,color:"#64748b"}}>{selRow.phone||selRow.contact||"—"}</p>
-                  <span style={{display:"inline-flex",alignItems:"center",gap:4,
-                    background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:999,
-                    padding:"2px 10px",fontSize:10,fontWeight:700,color:"#1d4ed8",
-                    marginBottom:6,letterSpacing:"0.02em"}}>
-                    📱 {selRow.phoneSavedOn||"UK 888"}
-                  </span>
-                  <p style={{margin:0,fontSize:12,color:"#64748b"}}>{selRow.address||"—"}</p>
-                </div>
-
-                {/* PAYMENT */}
-                <div style={{border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 16px"}}>
-                  <p style={{margin:"0 0 10px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>💳 Payment</p>
-                  <div style={{marginBottom:8}}>
-                    <span style={{background:"#dcfce7",color:"#15803d",fontWeight:700,fontSize:12,padding:"3px 10px",borderRadius:999}}>Paid</span>
-                  </div>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                    <span style={{fontSize:12,color:"#64748b"}}>Method</span>
-                    <span style={{fontSize:12,fontWeight:700,color:"#1e293b"}}>{selRow.pay||"—"}</span>
-                  </div>
-                  <div style={{display:"flex",justifyContent:"space-between"}}>
-                    <span style={{fontSize:12,color:"#64748b"}}>Amount</span>
-                    <span style={{fontSize:14,fontWeight:900,color:shop.accent}}>
-                      {fmt(shopId,(Number(selRow.amount)||0)-(Number(selRow.adjAmt)||0))}
-                    </span>
-                  </div>
-                </div>
-
-                {/* FULFILLMENT */}
-                <div style={{border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 16px"}}>
-                  <p style={{margin:"0 0 10px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🚚 Fulfillment</p>
-                  <div style={{marginBottom:8}}>
-                    <Badge l={selRow.ful||selRow.status||"PENDING"}/>
-                  </div>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                    <span style={{fontSize:12,color:"#64748b"}}>Total</span>
-                    <span style={{fontSize:14,fontWeight:900,color:shop.accent}}>
-                      {fmt(shopId,(Number(selRow.amount)||0)-(Number(selRow.adjAmt)||0))}
-                    </span>
-                  </div>
-                  {/* Fulfillment Timeline */}
-                  {(()=>{
-                    const hasDispatch=!!selRow.sentDate;
-                    const hasReturnReq=!!selRow.returnReqDate;
-                    const hasReturnRcvd=!!selRow.returnRcvd;
-                    const hasRefund=!!selRow.refundAmt&&Number(selRow.refundAmt)>0;
-                    const timelineItems=[
-                      hasDispatch&&{icon:"🚚",label:"Dispatched",date:formatDate(selRow.sentDate),color:"#15803d",bg:"#f0fdf4",border:"#bbf7d0"},
-                      hasReturnReq&&{icon:"↩️",label:"Return Requested",date:formatDate(selRow.returnReqDate),color:"#c2410c",bg:"#fff7ed",border:"#fed7aa"},
-                      hasReturnRcvd&&{icon:"📬",label:"Return Received",date:formatDate(selRow.returnRcvd),color:"#991b1b",bg:"#fff5f5",border:"#fecaca"},
-                      hasRefund&&{icon:"💸",label:"Refunded",date:fmt(shopId,Number(selRow.refundAmt)),color:"#6b21a8",bg:"#f5f3ff",border:"#ddd6fe"},
-                    ].filter(Boolean);
-                    if(timelineItems.length===0)return null;
-                    return(
-                      <div style={{marginTop:10}}>
-                        {timelineItems.map((item,i)=>(
-                          <div key={i} style={{display:"flex",alignItems:"center",gap:10,marginBottom:i<timelineItems.length-1?6:0}}>
-                            {i<timelineItems.length-1&&(
-                              <div style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",width:24,flexShrink:0}}>
-                                <div style={{width:24,height:24,borderRadius:"50%",background:item.bg,border:"1.5px solid "+item.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12}}>{item.icon}</div>
-                                <div style={{width:2,height:10,background:"#e2e8f0",margin:"1px 0"}}/>
-                              </div>
-                            )}
-                            {i===timelineItems.length-1&&(
-                              <div style={{width:24,height:24,borderRadius:"50%",background:item.bg,border:"1.5px solid "+item.border,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,flexShrink:0}}>{item.icon}</div>
-                            )}
-                            <div style={{flex:1,background:item.bg,border:"1px solid "+item.border,borderRadius:8,padding:"5px 10px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                              <span style={{fontSize:11,fontWeight:700,color:item.color}}>{item.label}</span>
-                              <span style={{fontSize:11,fontWeight:600,color:item.color}}>{item.date}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    );
-                  })()}
-                </div>
-              </div>
-
-              {/* ── LINE ITEMS ── */}
-              {(()=>{
-                const hasLines=Array.isArray(selRow.saleLines)&&selRow.saleLines.length>0;
-                const grandTotal=(Number(selRow.amount)||0)-(Number(selRow.adjAmt)||0);
-                const discountAmt=Number(selRow.discount)||0;
-                const otherChargesAmt=Number(selRow.otherCharges)||0;
-                const taxRatePct=selRow.taxRate!=null?selRow.taxRate:0;
-                const legacySubtotal=taxRatePct>0&&selRow.taxInclusive!==false
-                  ? parseFloat((grandTotal/(1+taxRatePct/100)).toFixed(2))
-                  : grandTotal;
-                const displayLines=hasLines
-                  ? selRow.saleLines
-                  : parseLegacyItems(selRow.item,selRow.qty,legacySubtotal);
-                const hasEstimated=!hasLines&&displayLines.some(l=>l.estimated);
-                return(
-                  <div style={{border:"1px solid #e2e8f0",borderRadius:14,overflow:"hidden",marginBottom:20}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:"#f8fafc",borderBottom:"1px solid #e2e8f0"}}>
-                      <span style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>Line Items</span>
-                      <span style={{fontSize:12,color:"#94a3b8"}}>{displayLines.length} item{displayLines.length!==1?"s":""}</span>
-                    </div>
-                    {hasEstimated&&(
-                      <div style={{padding:"8px 14px",background:"#fffbeb",borderBottom:"1px solid #fde68a",display:"flex",alignItems:"center",gap:8}}>
-                        <span style={{fontSize:13}}>⚠️</span>
-                        <span style={{fontSize:11,color:"#92400e",fontWeight:600}}>Unit prices are estimated equally — this sale was recorded before individual item pricing. Delete &amp; re-enter to set correct prices per item.</span>
-                      </div>
-                    )}
-                    <table style={{width:"100%",borderCollapse:"collapse"}}>
-                      <thead>
-                        <tr style={{background:"#f8fafc"}}>
-                          {["Description","QTY","Unit Price","Total"].map(h=>(
-                            <th key={h} style={{padding:"9px 14px",textAlign:h==="Description"?"left":"right",fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {displayLines.map((line,idx)=>{
-                          const q=parseFloat(line.qty)||1;
-                          const p=parseFloat(line.price)||0;
-                          const lineTotal=parseFloat((q*p).toFixed(2));
-                          return(
-                            <tr key={idx} style={{borderTop:"1px solid #f1f5f9",background:idx%2===0?"white":"#fafafa"}}>
-                              <td style={{padding:"11px 14px"}}>
-                                <p style={{margin:0,fontWeight:700,fontSize:13,color:"#1e293b"}}>{line.name||"Item "+(idx+1)}</p>
-                              </td>
-                              <td style={{padding:"11px 14px",textAlign:"right",fontWeight:600,color:"#374151"}}>{q}</td>
-                              <td style={{padding:"11px 14px",textAlign:"right",fontWeight:600,color:"#374151"}}>{fmt(shopId,p)}</td>
-                              <td style={{padding:"11px 14px",textAlign:"right",fontWeight:800,color:shop.accent}}>{fmt(shopId,lineTotal)}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                    {/* Totals footer */}
-                    <div style={{padding:"12px 16px",borderTop:"1px solid #e2e8f0",background:"#f8fafc"}}>
-                      {discountAmt>0&&(
-                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                          <span style={{fontSize:12,color:"#dc2626"}}>Discount</span>
-                          <span style={{fontSize:12,fontWeight:600,color:"#dc2626"}}>− {fmt(shopId,discountAmt)}</span>
-                        </div>
-                      )}
-                      {otherChargesAmt>0&&(
-                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                          <span style={{fontSize:12,color:"#64748b"}}>{selRow.otherChargesLabel||"Other Charges"}</span>
-                          <span style={{fontSize:12,fontWeight:600,color:"#374151"}}>+ {fmt(shopId,otherChargesAmt)}</span>
-                        </div>
-                      )}
-                      {taxRatePct>0&&(
-                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                          <span style={{fontSize:12,color:"#64748b"}}>GST / Tax ({taxRatePct}%)</span>
-                          <span style={{fontSize:12,fontWeight:600,color:"#374151"}}>{fmt(shopId,parseFloat((grandTotal*(taxRatePct/100)/(1+taxRatePct/100)).toFixed(2)))}</span>
-                        </div>
-                      )}
-                      {(Number(selRow.adjAmt)||0)>0&&(
-                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                          <span style={{fontSize:12,color:"#d97706"}}>{selRow.adjType||"Adjustment"}</span>
-                          <span style={{fontSize:12,fontWeight:600,color:"#d97706"}}>\u2212 {fmt(shopId,Number(selRow.adjAmt)||0)}</span>
-                        </div>
-                      )}
-                      <div style={{display:"flex",justifyContent:"space-between",borderTop:"2px solid #0f172a",paddingTop:8}}>
-                        <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>Grand Total</span>
-                        <span style={{fontSize:15,fontWeight:900,color:shop.accent}}>{fmt(shopId,grandTotal)}</span>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* ── NOTES + TOTALS ── */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16,marginBottom:20}}>
-                {/* notes */}
-                <div style={{border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 16px"}}>
-                  <p style={{margin:"0 0 8px",fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>Notes</p>
-                  <p style={{margin:0,fontSize:13,color:"#64748b",fontStyle:selRow.rem?"normal":"italic"}}>{selRow.rem||"—"}</p>
-                  {selRow.tag&&<div style={{marginTop:10,display:"flex",flexWrap:"wrap",gap:4}}>{parseTags(selRow.tag).map(t=><Badge key={t} l={t}/>)}</div>}
-                </div>
-                {/* totals */}
-                <div style={{border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 16px"}}>
-                  {(()=>{
-                    const amt=(Number(selRow.amount)||0)-(Number(selRow.adjAmt)||0);
-                    const rPct=selRow.taxRate!=null?selRow.taxRate:0;
-                    const r=rPct/100;
-                    // amount is always the final grand total as entered/saved
-                    const sub=r>0?(selRow.taxInclusive!==false?parseFloat((amt/(1+r)).toFixed(2)):amt):amt;
-                    const taxAmt=r>0?parseFloat((sub*r).toFixed(2)):0;
-                    const grand=r>0?parseFloat((sub+taxAmt).toFixed(2)):amt;
-                    const discAmt=Number(selRow.discount)||0;
-                    const otherAmt=Number(selRow.otherCharges)||0;
-                    return(<>
-                      {discAmt>0&&(
-                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                          <span style={{fontSize:12,color:"#dc2626"}}>Discount</span>
-                          <span style={{fontSize:12,fontWeight:600,color:"#dc2626"}}>− {fmt(shopId,discAmt)}</span>
-                        </div>
-                      )}
-                      {otherAmt>0&&(
-                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                          <span style={{fontSize:12,color:"#64748b"}}>{selRow.otherChargesLabel||"Other Charges"}</span>
-                          <span style={{fontSize:12,fontWeight:600,color:"#374151"}}>+ {fmt(shopId,otherAmt)}</span>
-                        </div>
-                      )}
-                      {rPct>0&&(
-                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                          <span style={{fontSize:12,color:"#64748b"}}>GST / Tax ({rPct}%)</span>
-                          <span style={{fontSize:12,fontWeight:600,color:"#374151"}}>{fmt(shopId,taxAmt)}</span>
-                        </div>
-                      )}
-                      <div style={{display:"flex",justifyContent:"space-between",marginBottom:8,paddingBottom:10,borderBottom:"1px solid #f1f5f9"}}>
-                        <span style={{fontSize:12,color:"#64748b"}}>Balance Due</span>
-                        <span style={{fontSize:12,fontWeight:700,color:"#15803d"}}>{shop.symbol}0</span>
-                      </div>
-                      {(Number(selRow.adjAmt)||0)>0&&(
-                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                          <span style={{fontSize:12,color:"#d97706"}}>{selRow.adjType||"Adjustment"}</span>
-                          <span style={{fontSize:12,fontWeight:600,color:"#d97706"}}>\u2212 {fmt(shopId,Number(selRow.adjAmt)||0)}</span>
-                        </div>
-                      )}
-                      <div style={{display:"flex",justifyContent:"space-between"}}>
-                        <span style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>Grand Total</span>
-                        <span style={{fontSize:16,fontWeight:900,color:shop.accent}}>{fmt(shopId,amt)}</span>
-                      </div>
-                    </>);
-                  })()}
-                </div>
-              </div>
-
-              {/* ── FOOTER ACTIONS ── */}
-              {confirmDelete?(
-                /* ── CONFIRM DELETE PANEL ── */
-                <div style={{
-                  background:"#fff5f5",border:"2px solid #fca5a5",borderRadius:14,
-                  padding:"18px 20px",display:"flex",flexDirection:"column",gap:14,
-                }}>
-                  <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
-                    <span style={{fontSize:28,flexShrink:0}}>⚠️</span>
-                    <div>
-                      <p style={{margin:"0 0 4px",fontWeight:900,fontSize:15,color:"#991b1b"}}>
-                        Delete Sale {selRow.id}?
-                      </p>
-                      <p style={{margin:0,fontSize:13,color:"#dc2626"}}>
-                        This will permanently remove the sale for <strong>{selRow.customer}</strong> ({fmt(shopId,selRow.amount)}) from the database. This cannot be undone.
-                      </p>
-                    </div>
-                  </div>
-                  <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-                    <button onClick={()=>setConfirmDelete(false)}
-                      style={{padding:"10px 24px",borderRadius:10,border:"1px solid #e2e8f0",
-                        background:"white",color:"#374151",fontWeight:700,fontSize:14,
-                        cursor:"pointer",fontFamily:"inherit"}}>
-                      ← Cancel
-                    </button>
-                    <button onClick={()=>{
-                        const id=selRow.id;
-                        setSalesData(prev=>({
-                          ...prev,
-                          [shopId]:(prev[shopId]||[]).filter(x=>x.id!==id)
-                        }));
-                        dbDeleteSale(id,shopId).catch(()=>{});
-                        setSelRow(null);
-                        setConfirmDelete(false);
-                      }}
-                      style={{padding:"10px 24px",borderRadius:10,border:"none",
-                        background:"#dc2626",color:"white",fontWeight:800,fontSize:14,
-                        cursor:"pointer",fontFamily:"inherit",
-                        boxShadow:"0 4px 14px rgba(220,38,38,0.35)"}}>
-                      🗑 Yes, Delete Sale
-                    </button>
-                  </div>
-                </div>
-              ):(
-                <div style={{display:"flex",justifyContent:"flex-end"}}>
-                  <button onClick={()=>{setSelRow(null);setConfirmDelete(false);}}
-                    style={{padding:"10px 28px",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
-                    Close
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-    </div>
-  );
+    result.push(curr);
+  }
+  return result;
+}
+
+/* ── Constants ──────────────────────────────────────────────────────────── */
+const PERIOD_META = {
+  day:      { label: "Day",      desc: "Today" },
+  week:     { label: "Week",     desc: "Mon–Sun" },
+  month:    { label: "Month",    desc: "This Month" },
+  year:     { label: "Year",     desc: "Financial Year" },
+  lifetime: { label: "Lifetime", desc: "All Time" },
 };
 
-/* ── SALE FORM ── */
-/* ══════════════════════════════════════════════════════
-   IMPORT / EXPORT PANEL
-══════════════════════════════════════════════════════ */
-const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
-  const [dragOver,setDragOver]=useState(false);
-  const [fileName,setFileName]=useState(null);
-  const [fileObj,setFileObj]=useState(null);
-  const [fileFmt,setFileFmt]=useState("CSV");
-  const [importing,setImporting]=useState(false);
-  const [importResult,setImportResult]=useState(null); // {ok:n, skip:n, errors:[]}
-  const [detectedCols,setDetectedCols]=useState(null); // show what columns were found
+const STATUS_TABS = [
+  { key: "ALL",           label: "All",           color: "#475569", bg: "#f1f5f9" },
+  { key: "PENDING",       label: "Pending",        color: "#d97706", bg: "#fef3c7" },
+  { key: "FULFILLED",     label: "Fulfilled",      color: "#059669", bg: "#d1fae5" },
+  { key: "GOOD FEEDBACK", label: "Good Feedback",  color: "#0d9488", bg: "#ccfbf1" },
+  { key: "RTRN REQSTD",   label: "Rtrn Reqstd",    color: "#c2410c", bg: "#ffedd5" },
+  { key: "RETRN RCVD",    label: "Retrn Rcvd",     color: "#991b1b", bg: "#fee2e2" },
+  { key: "EXCHANGED",     label: "Exchanged",      color: "#4338ca", bg: "#e0e7ff" },
+  { key: "REFUNDED",      label: "Refunded",       color: "#7e22ce", bg: "#f3e8ff" },
+];
 
-  const handleFileSelect=(f)=>{
-    if(!f)return;
-    setFileName(f.name);
-    setFileObj(f);
-    setImportResult(null);
-    setDetectedCols(null);
-    // Peek at headers to show user what was detected
-    const reader=new FileReader();
-    reader.onload=(e)=>{
-      try{
-        const firstLines=e.target.result.split('\n').slice(0,2).join('\n');
-        const hdrs=firstLines.split('\n')[0].split(',').map(h=>h.replace(/^"|"$/g,"").trim());
-        setDetectedCols(hdrs);
-      }catch{}
-    };
-    reader.readAsText(f);
+const STATUS_ROW_BG = {
+  "PENDING":       "#fffbeb",
+  "FULFILLED":     "#f0fdf4",
+  "GOOD FEEDBACK": "#ecfdf5",
+  "RTRN REQSTD":   "#fff7ed",
+  "RETRN RCVD":    "#fef2f2",
+  "EXCHANGED":     "#eef2ff",
+  "REFUNDED":      "#faf5ff",
+};
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   COMPONENT
+   ═══════════════════════════════════════════════════════════════════════════ */
+export default function SalesPanel({
+  Badge,
+  customers,
+  filtSales,
+  fmt,
+  formatDate,
+  onReload,
+  openMenu,
+  search,
+  sales,
+  salesPeriod,
+  setEditRow,
+  setInvoiceRow,
+  setModal,
+  setOpenMenu,
+  setSalesData,
+  setSearch,
+  setSelCustomer,
+  setSelRow,
+  setSalesPeriod,
+  shop,
+  shopId,
+  TD,
+  user,
+  isStaff,
+  statusFilter,
+  setStatusFilter,
+  statusTabs,
+  statusRowBg: statusRowBgProp,
+}) {
+  const [hovR,    setHovR]    = useState(null);
+  const [hovCard, setHovCard] = useState(null);
+  const [hovTab,  setHovTab]  = useState(null);
+  const [reloading, setReloading] = useState(false);
+  /* Month picker state */
+  const [pickedMonth, setPickedMonth] = useState(null);   // "YYYY-MM" or null
+  const [pickerOpen,  setPickerOpen]  = useState(false);
+  const [pickerYear,  setPickerYear]  = useState(() => {
+    // Default to FY start year — most historical sales live there
+    const now = new Date();
+    return now.getMonth() < 3 ? now.getFullYear() - 1 : now.getFullYear();
+  });
+  const pickerRef = useRef(null);
+  /* Use prop-driven status tab if provided, else fall back to local state */
+  const [statusTabLocal, setStatusTabLocal] = useState("ALL");
+  const statusTab    = statusFilter    ?? statusTabLocal;
+  const setStatusTab = setStatusFilter ?? setStatusTabLocal;
+
+  const accent   = shop?.accent   || "#059669";
+  const accentBg = shop?.accentBg || "#ecfdf5";
+
+  /* ── Close picker when clicking outside ─────────────────────────────── */
+  useEff(() => {
+    if (!pickerOpen) return;
+    const handler = e => { if (pickerRef.current && !pickerRef.current.contains(e.target)) setPickerOpen(false); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [pickerOpen]);
+
+  /* ── Effective period: pickedMonth overrides salesPeriod ─────────────── */
+  const effectivePeriod = pickedMonth ? "picked" : salesPeriod;
+
+  /* ── Filter for picked month (YYYY-MM) ───────────────────────────────── */
+  const filterByPickedMonth = (arr, ym) => {
+    if (!ym) return arr;
+    const [py, pm] = ym.split("-").map(Number);
+    return arr.filter(s => {
+      const dt = safeParseDate(s.date);
+      if (!dt || isNaN(dt.getTime())) return false;
+      return dt.getFullYear() === py && (dt.getMonth() + 1) === pm;
+    });
   };
 
-  /* ── Parse CSV text robustly (handles quoted fields with commas/newlines) ── */
-  const parseCSV=(text)=>{
-    const rows=[];
-    let row=[],field="",inQ=false;
-    for(let i=0;i<text.length;i++){
-      const ch=text[i],nx=text[i+1];
-      if(inQ){
-        if(ch==='"'&&nx==='"'){field+='"';i++;}
-        else if(ch==='"'){inQ=false;}
-        else{field+=ch;}
-      } else {
-        if(ch==='"'){inQ=true;}
-        else if(ch===','){row.push(field.trim());field="";}
-        else if(ch==='\n'||(ch==='\r'&&nx==='\n')){
-          row.push(field.trim());field="";
-          if(row.some(c=>c!==""))rows.push(row);
-          row=[];
-          if(ch==='\r')i++;
-        } else {field+=ch;}
+  /* ── Set of YYYY-MM strings that have at least one sale (for picker highlights) */
+  const salesMonthSet = useMemo(() => {
+    const s = new Set();
+    sales.forEach(sale => {
+      const dt = safeParseDate(sale.date);
+      if (dt && !isNaN(dt.getTime())) {
+        s.add(`${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}`);
       }
-    }
-    if(field||row.length)row.push(field.trim());
-    if(row.some(c=>c!==""))rows.push(row);
-    return rows;
-  };
-
-  const handleImport=()=>{
-    if(!fileObj){alert("Please select a file first.");return;}
-    if(!onSave){alert("Import not configured for this section.");return;}
-    setImporting(true);
-
-    const isXlsx=fileObj.name.toLowerCase().endsWith(".xlsx")||fileObj.name.toLowerCase().endsWith(".xls");
-
-    const processRows=(rows)=>{
-      try{
-        if(rows.length<2){alert("File appears to be empty or has no data rows.");setImporting(false);return;}
-        const norm=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
-        const headers=rows[0].map(h=>norm(h));
-        const dataRows=rows.slice(1);
-        console.log("Import headers:", headers);
-        const col=(...names)=>{
-          const needles=names.map(n=>norm(n));
-          for(const n of needles){const idx=headers.indexOf(n);if(idx>=0)return idx;}
-          for(const n of needles){const idx=headers.findIndex(h=>h.includes(n));if(idx>=0)return idx;}
-          return -1;
-        };
-        const idxId       = col("shopinv","Shop Inv.","invoiceno","Invoice No.","saleid","Sale ID");
-        const idxDate     = col("date");
-        const idxCust     = col("customername","customer");
-        const idxAddressee= col("addressee");
-        const idxAddress  = col("address");
-        const idxContact  = col("contactno","contact","phone");
-        const idxItem     = col("item","description");
-        const idxQty      = col("quantity","qty");
-        const idxPrice    = col("priceexcltax","price");
-        const idxTotal    = col("total","grandtotal","amount");
-        const idxPayment  = col("paymentmethod","payment","pay");
-        const idxSentDate = col("dispatchdate","sentdate","dispatch");
-        const idxReturn   = col("returnreceived","returnrcvd");
-        const idxRefund   = col("refund");
-        const idxTag      = col("tag");
-        const idxRemarks  = col("remarks","notes","rem");
-        const idxStatus   = col("status","ful","delivery","fulfil");
-        const get=(row,idx)=>idx>=0?String(row[idx]||"").trim():"";
-        const cleanNum=s=>parseFloat(String(s||"").replace(/[^0-9.\-]/g,""))||0;
-        let ok=0,skip=0;
-        const imported=[];
-        dataRows.forEach((row,i)=>{
-          if(row.every(c=>!c&&c!==0)){return;}
-          const customer=get(row,idxCust);
-          if(!customer){skip++;return;}
-          const id=get(row,idxId)||("IMP-"+Date.now()+"-"+i);
-          const amount=cleanNum(get(row,idxTotal))||cleanNum(get(row,idxPrice));
-          const statusRaw=get(row,idxStatus);
-          const ful=statusRaw||(shopId==="ros-india"?"ORDER NOT PLACED":"PENDING");
-          imported.push({
-            id, customer,
-            date:        get(row,idxDate)||new Date().toISOString().slice(0,10),
-            addressee:   get(row,idxAddressee),
-            address:     get(row,idxAddress),
-            contact:     get(row,idxContact),
-            phone:       get(row,idxContact),
-            item:        get(row,idxItem),
-            qty:         get(row,idxQty)||"1",
-            amount,
-            pay:         get(row,idxPayment)||"SHOP",
-            payBy:       get(row,idxPayment)||"SHOP",
-            ful, status: ful,
-            rem:         get(row,idxRemarks),
-            remarks:     get(row,idxRemarks),
-            tag:         get(row,idxTag),
-            sentDate:    get(row,idxSentDate),
-            refundAmt:   cleanNum(get(row,idxRefund)),
-            returnRcvd:  get(row,idxReturn),
-            taxRate:     0,
-            taxInclusive:true,
-            invoiceNo:   id,
-          });
-          ok++;
-        });
-        setImportResult({ok,skip,errors:[]});
-        if(ok>0){onSave(imported);}
-        else{alert("No valid rows found. Make sure the file has a Customer Name column.");}
-      }catch(err){alert("Error processing file: "+err.message);console.error(err);}
-      setImporting(false);
-    };
-
-    if(isXlsx){
-      const loadXLSX=()=>new Promise((res,rej)=>{
-        if(window.XLSX){res(window.XLSX);return;}
-        const s=document.createElement("script");
-        s.src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
-        s.onload=()=>res(window.XLSX);
-        s.onerror=()=>rej(new Error("Failed to load XLSX library"));
-        document.head.appendChild(s);
-      });
-      const reader=new FileReader();
-      reader.onload=(e)=>{
-        loadXLSX().then(XLSX=>{
-          const wb=XLSX.read(e.target.result,{type:"array"});
-          const ws=wb.Sheets[wb.SheetNames[0]];
-          const raw=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:""});
-          processRows(raw);
-        }).catch(err=>{alert("Could not load Excel reader: "+err.message);setImporting(false);});
-      };
-      reader.readAsArrayBuffer(fileObj);
-    } else {
-      const reader=new FileReader();
-      reader.onload=(e)=>processRows(parseCSV(e.target.result));
-      reader.onerror=()=>{alert("Could not read file.");setImporting(false);};
-      reader.readAsText(fileObj);
-    }
-  };
-
-  // All 22 export columns — all ON by default
-  const ALL_COLS=[
-    {key:"sale_id",       label:"Sale ID"},
-    {key:"date",          label:"Date"},
-    {key:"invoice_no",    label:"Invoice No."},
-    {key:"shop_invoice",  label:"Shop Inv."},
-    {key:"customer",      label:"Customer Name"},
-    {key:"addressee",     label:"Addressee"},
-    {key:"address",       label:"Address"},
-    {key:"contact",       label:"Contact No."},
-    {key:"item",          label:"Item"},
-    {key:"qty",           label:"Quantity"},
-    {key:"price",         label:"Price (excl. tax)"},
-    {key:"tax",           label:"Tax"},
-    {key:"total",         label:"Total"},
-    {key:"payment",       label:"Payment Method"},
-    {key:"dispatch_date", label:"Dispatch Date"},
-    {key:"return_req",    label:"Return Request"},
-    {key:"return_rcvd",   label:"Return Received"},
-    {key:"exchange",      label:"Exchange"},
-    {key:"refund",        label:"Refund"},
-    {key:"tag",           label:"Tag"},
-    {key:"remarks",       label:"Remarks"},
-    {key:"re",            label:"RE"},
-  ];
-
-  const initCols=ALL_COLS.reduce((acc,c)=>({...acc,[c.key]:true}),{});
-  const [cols,setCols]=useState(initCols);
-  const toggleCol=k=>setCols(c=>({...c,[k]:!c[k]}));
-  const allOn=Object.values(cols).every(Boolean);
-  const toggleAll=()=>{const v=!allOn;setCols(ALL_COLS.reduce((a,c)=>({...a,[c.key]:v}),{}));};
-
-  // Map a sale record to the 22 column values
-  const mapRow=(s)=>{
-    const isIndia=(shopId||"")===("ros-india");
-    const entered=Number(s.amount)||0;
-    const rate=((s.taxRate!==undefined&&s.taxRate!==null?s.taxRate:0)/100);
-    const inc=rate===0?true:s.taxInclusive!==false;
-    const subtotal=inc?parseFloat((entered/(1+rate)).toFixed(2)):entered;
-    const taxAmt=parseFloat((subtotal*rate).toFixed(2));
-    const grand=parseFloat((subtotal+taxAmt).toFixed(2));
-    return{
-      sale_id:       s.id||"",
-      date:          s.date||"",
-      invoice_no:    s.id||"",
-      shop_invoice:  s.invoiceNo||s.id||"",
-      customer:      s.customer||"",
-      addressee:     s.addressee||"",
-      address:       s.address||"",
-      contact:       s.phone||s.contact||"",
-      item:          s.item||"",
-      qty:           s.qty||1,
-      price:         subtotal,
-      tax:           taxAmt,
-      total:         grand,
-      payment:       s.pay||"",
-      dispatch_date: s.sentDate||"",
-      return_req:    s.returnRcvd?"Yes":"No",
-      return_rcvd:   s.returnRcvd||"",
-      exchange:      (s.ful||s.status||"")==="EXCHANGED"?"Yes":"No",
-      refund:        s.refundAmt||"",
-      tag:           s.tag||"",
-      remarks:       s.rem||s.remarks||"",
-      re:            s.re||"",
-    };
-  };
-
-  const handleExport=()=>{
-    if(!data||data.length===0){alert("No data to export.");return;}
-    const activeCols=ALL_COLS.filter(c=>cols[c.key]);
-    const header=activeCols.map(c=>c.label).join(",");
-    const rows=data.map(s=>{
-      const row=mapRow(s);
-      return activeCols.map(c=>{
-        const v=row[c.key]??"";;
-        const str=String(v).replace(/"/g,'""');
-        return `"${str}"`;
-      }).join(",");
     });
-    const csv=[header,...rows].join("\n");
-    const blob=new Blob([csv],{type:"text/csv;charset=utf-8;"});
-    const url=URL.createObjectURL(blob);
-    const a=document.createElement("a");
-    a.href=url;
-    a.download=`${shop.short||shop.name}_${entity}_${new Date().toISOString().slice(0,10)}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
-    onClose();
-  };
+    return s;
+  }, [sales]);
 
-  if(type==="export") return(
-    <div style={{display:"flex",flexDirection:"column",gap:18}}>
-      {/* info bar */}
-      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",gap:12}}>
-        <span style={{fontSize:24}}>⬆</span>
-        <div>
-          <p style={{margin:0,fontWeight:800,fontSize:14,color:shop.accentText}}>Export {entity}</p>
-          <p style={{margin:0,fontSize:12,color:shop.accent}}>{data?.length||0} records · {Object.values(cols).filter(Boolean).length} of {ALL_COLS.length} columns selected</p>
-        </div>
-      </div>
-
-      {/* format */}
-      <div>
-        <p style={{margin:"0 0 10px",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em"}}>File Format</p>
-        <div style={{display:"flex",gap:8}}>
-          {["CSV"].map(f=>(
-            <button key={f} onClick={()=>setFileFmt(f)}
-              style={{padding:"8px 20px",borderRadius:9,border:"1px solid "+(fileFmt===f?shop.accent:"#e2e8f0"),
-                background:fileFmt===f?shop.accent:"white",color:fileFmt===f?"white":"#374151",
-                fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>
-              {f}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* column selector */}
-      <div>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-          <p style={{margin:0,fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em"}}>Columns to Export</p>
-          <button onClick={toggleAll}
-            style={{fontSize:11,fontWeight:700,color:shop.accent,background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:999,padding:"3px 12px",cursor:"pointer",fontFamily:"inherit"}}>
-            {allOn?"Deselect All":"Select All"}
-          </button>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,maxHeight:260,overflowY:"auto",paddingRight:4}}>
-          {ALL_COLS.map((c,i)=>(
-            <button key={c.key} onClick={()=>toggleCol(c.key)}
-              style={{
-                display:"flex",alignItems:"center",gap:8,
-                padding:"8px 12px",borderRadius:9,
-                border:"1px solid "+(cols[c.key]?shop.accent+"55":"#e2e8f0"),
-                background:cols[c.key]?shop.accentBg:"#f8fafc",
-                color:cols[c.key]?shop.accentText:"#94a3b8",
-                fontWeight:cols[c.key]?700:500,fontSize:12,
-                cursor:"pointer",fontFamily:"inherit",
-                textAlign:"left",transition:"all 0.13s",
-              }}>
-              <span style={{width:16,height:16,borderRadius:5,border:"1.5px solid "+(cols[c.key]?shop.accent:"#cbd5e1"),background:cols[c.key]?shop.accent:"white",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontSize:9,color:"white",fontWeight:900,transition:"all 0.13s"}}>
-                {cols[c.key]?"✓":""}
-              </span>
-              <span style={{fontSize:11}}>{i+1}. {c.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* actions */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingTop:4}}>
-        <button onClick={handleExport}
-          style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,
-            color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",
-            boxShadow:"0 4px 14px "+shop.accent+"44"}}>
-          ⬇ Download CSV
-        </button>
-        <button onClick={onClose}
-          style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",
-            background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
-          Cancel
-        </button>
-      </div>
-    </div>
+  /* ── Years that have sales (for the picker year nav) */
+  const salesYears = useMemo(() => {
+    const ys = new Set();
+    sales.forEach(sale => {
+      const dt = safeParseDate(sale.date);
+      if (dt && !isNaN(dt.getTime())) ys.add(dt.getFullYear());
+    });
+    return [...ys].sort((a,b) => b - a); // descending
+  }, [sales]);
+  // KPI cards: filter from ALL sales (not search/status filtered)
+  const periodSales = useMemo(
+    () => pickedMonth ? filterByPickedMonth(sales, pickedMonth) : filterByPeriod(sales, salesPeriod),
+    [sales, salesPeriod, pickedMonth]
+  );
+  // Table rows: filter from search+status filtered sales
+  const periodFiltSales = useMemo(
+    () => pickedMonth ? filterByPickedMonth(filtSales, pickedMonth) : filterByPeriod(filtSales, salesPeriod),
+    [filtSales, salesPeriod, pickedMonth]
   );
 
-  /* IMPORT */
-  return(
-    <div style={{display:"flex",flexDirection:"column",gap:18}}>
-      {/* info */}
-      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",gap:12}}>
-        <span style={{fontSize:24}}>⬇</span>
-        <div>
-          <p style={{margin:0,fontWeight:800,fontSize:14,color:shop.accentText}}>Import {entity}</p>
-          <p style={{margin:0,fontSize:12,color:shop.accent}}>Upload a CSV file to bulk-import into {shop.name}</p>
-        </div>
-      </div>
+  /* ── Build per-FY breakdown from periodSales ─────────────────────────── */
+  const fyGroups = useMemo(() => {
+    const groups = {};
+    periodSales.forEach(s => {
+      const fy = fyStartYear(s) ?? "other";
+      if (!groups[fy]) groups[fy] = [];
+      groups[fy].push(s);
+    });
+    return Object.entries(groups)
+      .sort(([a], [b]) => Number(b) - Number(a))
+      .map(([fyStart, rows]) => {
+        const fyS = Number(fyStart);
+        const rev = rows.reduce((a, s) => a + (Number(s.amount) || 0) - (Number(s.adjAmt) || 0), 0);
+        const qty = rows.reduce((a, s) => a + (Number(s.qty)    || 1), 0);
+        const avg = rows.length > 0 ? Math.round(rev / rows.length) : 0;
+        return {
+          fyStart: fyS,
+          label: isNaN(fyS) ? "Other" : `${String(fyS).slice(-2)}-${String(fyS+1).slice(-2)}`,
+          count: rows.length, rev, qty, avg,
+        };
+      });
+  }, [periodSales]);
 
-      {/* template download */}
-      <div style={{background:"#f8fafc",borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-        <div>
-          <p style={{margin:0,fontSize:13,fontWeight:700,color:"#1e293b"}}>📄 Download Template</p>
-          <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>All 22 columns pre-labelled — fill and upload</p>
-        </div>
-        <button onClick={()=>{
-            const header=ALL_COLS.map(c=>c.label).join(",");
-            const blob=new Blob([header+"\n"],{type:"text/csv"});
-            const url=URL.createObjectURL(blob);
-            const a=document.createElement("a");
-            a.href=url;a.download=`${shop.short||"ROS"}_${entity}_template.csv`;a.click();
-            URL.revokeObjectURL(url);
-          }}
-          style={{padding:"7px 16px",borderRadius:9,border:"1px solid "+shop.accent+"44",
-            background:shop.accentBg,color:shop.accentText,fontSize:12,fontWeight:700,
-            cursor:"pointer",fontFamily:"inherit"}}>
-          ⬇ CSV Template
-        </button>
-      </div>
+  const fmtAmt = v => fmt ? fmt(shopId, v) : `${shop?.symbol || "£"}${(Number(v)||0).toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}`;
+  const totalRev = periodSales.reduce((a, s) => a + (Number(s.amount) || 0) - (Number(s.adjAmt) || 0), 0);
 
-      {/* Required columns hint */}
-      <div style={{background:"#f8fafc",borderRadius:10,padding:"12px 16px",border:"1px solid #e2e8f0"}}>
-        <p style={{margin:"0 0 8px",fontSize:11,fontWeight:800,color:"#475569",textTransform:"uppercase",letterSpacing:"0.06em"}}>Expected Columns (22)</p>
-        <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-          {ALL_COLS.map((c,i)=>(
-            <span key={c.key} style={{fontSize:10,fontWeight:600,color:"#64748b",background:"white",border:"1px solid #e2e8f0",borderRadius:6,padding:"2px 8px"}}>
-              {i+1}. {c.label}
-            </span>
-          ))}
-        </div>
-      </div>
+  /* ── Status tab counts (from period+search filtered) ─────────────────── */
+  const tabCounts = useMemo(() => {
+    const c = { ALL: periodFiltSales.length };
+    (statusTabs || STATUS_TABS).forEach(t => {
+      const k = t.key ?? t;
+      if (k !== "ALL")
+        c[k] = periodFiltSales.filter(s => (s.ful || s.status || "PENDING") === k).length;
+    });
+    return c;
+  }, [periodFiltSales, statusTabs]);
 
-      {/* drop zone */}
-      <div
-        onDragOver={e=>{e.preventDefault();setDragOver(true);}}
-        onDragLeave={()=>setDragOver(false)}
-        onDrop={e=>{e.preventDefault();setDragOver(false);const f=e.dataTransfer.files[0];if(f)handleFileSelect(f);}}
-        style={{
-          border:"2px dashed "+(dragOver?shop.accent:"#cbd5e1"),
-          borderRadius:14,padding:"40px 24px",textAlign:"center",
-          background:dragOver?shop.accentBg:"#f8fafc",
-          transition:"all 0.18s",cursor:"pointer",
-        }}
-        onClick={()=>document.getElementById("imp-file-"+entity).click()}>
-        <input id={"imp-file-"+entity} type="file" accept=".csv,.xlsx,.xls"
-          style={{display:"none"}}
-          onChange={e=>handleFileSelect(e.target.files[0]||null)}/>
-        <div style={{fontSize:40,marginBottom:10}}>{importResult?"✅":fileName?"📄":"📂"}</div>
-        <p style={{margin:0,fontWeight:800,fontSize:15,color:fileName?shop.accent:"#374151"}}>
-          {importResult?`Imported ${importResult.ok} records`:fileName||"Drop your CSV file here"}
-        </p>
-        <p style={{margin:"4px 0 0",fontSize:12,color:"#94a3b8"}}>
-          {importResult&&importResult.skip>0?`${importResult.skip} rows skipped`:fileName?"File ready to import":"or click to browse · CSV or Excel (.xlsx) accepted"}
-        </p>
-      </div>
+  /* ── Status-filtered rows for table ─────────────────────────────────── */
+  const statusFiltered = useMemo(() => {
+    if (statusTab === "ALL") return periodFiltSales;
+    return periodFiltSales.filter(s => (s.ful || s.status || "PENDING") === statusTab);
+  }, [periodFiltSales, statusTab]);
 
-      {/* detected columns preview */}
-      {detectedCols&&!importResult&&(
-        <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10,padding:"10px 14px"}}>
-          <p style={{margin:"0 0 6px",fontSize:11,fontWeight:800,color:"#15803d",textTransform:"uppercase",letterSpacing:"0.05em"}}>✅ Columns detected ({detectedCols.length})</p>
-          <div style={{display:"flex",flexWrap:"wrap",gap:4}}>
-            {detectedCols.map((c,i)=>(
-              <span key={i} style={{fontSize:10,fontWeight:600,color:"#15803d",background:"white",border:"1px solid #bbf7d0",borderRadius:6,padding:"2px 8px"}}>{c}</span>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* import result */}
-      {importResult&&(
-        <div style={{background:importResult.ok>0?"#f0fdf4":"#fef2f2",border:"1px solid "+(importResult.ok>0?"#bbf7d0":"#fecaca"),borderRadius:10,padding:"12px 14px"}}>
-          <p style={{margin:0,fontWeight:800,fontSize:13,color:importResult.ok>0?"#15803d":"#dc2626"}}>
-            {importResult.ok>0?`✅ ${importResult.ok} records imported successfully`:"❌ No records imported"}
-          </p>
-          {importResult.skip>0&&<p style={{margin:"4px 0 0",fontSize:12,color:"#64748b"}}>{importResult.skip} rows skipped (blank/invalid)</p>}
-        </div>
-      )}
-
-      {/* actions */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-        <button
-          onClick={handleImport}
-          disabled={!fileName||importing||!!importResult}
-          style={{padding:"12px 0",borderRadius:11,border:"none",
-            background:importResult?"#10b981":fileName&&!importing?shop.accent:"#e2e8f0",
-            color:fileName&&!importing?"white":"#94a3b8",fontWeight:800,fontSize:14,
-            cursor:fileName&&!importing&&!importResult?"pointer":"default",fontFamily:"inherit",
-            boxShadow:fileName&&!importing?"0 4px 14px "+shop.accent+"44":"none",
-            transition:"all 0.2s"}}>
-          {importing?"⏳ Processing…":importResult?"✅ Done":"⬆ Import Now"}
-        </button>
-        <button onClick={onClose}
-          style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",
-            background:"white",color:"#374151",fontWeight:700,fontSize:14,
-            cursor:"pointer",fontFamily:"inherit"}}>
-          {importResult?"Close":"Cancel"}
-        </button>
-      </div>
-    </div>
-  );
-};
-/* ══════════════════════════════════════════════════════
-   NEW PURCHASE FORM
-══════════════════════════════════════════════════════ */
-/* ── TagPicker: multi-tag chip selector used in EditSaleForm & NewSaleForm ── */
-const SALE_TAG_PRESETS=["Advance Sale","Budget Friendly","Bulk Sale","Discounted Sale","Exchange Sale","Final Payment Sale","Normal Sale"];
-const parseTags=str=>str?str.split(",").map(t=>t.trim()).filter(Boolean):[];
-const joinTags=arr=>arr.join(", ");
-const TagPicker=({value,onChange,accent,accentBg,inp,fo,bl,lbl})=>{
-  const tags=parseTags(value);
-  const [custom,setCustom]=React.useState("");
-  const toggle=(tag)=>{
-    const next=tags.includes(tag)?tags.filter(t=>t!==tag):[...tags,tag];
-    onChange(joinTags(next));
-  };
-  const addCustom=()=>{
-    const t=custom.trim();
-    if(!t)return;
-    if(!tags.includes(t)) onChange(joinTags([...tags,t]));
-    setCustom("");
-  };
-  return(
-    <div style={{marginBottom:12}}>
-      <label style={lbl}>Sale Type / Tags</label>
-      <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:8}}>
-        {SALE_TAG_PRESETS.map(tag=>{
-          const active=tags.includes(tag);
-          return(
-            <button key={tag} type="button" onClick={()=>toggle(tag)} style={{
-              padding:"4px 12px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",
-              border:active?"2px solid "+accent:"1px solid #e2e8f0",
-              background:active?accent:"white",
-              color:active?"white":"#475569",
-              transition:"all 0.12s",
-            }}>{tag}</button>
-          );
-        })}
-      </div>
-      {tags.filter(t=>!SALE_TAG_PRESETS.includes(t)).map(t=>(
-        <span key={t} style={{display:"inline-flex",alignItems:"center",gap:4,padding:"3px 10px",borderRadius:999,fontSize:11,fontWeight:700,background:accentBg,color:accent,border:"1px solid "+accent+"44",marginRight:4,marginBottom:4}}>
-          {t}
-          <span onClick={()=>toggle(t)} style={{cursor:"pointer",fontWeight:900,fontSize:13,lineHeight:1,opacity:0.7}}>×</span>
-        </span>
-      ))}
-      <div style={{display:"flex",gap:6,marginTop:4}}>
-        <input value={custom} onChange={e=>setCustom(e.target.value)}
-          onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();addCustom();}}}
-          placeholder="Add custom tag… (press Enter)" style={{...inp,flex:1,fontSize:12}}
-          onFocus={fo} onBlur={bl}/>
-        <button type="button" onClick={addCustom} style={{padding:"0 14px",borderRadius:9,border:"none",background:accent,color:"white",fontWeight:700,fontSize:12,cursor:"pointer"}}>+ Add</button>
-      </div>
-    </div>
-  );
-};
-
-const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
-  const [form,setForm]=useState({
-    id:          sale.id||"",
-    date:        sale.date||new Date().toISOString().slice(0,10),
-    invoiceNo:   sale.id||"",
-    customer:    sale.customer||"",
-    contact:     sale.phone||sale.contact||"",
-    item:        sale.item||"",
-    qty:         sale.qty||"1",
-    amount:      sale.amount||"",
-    payBy:       sale.pay||"SHOP",
-    status:      (sale.ful||sale.status||"PENDING").toUpperCase(),
-    sentDate:    sale.sentDate||"",
-    returnReqDate: sale.returnReqDate||"",
-    returnRcvd:  sale.returnRcvd||"",
-    refundAmt:   sale.refundAmt||"",
-    refundDate:  sale.refundDate||"",
-    exchangeDate: sale.exchangeDate||"",
-    tag:         sale.tag||"",
-    remarks:     sale.rem||sale.remarks||"",
-    taxInclusive: sale.taxInclusive !== false,
-    taxRate:      sale.taxRate !== undefined ? sale.taxRate : 0,
-    phoneSavedOn: sale.phoneSavedOn||"UK 888",
-    adjType:     sale.adjType||"",
-    adjAmt:      sale.adjAmt||"",
-    adjDate:     sale.adjDate||"",
-    adjNote:     sale.adjNote||"",
-  });
-  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-
-  const hasLines=Array.isArray(sale.saleLines)&&sale.saleLines.length>0;
-
-  // Editable saleLines state (for multi-item sales)
-  const [editLines,setEditLines]=useState(()=>
-    hasLines ? sale.saleLines.map(l=>({...l})) : []
-  );
-  const setLine=(i,k,v)=>setEditLines(prev=>{
-    const next=[...prev];
-    next[i]={...next[i],[k]:v};
-    // Auto-recalculate grand total from lines
-    const total=next.reduce((s,l)=>s+(parseFloat(l.qty||1)*parseFloat(l.price||0)),0);
-    setForm(f=>({...f,amount:parseFloat(total.toFixed(2))}));
-    return next;
-  });
-  const addLine=()=>setEditLines(prev=>{
-    const next=[...prev,{name:"",qty:1,price:""}];
-    return next;
-  });
-  const removeLine=(i)=>setEditLines(prev=>{
-    const next=prev.filter((_,idx)=>idx!==i);
-    const total=next.reduce((s,l)=>s+(parseFloat(l.qty||1)*parseFloat(l.price||0)),0);
-    setForm(f=>({...f,amount:parseFloat(total.toFixed(2))}));
-    return next;
-  });
-
-  const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white",transition:"border-color 0.15s"};
-  const fo=e=>e.target.style.borderColor=shop.accent;
-  const bl=e=>e.target.style.borderColor="#e2e8f0";
-  const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
-  const Divider=({title})=>(
-    <div style={{display:"flex",alignItems:"center",gap:8,margin:"6px 0 12px"}}>
-      <div style={{height:1,flex:1,background:"#f1f5f9"}}/>
-      <span style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap"}}>{title}</span>
-      <div style={{height:1,flex:1,background:"#f1f5f9"}}/>
-    </div>
+  /* ── Sort: FY descending → date descending → invoice number descending ── */
+  const sortedSales = useMemo(
+    () => [...statusFiltered].sort((a, b) => {
+      // Primary: FY group (use fyStartYear which reads invoice suffix)
+      const fyA = fyStartYear(a) ?? 0;
+      const fyB = fyStartYear(b) ?? 0;
+      if (fyB !== fyA) return fyB - fyA;
+      // Secondary: date descending
+      const dateDiff = toSortableDate(b.date).localeCompare(toSortableDate(a.date));
+      if (dateDiff !== 0) return dateDiff;
+      // Tertiary: invoice number descending
+      const numA = parseInt((a.id||"0").replace(/[^0-9]/g,""))||0;
+      const numB = parseInt((b.id||"0").replace(/[^0-9]/g,""))||0;
+      return numB - numA;
+    }),
+    [statusFiltered]
   );
 
-  const isReturnRequested=["RETURN REQUESTED","RTRN REQSTD"].includes(form.status);
-  const isReturnReceived=["RETURN RECEIVED","RETRN RCVD"].includes(form.status);
-  const isExchanged=form.status==="EXCHANGED";
-  const isRefunded=form.status==="REFUNDED";
-  const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","WORK IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
-  const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
-
-  return(
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
-
-      {/* highlight banner */}
-      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
-        <span style={{fontSize:20}}>✏️</span>
-        <div>
-          <p style={{margin:0,fontWeight:800,fontSize:13,color:shop.accentText}}>Editing Sale {form.invoiceNo}</p>
-          <p style={{margin:0,fontSize:11,color:shop.accent}}>All changes will update the sales record immediately on save</p>
-        </div>
-      </div>
-
-      <Divider title="Basic Info"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Date</label>
-          <input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Invoice Number</label>
-          <input value={form.invoiceNo} readOnly
-            style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/>
-        </div>
-      </div>
-
-      <Divider title="Customer"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Customer Name</label>
-          <select value={form.customer} onChange={e=>set("customer",e.target.value)} style={inp}>
-            <option value="">Select customer…</option>
-            {/* If the sale's customer is not in the CRM (e.g. imported), show them as a selectable option */}
-            {form.customer && !customers.some(c=>c.name===form.customer) && (
-              <option value={form.customer}>{form.customer} (imported)</option>
-            )}
-            {customers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
-          </select>
-        </div>
-        <div>
-          <label style={lbl}>Contact Number</label>
-          <input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div style={{gridColumn:"1/-1"}}>
-          <label style={lbl}>Phone Number Saved On</label>
-          <select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>
-            {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
-          </select>
-        </div>
-      </div>
-
-      <Divider title="Order Details"/>
-
-      {/* Editable multi-item lines */}
-      {hasLines&&(
-        <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-            <p style={{margin:0,fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>Items</p>
-            <button type="button" onClick={addLine}
-              style={{fontSize:11,fontWeight:700,color:shop.accent,background:shop.accentBg,border:"1px solid "+shop.accent+"44",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontFamily:"inherit"}}>
-              + Add Item
-            </button>
-          </div>
-          {/* Column headers */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 60px 90px 70px 28px",gap:4,marginBottom:4}}>
-            {["Item","Qty","Price","Total",""].map((h,i)=>(
-              <span key={i} style={{fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.04em",textAlign:i>0?"right":"left",paddingRight:i===3?4:0}}>{h}</span>
-            ))}
-          </div>
-          {editLines.map((l,i)=>{
-            const lineTotal=parseFloat(((parseFloat(l.qty)||1)*(parseFloat(l.price)||0)).toFixed(2));
-            return(
-              <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 60px 90px 70px 28px",gap:4,marginBottom:6,alignItems:"center"}}>
-                <input value={l.name} onChange={e=>setLine(i,"name",e.target.value)}
-                  placeholder="Item name"
-                  style={{...inp,fontSize:12,padding:"6px 9px"}} onFocus={fo} onBlur={bl}/>
-                <input type="number" min="1" value={l.qty} onChange={e=>setLine(i,"qty",e.target.value)}
-                  style={{...inp,fontSize:12,padding:"6px 6px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
-                <input type="number" min="0" step="0.01" value={l.price} onChange={e=>setLine(i,"price",e.target.value)}
-                  placeholder="0.00"
-                  style={{...inp,fontSize:12,padding:"6px 6px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
-                <span style={{fontSize:12,fontWeight:700,color:shop.accent,textAlign:"right",paddingRight:4}}>
-                  {shop.symbol}{lineTotal.toLocaleString()}
-                </span>
-                <button type="button" onClick={()=>removeLine(i)}
-                  title="Remove item"
-                  style={{width:24,height:24,borderRadius:6,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,padding:0,fontFamily:"inherit"}}>
-                  ×
-                </button>
-              </div>
-            );
-          })}
-          {editLines.length===0&&(
-            <p style={{margin:"4px 0 0",fontSize:11,color:"#94a3b8",fontStyle:"italic"}}>No items — click "+ Add Item" to add one.</p>
-          )}
-        </div>
-      )}
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        {!hasLines&&(
-          <div style={{gridColumn:"1/-1"}}>
-            <label style={lbl}>Item / Product</label>
-            <input value={form.item} onChange={e=>set("item",e.target.value)} placeholder="Item name" style={inp} onFocus={fo} onBlur={bl}/>
-          </div>
-        )}
-        {!hasLines&&(
-          <div>
-            <label style={lbl}>Quantity</label>
-            <input type="number" min="1" value={form.qty} onChange={e=>set("qty",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
-          </div>
-        )}
-        <div style={{gridColumn:"1/-1"}}>
-          {/* GST TOGGLE + RATE */}
-          <div style={{background:form.taxRate===0?"#f8fafc":(form.taxInclusive?"#f0fdf4":"#eff6ff"),border:"1px solid "+(form.taxRate===0?"#e2e8f0":(form.taxInclusive?"#bbf7d0":"#bfdbfe")),borderRadius:10,padding:"12px 14px",marginBottom:10}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
-              <div>
-                <p style={{margin:0,fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>GST / Tax</p>
-                <p style={{margin:"2px 0 0",fontSize:12,fontWeight:700,color:form.taxRate===0?"#94a3b8":(form.taxInclusive?"#15803d":"#1d4ed8")}}>
-                  {form.taxRate===0?"No tax applied":(form.taxInclusive?"Price includes tax — calculated backwards":"Tax added on top")}
-                </p>
-              </div>
-              {form.taxRate>0&&(
-                <div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}} onClick={()=>set("taxInclusive",!form.taxInclusive)}>
-                  <span style={{fontSize:12,fontWeight:700,color:"#64748b"}}>{form.taxInclusive?"Inclusive":"Exclusive"}</span>
-                  <div style={{width:44,height:24,borderRadius:999,background:form.taxInclusive?shop.accent:"#cbd5e1",position:"relative",transition:"background 0.2s",boxShadow:"inset 0 1px 3px rgba(0,0,0,0.15)"}}>
-                    <div style={{position:"absolute",top:3,left:form.taxInclusive?22:3,width:18,height:18,borderRadius:"50%",background:"white",transition:"left 0.2s",boxShadow:"0 1px 4px rgba(0,0,0,0.2)"}}/>
-                  </div>
-                </div>
-              )}
-            </div>
-            {/* Tax Rate Buttons */}
-            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-              <span style={{fontSize:11,fontWeight:700,color:"#64748b",marginRight:4}}>Tax Rate:</span>
-              {[0,5,10,18,20].map(r=>(
-                <button key={r} type="button" onClick={()=>set("taxRate",Number(r))}
-                  style={{padding:"4px 12px",borderRadius:999,border:"2px solid "+(Number(form.taxRate)===r?shop.accent:"#e2e8f0"),
-                    background:Number(form.taxRate)===r?shop.accent:"white",color:Number(form.taxRate)===r?"white":"#374151",
-                    fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>
-                  {r}%
-                </button>
-              ))}
-            </div>
-          </div>
-
-          {/* Amount input */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            <div>
-              <label style={lbl}>
-                Grand Total ({shop.symbol}) — {form.taxRate===0?"no tax":form.taxInclusive?"incl. tax":"excl. tax"}
-              </label>
-              <input type="number" value={form.amount} onChange={e=>set("amount",e.target.value)}
-                placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
-            </div>
-            {/* Tax breakdown preview */}
-            {form.amount&&Number(form.amount)>0&&(()=>{
-              const a=Number(form.amount);
-              const rate=(form.taxRate||0)/100;
-              const subtotal=form.taxInclusive?parseFloat((a/(1+rate)).toFixed(2)):a;
-              const tax=form.taxInclusive?parseFloat((a-subtotal).toFixed(2)):parseFloat((a*rate).toFixed(2));
-              const grand=form.taxInclusive?a:parseFloat((a+tax).toFixed(2));
-              return(
-                <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",border:"1px solid #e2e8f0"}}>
-                  <p style={{margin:"0 0 6px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>Tax Breakdown</p>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                    <span style={{fontSize:11,color:"#64748b"}}>Subtotal</span>
-                    <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>{shop.symbol}{subtotal.toLocaleString()}</span>
-                  </div>
-                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                    <span style={{fontSize:11,color:"#64748b"}}>{(form.taxRate||0)===0?"No Tax":("Tax "+form.taxRate+"%")}</span>
-                    <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>{shop.symbol}{tax.toLocaleString()}</span>
-                  </div>
-                  <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid #e2e8f0",paddingTop:4,marginTop:4}}>
-                    <span style={{fontSize:12,fontWeight:800,color:"#0f172a"}}>Grand Total</span>
-                    <span style={{fontSize:12,fontWeight:900,color:shop.accent}}>{shop.symbol}{grand.toLocaleString()}</span>
-                  </div>
-                </div>
-              );
-            })()}
-          </div>
-        </div>
-      </div>
-
-      <Divider title="Payment"/>
-      <div style={{marginBottom:16}}>
-        <label style={lbl}>Payment By</label>
-        <select value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
-          {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
-        </select>
-      </div>
-
-      <Divider title="Delivery"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#f8fafc",borderRadius:12,padding:"14px",border:"1px solid #e2e8f0"}}>
-        <div>
-          <label style={lbl}>Delivery Status</label>
-          <select value={form.status} onChange={e=>set("status",e.target.value)}
-            style={{...inp,fontWeight:700,color:statusColor[form.status]||"#374151"}}>
-            {(shopId==="ros-india"
-              ? ["ORDER NOT PLACED","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]
-              : ["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]
-            ).map(o=>(
-              <option key={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label style={lbl}>Sent / Dispatch Date</label>
-          <input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-      </div>
-
-      {isReturnRequested&&(
-        <>
-          <Divider title="Return Request"/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#fff7ed",borderRadius:12,padding:"14px",border:"1px solid #fed7aa"}}>
-            <div>
-              <label style={{...lbl,color:"#c2410c"}}>↩️ Return Request Date</label>
-              <input type="date" value={form.returnReqDate} onChange={e=>set("returnReqDate",e.target.value)} style={{...inp,border:"1px solid #fed7aa"}} onFocus={fo} onBlur={bl}/>
-              <p style={{margin:"6px 0 0",fontSize:11,color:"#92400e"}}>Record when the customer requested this return. Mark as <strong>Return Received</strong> once the item arrives back.</p>
-            </div>
-          </div>
-        </>
-      )}
-
-      {isReturnReceived&&(
-        <>
-          <Divider title="Return Received"/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#fff5f5",borderRadius:12,padding:"14px",border:"1px solid #fecaca"}}>
-            <div>
-              <label style={{...lbl,color:"#dc2626"}}>📬 Return Received Date</label>
-              <input type="date" value={form.returnRcvd} onChange={e=>set("returnRcvd",e.target.value)} style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/>
-            </div>
-          </div>
-        </>
-      )}
-
-      {isExchanged&&(
-        <>
-          <Divider title="Exchange"/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#eef2ff",borderRadius:12,padding:"14px",border:"1px solid #c7d2fe"}}>
-            <div>
-              <label style={{...lbl,color:"#4338ca"}}>🔄 Exchange Item Sent Date</label>
-              <input type="date" value={form.exchangeDate} onChange={e=>set("exchangeDate",e.target.value)} style={{...inp,border:"1px solid #c7d2fe"}} onFocus={fo} onBlur={bl}/>
-            </div>
-          </div>
-        </>
-      )}
-
-      {isRefunded&&(
-        <>
-          <Divider title="Refund"/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#f5f3ff",borderRadius:12,padding:"14px",border:"1px solid #ddd6fe"}}>
-            <div>
-              <label style={{...lbl,color:"#6b21a8"}}>📅 Refund Date</label>
-              <input type="date" value={form.refundDate} onChange={e=>set("refundDate",e.target.value)} style={{...inp,border:"1px solid #ddd6fe"}} onFocus={fo} onBlur={bl}/>
-            </div>
-            <div>
-              <label style={{...lbl,color:"#6b21a8"}}>💸 Refunded Amount ({shop.symbol})</label>
-              <input type="number" value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #ddd6fe"}} onFocus={fo} onBlur={bl}/>
-            </div>
-          </div>
-        </>
-      )}
-
-      <Divider title="Post-Sale Adjustment"/>
-      <div style={{background:"#fffbeb",borderRadius:12,padding:"14px",border:"1px solid #fde68a",marginBottom:16}}>
-        <p style={{margin:"0 0 10px",fontSize:11,color:"#92400e",fontWeight:600}}>🔧 Use this section to record any discount or partial refund given after the sale (e.g. damaged item, defect).</p>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-          <div>
-            <label style={{...lbl,color:"#92400e"}}>Adjustment Type</label>
-            <select value={form.adjType} onChange={e=>set("adjType",e.target.value)} style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}>
-              <option value="">-- None --</option>
-              <option value="Discount">Discount</option>
-              <option value="Partial Refund">Partial Refund</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-          <div>
-            <label style={{...lbl,color:"#92400e"}}>Adjustment Date</label>
-            <input type="date" value={form.adjDate} onChange={e=>set("adjDate",e.target.value)} style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
-          </div>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          <div>
-            <label style={{...lbl,color:"#92400e"}}>💰 Adjustment Amount ({shop.symbol})</label>
-            <input type="number" value={form.adjAmt} onChange={e=>set("adjAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
-          </div>
-          <div>
-            <label style={{...lbl,color:"#92400e"}}>📝 Reason / Note</label>
-            <input type="text" value={form.adjNote} onChange={e=>set("adjNote",e.target.value)} placeholder="e.g. damaged zip, colour mismatch…" style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
-          </div>
-        </div>
-      </div>
-
-      <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
-      <div style={{marginBottom:16}}>
-        <label style={lbl}>Remarks</label>
-        <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Any additional notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
-      </div>
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...form,id:sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||""})}
-          style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
-          💾 Save Changes
-        </button>
-        <button onClick={onClose}
-          style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-};
-
-const NewShipmentForm=({shopId,shop,purch,onSave,onClose})=>{
-  const [form,setForm]=useState({
-    date:         new Date().toISOString().slice(0,10),
-    shipmentId:   "SHP-"+String(Math.floor(Math.random()*9000)+1000),
-    purchaseId:   "",
-    supplier:     "",
-    deliveryAddr: "",
-    service:      "",
-    serviceCustom:"",
-    agent:        "",
-    agentCustom:  "",
-    trackingNo:   "",
-    cost:         "",
-    weight:       "",
-    status:       "PENDING",
-    dispatchDate: "",
-    eta:          "",
-    receivedDate: "",
-    remarks:      "",
-  });
-  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-
-  const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white",transition:"border-color 0.15s"};
-  const fo=e=>e.target.style.borderColor=shop.accent;
-  const bl=e=>e.target.style.borderColor="#e2e8f0";
-  const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
-
-  const Divider=({title})=>(
-    <div style={{display:"flex",alignItems:"center",gap:8,margin:"6px 0 12px"}}>
-      <div style={{height:1,flex:1,background:"#f1f5f9"}}/>
-      <span style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap"}}>{title}</span>
-      <div style={{height:1,flex:1,background:"#f1f5f9"}}/>
-    </div>
+  /* ── Rows with month / FY separators ────────────────────────────────── */
+  const rowsWithSeparators = useMemo(
+    () => buildRowsWithSeparators(sortedSales),
+    [sortedSales]
   );
 
-  const COURIERS=["DHL","FedEx","Royal Mail","Evri","UPS","DPD","India Post","DTDC","Blue Dart","Other"];
-  const AGENTS_LIST=["Other"];
-  const STATUS_OPTS=["PENDING","DISPATCHED","IN TRANSIT","OUT FOR DELIVERY","DELIVERED","RETURNED","ON HOLD"];
-  const statusColor={"PENDING":"#a16207","DISPATCHED":"#1d4ed8","IN TRANSIT":"#0369a1","OUT FOR DELIVERY":"#7c3aed","DELIVERED":"#15803d","RETURNED":"#c2410c","ON HOLD":"#6b7280"};
-
-  const useCustomService=form.service==="Other";
-  const useCustomAgent  =form.agent==="Other";
-
-  /* auto-fill supplier when purchase selected */
-  const handlePurchaseSelect=(pid)=>{
-    set("purchaseId",pid);
-    const p=purch.find(x=>x.id===pid);
-    if(p){ set("supplier",p.sup||p.supplier||""); }
-  };
-
-  return(
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
-
-      {/* SHIPMENT INFO */}
-      <Divider title="Shipment Info"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Shipment Date</label>
-          <input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Shipment ID</label>
-          <input value={form.shipmentId} readOnly
-            style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/>
-        </div>
-        <div>
-          <label style={lbl}>Status</label>
-          <select value={form.status} onChange={e=>set("status",e.target.value)}
-            style={{...inp,fontWeight:700,color:statusColor[form.status]||"#374151"}}>
-            {STATUS_OPTS.map(o=><option key={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>)}
-          </select>
-        </div>
-      </div>
-
-      {/* LINKED PURCHASE */}
-      <Divider title="Linked Purchase"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Link to Purchase ID</label>
-          <select value={form.purchaseId} onChange={e=>handlePurchaseSelect(e.target.value)} style={inp}>
-            <option value="">Select purchase…</option>
-            {purch.map(p=><option key={p.id} value={p.id}>{p.id}{p.sup?" — "+p.sup:p.supplier?" — "+p.supplier:""}</option>)}
-          </select>
-        </div>
-        <div>
-          <label style={lbl}>Supplier</label>
-          <input value={form.supplier} onChange={e=>set("supplier",e.target.value)}
-            placeholder="Auto-filled or enter" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div style={{gridColumn:"1/-1"}}>
-          <label style={lbl}>Delivery Address</label>
-          <textarea value={form.deliveryAddr} onChange={e=>set("deliveryAddr",e.target.value)}
-            rows={2} placeholder="Full delivery / warehouse address"
-            style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
-        </div>
-      </div>
-
-      {/* COURIER */}
-      <Divider title="Courier / Agent"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Courier / Service</label>
-          <select value={form.service} onChange={e=>set("service",e.target.value)} style={inp}>
-            <option value="">Select courier…</option>
-            {COURIERS.map(o=><option key={o}>{o}</option>)}
-          </select>
-          {useCustomService&&(
-            <input value={form.serviceCustom} onChange={e=>set("serviceCustom",e.target.value)}
-              placeholder="Enter courier name…" autoFocus
-              style={{...inp,marginTop:8,border:"1px solid "+shop.accent}} onFocus={fo} onBlur={bl}/>
-          )}
-        </div>
-        <div>
-          <label style={lbl}>Logistic Agent</label>
-          <select value={form.agent} onChange={e=>set("agent",e.target.value)} style={inp}>
-            <option value="">Select agent…</option>
-            {AGENTS_LIST.map(o=><option key={o}>{o}</option>)}
-          </select>
-          {useCustomAgent&&(
-            <input value={form.agentCustom} onChange={e=>set("agentCustom",e.target.value)}
-              placeholder="Enter agent name…" autoFocus
-              style={{...inp,marginTop:8,border:"1px solid "+shop.accent}} onFocus={fo} onBlur={bl}/>
-          )}
-        </div>
-        <div>
-          <label style={lbl}>Tracking Number</label>
-          <input value={form.trackingNo} onChange={e=>set("trackingNo",e.target.value)}
-            placeholder="AWB / Tracking ref."
-            style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Shipping Cost ({shop.symbol})</label>
-          <input type="number" value={form.cost} onChange={e=>set("cost",e.target.value)}
-            placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-      </div>
-
-      {/* DATES */}
-      <Divider title="Dates"/>
-      <div style={{marginBottom:16}}>
-        <label style={lbl}>Actual Received Date</label>
-        <input type="date" value={form.receivedDate} onChange={e=>set("receivedDate",e.target.value)}
-          style={{...inp,border:"1px solid "+shop.accent+"66",background:shop.accentBg}}
-          onFocus={fo} onBlur={bl}/>
-      </div>
-
-      {/* REMARKS */}
-      <div style={{marginBottom:16}}>
-        <label style={lbl}>Remarks</label>
-        <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)}
-          rows={2} placeholder="Any notes about this shipment…"
-          style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
-      </div>
-
-      {/* ACTIONS */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave(form)}
-          style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
-          🚚 Save Shipment
-        </button>
-        <button onClick={onClose}
-          style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-};
-
-
-const NewSupplierForm=({shop,onSave,onClose})=>{
-  const [sf,setSf]=useState({name:"",place:"",address:"",contactPerson:"",whatsapp:"",tag:"",remarks:""});
-  const ss=(k,v)=>setSf(f=>({...f,[k]:v}));
-  const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white"};
-  const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
-  const fo=e=>e.target.style.borderColor=shop.accent;
-  const bl=e=>e.target.style.borderColor="#e2e8f0";
-  return(
-    <div style={{display:"flex",flexDirection:"column",gap:14}}>
-      <div>
-        <label style={lbl}>Supplier Name *</label>
-        <input value={sf.name} onChange={e=>ss("name",e.target.value)} placeholder="Company / Supplier name" style={inp} onFocus={fo} onBlur={bl}/>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-        <div>
-          <label style={lbl}>Place / City</label>
-          <input value={sf.place} onChange={e=>ss("place",e.target.value)} placeholder="London, Mumbai…" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Contact Person</label>
-          <input value={sf.contactPerson} onChange={e=>ss("contactPerson",e.target.value)} placeholder="Full name" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-      </div>
-      <div>
-        <label style={lbl}>Address</label>
-        <textarea value={sf.address} onChange={e=>ss("address",e.target.value)} rows={2} placeholder="Full address" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-        <div>
-          <label style={lbl}>WhatsApp Number</label>
-          <input value={sf.whatsapp} onChange={e=>ss("whatsapp",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Tag</label>
-          <select value={sf.tag} onChange={e=>ss("tag",e.target.value)} style={inp}>
-            {["","Active","Preferred","Occasional","Inactive"].map(o=><option key={o} value={o}>{o||"None"}</option>)}
-          </select>
-        </div>
-      </div>
-      <div>
-        <label style={lbl}>Remarks</label>
-        <textarea value={sf.remarks} onChange={e=>ss("remarks",e.target.value)} rows={2} placeholder="Notes about this supplier" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingTop:4}}>
-        <button onClick={()=>{if(!sf.name.trim()){alert("Supplier name is required.");return;}onSave({id:Date.now(),name:sf.name,contact:sf.contactPerson,phone:sf.whatsapp,email:"",category:sf.tag||"General",terms:"",place:sf.place,address:sf.address,remarks:sf.remarks});}}
-          style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
-          ✅ Add Supplier
-        </button>
-        <button onClick={onClose} style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
-      </div>
-    </div>
-  );
-};
-
-const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
-  const nextNum=(lastPurchNum||700)+1;
-  const pfx={["ros-selections"]:"PO",["ros-hairlines"]:"PH",["ros-india"]:"PI"}[shopId]||"PO";
-  const autoId=`${pfx}-${String(nextNum).padStart(4,"0")}`;
-
-  const [form,setForm]=useState({
-    date:        new Date().toISOString().slice(0,10),
-    purchaseId:  autoId,
-    idEditing:   false,
-    supplier:    "",
-    invoiceNo:   "",
-    batch:       "",
-    item:        "",
-    itemCustom:  "",
-    qty:         "",
-    total:       "",
-    gst:         "",
-    payBy:       "HDFC SURESH",
-    payDate:     new Date().toISOString().slice(0,10),
-    logisticBy:  "",
-    logisticRef: "",
-    receivedDate:"",
-    remarks:     "",
-  });
-  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-
-  /* unit cost = total / qty — read-only, auto-calc */
-  const unitCost=(()=>{
-    const q=parseFloat(form.qty);
-    const t=parseFloat(form.total);
-    if(q>0&&t>0) return (t/q).toFixed(2);
-    return "";
+  /* ── Period range label ─────────────────────────────────────────────── */
+  const rangeLabel = (() => {
+    if (pickedMonth) {
+      const [py, pm] = pickedMonth.split("-").map(Number);
+      const firstDay = new Date(py, pm - 1, 1);
+      const lastDay  = new Date(py, pm, 0);
+      return `${localISO(firstDay).split("-").reverse().slice(0,2).join("/")}/${String(py).slice(-2)} → ${localISO(lastDay).split("-").reverse().slice(0,2).join("/")}/${String(py).slice(-2)}`;
+    }
+    const { start, end } = getPeriodRange(salesPeriod);
+    return !start ? "All records"
+      : start === end ? fmtDate(start)
+      : `${fmtDate(start)} → ${fmtDate(end)}`;
   })();
 
-  const [supplierList,setSupplierList]=useState([...SUPPLIERS]);
-  const [showNewSup,setShowNewSup]=useState(false);
+  const PERIODS = isStaff
+    ? ["day", "week", "month"]
+    : ["day", "week", "month", "year", "lifetime"];
 
-  const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white",transition:"border-color 0.15s"};
-  const inpGray={...inp,background:"#f1f5f9",color:"#64748b",cursor:"not-allowed"};
-  const fo=e=>e.target.style.borderColor=shop.accent;
-  const bl=e=>e.target.style.borderColor="#e2e8f0";
-  const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
+  const resolvedTabs = statusTabs || STATUS_TABS;
+  const activeTabCfg = STATUS_TABS.find(t => t.key === statusTab) || STATUS_TABS[0];
 
-  const Divider=({title})=>(
-    <div style={{display:"flex",alignItems:"center",gap:8,margin:"6px 0 12px"}}>
-      <div style={{height:1,flex:1,background:"#f1f5f9"}}/>
-      <span style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap"}}>{title}</span>
-      <div style={{height:1,flex:1,background:"#f1f5f9"}}/>
-    </div>
-  );
+  /* ── KPI card definitions ───────────────────────────────────────────── */
+  const kpiDefs = [
+    { icon:"🛒", label:"Orders",    getValue: g=>String(g.count),    topGrad:"linear-gradient(90deg,#4f46e5,#818cf8,#4f46e5)", topColor:"#6366f1", iconBg:"#eef2ff", iconColor:"#4f46e5", shadow:"rgba(99,102,241,0.14)",  glowColor:"rgba(99,102,241,0.32)"  },
+    { icon:"📦", label:"Quantity",  getValue: g=>`${g.qty} units`,   topGrad:"linear-gradient(90deg,#0284c7,#38bdf8,#0284c7)", topColor:"#0ea5e9", iconBg:"#e0f2fe", iconColor:"#0284c7", shadow:"rgba(14,165,233,0.14)",  glowColor:"rgba(14,165,233,0.32)"  },
+    { icon:"💰", label:"Revenue",   getValue: g=>fmtAmt(g.rev),      topGrad:`linear-gradient(90deg,${accent},${accent}99,${accent})`,          topColor:accent,    iconBg:accentBg,   iconColor:accent,    shadow:`${accent}22`,               glowColor:`${accent}44`            },
+    { icon:"📈", label:"Avg. Order",getValue: g=>fmtAmt(g.avg),      topGrad:"linear-gradient(90deg,#d97706,#fbbf24,#d97706)", topColor:"#f59e0b", iconBg:"#fef3c7", iconColor:"#d97706",shadow:"rgba(245,158,11,0.14)", glowColor:"rgba(245,158,11,0.36)"  },
+  ];
 
-  const useCustomItem=form.item==="__custom__";
+  return (
+    <div style={{ padding: 0 }}>
 
-  const handleAddSupplier=(newSup)=>{
-    setSupplierList(l=>[newSup,...l]);
-    set("supplier",newSup.name);
-    setShowNewSup(false);
-  };
-
-  return(
-    <>
-    {/* ── NEW SUPPLIER OVERLAY ── */}
-    {showNewSup&&(
-      <div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setShowNewSup(false)}>
-        <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.50)",backdropFilter:"blur(4px)"}}/>
-        <div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.25)",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",zIndex:81}} onClick={e=>e.stopPropagation()}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 22px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"12",borderRadius:"20px 20px 0 0"}}>
-            <h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>➕ New Supplier</h3>
-            <button onClick={()=>setShowNewSup(false)} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
-          </div>
-          <div style={{padding:22}}>
-            <NewSupplierForm shop={shop} onSave={handleAddSupplier} onClose={()=>setShowNewSup(false)}/>
-          </div>
-        </div>
-      </div>
-    )}
-
-    {/* ── MAIN FORM ── */}
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
-
-      {/* BASIC INFO */}
-      <Divider title="Basic Info"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+      {/* ══════════════════════════════════════════════════════════
+          PAGE HEADER
+         ══════════════════════════════════════════════════════════ */}
+      <div style={{
+        display: "flex", alignItems: "flex-start", justifyContent: "space-between",
+        marginBottom: 20, flexWrap: "wrap", gap: 12,
+      }}>
         <div>
-          <label style={lbl}>Date</label>
-          <input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
+          <h2 style={{ margin: "0 0 2px", fontSize: 20, fontWeight: 800, color: "#0f172a" }}>
+            Sales
+          </h2>
+          <p style={{ margin: 0, fontSize: 12, color: "#94a3b8" }}>
+            {periodSales.length} order{periodSales.length !== 1 ? "s" : ""} · {rangeLabel}
+          </p>
         </div>
-        <div>
-          <label style={lbl}>Purchase ID</label>
-          <div style={{display:"flex",gap:6}}>
-            <input value={form.purchaseId} readOnly={!form.idEditing} onChange={e=>set("purchaseId",e.target.value)}
-              style={{...inp,flex:1,background:form.idEditing?"white":"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,border:"1px solid "+(form.idEditing?shop.accent:"#e2e8f0")}}
-              onFocus={fo} onBlur={bl}/>
-            <button onClick={()=>set("idEditing",!form.idEditing)}
-              style={{flexShrink:0,width:34,height:34,borderRadius:8,cursor:"pointer",border:"1px solid "+(form.idEditing?shop.accent:"#e2e8f0"),background:form.idEditing?shop.accent:"#f8fafc",color:form.idEditing?"white":"#64748b",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}}>
-              {form.idEditing?"✓":"✏️"}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {/* Period selector pills */}
+          <div style={{ display: "flex", background: "#f1f5f9", borderRadius: 10, padding: 3, gap: 2 }}>
+            {PERIODS.map(p => {
+              const isActive = !pickedMonth && salesPeriod === p;
+              return (
+                <button key={p} onClick={() => { setSalesPeriod(p); setPickedMonth(null); setPickerOpen(false); }} title={PERIOD_META[p].desc}
+                  style={{
+                    padding: "5px 13px", borderRadius: 8, border: "none",
+                    background: isActive ? accent : "transparent",
+                    color: isActive ? "white" : "#64748b",
+                    fontWeight: isActive ? 800 : 600, fontSize: 12,
+                    cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
+                    boxShadow: isActive ? `0 2px 8px ${accent}44` : "none",
+                  }}>
+                  {PERIOD_META[p].label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* ── Month Picker ── */}
+          <div ref={pickerRef} style={{ position: "relative" }}>
+            {/* Trigger button */}
+            <button
+              onClick={() => setPickerOpen(o => !o)}
+              title="Pick a specific month"
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "5px 12px", borderRadius: 8, border: "none",
+                background: pickedMonth ? accent : "#f1f5f9",
+                color: pickedMonth ? "white" : "#64748b",
+                fontWeight: 700, fontSize: 12,
+                cursor: "pointer", fontFamily: "inherit", transition: "all 0.15s",
+                boxShadow: pickedMonth ? `0 2px 8px ${accent}44` : "none",
+                whiteSpace: "nowrap",
+              }}>
+              📅 {pickedMonth
+                ? new Date(+pickedMonth.split("-")[0], +pickedMonth.split("-")[1] - 1, 1)
+                    .toLocaleString("default", { month: "short", year: "numeric" })
+                : "Pick Month"}
+              {pickedMonth && (
+                <span
+                  onClick={e => { e.stopPropagation(); setPickedMonth(null); setPickerOpen(false); }}
+                  style={{ marginLeft: 2, opacity: 0.8, fontWeight: 900, fontSize: 13, lineHeight: 1 }}
+                  title="Clear">×</span>
+              )}
             </button>
-          </div>
-        </div>
-        <div>
-          <label style={lbl}>Batch / Reference</label>
-          <input value={form.batch} onChange={e=>set("batch",e.target.value)} placeholder="Mo 1057" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Supplier Invoice No.</label>
-          <input value={form.invoiceNo} onChange={e=>set("invoiceNo",e.target.value)} placeholder="ELT-7821" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/>
-        </div>
-      </div>
 
-      {/* SUPPLIER */}
-      <Divider title="Supplier"/>
-      <div style={{marginBottom:16}}>
-        <label style={lbl}>Supplier</label>
-        <div style={{display:"flex",gap:6}}>
-          <select value={form.supplier} onChange={e=>set("supplier",e.target.value)} style={{...inp,flex:1}}>
-            <option value="">Select supplier…</option>
-            {supplierList.map(s=><option key={s.id} value={s.name}>{s.name}{s.place?" · "+s.place:""}</option>)}
-          </select>
-          <button onClick={()=>setShowNewSup(true)} title="Add new supplier"
-            style={{flexShrink:0,width:34,height:34,borderRadius:8,cursor:"pointer",border:"1px solid "+shop.accent,background:shop.accent,color:"white",fontSize:18,fontWeight:900,display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 2px 8px "+shop.accent+"44",transition:"all 0.15s"}}
-            onMouseEnter={e=>e.currentTarget.style.transform="scale(1.08)"}
-            onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>
-            +
+            {/* Dropdown picker */}
+            {pickerOpen && (
+              <div style={{
+                position: "absolute", top: "calc(100% + 8px)", right: 0,
+                background: "white", borderRadius: 14,
+                border: "1px solid #e2e8f0",
+                boxShadow: "0 12px 40px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.08)",
+                padding: 16, zIndex: 200, minWidth: 260,
+              }}>
+                {/* Year navigation */}
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                  <button onClick={() => setPickerYear(y => y - 1)}
+                    style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}>
+                    <span style={{ fontWeight: 800, fontSize: 15, color: "#0f172a" }}>{pickerYear}</span>
+                    {/* Dots for years that have sales */}
+                    <div style={{ display: "flex", gap: 4 }}>
+                      {salesYears.map(yr => (
+                        <button key={yr} onClick={() => setPickerYear(yr)}
+                          title={`Go to ${yr}`}
+                          style={{
+                            width: 8, height: 8, borderRadius: "50%", border: "none", padding: 0,
+                            cursor: "pointer",
+                            background: yr === pickerYear ? accent : `${accent}44`,
+                          }} />
+                      ))}
+                    </div>
+                  </div>
+                  <button onClick={() => setPickerYear(y => y + 1)}
+                    style={{ width: 30, height: 30, borderRadius: 8, border: "1px solid #e2e8f0", background: "#f8fafc", cursor: "pointer", fontSize: 14, fontWeight: 700, color: "#374151", display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
+                </div>
+                {/* Month grid — 4 columns */}
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 6 }}>
+                  {["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"].map((mon, idx) => {
+                    const key = `${pickerYear}-${String(idx + 1).padStart(2, "0")}`;
+                    const isSelected = pickedMonth === key;
+                    const isCurrentMonth = key === localISO(new Date()).slice(0, 7);
+                    const hasSales = salesMonthSet.has(key);
+                    return (
+                      <button key={key}
+                        onClick={() => { setPickedMonth(key); setPickerOpen(false); }}
+                        style={{
+                          padding: "8px 4px", borderRadius: 8,
+                          border: isSelected ? `2px solid ${accent}` : isCurrentMonth ? `1px solid ${accent}` : "1px solid transparent",
+                          background: isSelected ? accent : isCurrentMonth ? `${accent}12` : hasSales ? `${accent}08` : "#f8fafc",
+                          color: isSelected ? "white" : isCurrentMonth ? accent : hasSales ? "#374151" : "#cbd5e1",
+                          fontWeight: isSelected || isCurrentMonth ? 700 : hasSales ? 600 : 400,
+                          fontSize: 12, cursor: hasSales ? "pointer" : "default",
+                          fontFamily: "inherit", transition: "all 0.12s",
+                          position: "relative",
+                        }}
+                        onMouseEnter={e => { if (!isSelected && hasSales) { e.currentTarget.style.background = `${accent}20`; e.currentTarget.style.color = accent; }}}
+                        onMouseLeave={e => { if (!isSelected) { e.currentTarget.style.background = isSelected ? accent : isCurrentMonth ? `${accent}12` : hasSales ? `${accent}08` : "#f8fafc"; e.currentTarget.style.color = isSelected ? "white" : isCurrentMonth ? accent : hasSales ? "#374151" : "#cbd5e1"; }}}>
+                        {mon}
+                        {hasSales && !isSelected && (
+                          <span style={{ position: "absolute", bottom: 2, left: "50%", transform: "translateX(-50%)", width: 4, height: 4, borderRadius: "50%", background: accent, display: "block" }} />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+                {/* Quick jump to current month */}
+                <button
+                  onClick={() => { const now = new Date(); setPickerYear(now.getFullYear()); setPickedMonth(localISO(now).slice(0, 7)); setPickerOpen(false); }}
+                  style={{
+                    marginTop: 10, width: "100%", padding: "7px 0", borderRadius: 8,
+                    border: `1px solid ${accent}33`, background: `${accent}10`,
+                    color: accent, fontWeight: 700, fontSize: 12,
+                    cursor: "pointer", fontFamily: "inherit",
+                  }}>
+                  ↩ This Month
+                </button>
+              </div>
+            )}
+          </div>
+          <button onClick={() => setModal("import-sales")}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "8px 14px", borderRadius: 9, border: "1px solid #e2e8f0",
+              background: "white", color: "#374151", fontWeight: 700, fontSize: 13,
+              cursor: "pointer", fontFamily: "inherit",
+            }}>
+            ⬇ Import
+          </button>
+          <button onClick={() => setModal("export-sales")}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "8px 14px", borderRadius: 9, border: "1px solid #e2e8f0",
+              background: "white", color: "#374151", fontWeight: 700, fontSize: 13,
+              cursor: "pointer", fontFamily: "inherit",
+            }}>
+            ⬆ Export
+          </button>
+          {onReload && (
+            <button onClick={async () => { setReloading(true); await onReload(); setReloading(false); }}
+              disabled={reloading}
+              title="Refresh sales from database"
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "8px 12px", borderRadius: 9, border: "1px solid #e2e8f0",
+                background: "white", color: "#64748b", fontWeight: 700, fontSize: 13,
+                cursor: reloading ? "not-allowed" : "pointer", fontFamily: "inherit",
+                opacity: reloading ? 0.6 : 1,
+              }}>
+              {reloading ? "⏳" : "🔄"}
+            </button>
+          )}
+          <button onClick={() => setModal("new-sale")}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "8px 16px", borderRadius: 9, border: "none",
+              background: accent, color: "white", fontWeight: 800, fontSize: 13,
+              cursor: "pointer", fontFamily: "inherit",
+              boxShadow: `0 3px 10px ${accent}44`,
+            }}>
+            + New Sale
           </button>
         </div>
       </div>
 
-      {/* ITEM */}
-      <Divider title="Item / Product"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div style={{gridColumn:"1/-1"}}>
-          <label style={lbl}>Item</label>
-          <select value={form.item} onChange={e=>set("item",e.target.value)} style={inp}>
-            <option value="">Select product…</option>
-            <option value="__custom__">✏️ Enter manually…</option>
-            {PRODUCTS.map(p=><option key={p.id} value={p.name}>{p.name}</option>)}
-          </select>
-          {useCustomItem&&<input value={form.itemCustom} onChange={e=>set("itemCustom",e.target.value)} placeholder="Type item name" style={{...inp,marginTop:8,border:"1px solid "+shop.accent}} autoFocus onFocus={fo} onBlur={bl}/>}
-        </div>
-        <div>
-          <label style={lbl}>Total Quantity</label>
-          <input type="number" min="1" value={form.qty} onChange={e=>set("qty",e.target.value)} placeholder="0" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Total Amount ({shop.symbol})</label>
-          <input type="number" value={form.total} onChange={e=>set("total",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={{...lbl,color:"#94a3b8"}}>Unit Cost ({shop.symbol}) <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0}}>— auto</span></label>
-          <input readOnly value={unitCost} placeholder="Auto-calculated" style={inpGray}/>
-        </div>
-        <div>
-          <label style={lbl}>GST / VAT ({shop.currency==="INR"?"%":"£"})</label>
-          <input type="number" value={form.gst} onChange={e=>set("gst",e.target.value)} placeholder="0" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-      </div>
-
-      {/* PAYMENT */}
-      <Divider title="Payment"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Payment By</label>
-          <select value={form.payBy==="OTHER"||!["REMITLY SURESH","REMITLY BINITHA","HDFC SURESH","HDFC BINITHA","ROS INDIA","OTHER"].includes(form.payBy)?"OTHER":form.payBy}
-            onChange={e=>set("payBy",e.target.value)} style={{...inp,fontWeight:600}}>
-            {["REMITLY SURESH","REMITLY BINITHA","HDFC SURESH","HDFC BINITHA","ROS INDIA","OTHER"].map(o=><option key={o}>{o}</option>)}
-          </select>
-          {(form.payBy==="OTHER"||!["REMITLY SURESH","REMITLY BINITHA","HDFC SURESH","HDFC BINITHA","ROS INDIA"].includes(form.payBy))&&(
-            <input
-              value={form.payBy==="OTHER"?"":form.payBy}
-              onChange={e=>set("payBy",e.target.value||"OTHER")}
-              placeholder="Enter payment method…"
-              autoFocus
-              style={{...inp,marginTop:8,border:"1px solid "+shop.accent,fontWeight:600}}
-              onFocus={fo} onBlur={bl}/>
-          )}
-        </div>
-        <div>
-          <label style={lbl}>Payment Date</label>
-          <input type="date" value={form.payDate} onChange={e=>set("payDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-      </div>
-
-      {/* LOGISTICS */}
-      <Divider title="Logistics"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Logistic Service By</label>
-          <input value={form.logisticBy} onChange={e=>set("logisticBy",e.target.value)} placeholder="DHL, FedEx, India Post…" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Logistic Ref. Number</label>
-          <input value={form.logisticRef} onChange={e=>set("logisticRef",e.target.value)} placeholder="Tracking / AWB number" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Item Received Date</label>
-          <input type="date" value={form.receivedDate} onChange={e=>set("receivedDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-      </div>
-
-      {/* REMARKS */}
-      <div style={{marginBottom:16}}>
-        <label style={lbl}>Remarks</label>
-        <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Notes about this purchase…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
-      </div>
-
-      {/* ACTIONS */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave(form)}
-          style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
-          💾 Save Purchase
-        </button>
-        <button onClick={onClose}
-          style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
-          Cancel
-        </button>
-      </div>
-    </div>
-    </>
-  );
-};
-
-
-const NewCustomerForm=({shop,onSave,onClose,customers=[]})=>{
-  const [cf,setCf]=useState({
-    name:"",phone:"",email:"",
-    phoneSavedOn:"UK 888",
-    addressee:"",address:"",tag:"",remarks:"",
-  });
-  const sc=(k,v)=>setCf(f=>({...f,[k]:v}));
-
-  /* ── Autocomplete state ── */
-  const [acOpen,setAcOpen]=useState(false);
-  const [acMatches,setAcMatches]=useState([]);
-
-  const handleNameChange=(val)=>{
-    sc("name",val);
-    if(val.trim().length>=1){
-      const q=val.trim().toLowerCase();
-      const hits=(customers||[]).filter(c=>c.name.toLowerCase().includes(q));
-      setAcMatches(hits);
-      setAcOpen(hits.length>0);
-    } else {
-      setAcMatches([]);
-      setAcOpen(false);
-    }
-  };
-
-  const handlePickCustomer=(c)=>{
-    setCf(f=>({...f,
-      name:c.name,
-      phone:c.phone||f.phone,
-      email:c.email||f.email,
-      address:c.address||f.address,
-      addressee:c.addressee||f.addressee,
-      tag:c.tag||f.tag,
-      remarks:c.notes||f.remarks,
-      phoneSavedOn:c.phoneSavedOn||f.phoneSavedOn,
-    }));
-    setAcOpen(false);
-    setAcMatches([]);
-  };
-
-  const inp={
-    width:"100%",border:"1px solid #e2e8f0",borderRadius:9,
-    padding:"9px 13px",fontSize:13,outline:"none",
-    fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",
-    color:"#374151",background:"white",
-  };
-  const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
-  const fo=e=>e.target.style.borderColor=shop.accent;
-  const bl=e=>e.target.style.borderColor="#e2e8f0";
-
-  const handleSave=()=>{
-    if(!cf.name.trim()){alert("Customer name is required.");return;}
-    onSave({
-      id:Date.now(),
-      name:cf.name,phone:cf.phone,whatsapp:cf.phone,
-      address:cf.address,notes:cf.remarks,
-      purchases:0,spend:0,last:"—",tag:cf.tag,
-      email:cf.email,addressee:cf.addressee,phoneSavedOn:cf.phoneSavedOn,
-    });
-  };
-
-  return(
-    <div style={{display:"flex",flexDirection:"column",gap:14}}>
-      {/* name with autocomplete */}
-      <div style={{position:"relative"}}>
-        <label style={lbl}>Customer Name *</label>
-        <input value={cf.name} onChange={e=>handleNameChange(e.target.value)}
-          placeholder="Type to search existing customers…" style={inp}
-          onFocus={e=>{fo(e);if(cf.name.trim()&&acMatches.length)setAcOpen(true);}}
-          onBlur={e=>{bl(e);setTimeout(()=>setAcOpen(false),180);}}
-          autoComplete="off"/>
-        {/* ── dropdown ── */}
-        {acOpen&&acMatches.length>0&&(
-          <div style={{
-            position:"absolute",top:"100%",left:0,right:0,zIndex:200,
-            background:"white",border:"1px solid "+shop.accent+"55",
-            borderRadius:"0 0 12px 12px",boxShadow:"0 8px 24px rgba(0,0,0,0.12)",
-            maxHeight:220,overflowY:"auto",marginTop:-1,
-          }}>
-            <div style={{padding:"6px 12px",background:shop.accentBg,borderBottom:"1px solid "+shop.accent+"22"}}>
-              <span style={{fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.06em"}}>
-                {acMatches.length} match{acMatches.length!==1?"es":""} in database — click to autofill
-              </span>
-            </div>
-            {acMatches.map((c,i)=>(
-              <div key={c.id||i}
-                onMouseDown={()=>handlePickCustomer(c)}
-                style={{
-                  padding:"10px 14px",cursor:"pointer",
-                  borderBottom:i<acMatches.length-1?"1px solid #f1f5f9":"none",
-                  transition:"background 0.1s",
-                }}
-                onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg}
-                onMouseLeave={e=>e.currentTarget.style.background="white"}>
-                <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <div style={{
-                    width:32,height:32,borderRadius:9,flexShrink:0,
-                    background:shop.sb,display:"flex",alignItems:"center",
-                    justifyContent:"center",color:"white",fontWeight:800,fontSize:13,
-                  }}>{c.name.charAt(0)}</div>
-                  <div style={{flex:1,minWidth:0}}>
-                    <p style={{margin:0,fontWeight:700,fontSize:13,color:"#0f172a",
-                      overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</p>
-                    <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>{c.phone||"No phone"}{c.tag?" · "+c.tag:""}</p>
-                  </div>
-                  <span style={{fontSize:10,fontWeight:700,color:shop.accent,
-                    background:shop.accentBg,border:"1px solid "+shop.accent+"33",
-                    borderRadius:999,padding:"2px 8px",flexShrink:0}}>Select</span>
-                </div>
-              </div>
-            ))}
-            <div style={{padding:"8px 14px",background:"#f8fafc",borderTop:"1px solid #f1f5f9"}}>
-              <span style={{fontSize:10,color:"#94a3b8",fontWeight:600}}>↩ Or keep typing to create a new customer</span>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-        {/* phone */}
-        <div>
-          <label style={lbl}>Phone Number</label>
-          <input value={cf.phone} onChange={e=>sc("phone",e.target.value)}
-            placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        {/* email */}
-        <div>
-          <label style={lbl}>Email</label>
-          <input type="email" value={cf.email} onChange={e=>sc("email",e.target.value)}
-            placeholder="email@example.com" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-      </div>
-
-      {/* phone saved on */}
-      <div>
-        <label style={lbl}>Phone Number Saved On</label>
-        <select value={cf.phoneSavedOn} onChange={e=>sc("phoneSavedOn",e.target.value)} style={inp}>
-          {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
-        </select>
-      </div>
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-        {/* addressee */}
-        <div>
-          <label style={lbl}>Addressee</label>
-          <input value={cf.addressee} onChange={e=>sc("addressee",e.target.value)}
-            placeholder="Name on delivery label" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        {/* tag */}
-        <div>
-          <label style={lbl}>Tag</label>
-          <select value={cf.tag} onChange={e=>sc("tag",e.target.value)} style={inp}>
-            {["","VIP","Wholesale","New Customer","Regular","Not Good","Regular Return","Banned"].map(o=><option key={o} value={o}>{o||"None"}</option>)}
-          </select>
-        </div>
-      </div>
-
-      {/* address */}
-      <div>
-        <label style={lbl}>Address</label>
-        <textarea value={cf.address} onChange={e=>sc("address",e.target.value)}
-          rows={2} placeholder="Full delivery address"
-          style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
-      </div>
-
-      {/* remarks */}
-      <div>
-        <label style={lbl}>Remarks</label>
-        <textarea value={cf.remarks} onChange={e=>sc("remarks",e.target.value)}
-          rows={2} placeholder="Any notes about this customer"
-          style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
-      </div>
-
-      {/* actions */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingTop:4}}>
-        <button onClick={handleSave}
-          style={{padding:"12px 0",borderRadius:11,border:"none",
-            background:shop.accent,color:"white",fontWeight:800,fontSize:14,
-            cursor:"pointer",fontFamily:"inherit",
-            boxShadow:"0 4px 14px "+shop.accent+"44"}}>
-          ✅ Add Customer
-        </button>
-        <button onClick={onClose}
-          style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",
-            background:"white",color:"#374151",fontWeight:700,fontSize:14,
-            cursor:"pointer",fontFamily:"inherit"}}>
-          Cancel
-        </button>
-      </div>
-    </div>
-  );
-};
-
-/* ══════════════════════════════════════════════════════
-   NEW SALE FORM
-══════════════════════════════════════════════════════ */
-const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,customers=[]})=>{
-  const _now=new Date();
-  const _yr=_now.getMonth()>=3?_now.getFullYear():_now.getFullYear()-1;
-  const _fySuffix=String(_yr+1).slice(-1);
- const _stored=()=>{try{const v=localStorage.getItem("ros_lastInv_"+shopId);return v?parseInt(v)||1312:1312;}catch{return 1312;}};
-  const _nextNum=_stored()+1;
-  const _seq=String(_nextNum).padStart(4,"0");
-  const _pfx = shopId==="ros-india" ? "IND" : "ROS";
-  const autoInv=`${_pfx}${_seq}${_fySuffix}`;
-
-  // ── Multi-item lines state ──
-  const blankLine=()=>({id:Date.now()+Math.random(),name:"",qty:"1",price:""});
-  const [lines,setLines]=useState([blankLine()]);
-
-  const [form,setForm]=useState({
-    date:        new Date().toISOString().slice(0,10),
-    invoiceNo:   autoInv,
-    invEditing:  false,
-    customer:    "",
-    contact:     "",
-    taxInclusive: false,
-    taxRate:     0,
-    discount:    "",
-    otherCharges:"",
-    otherChargesLabel:"Other Charges",
-    payBy:       "SHOP",
-    shopInvoiceNo: "",
-    status:      shopId==="ros-india" ? "ORDER NOT PLACED" : "PENDING",
-    sentDate:    "",
-    returnReqDate: "",
-    returnRcvd:  "",
-    refundAmt:   "",
-    tag:         "",
-    remarks:     "",
-  });
-  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-
-  const [customerList,setCustomerList]=useState(customers.length>0?[...customers]:[...CUSTOMERS]);
-  const [showNewCust,setShowNewCust]=useState(false);
-  const [custAcOpen,setCustAcOpen]=useState(false);
-  const [custAcMatches,setCustAcMatches]=useState([]);
-
-  const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white",transition:"border-color 0.15s"};
-  const fo=e=>e.target.style.borderColor=shop.accent;
-  const bl=e=>e.target.style.borderColor="#e2e8f0";
-  const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
-  const Divider=({title})=>(<div style={{display:"flex",alignItems:"center",gap:8,margin:"6px 0 12px"}}><div style={{height:1,flex:1,background:"#f1f5f9"}}/><span style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap"}}>{title}</span><div style={{height:1,flex:1,background:"#f1f5f9"}}/></div>);
-
-  const isReturnRequested=["RETURN REQUESTED","RTRN REQSTD"].includes(form.status);
-  const isReturnReceived=["RETURN RECEIVED","RETRN RCVD"].includes(form.status);
-  const isRefundOnly=["EXCHANGED","REFUNDED"].includes(form.status);
-  const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","WORK IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
-
-  const handleAddCustomer=(newCust)=>{setCustomerList(l=>[newCust,...l]);set("customer",newCust.name);set("contact",newCust.phone);setShowNewCust(false);};
-  const updateLine=(id,key,val)=>setLines(ls=>ls.map(l=>l.id===id?{...l,[key]:val}:l));
-  const addLine=()=>setLines(ls=>[...ls,blankLine()]);
-  const removeLine=(id)=>setLines(ls=>ls.length>1?ls.filter(l=>l.id!==id):ls);
-
-  const itemsSubtotal=parseFloat(lines.reduce((sum,l)=>{const q=parseFloat(l.qty)||0;const p=parseFloat(l.price)||0;return sum+(q*p);},0).toFixed(2));
-  const discountAmt=parseFloat(form.discount)||0;
-  const otherChargesAmt=parseFloat(form.otherCharges)||0;
-  const preGstTotal=parseFloat((itemsSubtotal-discountAmt+otherChargesAmt).toFixed(2));
-  const taxRate=(form.taxRate||0)/100;
-  const gstAmt=parseFloat((preGstTotal*taxRate).toFixed(2));
-  const grandTotal=parseFloat((preGstTotal+gstAmt).toFixed(2));
-
-  const handleSave=()=>{
-    const filledLines=lines.filter(l=>l.name.trim()||(parseFloat(l.price)>0));
-    const combinedItem=filledLines.map(l=>`${l.name}(x${l.qty})`).join(", ")||"Sale";
-    const combinedQty=filledLines.reduce((s,l)=>s+(parseFloat(l.qty)||0),0)||1;
-    onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel});
-  };
-
-  return(<>
-    {showNewCust&&(<div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setShowNewCust(false)}><div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.50)",backdropFilter:"blur(4px)"}}/><div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.25)",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",zIndex:81}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 22px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"12",borderRadius:"20px 20px 0 0"}}><h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>➕ New Customer</h3><button onClick={()=>setShowNewCust(false)} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button></div><div style={{padding:22}}><NewCustomerForm shop={shop} onSave={handleAddCustomer} onClose={()=>setShowNewCust(false)} customers={customerList}/></div></div></div>)}
-
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"78vh",overflowY:"auto",paddingRight:4}}>
-
-      <Divider title="Basic Info"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div><label style={lbl}>Date</label><input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
-        <div>
-          <label style={lbl}>Invoice Number</label>
-          <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            <input value={form.invoiceNo} readOnly={!form.invEditing} onChange={e=>set("invoiceNo",e.target.value)} style={{...inp,flex:1,background:form.invEditing?"white":"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,border:"1px solid "+(form.invEditing?shop.accent:"#e2e8f0")}} onFocus={fo} onBlur={bl}/>
-            <button onClick={()=>set("invEditing",!form.invEditing)} style={{flexShrink:0,width:34,height:34,borderRadius:8,cursor:"pointer",border:"1px solid "+(form.invEditing?shop.accent:"#e2e8f0"),background:form.invEditing?shop.accent:"#f8fafc",color:form.invEditing?"white":"#64748b",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}}>{form.invEditing?"✓":"✏️"}</button>
-          </div>
-          <p style={{margin:"3px 0 0",fontSize:10,color:"#94a3b8"}}>Auto-generated · ✏️ to edit</p>
-        </div>
-      </div>
-
-      <Divider title="Customer"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div style={{position:"relative"}}>
-          <label style={lbl}>Customer Name</label>
-          <div style={{display:"flex",gap:6}}>
-            <input value={form.customer} onChange={e=>{set("customer",e.target.value);const q=e.target.value.trim().toLowerCase();if(q.length>=1){const m=customerList.filter(c=>c.name.toLowerCase().includes(q)).slice(0,8);setCustAcMatches(m);setCustAcOpen(m.length>0);}else{setCustAcOpen(false);setCustAcMatches([]);}}} onBlur={()=>setTimeout(()=>setCustAcOpen(false),180)} placeholder="Type customer name…" style={{...inp,flex:1}} onFocus={fo} autoComplete="off"/>
-            <button type="button" onClick={()=>setShowNewCust(true)} style={{flexShrink:0,width:34,height:34,borderRadius:8,cursor:"pointer",border:"1px solid "+shop.accent+"66",background:shop.accentBg,color:shop.accent,fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>+</button>
-          </div>
-          {custAcOpen&&custAcMatches.length>0&&(<div style={{position:"absolute",top:"100%",left:0,zIndex:200,minWidth:"100%",width:"max-content",maxWidth:420,background:"white",border:"1px solid "+shop.accent+"55",borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.16)",maxHeight:260,overflowY:"auto",marginTop:4}}>
-            <div style={{padding:"6px 14px",background:shop.accentBg,borderBottom:"1px solid "+shop.accent+"22",borderRadius:"12px 12px 0 0"}}><span style={{fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.06em"}}>{custAcMatches.length} match{custAcMatches.length!==1?"es":""} — click to select</span></div>
-            {custAcMatches.map((c,i)=>(<div key={c.id||i} onMouseDown={()=>{set("customer",c.name);set("contact",c.phone||"");setCustAcOpen(false);setCustAcMatches([]);}} style={{padding:"10px 14px",cursor:"pointer",borderBottom:i<custAcMatches.length-1?"1px solid #f1f5f9":"none"}} onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg} onMouseLeave={e=>e.currentTarget.style.background="white"}><div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:32,height:32,borderRadius:9,flexShrink:0,background:shop.sb,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:13}}>{c.name.charAt(0)}</div><div style={{flex:1}}><p style={{margin:0,fontWeight:700,fontSize:13,color:"#0f172a",whiteSpace:"nowrap"}}>{c.name}</p><p style={{margin:0,fontSize:11,color:"#94a3b8",whiteSpace:"nowrap"}}>{c.phone||"No phone"}{c.tag?" · "+c.tag:""}</p></div><span style={{fontSize:10,fontWeight:700,color:shop.accent,background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:999,padding:"2px 10px",flexShrink:0,marginLeft:8}}>Select</span></div></div>))}
-          </div>)}
-        </div>
-        <div><label style={lbl}>Contact Number</label><input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/></div>
-      </div>
-
-      <Divider title="Items"/>
-      <div style={{marginBottom:12}}>
-        {shopItems.length>0&&(<div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>{shopItems.map((itm,idx)=>{const label=typeof itm==="object"&&itm!==null?(itm.name||itm.label||"Item"):String(itm);const value=typeof itm==="object"&&itm!==null?(itm.name||itm.label||""):String(itm);return(<button key={idx} type="button" onClick={()=>{const emptyIdx=lines.findIndex(l=>!l.name.trim());if(emptyIdx>=0){updateLine(lines[emptyIdx].id,"name",value);}else{setLines(ls=>[...ls,{...blankLine(),name:value}]);}}} style={{padding:"4px 12px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",border:"1px solid "+shop.accent+"55",background:"white",color:shop.accentText,transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.color="white";}} onMouseLeave={e=>{e.currentTarget.style.background="white";e.currentTarget.style.color=shop.accentText;}}>+ {label}</button>);})}</div>)}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 80px 110px 32px",gap:6,marginBottom:4}}>
-          <span style={{...lbl,marginBottom:0}}>Item Name</span>
-          <span style={{...lbl,marginBottom:0}}>Qty</span>
-          <span style={{...lbl,marginBottom:0}}>Price ({shop.symbol})</span>
-          <span/>
-        </div>
-        {lines.map((line,idx)=>(<div key={line.id} style={{display:"grid",gridTemplateColumns:"1fr 80px 110px 32px",gap:6,marginBottom:6,alignItems:"center"}}>
-          <input value={line.name} onChange={e=>updateLine(line.id,"name",e.target.value)} placeholder={"Item "+(idx+1)} style={inp} onFocus={fo} onBlur={bl}/>
-          <input type="number" min="1" value={line.qty} onChange={e=>updateLine(line.id,"qty",e.target.value)} style={{...inp,textAlign:"center"}} onFocus={fo} onBlur={bl}/>
-          <input type="number" min="0" value={line.price} onChange={e=>updateLine(line.id,"price",e.target.value)} placeholder="0.00" style={{...inp,textAlign:"right"}} onFocus={fo} onBlur={bl}/>
-          <button type="button" onClick={()=>removeLine(line.id)} style={{width:32,height:36,borderRadius:8,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"inherit"}}>×</button>
-        </div>))}
-        <div style={{display:"flex",gap:8,alignItems:"center",marginTop:4}}>
-          <button type="button" onClick={addLine} style={{display:"flex",alignItems:"center",gap:5,padding:"7px 14px",borderRadius:8,border:"1px dashed "+shop.accent+"66",background:shop.accentBg,color:shop.accentText,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>＋ Add Item</button>
-          {lines.some(l=>l.name.trim())&&onAddShopItem&&(<button type="button" onClick={()=>{lines.filter(l=>l.name.trim()).forEach(l=>onAddShopItem(l.name.trim()));}} style={{padding:"7px 14px",borderRadius:8,border:"1px solid "+shop.accent+"44",background:"white",color:shop.accentText,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>💾 Save Items</button>)}
-        </div>
-      </div>
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-        <div><label style={lbl}>Discount ({shop.symbol})</label><input type="number" min="0" value={form.discount} onChange={e=>set("discount",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/></div>
-        <div>
-          <div style={{display:"flex",gap:6,alignItems:"flex-end",marginBottom:5}}>
-            <label style={{...lbl,marginBottom:0,flex:1}}>Other Charges ({shop.symbol})</label>
-            <input value={form.otherChargesLabel} onChange={e=>set("otherChargesLabel",e.target.value)} placeholder="Label" style={{fontSize:10,padding:"2px 6px",borderRadius:6,border:"1px solid #e2e8f0",outline:"none",fontFamily:"DM Sans,sans-serif",color:"#64748b",width:90}}/>
-          </div>
-          <input type="number" min="0" value={form.otherCharges} onChange={e=>set("otherCharges",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-      </div>
-
-      <div style={{marginBottom:16}}>
-        <div style={{background:form.taxRate===0?"#f8fafc":(form.taxInclusive?"#f0fdf4":"#eff6ff"),border:"1px solid "+(form.taxRate===0?"#e2e8f0":(form.taxInclusive?"#bbf7d0":"#bfdbfe")),borderRadius:10,padding:"12px 14px"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
-            <div>
-              <p style={{margin:0,fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>GST / Tax</p>
-              <p style={{margin:"2px 0 0",fontSize:12,fontWeight:700,color:form.taxRate===0?"#94a3b8":(form.taxInclusive?"#15803d":"#1d4ed8")}}>{form.taxRate===0?"No tax applied":(form.taxInclusive?"Price includes tax — calculated backwards":"Tax added on top of price")}</p>
-            </div>
-            {form.taxRate>0&&(<div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}} onClick={()=>set("taxInclusive",!form.taxInclusive)}><span style={{fontSize:12,fontWeight:700,color:"#64748b"}}>{form.taxInclusive?"Inclusive":"Exclusive"}</span><div style={{width:44,height:24,borderRadius:999,background:form.taxInclusive?shop.accent:"#cbd5e1",position:"relative",transition:"background 0.2s",boxShadow:"inset 0 1px 3px rgba(0,0,0,0.15)"}}><div style={{position:"absolute",top:3,left:form.taxInclusive?22:3,width:18,height:18,borderRadius:"50%",background:"white",transition:"left 0.2s",boxShadow:"0 1px 4px rgba(0,0,0,0.2))"}}/></div></div>)}
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-            <span style={{fontSize:11,fontWeight:700,color:"#64748b",marginRight:2}}>Tax Rate:</span>
-            {[0,5,10,18,20].map(r=>(<button key={r} type="button" onClick={()=>set("taxRate",r)} style={{padding:"4px 12px",borderRadius:999,border:"2px solid "+(form.taxRate===r?shop.accent:"#e2e8f0"),background:form.taxRate===r?shop.accent:"white",color:form.taxRate===r?"white":"#374151",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>{r}%</button>))}
-          </div>
-        </div>
-      </div>
-
-      <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:12,padding:"14px 16px",marginBottom:16}}>
-        <p style={{margin:"0 0 10px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>Order Summary</p>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#64748b"}}>Items Subtotal</span><span style={{fontSize:13,fontWeight:600,color:"#374151"}}>{shop.symbol}{itemsSubtotal.toLocaleString()}</span></div>
-        {discountAmt>0&&(<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#dc2626"}}>Discount</span><span style={{fontSize:13,fontWeight:600,color:"#dc2626"}}>− {shop.symbol}{discountAmt.toLocaleString()}</span></div>)}
-        {otherChargesAmt>0&&(<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#64748b"}}>{form.otherChargesLabel||"Other Charges"}</span><span style={{fontSize:13,fontWeight:600,color:"#374151"}}>+ {shop.symbol}{otherChargesAmt.toLocaleString()}</span></div>)}
-        {form.taxRate>0&&(<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#64748b"}}>GST / Tax ({form.taxRate}%)</span><span style={{fontSize:13,fontWeight:600,color:"#374151"}}>+ {shop.symbol}{gstAmt.toLocaleString()}</span></div>)}
-        <div style={{display:"flex",justifyContent:"space-between",borderTop:"2px solid #0f172a",paddingTop:10,marginTop:8}}><span style={{fontSize:15,fontWeight:900,color:"#0f172a"}}>Grand Total</span><span style={{fontSize:17,fontWeight:900,color:shop.accent}}>{shop.symbol}{grandTotal.toLocaleString()}</span></div>
-      </div>
-
-      <Divider title="Payment"/>
-      <div style={{display:"grid",gridTemplateColumns:form.payBy==="SHOP"?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
-        <div><label style={lbl}>Payment By</label><select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"].map(o=><option key={o}>{o}</option>)}</select></div>
-        {form.payBy==="SHOP"&&(<div><label style={lbl}>Shop Invoice No.</label><input value={form.shopInvoiceNo||""} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 12345" style={inp} onFocus={fo} onBlur={bl}/></div>)}
-      </div>
-
-      <Divider title="Delivery"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#f8fafc",borderRadius:12,padding:"14px",border:"1px solid #e2e8f0"}}>
-        <div><label style={lbl}>Delivery Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,color:statusColor[form.status]||"#374151",fontWeight:700}}>{(shopId==="ros-india"?["ORDER NOT PLACED","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o} value={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>))}</select></div>
-        <div><label style={lbl}>Sent / Dispatch Date</label><input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
-      </div>
-
-      {isReturnRequested&&(
-        <>
-          <Divider title="Return Request"/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#fff7ed",borderRadius:12,padding:"14px",border:"1px solid #fed7aa"}}>
-            <div>
-              <label style={{...lbl,color:"#c2410c"}}>↩️ Return Request Date</label>
-              <input type="date" value={form.returnReqDate} onChange={e=>set("returnReqDate",e.target.value)} style={{...inp,border:"1px solid #fed7aa"}} onFocus={fo} onBlur={bl}/>
-              <p style={{margin:"6px 0 0",fontSize:11,color:"#92400e"}}>Record when the customer requested this return. Mark as <strong>Return Received</strong> once the item arrives back.</p>
-            </div>
-          </div>
-        </>
-      )}
-
-      {isReturnReceived&&(
-        <>
-          <Divider title="Return Received"/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#fff5f5",borderRadius:12,padding:"14px",border:"1px solid #fecaca"}}>
-            <div>
-              <label style={{...lbl,color:"#dc2626"}}>📬 Return Received Date</label>
-              <input type="date" value={form.returnRcvd} onChange={e=>set("returnRcvd",e.target.value)} style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/>
-            </div>
-            <div>
-              <label style={{...lbl,color:"#dc2626"}}>💸 Refunded Amount ({shop.symbol})</label>
-              <input type="number" value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/>
-            </div>
-          </div>
-        </>
-      )}
-
-      {isRefundOnly&&(
-        <>
-          <Divider title="Refund"/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#f5f3ff",borderRadius:12,padding:"14px",border:"1px solid #ddd6fe"}}>
-            <div>
-              <label style={{...lbl,color:"#6b21a8"}}>💸 Refunded Amount ({shop.symbol})</label>
-              <input type="number" value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #ddd6fe"}} onFocus={fo} onBlur={bl}/>
-            </div>
-          </div>
-        </>
-      )}
-
-      <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
-      <div style={{marginBottom:16}}><label style={lbl}>Remarks</label><textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Any additional notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/></div>
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={handleSave} style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
-          💾 Save Sale {grandTotal>0?"("+shop.symbol+grandTotal.toLocaleString()+")":""}
-        </button>
-        <button onClick={onClose} style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
-      </div>
-    </div>
-  </>);
-};
-
-/* =========================================================
-   INLINE PANEL COMPONENTS
-   ========================================================= */
-
-/* ── CustomerEditModal — proper component so hooks are always called at top level ── */
-const CustomerEditModal=({customer,shop,onSave,onClose})=>{
-  const [ef,setEf]=useState({...customer});
-  const se=(k,v)=>setEf(f=>({...f,[k]:v}));
-  const einp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 12px",
-    fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",
-    color:"#374151",background:"white",transition:"border-color 0.15s"};
-  const elbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:4,
-    textTransform:"uppercase",letterSpacing:"0.05em"};
-  const fo=e=>e.target.style.borderColor=shop.accent;
-  const bl=e=>e.target.style.borderColor="#e2e8f0";
-  return(
-    <div style={{position:"fixed",inset:0,zIndex:70,display:"flex",alignItems:"center",
-      justifyContent:"center",padding:16}} onClick={onClose}>
-      <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(5px)"}}/>
-      <div style={{position:"relative",background:"white",borderRadius:20,
-        boxShadow:"0 32px 64px rgba(0,0,0,0.22)",width:"100%",maxWidth:560,
-        maxHeight:"90vh",overflowY:"auto",zIndex:71}}
-        onClick={e=>e.stopPropagation()}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-          padding:"16px 24px",borderBottom:"1px solid #f1f5f9",
-          background:shop.accent+"10",borderRadius:"20px 20px 0 0"}}>
-          <p style={{margin:0,fontWeight:900,fontSize:16,color:"#0f172a"}}>✏️ Edit — {ef.name}</p>
-          <button onClick={onClose}
-            style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#f1f5f9",
-              cursor:"pointer",fontSize:20,color:"#64748b",display:"flex",alignItems:"center",
-              justifyContent:"center",lineHeight:1}}>×</button>
-        </div>
-        <div style={{padding:24,display:"flex",flexDirection:"column",gap:14}}>
-          <div>
-            <label style={elbl}>Customer Name *</label>
-            <input value={ef.name||""} onChange={e=>se("name",e.target.value)}
-              style={einp} onFocus={fo} onBlur={bl}/>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-            <div>
-              <label style={elbl}>Phone Number</label>
-              <input value={ef.phone||""} onChange={e=>se("phone",e.target.value)}
-                style={einp} onFocus={fo} onBlur={bl}/>
-            </div>
-            <div>
-              <label style={elbl}>Email</label>
-              <input value={ef.email||""} onChange={e=>se("email",e.target.value)}
-                style={einp} onFocus={fo} onBlur={bl}/>
-            </div>
-          </div>
-          <div>
-            <label style={elbl}>Phone Number Saved On</label>
-            <select value={ef.phoneSavedOn||"UK 888"} onChange={e=>se("phoneSavedOn",e.target.value)} style={einp}>
-              {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
-            </select>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-            <div>
-              <label style={elbl}>Addressee</label>
-              <input value={ef.addressee||""} onChange={e=>se("addressee",e.target.value)}
-                placeholder="Name on delivery label" style={einp} onFocus={fo} onBlur={bl}/>
-            </div>
-            <div>
-              <label style={elbl}>Tag</label>
-              <select value={ef.tag||""} onChange={e=>se("tag",e.target.value)} style={einp}>
-                {["","VIP","Wholesale","New Customer","Regular","Not Good","Regular Return","Banned"].map(o=>(
-                  <option key={o} value={o}>{o||"None"}</option>
-                ))}
-              </select>
-            </div>
-          </div>
-          <div>
-            <label style={elbl}>Address</label>
-            <textarea value={ef.address||""} onChange={e=>se("address",e.target.value)}
-              rows={2} style={{...einp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
-          </div>
-          <div>
-            <label style={elbl}>Notes / Remarks</label>
-            <textarea value={ef.notes||""} onChange={e=>se("notes",e.target.value)}
-              rows={2} style={{...einp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingTop:4}}>
-            <button onClick={()=>onSave(ef)}
-              style={{padding:"12px 0",borderRadius:11,border:"none",
-                background:shop.accent,color:"white",fontWeight:800,fontSize:14,
-                cursor:"pointer",fontFamily:"inherit",
-                boxShadow:"0 4px 14px "+shop.accent+"44"}}>
-              💾 Save Changes
-            </button>
-            <button onClick={onClose}
-              style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",
-                background:"white",color:"#374151",fontWeight:700,fontSize:14,
-                cursor:"pointer",fontFamily:"inherit"}}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-/* ── CustomersPanel ── */
-const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCustomer})=>{
-  const [viewCust,setViewCust]=useState(null);
-  const [editCust,setEditCust]=useState(null);
-  const [delCust,setDelCust]=useState(null);   // customer staged for deletion
-  const [hovR,setHovR]=useState(null);
-  const [tagFilter,setTagFilter]=useState(null); // must be declared before filtered
-  const ALL_TAGS=["VIP","Wholesale","New Customer","Regular","Not Good","Regular Return","Banned"];
-  const filtered=(customers||[]).filter(c=>{
-    const matchSearch=!search||c.name.toLowerCase().includes(search.toLowerCase())||
-      (c.phone||"").includes(search)||(c.tag||"").toLowerCase().includes(search.toLowerCase());
-    const matchTag=!tagFilter||(c.tag||"")===tagFilter;
-    return matchSearch&&matchTag;
-  });
-  const tagColor={
-    "VIP":            {bg:"#fef9c3",color:"#854d0e",border:"#fde047",ic:"⭐"},
-    "Wholesale":      {bg:"#ede9fe",color:"#5b21b6",border:"#c4b5fd",ic:"📦"},
-    "New Customer":   {bg:"#dbeafe",color:"#1e40af",border:"#93c5fd",ic:"🆕"},
-    "Regular":        {bg:"#dcfce7",color:"#166534",border:"#86efac",ic:"✅"},
-    "Not Good":       {bg:"#fff7ed",color:"#c2410c",border:"#fdba74",ic:"⚠️"},
-    "Regular Return": {bg:"#fef3c7",color:"#92400e",border:"#fcd34d",ic:"🔄"},
-    "Banned":         {bg:"#fee2e2",color:"#991b1b",border:"#f87171",ic:"🚫"},
-  };
-  const tc=t=>tagColor[t]||{bg:"#f1f5f9",color:"#475569",border:"#e2e8f0",ic:"👤"};
-
-  /* ── shared input style for edit form ── */
-  const einp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 12px",
-    fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",
-    color:"#374151",background:"white",transition:"border-color 0.15s"};
-  const elbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:4,
-    textTransform:"uppercase",letterSpacing:"0.05em"};
-
-  return(
-    <div style={{padding:0}}>
-      {/* ══ VIEW MODAL ══ */}
-      {viewCust&&(
-        <div style={{position:"fixed",inset:0,zIndex:70,display:"flex",alignItems:"center",
-          justifyContent:"center",padding:16}} onClick={()=>setViewCust(null)}>
-          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(5px)"}}/>
-          <div style={{position:"relative",background:"white",borderRadius:20,
-            boxShadow:"0 32px 64px rgba(0,0,0,0.22)",width:"100%",maxWidth:560,
-            maxHeight:"90vh",overflowY:"auto",zIndex:71}}
-            onClick={e=>e.stopPropagation()}>
-            {/* header */}
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-              padding:"18px 24px",borderBottom:"1px solid #f1f5f9",
-              background:shop.accent+"10",borderRadius:"20px 20px 0 0"}}>
-              <div style={{display:"flex",alignItems:"center",gap:12}}>
-                <div style={{width:44,height:44,borderRadius:13,background:shop.sb,
-                  display:"flex",alignItems:"center",justifyContent:"center",
-                  color:"white",fontWeight:900,fontSize:18,boxShadow:"0 4px 12px rgba(0,0,0,0.15)"}}>
-                  {viewCust.name.charAt(0)}
-                </div>
-                <div>
-                  <p style={{margin:0,fontWeight:900,fontSize:16,color:"#0f172a"}}>{viewCust.name}</p>
-                  {viewCust.tag&&(()=>{const t=tc(viewCust.tag);return(
-                    <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:999,
-                      background:t.bg,color:t.color,border:"1px solid "+t.border}}>{viewCust.tag}</span>
-                  );})()}
-                </div>
-              </div>
-              <button onClick={()=>setViewCust(null)}
-                style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#f1f5f9",
-                  cursor:"pointer",fontSize:20,color:"#64748b",display:"flex",alignItems:"center",
-                  justifyContent:"center",lineHeight:1}}>×</button>
-            </div>
-            {/* body */}
-            <div style={{padding:24}}>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-                {[
-                  {l:"Phone",         v:viewCust.phone||"—",         ic:"📞"},
-                  {l:"Phone Saved On",v:viewCust.phoneSavedOn||"—",  ic:"📱"},
-                  {l:"WhatsApp",      v:viewCust.whatsapp||"—",      ic:"💬"},
-                  {l:"Email",         v:viewCust.email||"—",         ic:"📧"},
-                  {l:"Purchases",     v:viewCust.purchases||0,        ic:"🛒"},
-                  {l:"Total Spend",   v:(viewCust.spend>=10000?"₹":"£")+(viewCust.spend||0).toLocaleString(), ic:"💰"},
-                  {l:"Last Order",    v:viewCust.last||"—",           ic:"📅"},
-                  {l:"Addressee",     v:viewCust.addressee||"—",      ic:"🏷"},
-                ].map((f,i)=>(
-                  <div key={i} style={{background:"#f8fafc",borderRadius:10,padding:"10px 14px",
-                    border:"1px solid #f1f5f9"}}>
-                    <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#94a3b8",
-                      textTransform:"uppercase",letterSpacing:"0.06em"}}>{f.ic} {f.l}</p>
-                    <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a",
-                      wordBreak:"break-word"}}>{String(f.v)}</p>
-                  </div>
-                ))}
-              </div>
-              {/* address full width */}
-              <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 14px",
-                border:"1px solid #f1f5f9",marginBottom:12}}>
-                <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#94a3b8",
-                  textTransform:"uppercase",letterSpacing:"0.06em"}}>📍 Address</p>
-                <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{viewCust.address||"—"}</p>
-              </div>
-              {viewCust.notes&&(
-                <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,
-                  padding:"10px 14px",marginBottom:12}}>
-                  <p style={{margin:"0 0 3px",fontSize:9,fontWeight:800,color:"#92400e",
-                    textTransform:"uppercase",letterSpacing:"0.06em"}}>📝 Notes</p>
-                  <p style={{margin:0,fontSize:13,color:"#92400e"}}>{viewCust.notes}</p>
-                </div>
-              )}
-              <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:4}}>
-                <button onClick={()=>{setEditCust(viewCust);setViewCust(null);}}
-                  style={{padding:"9px 20px",borderRadius:10,border:"none",
-                    background:shop.accent,color:"white",fontWeight:700,fontSize:13,
-                    cursor:"pointer",fontFamily:"inherit",boxShadow:"0 3px 10px "+shop.accent+"44"}}>
-                  ✏️ Edit
-                </button>
-                <button onClick={()=>setViewCust(null)}
-                  style={{padding:"9px 20px",borderRadius:10,border:"1px solid #e2e8f0",
-                    background:"white",color:"#374151",fontWeight:700,fontSize:13,
-                    cursor:"pointer",fontFamily:"inherit"}}>
-                  Close
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ══ EDIT MODAL ══ */}
-            {editCust&&<CustomerEditModal customer={editCust} shop={shop} onSave={(ef)=>{setCustomers(prev=>prev.map(x=>x.id===ef.id?{...x,...ef}:x));setEditCust(null);}} onClose={()=>setEditCust(null)}/>}
-
-      {/* ══ DELETE CONFIRM MODAL ══ */}
-      {delCust&&(
-        <div style={{position:"fixed",inset:0,zIndex:70,display:"flex",alignItems:"center",
-          justifyContent:"center",padding:16}} onClick={()=>setDelCust(null)}>
-          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(5px)"}}/>
-          <div style={{position:"relative",background:"white",borderRadius:20,
-            boxShadow:"0 32px 64px rgba(0,0,0,0.22)",width:"100%",maxWidth:420,zIndex:71}}
-            onClick={e=>e.stopPropagation()}>
-            <div style={{padding:28,textAlign:"center"}}>
-              <div style={{fontSize:48,marginBottom:12}}>⚠️</div>
-              <p style={{margin:"0 0 6px",fontWeight:900,fontSize:17,color:"#991b1b"}}>
-                Delete Customer?
-              </p>
-              <p style={{margin:"0 0 20px",fontSize:13,color:"#64748b",lineHeight:1.6}}>
-                You are about to permanently delete <strong style={{color:"#0f172a"}}>{delCust.name}</strong> from the customer database.<br/>This action cannot be undone.
-              </p>
-              <div style={{display:"flex",gap:10}}>
-                <button onClick={()=>setDelCust(null)}
-                  style={{flex:1,padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",
-                    background:"white",color:"#374151",fontWeight:700,fontSize:14,
-                    cursor:"pointer",fontFamily:"inherit"}}>
-                  ← Cancel
-                </button>
-                <button onClick={()=>{
-                    setCustomers(prev=>prev.filter(x=>x.id!==delCust.id));
-                    if(dbDeleteCustomer) dbDeleteCustomer(delCust.id);
-                    setDelCust(null);
-                  }}
-                  style={{flex:1,padding:"12px 0",borderRadius:11,border:"none",
-                    background:"#dc2626",color:"white",fontWeight:800,fontSize:14,
-                    cursor:"pointer",fontFamily:"inherit",
-                    boxShadow:"0 4px 14px rgba(220,38,38,0.35)"}}>
-                  🗑 Yes, Delete
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ══ TABLE HEADER + TAG FILTERS ══ */}
-      <div style={{marginBottom:20}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-          <div>
-            <h2 style={{margin:"0 0 2px",fontSize:20,fontWeight:800,color:"#0f172a"}}>Customers</h2>
-            <p style={{margin:0,fontSize:12,color:"#94a3b8"}}>
-              {filtered.length} of {(customers||[]).length} customer{(customers||[]).length!==1?"s":""}
-              {tagFilter&&<span style={{color:"#64748b"}}> · filtered by <strong>{tagFilter}</strong></span>}
-            </p>
-          </div>
-          {tagFilter&&(
-            <button onClick={()=>setTagFilter(null)}
-              style={{fontSize:11,fontWeight:700,color:"#64748b",background:"#f1f5f9",
-                border:"1px solid #e2e8f0",borderRadius:999,padding:"4px 12px",
-                cursor:"pointer",fontFamily:"inherit"}}>
-              ✕ Clear filter
-            </button>
-          )}
-        </div>
-        {/* Tag filter pills */}
-        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          {ALL_TAGS.map(tag=>{
-            const t=tc(tag);
-            const count=(customers||[]).filter(c=>c.tag===tag).length;
-            const isActive=tagFilter===tag;
-            return(
-              <button key={tag}
-                onClick={()=>setTagFilter(isActive?null:tag)}
-                style={{
-                  display:"inline-flex",alignItems:"center",gap:5,
-                  fontSize:11,fontWeight:700,padding:"5px 12px",borderRadius:999,
-                  cursor:"pointer",fontFamily:"inherit",
-                  transition:"all 0.15s",
-                  background:isActive?t.color:t.bg,
-                  color:isActive?"white":t.color,
-                  border:"2px solid "+(isActive?t.color:t.border),
-                  boxShadow:isActive?"0 2px 8px "+t.color+"55":"none",
-                  transform:isActive?"scale(1.04)":"scale(1)",
-                }}>
-                <span>{t.ic}</span>
-                {tag}
-                <span style={{
-                  background:isActive?"rgba(255,255,255,0.25)":t.color+"22",
-                  color:isActive?"white":t.color,
-                  borderRadius:999,padding:"1px 7px",fontSize:10,fontWeight:800,
-                }}>{count}</span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div style={{background:"white",borderRadius:16,border:"1px solid #f1f5f9",overflow:"hidden",boxShadow:"0 2px 12px rgba(0,0,0,0.04)"}}>
-        <table style={{width:"100%",borderCollapse:"collapse"}}>
-          <thead>
-            <tr style={{background:"#f8fafc",borderBottom:"1px solid #f1f5f9"}}>
-              {["Customer","Contact","Address","Purchases","Total Spend","Last Order","Tag","Actions"].map(h=>(
-                <th key={h} style={{padding:"11px 16px",fontSize:10,fontWeight:800,color:"#64748b",
-                  textTransform:"uppercase",letterSpacing:"0.06em",textAlign:"left",whiteSpace:"nowrap"}}>
-                  {h}
-                </th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length===0&&(
-              <tr><td colSpan={8} style={{padding:40,textAlign:"center",color:"#94a3b8",fontSize:13}}>No customers found</td></tr>
-            )}
-            {filtered.map((c,i)=>{
-              const isH=hovR===c.id;
-              const t=tc(c.tag);
-              return(
-                <tr key={c.id}
-                  onMouseEnter={()=>setHovR(c.id)}
-                  onMouseLeave={()=>setHovR(null)}
-                  style={{
-                    borderBottom:i<filtered.length-1?"1px solid #f8fafc":"none",
-                    background:isH?"#fafafa":"white",
-                    transition:"background 0.12s",
-                  }}>
-                  {/* Name — clickable to view */}
-                  <td style={{padding:"13px 16px",cursor:"pointer"}} onClick={()=>setViewCust(c)}>
-                    <div style={{display:"flex",alignItems:"center",gap:10}}>
-                      <div style={{width:34,height:34,borderRadius:10,flexShrink:0,
-                        background:shop.sb,display:"flex",alignItems:"center",justifyContent:"center",
-                        color:"white",fontWeight:800,fontSize:13,
-                        boxShadow:"0 2px 6px rgba(0,0,0,0.12)"}}>
-                        {c.name.charAt(0)}
-                      </div>
-                      <div>
-                        <p style={{margin:0,fontWeight:700,fontSize:13,color:shop.accent,
-                          textDecoration:"underline",textDecorationStyle:"dotted",
-                          textUnderlineOffset:3}}>{c.name}</p>
-                        {c.notes&&<p style={{margin:0,fontSize:10,color:"#94a3b8"}}>{c.notes}</p>}
-                      </div>
-                    </div>
-                  </td>
-                  <td style={{padding:"13px 16px"}}>
-                    <p style={{margin:"0 0 2px",fontSize:12,fontWeight:600,color:"#374151"}}>{c.phone}</p>
-                    <p style={{margin:0,fontSize:10,color:"#22c55e",fontWeight:600}}>💬 {c.whatsapp}</p>
-                    {c.phoneSavedOn&&<p style={{margin:"2px 0 0",fontSize:10,fontWeight:700,color:"#6366f1"}}>📱 {c.phoneSavedOn}</p>}
-                  </td>
-                  <td style={{padding:"13px 16px",fontSize:12,color:"#64748b",maxWidth:160}}>
-                    <span style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.address}</span>
-                  </td>
-                  <td style={{padding:"13px 16px",textAlign:"center"}}>
-                    <span style={{fontSize:14,fontWeight:800,color:shop.accent}}>{c.purchases}</span>
-                  </td>
-                  <td style={{padding:"13px 16px"}}>
-                    <span style={{fontFamily:"DM Mono,monospace",fontSize:13,fontWeight:700,color:"#0f172a"}}>
-                      {c.spend>=10000?("₹"+c.spend.toLocaleString()):("£"+c.spend.toLocaleString())}
-                    </span>
-                  </td>
-                  <td style={{padding:"13px 16px",fontSize:12,color:"#64748b"}}>{c.last}</td>
-                  <td style={{padding:"13px 16px"}}>
-                    {c.tag&&(
-                      <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:999,
-                        background:t.bg,color:t.color,border:"1px solid "+t.border,whiteSpace:"nowrap"}}>
-                        {c.tag}
-                      </span>
-                    )}
-                  </td>
-                  {/* Actions */}
-                  <td style={{padding:"13px 16px"}}>
-                    <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                      <button onClick={()=>setViewCust(c)}
-                        title="View full details"
-                        style={{padding:"5px 10px",borderRadius:7,border:"1px solid #e2e8f0",
-                          background:"white",color:"#374151",fontSize:12,fontWeight:700,
-                          cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",
-                          transition:"all 0.13s"}}
-                        onMouseEnter={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accent;e.currentTarget.style.borderColor=shop.accent;}}
-                        onMouseLeave={e=>{e.currentTarget.style.background="white";e.currentTarget.style.color="#374151";e.currentTarget.style.borderColor="#e2e8f0";}}>
-                        👁 View
-                      </button>
-                      <button onClick={()=>setEditCust(c)}
-                        title="Edit customer"
-                        style={{padding:"5px 10px",borderRadius:7,border:"1px solid "+shop.accent,
-                          background:shop.accentBg,color:shop.accent,fontSize:12,fontWeight:700,
-                          cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",
-                          transition:"all 0.13s"}}
-                        onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.color="white";}}
-                        onMouseLeave={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accent;}}>
-                        ✏️ Edit
-                      </button>
-                      {(user?.role==="superadmin"||user?.role==="admin")&&(
-                        <button onClick={()=>setDelCust(c)}
-                          title="Delete customer"
-                          style={{padding:"5px 10px",borderRadius:7,border:"1px solid #fca5a5",
-                            background:"#fff5f5",color:"#dc2626",fontSize:12,fontWeight:700,
-                            cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",
-                            transition:"all 0.13s"}}
-                          onMouseEnter={e=>{e.currentTarget.style.background="#dc2626";e.currentTarget.style.color="white";}}
-                          onMouseLeave={e=>{e.currentTarget.style.background="#fff5f5";e.currentTarget.style.color="#dc2626";}}>
-                          🗑
-                        </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
-
-/* ── AgentsPanel (Logistics Agents) ── */
-const AgentsPanel=({agents,shop})=>{
-  const [hovR,setHovR]=useState(null);
-  const typeColor={
-    "Courier":{bg:"#dbeafe",color:"#1e40af",border:"#bfdbfe",ic:"🚀"},
-    "Postal": {bg:"#dcfce7",color:"#166534",border:"#bbf7d0",ic:"📦"},
-  };
-  return(
-    <div>
-      <div style={{marginBottom:20}}>
-        <h2 style={{margin:"0 0 2px",fontSize:20,fontWeight:800,color:"#0f172a"}}>Logistics Agents</h2>
-        <p style={{margin:0,fontSize:12,color:"#94a3b8"}}>{(agents||[]).length} shipping partners configured</p>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:16,marginBottom:24}}>
-        {(agents||[]).map(a=>{
-          const tc=typeColor[a.type]||{bg:"#f1f5f9",color:"#475569",border:"#e2e8f0",ic:"🚚"};
-          const isH=hovR===a.id;
-          return(
-            <div key={a.id}
-              onMouseEnter={()=>setHovR(a.id)}
-              onMouseLeave={()=>setHovR(null)}
+      {/* ══════════════════════════════════════════════════════════
+          KPI COMPARISON CARDS — current FY large, prior years smaller
+         ══════════════════════════════════════════════════════════ */}
+      <div style={{ display:"grid", gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))", gap:14, marginBottom:20 }}>
+        {kpiDefs.map((card, i) => {
+          const isHov = hovCard === i;
+          return (
+            <div key={card.label}
+              onMouseEnter={() => setHovCard(i)}
+              onMouseLeave={() => setHovCard(null)}
               style={{
-                background:"white",borderRadius:16,
-                border:isH?"1px solid "+shop.accent+"44":"1px solid #f1f5f9",
-                padding:20,
-                boxShadow:isH?"0 8px 24px "+shop.accent+"18":"0 2px 8px rgba(0,0,0,0.04)",
-                transition:"all 0.18s",transform:isH?"translateY(-2px)":"none",
+                background:"white", borderRadius:16, border:"1px solid #f1f5f9", overflow:"hidden",
+                boxShadow: isHov ? `0 16px 40px ${card.glowColor},0 4px 12px ${card.shadow}` : `0 2px 10px ${card.shadow}`,
+                transform: isHov ? "translateY(-4px) scale(1.02)" : "none",
+                transition:"all 0.22s cubic-bezier(0.34,1.56,0.64,1)",
               }}>
-              <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
-                <div style={{width:44,height:44,borderRadius:12,background:shop.accentBg,
-                  display:"flex",alignItems:"center",justifyContent:"center",fontSize:22,
-                  border:"1px solid "+shop.accent+"22",flexShrink:0}}>
-                  {tc.ic}
-                </div>
-                <div>
-                  <p style={{margin:"0 0 4px",fontWeight:800,fontSize:15,color:"#0f172a"}}>{a.name}</p>
-                  <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:999,
-                    background:tc.bg,color:tc.color,border:"1px solid "+tc.border}}>
-                    {a.type}
+              {/* Top accent bar */}
+              <div style={{ height:4, background:card.topGrad }} />
+              <div style={{ padding:"14px 16px 16px" }}>
+                {/* Icon + label row */}
+                <div style={{ display:"flex", alignItems:"center", gap:9, marginBottom:14 }}>
+                  <div style={{
+                    width:36, height:36, borderRadius:10, background:card.iconBg,
+                    display:"flex", alignItems:"center", justifyContent:"center", fontSize:18,
+                    transform: isHov ? "scale(1.1) rotate(-4deg)" : "none", transition:"transform 0.22s",
+                  }}>{card.icon}</div>
+                  <span style={{ fontSize:11, fontWeight:800, color:"#64748b", textTransform:"uppercase", letterSpacing:"0.07em" }}>
+                    {card.label}
                   </span>
+                  <div style={{
+                    marginLeft:"auto", width:7, height:7, borderRadius:"50%", background:card.topColor,
+                    boxShadow: isHov ? `0 0 0 3px ${card.glowColor}` : "none", transition:"box-shadow 0.22s",
+                  }} />
                 </div>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                <div style={{display:"flex",alignItems:"center",gap:8,background:"#f8fafc",
-                  borderRadius:8,padding:"8px 12px",border:"1px solid #f1f5f9"}}>
-                  <span>📞</span>
-                  <span style={{fontSize:12,fontWeight:600,color:"#374151",fontFamily:"DM Mono,monospace"}}>{a.contact}</span>
+                {/* FY rows — newest first, current year bigger */}
+                <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
+                  {fyGroups.length === 0 && (
+                    <span style={{ fontSize:22, fontWeight:900, color:"#94a3b8" }}>—</span>
+                  )}
+                  {fyGroups.map((g, gi) => {
+                    const isCurrent = gi === 0;
+                    return (
+                      <div key={g.fyStart} style={{
+                        display:"flex", alignItems:"center", justifyContent:"space-between",
+                        padding: isCurrent ? "6px 10px" : "4px 10px",
+                        borderRadius:8,
+                        background: isCurrent ? `${card.topColor}12` : "#f8fafc",
+                        borderLeft: `3px solid ${isCurrent ? card.topColor : "#e2e8f0"}`,
+                      }}>
+                        <span style={{
+                          fontSize: isCurrent ? 10 : 9, fontWeight:700,
+                          color: isCurrent ? card.topColor : "#94a3b8",
+                          letterSpacing:"0.04em", minWidth:38,
+                        }}>
+                          FY {g.label}
+                        </span>
+                        <span style={{
+                          fontSize: isCurrent ? 22 : 14,
+                          fontWeight: isCurrent ? 900 : 700,
+                          color: isCurrent ? (isHov ? card.topColor : "#0f172a") : "#64748b",
+                          letterSpacing: isCurrent ? "-0.5px" : "0",
+                          transition:"color 0.2s",
+                        }}>
+                          {card.getValue(g)}
+                        </span>
+                      </div>
+                    );
+                  })}
                 </div>
-                <a href={a.url} target="_blank" rel="noopener noreferrer"
-                  style={{display:"flex",alignItems:"center",gap:8,background:shop.accentBg,
-                    borderRadius:8,padding:"8px 12px",border:"1px solid "+shop.accent+"22",
-                    textDecoration:"none",cursor:"pointer",transition:"background 0.15s"}}
-                  onMouseEnter={e=>e.currentTarget.style.background=shop.accent+"22"}
-                  onMouseLeave={e=>e.currentTarget.style.background=shop.accentBg}>
-                  <span>🔗</span>
-                  <span style={{fontSize:12,fontWeight:600,color:shop.accent}}>Track Shipment →</span>
-                </a>
               </div>
             </div>
           );
         })}
       </div>
-      <div style={{background:"#fffbeb",borderRadius:12,padding:"12px 16px",
-        border:"1px solid #fde68a",display:"flex",alignItems:"center",gap:10}}>
-        <span>💡</span>
-        <p style={{margin:0,fontSize:12,color:"#92400e",fontWeight:500}}>
-          Click <strong>Track Shipment</strong> to open the carrier tracking portal in a new tab.
-        </p>
-      </div>
-    </div>
-  );
-};
 
-
-/* =========================================================
-   SETTINGS PANEL (Suresh / superadmin only)
-   ========================================================= */
-const SettingsPanel=({users,setUsers,currentUser,onClose})=>{
-  const [tab,setTab]=useState("users");
-  const [editId,setEditId]=useState(null);
-  const [hovR,setHovR]=useState(null);
-  // new user form
-  const [newName,setNewName]=useState("");
-  const [newPin,setNewPin]=useState("");
-  const [newRole,setNewRole]=useState("staff");
-  const [newShops,setNewShops]=useState([]);
-  const [formErr,setFormErr]=useState("");
-  const [saved,setSaved]=useState(false);
-  // edit PIN form
-  const [editPin,setEditPin]=useState("");
-  const [editPinErr,setEditPinErr]=useState("");
-
-  const SHOP_LABELS={
-    "ros-selections":"ROS Selections UK",
-    "ros-hairlines":"ROS Hairlines UK",
-    "ros-india":"ROS India",
-  };
-  const AVATARS=[
-    "linear-gradient(135deg,#1d4ed8,#7c3aed)",
-    "linear-gradient(135deg,#059669,#0891b2)",
-    "linear-gradient(135deg,#64748b,#334155)",
-    "linear-gradient(135deg,#dc2626,#f97316)",
-    "linear-gradient(135deg,#7c3aed,#ec4899)",
-    "linear-gradient(135deg,#0891b2,#059669)",
-  ];
-
-  const flash=()=>{setSaved(true);setTimeout(()=>setSaved(false),2000);};
-
-  const savePin=()=>{
-    if(!/^[0-9]{4}$/.test(editPin)){setEditPinErr("PIN must be exactly 4 digits");return;}
-    setUsers(prev=>prev.map(u=>u.id===editId?{...u,pin:editPin}:u));
-    setEditId(null);setEditPin("");setEditPinErr("");flash();
-  };
-
-  const deleteUser=id=>{
-    if(id===currentUser.id){alert("You cannot delete your own account.");return;}
-    setUsers(prev=>prev.filter(u=>u.id!==id));
-  };
-
-  const addUser=()=>{
-    setFormErr("");
-    if(!newName.trim()){setFormErr("Name is required.");return;}
-    if(!/^[0-9]{4}$/.test(newPin)){setFormErr("PIN must be exactly 4 digits.");return;}
-    if(newShops.length===0&&newRole==="staff"){setFormErr("Assign at least one shop for staff.");return;}
-    const id=newName.trim().toLowerCase().replace(/\s+/g,"-")+"-"+Date.now();
-    const initials=newName.trim().split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
-    const av=AVATARS[users.length%AVATARS.length];
-    setUsers(prev=>[...prev,{
-      id, name:newName.trim(), initials, role:newRole, pin:newPin,
-      avatar:av,
-      shops:newRole==="staff"?newShops:SHOP_IDS,
-    }]);
-    setNewName("");setNewPin("");setNewRole("staff");setNewShops([]);setFormErr("");
-    flash();
-  };
-
-  const toggleShop=(id,shopId)=>{
-    setUsers(prev=>prev.map(u=>{
-      if(u.id!==id)return u;
-      const has=(u.shops||[]).includes(shopId);
-      return {...u,shops:has?(u.shops||[]).filter(s=>s!==shopId):[...(u.shops||[]),shopId]};
-    }));
-    flash();
-  };
-
-  const iBtn=(label,onClick,color,bg)=>({
-    label,onClick,color:color||"#374151",bg:bg||"#f8fafc",
-  });
-
-  const roleColor={
-    superadmin:{bg:"#ede9fe",color:"#5b21b6",border:"#ddd6fe",label:"Super Admin"},
-    admin:      {bg:"#dbeafe",color:"#1e40af",border:"#bfdbfe",label:"Admin"},
-    staff:      {bg:"#f0fdf4",color:"#166534",border:"#bbf7d0",label:"Staff"},
-  };
-
-  // input style helper
-  const inp={
-    width:"100%",padding:"9px 12px",borderRadius:9,
-    border:"1px solid #e2e8f0",fontSize:13,fontFamily:"inherit",
-    outline:"none",color:"#0f172a",background:"white",boxSizing:"border-box",
-  };
-
-  return(
-    <div style={{
-      position:"fixed",inset:0,zIndex:200,
-      background:"rgba(15,23,42,0.55)",backdropFilter:"blur(4px)",
-      display:"flex",alignItems:"center",justifyContent:"center",
-      fontFamily:"'DM Sans',system-ui,sans-serif",
-    }} onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      {/* ══════════════════════════════════════════════════════════
+          STATUS FILTER TABS + SEARCH
+         ══════════════════════════════════════════════════════════ */}
       <div style={{
-        width:"100%",maxWidth:780,maxHeight:"90vh",
-        background:"white",borderRadius:20,
-        boxShadow:"0 24px 80px rgba(0,0,0,0.22)",
-        display:"flex",flexDirection:"column",
-        overflow:"hidden",
+        background: "white", borderRadius: 14, border: "1px solid #e2e8f0",
+        marginBottom: 12, boxShadow: "0 1px 4px rgba(0,0,0,0.05)",
+        display: "flex", alignItems: "stretch", overflow: "hidden",
       }}>
-        {/* ── header ── */}
+        {/* Scrollable tab strip */}
         <div style={{
-          background:"linear-gradient(135deg,#0f172a,#1e293b)",
-          padding:"18px 24px",
-          display:"flex",alignItems:"center",justifyContent:"space-between",
-          flexShrink:0,
+          flex: 1, overflowX: "auto", scrollbarWidth: "none",
+          display: "flex", alignItems: "stretch",
         }}>
-          <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <div style={{width:38,height:38,borderRadius:11,
-              background:"linear-gradient(135deg,#1d4ed8,#7c3aed)",
-              display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>
-              ⚙️
-            </div>
-            <div>
-              <h2 style={{margin:0,fontSize:17,fontWeight:800,color:"white"}}>Settings</h2>
-              <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.45)"}}>Super Admin · {currentUser.name}</p>
-            </div>
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
-            {saved&&(
-              <span style={{fontSize:12,fontWeight:700,color:"#4ade80",
-                background:"rgba(74,222,128,0.15)",padding:"4px 12px",borderRadius:999}}>
-                ✓ Saved
-              </span>
-            )}
-            <button onClick={onClose}
-              style={{width:32,height:32,borderRadius:9,border:"1px solid rgba(255,255,255,0.20)",
-                background:"rgba(255,255,255,0.08)",color:"white",cursor:"pointer",
-                fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",
-                fontFamily:"inherit"}}>
-              ✕
-            </button>
+          <style>{`.ros-sp-tab::-webkit-scrollbar{display:none}.ros-sp-btn:hover{background:${accentBg}!important;color:${accent}!important}`}</style>
+          <div style={{ display: "flex", alignItems: "stretch", minWidth: "max-content", padding: "0 6px" }}>
+            {resolvedTabs.map(t => {
+              const key   = t.key   ?? t;
+              const label = t.label ?? t;
+              const emoji = t.emoji ?? "";
+              const isActive = statusTab === key;
+              const count = tabCounts[key] ?? 0;
+              return (
+                <button key={key}
+                  className="ros-sp-btn"
+                  onClick={() => setStatusTab(key)}
+                  onMouseEnter={() => setHovTab(key)}
+                  onMouseLeave={() => setHovTab(null)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 5,
+                    padding: "10px 13px",
+                    border: "none",
+                    borderBottom: isActive ? `3px solid ${accent}` : "3px solid transparent",
+                    borderTop: "3px solid transparent",
+                    background: isActive ? accentBg + "80" : "transparent",
+                    cursor: "pointer", fontFamily: "inherit",
+                    fontWeight: isActive ? 800 : 500,
+                    fontSize: 12, whiteSpace: "nowrap",
+                    color: isActive ? accent : "#64748b",
+                    transition: "all 0.14s",
+                  }}>
+                  {emoji && <span style={{ fontSize: 12 }}>{emoji}</span>}
+                  <span>{label}</span>
+                  {count > 0 && (
+                    <span style={{
+                      background: isActive ? accent : "#e2e8f0",
+                      color: isActive ? "white" : "#64748b",
+                      borderRadius: 999, padding: "1px 7px",
+                      fontSize: 10, fontWeight: 800,
+                      lineHeight: "16px", display: "inline-block",
+                    }}>{count}</span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
 
-        {/* ── tab bar ── */}
-        <div style={{display:"flex",gap:4,padding:"12px 24px 0",borderBottom:"1px solid #f1f5f9",flexShrink:0}}>
-          {[
-            {id:"users",   label:"👥 Manage Users"},
-            {id:"add",     label:"➕ Add User"},
-            {id:"shops",   label:"🏪 Shop Access"},
-          ].map(t=>(
-            <button key={t.id} onClick={()=>setTab(t.id)}
+        {/* Inline search — right side */}
+        <div style={{
+          display: "flex", alignItems: "center", gap: 8, flexShrink: 0,
+          padding: "0 14px", borderLeft: "1px solid #f1f5f9",
+          background: "#f8fafc",
+        }}>
+          <span style={{ fontSize: 13, color: "#94a3b8" }}>🔍</span>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search invoice or customer…"
+            style={{
+              border: "none", outline: "none", background: "transparent",
+              fontSize: 12, color: "#374151", fontFamily: "inherit", width: 180,
+            }}
+          />
+          {search && (
+            <button onClick={() => setSearch("")}
               style={{
-                padding:"8px 16px",borderRadius:"9px 9px 0 0",border:"none",
-                cursor:"pointer",fontSize:12,fontWeight:700,fontFamily:"inherit",
-                background:tab===t.id?"white":"transparent",
-                color:tab===t.id?"#0f172a":"#64748b",
-                borderBottom:tab===t.id?"2px solid #1d4ed8":"2px solid transparent",
-                marginBottom:"-1px",transition:"all 0.15s",
+                background: "none", border: "none", cursor: "pointer",
+                fontSize: 16, color: "#94a3b8", padding: 0, lineHeight: 1,
               }}>
-              {t.label}
+              ×
             </button>
-          ))}
+          )}
         </div>
+      </div>
 
-        {/* ── body ── */}
-        <div style={{flex:1,overflowY:"auto",padding:24}}>
+      {/* ── Active status context bar ── */}
+      {statusTab !== "ALL" && (
+        <div style={{
+          display: "flex", alignItems: "center", gap: 10,
+          padding: "9px 14px", marginBottom: 12,
+          background: activeTabCfg.bg, borderRadius: 11,
+          border: `1px solid ${activeTabCfg.color}33`,
+        }}>
+          <div style={{
+            width: 8, height: 8, borderRadius: "50%",
+            background: activeTabCfg.color, flexShrink: 0,
+          }} />
+          <span style={{
+            fontSize: 12, fontWeight: 800, color: activeTabCfg.color,
+            textTransform: "uppercase", letterSpacing: "0.07em",
+          }}>
+            {activeTabCfg.label}
+          </span>
+          <span style={{ fontSize: 12, color: activeTabCfg.color, opacity: 0.65 }}>
+            — {sortedSales.length} record{sortedSales.length !== 1 ? "s" : ""}
+          </span>
+          <button onClick={() => setStatusTab("ALL")}
+            style={{
+              marginLeft: "auto", fontSize: 11, fontWeight: 700,
+              color: activeTabCfg.color, background: "white",
+              border: `1px solid ${activeTabCfg.color}44`,
+              borderRadius: 7, padding: "3px 10px",
+              cursor: "pointer", fontFamily: "inherit",
+            }}>
+            Show All ×
+          </button>
+        </div>
+      )}
 
-          {/* ────────── MANAGE USERS tab ────────── */}
-          {tab==="users"&&(
-            <div>
-              <p style={{margin:"0 0 16px",fontSize:13,color:"#64748b"}}>
-                Click a user to change their PIN. Suresh's role cannot be changed.
-              </p>
-              <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {users.map(u=>{
-                  const rc=roleColor[u.role]||roleColor.staff;
-                  const isEdit=editId===u.id;
-                  const isH=hovR===u.id;
-                  const isSelf=u.id===currentUser.id;
-                  return(
-                    <div key={u.id}
-                      onMouseEnter={()=>setHovR(u.id)}
-                      onMouseLeave={()=>setHovR(null)}
-                      style={{
-                        border:isEdit?"1px solid #1d4ed8":"1px solid #f1f5f9",
-                        borderRadius:14,padding:"14px 16px",
-                        background:isEdit?"#f8faff":isH?"#fafafa":"white",
-                        transition:"all 0.15s",
-                      }}>
-                      {/* user row */}
-                      <div style={{display:"flex",alignItems:"center",gap:12}}>
-                        <div style={{width:42,height:42,borderRadius:12,flexShrink:0,
-                          background:u.avatar,display:"flex",alignItems:"center",
-                          justifyContent:"center",color:"white",fontWeight:800,fontSize:14,
-                          boxShadow:"0 2px 8px rgba(0,0,0,0.15)"}}>
-                          {u.initials}
-                        </div>
-                        <div style={{flex:1}}>
-                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}>
-                            <span style={{fontWeight:700,fontSize:14,color:"#0f172a"}}>{u.name}</span>
-                            {isSelf&&<span style={{fontSize:9,fontWeight:800,color:"#1d4ed8",
-                              background:"#dbeafe",padding:"1px 7px",borderRadius:999}}>YOU</span>}
-                            <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",
-                              borderRadius:999,background:rc.bg,color:rc.color,
-                              border:"1px solid "+rc.border}}>
-                              {rc.label}
-                            </span>
-                          </div>
-                          <span style={{fontSize:11,color:"#94a3b8"}}>
-                            PIN: {'●'.repeat(4)} · Shops: {(u.shops||SHOP_IDS).length===3?"All":
-                              (u.shops||[]).map(s=>({
-                                "ros-selections":"UK Sel","ros-hairlines":"UK Hair","ros-india":"India"
-                              }[s]||s)).join(", ")||"None"}
+      {/* ══════════════════════════════════════════════════════════
+          SALES TABLE
+         ══════════════════════════════════════════════════════════ */}
+      <div style={{
+        background: "white", borderRadius: 16, border: "1px solid #f1f5f9",
+        overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.04)",
+      }}>
+        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+            <thead>
+              <tr style={{ background: "#f8fafc" }}>
+                {["Invoice", "Date", "Customer", "Item", "Amount", "Payment", "Status", "Tags", "Actions"]
+                  .map((h, i) => (
+                    <th key={h} style={{
+                      padding: "11px 16px", textAlign: (i >= 4 && i !== 7) ? "right" : "left",
+                      fontSize: 11, fontWeight: 800, color: "#94a3b8",
+                      textTransform: "uppercase", letterSpacing: "0.06em",
+                      borderBottom: "1px solid #f1f5f9", whiteSpace: "nowrap",
+                    }}>
+                      {h}
+                    </th>
+                  ))}
+              </tr>
+            </thead>
+            <tbody>
+
+              {/* Empty state */}
+              {rowsWithSeparators.length === 0 && (
+                <tr>
+                  <td colSpan={9} style={{ padding: "52px 16px", textAlign: "center" }}>
+                    <div style={{ fontSize: 36, marginBottom: 10 }}>🛒</div>
+                    <p style={{ margin: 0, fontWeight: 700, color: "#94a3b8", fontSize: 14 }}>
+                      No {statusTab !== "ALL" ? activeTabCfg.label.toLowerCase() + " " : ""}sales found
+                    </p>
+                    <p style={{ margin: "4px 0 0", fontSize: 12, color: "#cbd5e1" }}>
+                      {statusTab !== "ALL"
+                        ? "Try a different status tab or time range"
+                        : "Try a different time range or add a new sale"}
+                    </p>
+                  </td>
+                </tr>
+              )}
+
+              {rowsWithSeparators.map((row, idx) => {
+
+                /* ── FINANCIAL YEAR BOUNDARY ─────────────────────────────── */
+                if (row._type === "fy") {
+                  return (
+                    <tr key={`fy-${row._fyStart}-${idx}`}>
+                      <td colSpan={9} style={{ padding: 0 }}>
+                        <div style={{
+                          display: "flex", alignItems: "center", gap: 10,
+                          padding: "9px 16px",
+                          background: "linear-gradient(90deg,#fef3c7 0%,#fde68a 40%,#fef3c7 100%)",
+                          borderTop: "2px solid #f59e0b", borderBottom: "2px solid #f59e0b",
+                        }}>
+                          <span style={{ fontSize: 14 }}>◆</span>
+                          <span style={{
+                            fontSize: 11, fontWeight: 900, color: "#78350f",
+                            textTransform: "uppercase", letterSpacing: "0.10em",
+                          }}>
+                            {row._label} &nbsp;·&nbsp; Financial Year Starts 1 April
+                          </span>
+                          <div style={{ flex: 1, height: 1, background: "#f59e0b88" }} />
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, color: "#92400e",
+                            background: "#fef9c3", border: "1px solid #fde68a",
+                            borderRadius: 6, padding: "2px 9px", whiteSpace: "nowrap",
+                          }}>
+                            📅 New Financial Year
                           </span>
                         </div>
-                        <div style={{display:"flex",gap:8}}>
-                          {!isEdit&&(
-                            <button onClick={()=>{setEditId(u.id);setEditPin("");setEditPinErr("");}}
-                              style={{padding:"6px 14px",borderRadius:8,border:"1px solid #e2e8f0",
-                                background:"#f8fafc",fontSize:12,fontWeight:700,color:"#374151",
-                                cursor:"pointer",fontFamily:"inherit"}}>
-                              🔑 Change PIN
-                            </button>
-                          )}
-                          {!isSelf&&u.role!=="superadmin"&&(
-                            <button onClick={()=>deleteUser(u.id)}
-                              style={{padding:"6px 12px",borderRadius:8,border:"1px solid #fecaca",
-                                background:"#fef2f2",fontSize:12,fontWeight:700,color:"#dc2626",
-                                cursor:"pointer",fontFamily:"inherit"}}>
-                              🗑
-                            </button>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* PIN edit row */}
-                      {isEdit&&(
-                        <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #f1f5f9",
-                          display:"flex",alignItems:"flex-end",gap:10}}>
-                          <div style={{flex:1}}>
-                            <label style={{fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:4}}>
-                              New 4-digit PIN for {u.name}
-                            </label>
-                            <input
-                              type="password" maxLength={4}
-                              value={editPin}
-                              onChange={e=>{setEditPin(e.target.value.replace(/\D/g,"").slice(0,4));setEditPinErr("");}}
-                              placeholder="● ● ● ●"
-                              style={{...inp,width:160,letterSpacing:"0.2em",fontSize:18,textAlign:"center"}}
-                            />
-                            {editPinErr&&<p style={{margin:"4px 0 0",fontSize:11,color:"#dc2626"}}>{editPinErr}</p>}
-                          </div>
-                          <button onClick={savePin}
-                            style={{padding:"9px 18px",borderRadius:9,border:"none",
-                              background:"linear-gradient(135deg,#1d4ed8,#7c3aed)",
-                              color:"white",fontWeight:700,fontSize:13,cursor:"pointer",
-                              fontFamily:"inherit",whiteSpace:"nowrap"}}>
-                            ✓ Save PIN
-                          </button>
-                          <button onClick={()=>{setEditId(null);setEditPin("");setEditPinErr("");}}
-                            style={{padding:"9px 14px",borderRadius:9,border:"1px solid #e2e8f0",
-                              background:"white",color:"#64748b",fontWeight:600,fontSize:13,
-                              cursor:"pointer",fontFamily:"inherit"}}>
-                            Cancel
-                          </button>
-                        </div>
-                      )}
-                    </div>
+                      </td>
+                    </tr>
                   );
-                })}
-              </div>
-            </div>
-          )}
+                }
 
-          {/* ────────── ADD USER tab ────────── */}
-          {tab==="add"&&(
-            <div style={{maxWidth:480}}>
-              <p style={{margin:"0 0 20px",fontSize:13,color:"#64748b"}}>
-                Create a new user account. Staff accounts can be restricted to specific shops.
-              </p>
-              <div style={{display:"flex",flexDirection:"column",gap:14}}>
-                <div>
-                  <label style={{fontSize:11,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>
-                    FULL NAME
-                  </label>
-                  <input value={newName} onChange={e=>setNewName(e.target.value)}
-                    placeholder="e.g. Alex Johnson" style={inp}/>
-                </div>
-                <div>
-                  <label style={{fontSize:11,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>
-                    4-DIGIT PIN
-                  </label>
-                  <input type="password" maxLength={4}
-                    value={newPin} onChange={e=>setNewPin(e.target.value.replace(/\D/g,"").slice(0,4))}
-                    placeholder="● ● ● ●"
-                    style={{...inp,width:160,letterSpacing:"0.2em",fontSize:18,textAlign:"center"}}/>
-                </div>
-                <div>
-                  <label style={{fontSize:11,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>
-                    ROLE
-                  </label>
-                  <div style={{display:"flex",gap:10}}>
-                    {[
-                      {v:"admin",  l:"Admin",  desc:"Full access to all features"},
-                      {v:"staff",  l:"Staff",  desc:"Sales only, shop-restricted"},
-                    ].map(r=>(
-                      <div key={r.v} onClick={()=>setNewRole(r.v)}
-                        style={{
-                          flex:1,padding:"12px 14px",borderRadius:12,cursor:"pointer",
-                          border:newRole===r.v?"2px solid #1d4ed8":"2px solid #f1f5f9",
-                          background:newRole===r.v?"#eff6ff":"white",
-                          transition:"all 0.15s",
+                /* ── MONTH BOUNDARY ──────────────────────────────────────── */
+                if (row._type === "month") {
+                  return (
+                    <tr key={`month-${row._monthKey}-${idx}`}>
+                      <td colSpan={9} style={{ padding: 0 }}>
+                        <div style={{
+                          display: "flex", alignItems: "center", gap: 10,
+                          padding: "6px 16px",
+                          background: "linear-gradient(90deg,#f0f9ff 0%,#e0f2fe 50%,#f0f9ff 100%)",
+                          borderTop: "1px solid #bae6fd", borderBottom: "1px solid #bae6fd",
                         }}>
-                        <p style={{margin:"0 0 2px",fontWeight:700,fontSize:13,
-                          color:newRole===r.v?"#1d4ed8":"#374151"}}>{r.l}</p>
-                        <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>{r.desc}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                {newRole==="staff"&&(
-                  <div>
-                    <label style={{fontSize:11,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>
-                      SHOP ACCESS (select one or more)
-                    </label>
-                    <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                      {Object.entries(SHOP_LABELS).map(([sid,sname])=>{
-                        const has=newShops.includes(sid);
-                        return(
-                          <div key={sid} onClick={()=>setNewShops(p=>has?p.filter(x=>x!==sid):[...p,sid])}
-                            style={{
-                              display:"flex",alignItems:"center",gap:10,padding:"10px 14px",
-                              borderRadius:10,cursor:"pointer",
-                              border:has?"1px solid #1d4ed8":"1px solid #f1f5f9",
-                              background:has?"#eff6ff":"#fafafa",
-                              transition:"all 0.15s",
-                            }}>
-                            <div style={{
-                              width:18,height:18,borderRadius:5,flexShrink:0,
-                              border:has?"2px solid #1d4ed8":"2px solid #e2e8f0",
-                              background:has?"#1d4ed8":"white",
-                              display:"flex",alignItems:"center",justifyContent:"center",
-                            }}>
-                              {has&&<span style={{color:"white",fontSize:10,fontWeight:900}}>✓</span>}
-                            </div>
-                            <span style={{fontSize:13,fontWeight:600,color:has?"#1d4ed8":"#374151"}}>{sname}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                {formErr&&(
-                  <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,
-                    padding:"10px 14px",fontSize:12,color:"#dc2626",fontWeight:600}}>
-                    ⚠️ {formErr}
-                  </div>
-                )}
-                <button onClick={addUser}
-                  style={{padding:"12px 0",borderRadius:11,border:"none",
-                    background:"linear-gradient(135deg,#1d4ed8,#7c3aed)",
-                    color:"white",fontWeight:800,fontSize:14,cursor:"pointer",
-                    fontFamily:"inherit",boxShadow:"0 4px 16px rgba(37,99,235,0.30)",
-                    marginTop:4}}>
-                  ➕ Create User
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* ────────── SHOP ACCESS tab ────────── */}
-          {tab==="shops"&&(
-            <div>
-              <p style={{margin:"0 0 16px",fontSize:13,color:"#64748b"}}>
-                Toggle shop access for each staff member. Admin accounts always have full access.
-              </p>
-              <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                {users.filter(u=>u.role==="staff").length===0&&(
-                  <div style={{textAlign:"center",padding:"40px 0",color:"#94a3b8",fontSize:13}}>
-                    No staff members yet. Add one in the <strong>Add User</strong> tab.
-                  </div>
-                )}
-                {users.filter(u=>u.role==="staff").map(u=>(
-                  <div key={u.id} style={{border:"1px solid #f1f5f9",borderRadius:14,padding:"16px 18px",background:"white"}}>
-                    <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:14}}>
-                      <div style={{width:36,height:36,borderRadius:10,background:u.avatar,
-                        display:"flex",alignItems:"center",justifyContent:"center",
-                        color:"white",fontWeight:800,fontSize:13,flexShrink:0}}>
-                        {u.initials}
-                      </div>
-                      <div>
-                        <p style={{margin:0,fontWeight:700,fontSize:14,color:"#0f172a"}}>{u.name}</p>
-                        <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>Staff · Sales tab only per assigned shop</p>
-                      </div>
-                    </div>
-                    <div style={{display:"flex",gap:10,flexWrap:"wrap"}}>
-                      {Object.entries(SHOP_LABELS).map(([sid,sname])=>{
-                        const has=(u.shops||[]).includes(sid);
-                        return(
-                          <div key={sid} onClick={()=>toggleShop(u.id,sid)}
-                            style={{
-                              display:"flex",alignItems:"center",gap:8,padding:"8px 14px",
-                              borderRadius:10,cursor:"pointer",
-                              border:has?"1px solid #1d4ed8":"1px solid #e2e8f0",
-                              background:has?"#eff6ff":"#f8fafc",
-                              transition:"all 0.15s",
-                            }}>
-                            <div style={{
-                              width:16,height:16,borderRadius:4,flexShrink:0,
-                              border:has?"2px solid #1d4ed8":"2px solid #cbd5e1",
-                              background:has?"#1d4ed8":"white",
-                              display:"flex",alignItems:"center",justifyContent:"center",
-                            }}>
-                              {has&&<span style={{color:"white",fontSize:9,fontWeight:900}}>✓</span>}
-                            </div>
-                            <span style={{fontSize:12,fontWeight:600,color:has?"#1d4ed8":"#64748b"}}>{sname}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* info box */}
-              <div style={{marginTop:20,background:"#fffbeb",borderRadius:12,padding:"12px 16px",
-                border:"1px solid #fde68a",display:"flex",gap:10}}>
-                <span style={{fontSize:16,flexShrink:0}}>💡</span>
-                <p style={{margin:0,fontSize:12,color:"#92400e"}}>
-                  Staff members can only view <strong>Sales</strong> in their assigned shops.
-                  Analytics, reports, customers, and all other tabs are hidden for staff.
-                </p>
-              </div>
-            </div>
-          )}
-
-        </div>
-      </div>
-    </div>
-  );
-};
-
-/* =========================================================
-   USERS / AUTH
-   ========================================================= */
-const INITIAL_USERS=[
-  {id:"suresh", name:"Suresh", initials:"SU", role:"superadmin", pin:"1111",
-   avatar:"linear-gradient(135deg,#1d4ed8,#7c3aed)", shops:["ros-selections","ros-hairlines","ros-india"]},
-  {id:"rani",   name:"Rani",   initials:"RA", role:"admin",      pin:"2222",
-   avatar:"linear-gradient(135deg,#059669,#0891b2)", shops:["ros-selections","ros-hairlines","ros-india"]},
-  {id:"staff",  name:"Staff",  initials:"ST", role:"staff",      pin:"3333",
-   avatar:"linear-gradient(135deg,#64748b,#334155)", shops:["ros-india"]},
-];
-const ROLE_NAV={
-  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","documents","analytics","reports","settings"],
-  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","documents","analytics","reports"],
-  staff:["sales"],
-};
-const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
-
-
-/* =========================================================
-   UI COMPONENTS
-   ========================================================= */
-
-/* ── Login Screen ── */
-const LoginScreen=({onLogin,users})=>{
-  const [selUser,setSelUser]=useState(null);
-  const [pin,setPin]=useState("");
-  const [err,setErr]=useState("");
-  const [shake,setShake]=useState(false);
-  const [success,setSuccess]=useState(false);
-  const [hovB,setHovB]=useState(null);
-
-  const handlePin=(d)=>{
-    if(pin.length>=4||success)return;
-    const np=pin+d;
-    setPin(np);
-    setErr("");
-    if(np.length===4){
-      setTimeout(()=>{
-        const liveUser=users.find(x=>x.id===selUser.id)||selUser;
-        if(np===liveUser.pin){
-          setSuccess(true);
-          setTimeout(()=>onLogin(liveUser),420);
-        } else {
-          setShake(true);
-          setErr("Incorrect PIN — try again");
-          setPin("");
-          setTimeout(()=>setShake(false),500);
-        }
-      },180);
-    }
-  };
-  const handleDel=()=>{setPin(p=>p.slice(0,-1));setErr("");};
-  const handleBack=()=>{setSelUser(null);setPin("");setErr("");setSuccess(false);setShake(false);};
-
-  const ROLE_LABELS={"superadmin":"Super Admin","admin":"Administrator","staff":"Staff"};
-
-  return(
-    <div style={{
-      minHeight:"100vh",width:"100vw",
-      background:"#060b14",
-      display:"flex",alignItems:"stretch",
-      fontFamily:"'DM Sans',system-ui,sans-serif",
-      position:"relative",overflow:"hidden",
-    }}>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800;900&family=Syne:wght@700;800&display=swap');
-        @keyframes ros-floatOrb{0%,100%{transform:translateY(0) scale(1);}50%{transform:translateY(-28px) scale(1.04);}}
-        @keyframes ros-fadeUp{from{opacity:0;transform:translateY(20px);}to{opacity:1;transform:translateY(0);}}
-        @keyframes ros-fadeIn{from{opacity:0;}to{opacity:1;}}
-        @keyframes ros-shake{0%,100%{transform:translateX(0);}20%{transform:translateX(-9px);}40%{transform:translateX(9px);}60%{transform:translateX(-6px);}80%{transform:translateX(6px);}}
-        @keyframes ros-pulse{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,0.5);}50%{box-shadow:0 0 0 8px rgba(16,185,129,0);}}
-        .ros-user-card{transition:all 0.22s cubic-bezier(0.34,1.56,0.64,1);cursor:pointer;}
-        .ros-user-card:hover{transform:translateY(-3px) scale(1.02)!important;background:rgba(255,255,255,0.08)!important;border-color:rgba(255,255,255,0.18)!important;box-shadow:0 16px 40px rgba(0,0,0,0.5)!important;}
-        .ros-pin-btn{transition:background 0.12s,border-color 0.12s,transform 0.1s;cursor:pointer;}
-        .ros-pin-btn:hover:not([data-empty]){background:rgba(255,255,255,0.13)!important;border-color:rgba(255,255,255,0.22)!important;}
-        .ros-pin-btn:active:not([data-empty]){transform:scale(0.90)!important;}
-        @media(max-width:700px){.ros-left-panel{display:none!important;}.ros-right-panel{padding:36px 20px!important;}}
-      `}</style>
-
-      {/* LEFT — branding */}
-      <div className="ros-left-panel" style={{
-        flex:"0 0 44%",
-        background:"linear-gradient(155deg,#0d1f3c 0%,#091526 55%,#060b14 100%)",
-        display:"flex",flexDirection:"column",justifyContent:"space-between",
-        padding:"52px 56px",position:"relative",overflow:"hidden",
-      }}>
-        <div style={{position:"absolute",top:-90,left:-90,width:420,height:420,borderRadius:"50%",background:"radial-gradient(circle,rgba(37,99,235,0.18) 0%,transparent 68%)",animation:"ros-floatOrb 7s ease-in-out infinite",pointerEvents:"none"}}/>
-        <div style={{position:"absolute",bottom:-70,right:-70,width:380,height:380,borderRadius:"50%",background:"radial-gradient(circle,rgba(124,58,237,0.14) 0%,transparent 68%)",animation:"ros-floatOrb 9s ease-in-out infinite reverse",pointerEvents:"none"}}/>
-        <div style={{position:"absolute",inset:0,backgroundImage:"linear-gradient(rgba(255,255,255,0.024) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.024) 1px,transparent 1px)",backgroundSize:"48px 48px",pointerEvents:"none"}}/>
-
-        <div style={{position:"relative",zIndex:1,animation:"ros-fadeUp 0.7s ease both"}}>
-          <div style={{display:"flex",alignItems:"center",gap:14}}>
-            <div style={{width:48,height:48,borderRadius:15,background:"linear-gradient(135deg,#2563eb,#7c3aed)",display:"flex",alignItems:"center",justifyContent:"center",boxShadow:"0 4px 24px rgba(37,99,235,0.50)",flexShrink:0}}>
-              <span style={{color:"white",fontWeight:900,fontSize:22,fontFamily:"'Syne',sans-serif"}}>R</span>
-            </div>
-            <div>
-              <p style={{margin:0,fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:18,color:"white",letterSpacing:"-0.2px",lineHeight:1.2}}>ROS Nexus</p>
-              <p style={{margin:0,fontSize:10,fontWeight:500,letterSpacing:"0.10em",textTransform:"uppercase",color:"rgba(255,255,255,0.32)"}}>Business Suite</p>
-            </div>
-          </div>
-        </div>
-
-        <div style={{position:"relative",zIndex:1,animation:"ros-fadeUp 0.7s 0.15s ease both",opacity:0,animationFillMode:"forwards"}}>
-          <div style={{display:"inline-flex",alignItems:"center",gap:8,background:"rgba(37,99,235,0.14)",border:"1px solid rgba(37,99,235,0.28)",borderRadius:999,padding:"5px 14px",marginBottom:22}}>
-            <span style={{width:6,height:6,borderRadius:"50%",background:"#60a5fa",display:"inline-block"}}/>
-            <span style={{fontSize:11,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.65)"}}>Secure Access Portal</span>
-          </div>
-          <h1 style={{margin:"0 0 18px",fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:"clamp(30px,3vw,44px)",color:"white",lineHeight:1.12,letterSpacing:"-1px"}}>
-            Run your business<br/>
-            <span style={{background:"linear-gradient(90deg,#3b82f6 0%,#8b5cf6 50%,#06b6d4 100%)",WebkitBackgroundClip:"text",WebkitTextFillColor:"transparent",backgroundClip:"text"}}>with confidence.</span>
-          </h1>
-          <p style={{margin:0,fontSize:14,color:"rgba(255,255,255,0.38)",lineHeight:1.75,maxWidth:320,fontWeight:400}}>
-            Manage sales, customers, inventory and finances across all your shops — in one unified dashboard.
-          </p>
-        </div>
-
-        <div style={{position:"relative",zIndex:1,animation:"ros-fadeIn 1s 0.5s ease both",opacity:0,animationFillMode:"forwards"}}>
-          <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.16)",fontWeight:500}}>© {new Date().getFullYear()} ROS Nexus · All rights reserved</p>
-        </div>
-      </div>
-
-      {/* RIGHT — login form */}
-      <div className="ros-right-panel" style={{
-        flex:1,background:"#0a0f1a",
-        display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
-        padding:"48px 32px",position:"relative",
-      }}>
-        <div style={{position:"absolute",inset:0,backgroundImage:"radial-gradient(rgba(255,255,255,0.018) 1px,transparent 1px)",backgroundSize:"24px 24px",pointerEvents:"none"}}/>
-        <div style={{position:"absolute",top:0,left:0,width:1,height:"100%",background:"linear-gradient(180deg,transparent 0%,rgba(255,255,255,0.06) 30%,rgba(255,255,255,0.06) 70%,transparent 100%)"}}/>
-
-        <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:360}}>
-          {!selUser?(
-            <div style={{animation:"ros-fadeUp 0.5s ease both"}}>
-              <div style={{marginBottom:32}}>
-                <h2 style={{margin:"0 0 6px",fontSize:26,fontWeight:800,color:"white",letterSpacing:"-0.5px",fontFamily:"'Syne',sans-serif"}}>Welcome back</h2>
-                <p style={{margin:0,fontSize:13,color:"rgba(255,255,255,0.36)",fontWeight:400}}>Choose your account to continue</p>
-              </div>
-              <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {(users||[]).map((u,i)=>(
-                  <div key={u.id} className="ros-user-card" onClick={()=>setSelUser(u)}
-                    style={{display:"flex",alignItems:"center",gap:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16,padding:"14px 16px",boxShadow:"0 4px 20px rgba(0,0,0,0.28)"}}>
-                    <div style={{width:44,height:44,borderRadius:13,background:u.avatar,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:15,flexShrink:0,boxShadow:"0 4px 14px rgba(0,0,0,0.35)"}}>
-                      {u.initials}
-                    </div>
-                    <div style={{flex:1}}>
-                      <p style={{margin:"0 0 2px",fontWeight:700,fontSize:14,color:"white"}}>{u.name}</p>
-                      <p style={{margin:0,fontSize:11,fontWeight:500,color:"rgba(255,255,255,0.30)",textTransform:"capitalize"}}>{ROLE_LABELS[u.role]||u.role}</p>
-                    </div>
-                    <div style={{width:28,height:28,borderRadius:9,background:"rgba(255,255,255,0.05)",display:"flex",alignItems:"center",justifyContent:"center",color:"rgba(255,255,255,0.30)",fontSize:14}}>›</div>
-                  </div>
-                ))}
-              </div>
-              <p style={{textAlign:"center",marginTop:36,fontSize:11,color:"rgba(255,255,255,0.14)",fontWeight:500,letterSpacing:"0.06em"}}>DEVELOPED BY ROS NEXUS</p>
-            </div>
-          ):(
-            <div style={{animation:"ros-fadeUp 0.4s ease both",textAlign:"center"}}>
-              <button onClick={handleBack}
-                style={{display:"inline-flex",alignItems:"center",gap:6,background:"rgba(255,255,255,0.05)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:10,padding:"7px 14px",cursor:"pointer",color:"rgba(255,255,255,0.42)",fontSize:12,fontWeight:600,fontFamily:"inherit",marginBottom:28,transition:"all 0.15s",outline:"none"}}
-                onMouseEnter={e=>{e.currentTarget.style.background="rgba(255,255,255,0.10)";e.currentTarget.style.color="white";}}
-                onMouseLeave={e=>{e.currentTarget.style.background="rgba(255,255,255,0.05)";e.currentTarget.style.color="rgba(255,255,255,0.42)";}}>
-                ← All accounts
-              </button>
-              <div style={{marginBottom:22}}>
-                <div style={{width:66,height:66,borderRadius:20,background:selUser.avatar,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:24,margin:"0 auto 12px",boxShadow:"0 8px 32px rgba(0,0,0,0.50)",transition:"all 0.3s",animation:success?"ros-pulse 0.6s ease":"none"}}>
-                  {success?"✓":selUser.initials}
-                </div>
-                <p style={{margin:"0 0 6px",fontWeight:700,fontSize:18,color:"white",fontFamily:"'Syne',sans-serif"}}>{selUser.name}</p>
-                <span style={{display:"inline-block",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.40)",background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:999,padding:"3px 12px"}}>
-                  {ROLE_LABELS[selUser.role]||selUser.role}
-                </span>
-              </div>
-              <div style={{animation:shake?"ros-shake 0.45s ease":"none",marginBottom:8}}>
-                <div style={{display:"flex",justifyContent:"center",gap:18,marginBottom:10}}>
-                  {[0,1,2,3].map(i=>{
-                    const filled=pin.length>i;
-                    return(<div key={i} style={{width:13,height:13,borderRadius:"50%",background:success?"#10b981":filled?"white":"transparent",border:"2px solid "+(success?"#10b981":filled?"white":"rgba(255,255,255,0.22)"),transition:"all 0.15s",transform:filled?"scale(1.18)":"scale(1)",boxShadow:success?"0 0 12px rgba(16,185,129,0.60)":filled?"0 0 10px rgba(255,255,255,0.45)":"none"}}/>);
-                  })}
-                </div>
-                <p style={{margin:0,minHeight:20,fontSize:12,fontWeight:600,color:err?"#f87171":success?"#34d399":"rgba(255,255,255,0.28)",transition:"color 0.2s"}}>
-                  {err||(success?"Signing in…":"Enter your 4-digit PIN")}
-                </p>
-              </div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:20,opacity:success?0.35:1,transition:"opacity 0.3s"}}>
-                {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((d,i)=>{
-                  const isEmpty=d==="";const isDel=d==="⌫";
-                  return(
-                    <button key={i} className="ros-pin-btn" data-empty={isEmpty||undefined}
-                      onMouseEnter={()=>!isEmpty&&setHovB(i)} onMouseLeave={()=>setHovB(null)}
-                      onClick={()=>{if(isEmpty||success)return;isDel?handleDel():handlePin(String(d));}}
-                      style={{height:56,borderRadius:14,border:"1px solid "+(isEmpty?"transparent":"rgba(255,255,255,0.09)"),background:isEmpty?"transparent":"rgba(255,255,255,0.05)",color:isEmpty?"transparent":isDel?"rgba(255,255,255,0.50)":"white",fontSize:isDel?20:22,fontWeight:isDel?400:700,cursor:isEmpty?"default":"pointer",fontFamily:"inherit",outline:"none"}}>
-                      {d}
-                    </button>
+                          <div style={{
+                            width: 7, height: 7, borderRadius: "50%",
+                            background: accent, flexShrink: 0,
+                            boxShadow: `0 0 0 2px ${accent}33`,
+                          }} />
+                          <span style={{
+                            fontSize: 11, fontWeight: 800, color: "#0369a1",
+                            textTransform: "uppercase", letterSpacing: "0.08em",
+                          }}>
+                            {row._label}
+                          </span>
+                          <div style={{ flex: 1, height: 1, background: "#7dd3fc" }} />
+                          <span style={{
+                            fontSize: 10, fontWeight: 700, color: "#0284c7",
+                            background: "white", border: "1px solid #bae6fd",
+                            borderRadius: 6, padding: "2px 8px", whiteSpace: "nowrap",
+                          }}>
+                            ↕ month boundary
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
                   );
-                })}
-              </div>
-            </div>
-          )}
+                }
+
+                /* ── SALE ROW ────────────────────────────────────────────── */
+                const s   = row;
+                const ful = s.ful || s.status || "PENDING";
+                const isH = hovR === s.id;
+                const mergedRowBg = { ...STATUS_ROW_BG, ...(statusRowBgProp || {}) };
+                const rowBg = isH ? `${accent}10` : (mergedRowBg[ful] || "white");
+
+                return (
+                  <tr key={s.id}
+                    onClick={() => setSelRow(s)}
+                    onMouseEnter={() => setHovR(s.id)}
+                    onMouseLeave={() => setHovR(null)}
+                    style={{
+                      background: rowBg, cursor: "pointer",
+                      borderBottom: "1px solid #f8fafc",
+                      transition: "background 0.12s",
+                    }}>
+                    {/* Invoice */}
+                    <td style={{ padding: "12px 16px" }}>
+                      <span style={{ fontFamily: "DM Mono,monospace", fontWeight: 700, fontSize: 12, color: accent }}>
+                        {s.id}
+                      </span>
+                    </td>
+                    {/* Date */}
+                    <td style={{ padding: "12px 16px" }}>
+                      <span style={{ fontSize: 12, color: "#64748b", whiteSpace: "nowrap" }}>
+                        {fmtDateForSale(s)}
+                      </span>
+                    </td>
+                    {/* Customer */}
+                    <td style={{ padding: "12px 16px" }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: "#0f172a", textTransform: "uppercase" }}>{s.customer}</div>
+                      {s.phone && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>{s.phone}</div>}
+                    </td>
+                    {/* Item */}
+                    <td style={{ padding: "12px 16px" }}>
+                      <span style={{ fontSize: 12, color: "#374151" }}>
+                        {s.item || "—"}
+                        {s.qty && s.qty !== "1" && (
+                          <span style={{ color: "#94a3b8", marginLeft: 4 }}>×{s.qty}</span>
+                        )}
+                      </span>
+                    </td>
+                    {/* Amount */}
+                    <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                      {(() => {
+                        const sym = shop?.symbol || "£";
+                        const net = (Number(s.amount)||0) - (Number(s.adjAmt)||0);
+                        const orig = Number(s.amount)||0;
+                        const fmtVal = (v) => fmt ? fmt(shopId, v) : sym + v.toLocaleString("en-GB", {minimumFractionDigits:2,maximumFractionDigits:2});
+                        return (
+                          <>
+                            <span style={{ fontWeight: 800, fontSize: 13, color: "#0f172a" }}>{fmtVal(net)}</span>
+                            {(Number(s.adjAmt)||0) > 0 && (
+                              <div style={{ fontSize: 10, color: "#d97706", marginTop: 2, whiteSpace: "nowrap" }}>
+                                was {fmtVal(orig)}
+                              </div>
+                            )}
+                          </>
+                        );
+                      })()}
+                    </td>
+                    {/* Payment */}
+                    <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                      <Badge l={s.pay || "SHOP"} />
+                    </td>
+                    {/* Status */}
+                    <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                      <Badge l={ful} />
+                    </td>
+                    {/* Tags */}
+                    <td style={{ padding: "8px 16px" }}>
+                      {s.tag ? (
+                        <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
+                          {s.tag.split(",").map(t => t.trim()).filter(Boolean).map(t => (
+                            <span key={t} style={{
+                              display: "inline-block", padding: "2px 8px",
+                              borderRadius: 999, fontSize: 10, fontWeight: 700,
+                              background: `${accent}12`, color: accent,
+                              border: `1px solid ${accent}30`, whiteSpace: "nowrap",
+                            }}>{t}</span>
+                          ))}
+                        </div>
+                      ) : <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>}
+                    </td>
+                    {/* Actions */}
+                    <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                      <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                        <button
+                          onClick={e => { e.stopPropagation(); setInvoiceRow(s); }}
+                          title="View Invoice"
+                          style={{
+                            width: 30, height: 30, borderRadius: 8,
+                            border: "1px solid #e2e8f0", background: "white",
+                            cursor: "pointer", fontSize: 14,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                          }}>
+                          🧾
+                        </button>
+                        <button
+                          onClick={e => { e.stopPropagation(); setEditRow(s); setModal("edit-sale"); }}
+                          title="Edit"
+                          style={{
+                            width: 30, height: 30, borderRadius: 8,
+                            border: `1px solid ${accent}33`, background: `${accent}12`,
+                            color: accent, cursor: "pointer", fontSize: 13,
+                            display: "flex", alignItems: "center", justifyContent: "center",
+                          }}>
+                          ✏️
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
+
+        {/* ── Table footer ── */}
+        {sortedSales.length > 0 && (
+          <div style={{
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            padding: "10px 20px", borderTop: "1px solid #f1f5f9", background: "#f8fafc",
+          }}>
+            <span style={{ fontSize: 12, color: "#94a3b8" }}>
+              {sortedSales.length} record{sortedSales.length !== 1 ? "s" : ""}
+              {statusTab !== "ALL" && (
+                <span style={{ color: activeTabCfg.color, fontWeight: 700 }}>
+                  {" "}· {activeTabCfg.label}
+                </span>
+              )}
+            </span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>
+              Subtotal:{" "}
+              {fmtAmt(sortedSales.reduce((a, s) => a + (Number(s.amount) || 0) - (Number(s.adjAmt) || 0), 0))}
+            </span>
+          </div>
+        )}
       </div>
     </div>
-  );
-};
-
-export default function App(){
-  // Always start logged-out — login page shown on every fresh load
-  const [user,setUser]=useState(null);
-  const [shop,setShop]=useState(null);
-  const [users,setUsers]=useState(()=>{
-    try{
-      const s=localStorage.getItem("ros_users");
-      if(s){
-        const parsed=JSON.parse(s);
-        if(Array.isArray(parsed)&&parsed.length>0) return parsed;
-      }
-    }catch{}
-    return INITIAL_USERS;
-  });
-  const setUsersPersist=(updater)=>{
-    setUsers(prev=>{
-      const next=typeof updater==="function"?updater(prev):updater;
-      try{localStorage.setItem("ros_users",JSON.stringify(next));}catch{}
-      return next;
-    });
-  };
-  const [settingsOpen,setSettingsOpen]=useState(false);
-  const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
-  const [customers,setCustomers]=useState([]);
-  const [shopItems,setShopItems]=useState(()=>{
-    try{
-      const s=localStorage.getItem("ros_shopItems");
-      if(!s) return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};
-      const parsed=JSON.parse(s);
-      // Normalize: ensure every entry is a plain string (guard against legacy {name,code} objects)
-      const normalize=(arr)=>(arr||[]).map(x=>typeof x==="object"&&x!==null?(x.name||x.label||JSON.stringify(x)):String(x)).filter(Boolean);
-      return {
-        "ros-selections": normalize(parsed["ros-selections"]),
-        "ros-hairlines":  normalize(parsed["ros-hairlines"]),
-        "ros-india":      normalize(parsed["ros-india"]),
-      };
-    }catch{return {"ros-selections":[],"ros-hairlines":[],"ros-india":[]};}
-  });
-  const saveShopItems=(updated)=>{
-    setShopItems(updated);
-    try{localStorage.setItem("ros_shopItems",JSON.stringify(updated));}catch{}
-  };
-
-  const updateSalesData=setSalesData;
-
-  // Self-heal: clear any corrupted ros_shopItems from localStorage on first mount
-  useEffect(()=>{
-    try{
-      const raw=localStorage.getItem("ros_shopItems");
-      if(raw){
-        const parsed=JSON.parse(raw);
-        const hasObjects=["ros-selections","ros-hairlines","ros-india"].some(k=>
-          (parsed[k]||[]).some(x=>typeof x==="object"&&x!==null)
-        );
-        if(hasObjects){
-          console.warn("🔧 Clearing corrupted ros_shopItems from localStorage");
-          localStorage.removeItem("ros_shopItems");
-          setShopItems({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
-        }
-      }
-    }catch{}
-  },[]);
-
-  // Load from Supabase on mount - Supabase is single source of truth
-  useEffect(()=>{
-    const shops=["ros-selections","ros-hairlines","ros-india"];
-    shops.forEach(sid=>{
-      dbLoadSales(sid).then(data=>{
-        if(!data) return;
-        setSalesData(prev=>({...prev,[sid]:data.map(normaliseSale)}));
-      }).catch(()=>{});
-    });
-    dbLoadCustomers().then(data=>{
-      if(data&&data.length>0) setCustomers(data);
-    }).catch(()=>{});
-  },[]);
-
-  const handleLogin=u=>{
-    const fresh=users.find(x=>x.id===u.id)||u;
-    setUser(fresh);setShop(null);
-  };
-
-  const handleLogout=()=>{
-    setUser(null);setShop(null);
-  };
-
-  const handleSetShop=(s)=>{
-    setShop(s);
-    try{localStorage.setItem("ros_shop",s);}catch{}
-  };
-
-  if(!user) return <LoginScreen users={users} onLogin={handleLogin}/>;
-
-  const allowedShops=(user.shops||SHOP_IDS);
-
-  // Auto-route staff directly to their assigned shop
-  const activeShop = shop || (user.role==="staff" && allowedShops.length===1 ? allowedShops[0] : null);
-
-  if(activeShop&&allowedShops.includes(activeShop))
-    return <ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={updateSalesData} customers={customers} setCustomers={setCustomers} shopItems={shopItems} saveShopItems={saveShopItems}/>;
-
-  return(
-    <>
-      <ShopSelector onSelect={handleSetShop} user={user} salesData={salesData}
-        onLogout={handleLogout}
-        onOpenSettings={()=>setSettingsOpen(true)}/>
-      {settingsOpen&&user?.role==="superadmin"&&(
-        <SettingsPanel
-          users={users}
-          setUsers={setUsersPersist}
-          currentUser={user}
-          onClose={()=>setSettingsOpen(false)}/>
-      )}
-    </>
   );
 }
