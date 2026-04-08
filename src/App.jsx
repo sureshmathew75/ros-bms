@@ -767,6 +767,13 @@ const normaliseSale=(s)=>{
   const discount = Number(s.discount !== undefined ? s.discount : s.discount_amt || 0) || 0;
   const otherCharges = Number(s.otherCharges !== undefined ? s.otherCharges : s.other_charges || 0) || 0;
   const otherChargesLabel = s.otherChargesLabel || s.other_charges_label || "Other Charges";
+  const adjAmt = Number(s.adjAmt !== undefined ? s.adjAmt : s.adj_amt || 0) || 0;
+  const adjType = s.adjType || s.adj_type || "";
+  const adjDate = s.adjDate || s.adj_date || "";
+  const adjNote = s.adjNote || s.adj_note || "";
+  const shopInvoiceNo = s.shopInvoiceNo || s.shop_invoice_no || "";
+  const refundDate = s.refundDate || s.refund_date || "";
+  const exchangeDate = s.exchangeDate || s.exchange_date || "";
   return {
     ...s,
     item:             displayItem,
@@ -776,6 +783,13 @@ const normaliseSale=(s)=>{
     discount,
     otherCharges,
     otherChargesLabel,
+    adjAmt,
+    adjType,
+    adjDate,
+    adjNote,
+    shopInvoiceNo,
+    refundDate,
+    exchangeDate,
   };
 };
 
@@ -2003,7 +2017,7 @@ return(
                     const ti=tr===0?true:(s.taxInclusive!==undefined?s.taxInclusive!==false:true);
                     let sl=decodedLines||s.saleLines||s.sale_lines||null;
                     if(typeof sl==="string"){try{sl=JSON.parse(sl);}catch{sl=null;}}
-                    return {...s,item:displayItem,taxRate:tr,taxInclusive:ti,saleLines:Array.isArray(sl)?sl:null,discount:Number(s.discount||s.discount_amt)||0,otherCharges:Number(s.otherCharges||s.other_charges)||0};
+                    return {...s,item:displayItem,taxRate:tr,taxInclusive:ti,saleLines:Array.isArray(sl)?sl:null,discount:Number(s.discount||s.discount_amt)||0,otherCharges:Number(s.otherCharges||s.other_charges)||0,adjAmt:Number(s.adjAmt||s.adj_amt)||0,adjType:s.adjType||s.adj_type||"",adjDate:s.adjDate||s.adj_date||"",adjNote:s.adjNote||s.adj_note||"",shopInvoiceNo:s.shopInvoiceNo||s.shop_invoice_no||"",refundDate:s.refundDate||s.refund_date||"",exchangeDate:s.exchangeDate||s.exchange_date||""};
                   })}));
                 }).catch(()=>{});
               }).catch(err=>console.error("❌ Edit save failed:",err));
@@ -2038,7 +2052,7 @@ return(
         const taxAmt=parseFloat((subtotal*taxRate).toFixed(2));
         const grand=parseFloat((subtotal+taxAmt-invAdjAmt).toFixed(2));
         const cgst=parseFloat((taxAmt/2).toFixed(2));
-        const tRows=[...(rPct===0?[["Amount (no tax)",total]]:isIndia?[["Subtotal (excl. tax)",subtotal],["CGST ("+(rPct/2)+"%)","cgst],["SGST ("+(rPct/2)+"%)",cgst]]:["Subtotal (excl. tax)",subtotal],["Tax ("+rPct+"%)",taxAmt]]),...(invAdjAmt>0?[["Post-Sale Adj. ("+(inv.adjType||"Adjustment")+")",-invAdjAmt]]:[]),["Grand Total",grand]];
+        const tRows=rPct===0?[["Amount (no tax)",total]]:isIndia?[["Subtotal (excl. tax)",subtotal],["CGST ("+(rPct/2)+"%)",cgst],["SGST ("+(rPct/2)+"%)",cgst]]:[["Subtotal (excl. tax)",subtotal],["Tax ("+rPct+"%)",taxAmt]];
         const n=Math.round(total);const ons=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];const tns=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
         let wds="";if(n<20)wds=ons[n];else if(n<100)wds=tns[Math.floor(n/10)]+(n%10?" "+ons[n%10]:"");else if(n<1000)wds=ons[Math.floor(n/100)]+" Hundred"+(n%100?" "+tns[Math.floor((n%100)/10)]+(n%10?" "+ons[n%10]:""):"");else if(n<100000)wds=ons[Math.floor(n/1000)]+" Thousand";else wds=String(n);
         return(
@@ -2171,6 +2185,12 @@ return(
                       <span style={{fontSize:13,fontWeight:600}}>{v===0?sym+"0.00":sym+Number(v).toLocaleString()}</span>
                     </div>
                   ))}
+                  {invAdjAmt>0&&(
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+                      <span style={{fontSize:13,color:"#d97706"}}>{inv.adjType||"Adjustment"}</span>
+                      <span style={{fontSize:13,fontWeight:600,color:"#d97706"}}>{sym}-{Number(invAdjAmt).toLocaleString()}</span>
+                    </div>
+                  )}
                   <div style={{borderTop:"2px solid #0f172a",paddingTop:10,marginTop:4}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
                       <span style={{fontSize:15,fontWeight:900}}>GRAND TOTAL</span>
