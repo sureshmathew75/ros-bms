@@ -4,33 +4,53 @@ const fmtAmt=(shop,n)=>{
   if(!n)return shop.symbol+"0.00";
   return shop.symbol+Number(n).toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2});
 };
+/* net sale amount = amount minus any post-sale adjustment */
+const netAmt=(s)=>(Number(s.amount)||0)-(Number(s.adjAmt)||0);
 const FULFILLED=new Set(["FULFILLED","GOOD FEEDBACK","GOOD FEEDBACK RECEIVED","EXCHANGED"]);
 const RETURNED=new Set(["RTRN REQSTD","RETRN RCVD","RETURN REQUESTED","RETURN RECEIVED","REFUNDED"]);
+/* FY start year from invoice suffix (ground truth) or date fallback */
+function getSaleFYStart(s){
+  const id=String(s.id||"");
+  const m=id.match(/^[A-Z]{2,3}(\d{4})(\d)$/);
+  if(m){
+    const suffix=+m[2],now=new Date().getFullYear(),decade=Math.floor(now/10)*10;
+    let endY=decade+suffix;
+    if(endY-now>5)endY-=10;
+    if(now-endY>5)endY+=10;
+    return endY-1;
+  }
+  const d=new Date(s.date);
+  if(isNaN(d))return null;
+  return d.getMonth()<3?d.getFullYear()-1:d.getFullYear();
+}
 
 function buildSales(sales){
   const now=new Date();const curY=now.getFullYear(),curM=now.getMonth();
-  const fyStart=curM<3?new Date(curY-1,3,6):new Date(curY,3,6);
-  const total=sales.reduce((a,s)=>a+(s.amount||0),0);
+  const curFYStart=curM<3?curY-1:curY;
   const monthly=sales.filter(s=>{const d=new Date(s.date);return d.getFullYear()===curY&&d.getMonth()===curM;});
-  const fy=sales.filter(s=>new Date(s.date)>=fyStart);
+  const fy=sales.filter(s=>getSaleFYStart(s)===curFYStart);
+  const isRefunded=s=>(s.ful||s.status)==="REFUNDED";
+  const rev=arr=>arr.filter(s=>!isRefunded(s)).reduce((a,s)=>a+netAmt(s),0);
+  const total=rev(sales);
+  const monthRev=rev(monthly);
+  const fyRev=rev(fy);
   const fulfilled=sales.filter(s=>FULFILLED.has(s.ful||s.status)).length;
   const returned=sales.filter(s=>RETURNED.has(s.ful||s.status)).length;
   const pending=sales.filter(s=>!FULFILLED.has(s.ful||s.status)&&!RETURNED.has(s.ful||s.status)).length;
   const custMap={};
-  sales.forEach(s=>{if(!s.customer)return;if(!custMap[s.customer])custMap[s.customer]={name:s.customer,orders:0,total:0};custMap[s.customer].orders++;custMap[s.customer].total+=s.amount||0;});
+  sales.forEach(s=>{if(!s.customer)return;if(!custMap[s.customer])custMap[s.customer]={name:s.customer,orders:0,total:0};custMap[s.customer].orders++;custMap[s.customer].total+=netAmt(s);});
   const topCusts=Object.values(custMap).sort((a,b)=>b.total-a.total).slice(0,10);
   const monthData=[];
-  for(let i=5;i>=0;i--){const d=new Date(curY,curM-i,1);const mY=d.getFullYear(),mM=d.getMonth();const mS=sales.filter(s=>{const sd=new Date(s.date);return sd.getFullYear()===mY&&sd.getMonth()===mM;});monthData.push({label:d.toLocaleString("default",{month:"short",year:"2-digit"}),rev:mS.reduce((a,s)=>a+(s.amount||0),0),orders:mS.length});}
-  const payMap={};sales.forEach(s=>{const p=s.pay||"SHOP";payMap[p]=(payMap[p]||0)+(s.amount||0);});
-  const monthRev=monthly.reduce((a,s)=>a+(s.amount||0),0);
-  const fyRev=fy.reduce((a,s)=>a+(s.amount||0),0);
-  return{total,monthRev,fyRev,fulfilled,returned,pending,topCusts,monthData,payMap,count:sales.length};
+  for(let i=5;i>=0;i--){const d=new Date(curY,curM-i,1);const mY=d.getFullYear(),mM=d.getMonth();const mS=sales.filter(s=>{const sd=new Date(s.date);return sd.getFullYear()===mY&&sd.getMonth()===mM;});monthData.push({label:d.toLocaleString("default",{month:"short",year:"2-digit"}),rev:rev(mS),orders:mS.length});}
+  const payMap={};sales.forEach(s=>{const p=s.pay||"SHOP";payMap[p]=(payMap[p]||0)+netAmt(s);});
+  return{total,monthRev,fyRev,fulfilled,returned,pending,topCusts,monthData,payMap,
+    count:sales.length,monthCount:monthly.length,fyCount:fy.length};
 }
 function buildCust(sales){
   const custMap={};
-  sales.forEach(s=>{if(!s.customer)return;if(!custMap[s.customer])custMap[s.customer]={name:s.customer,orders:0,total:0,lastDate:""};custMap[s.customer].orders++;custMap[s.customer].total+=s.amount||0;if(!custMap[s.customer].lastDate||s.date>custMap[s.customer].lastDate)custMap[s.customer].lastDate=s.date;});
+  sales.forEach(s=>{if(!s.customer)return;if(!custMap[s.customer])custMap[s.customer]={name:s.customer,orders:0,total:0,lastDate:""};custMap[s.customer].orders++;custMap[s.customer].total+=netAmt(s);if(!custMap[s.customer].lastDate||s.date>custMap[s.customer].lastDate)custMap[s.customer].lastDate=s.date;});
   const list=Object.values(custMap).sort((a,b)=>b.total-a.total);
-  const totalRev=list.reduce((a,c)=>a+c.total,0);
+  const totalRev=list.reduce((a,c)=>a+c.total,0); // already netAmt per customer
   const avgOrder=sales.length?totalRev/sales.length:0;
   return{list,totalRev,avgOrder};
 }
@@ -45,7 +65,8 @@ function buildPurch(purch){
   return{total,suppliers:Object.values(supMap).sort((a,b)=>b.total-a.total),count:purch.length};
 }
 function buildPL(sales,exps,purch){
-  const revenue=sales.reduce((a,s)=>a+(s.amount||0),0);
+  const isRef=s=>(s.ful||s.status)==="REFUNDED";
+  const revenue=sales.filter(s=>!isRef(s)).reduce((a,s)=>a+netAmt(s),0);
   const expenses=exps.reduce((a,e)=>a+(e.amount||0),0);
   const cogs=purch.reduce((a,p)=>a+(p.total||0),0);
   const grossProfit=revenue-cogs;
@@ -86,7 +107,7 @@ function getPrintHTML(key,sales,exps,purch,shop){
   const f=n=>sym+Number(n||0).toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2});
   if(key==="sales"){
     const d=buildSales(sales);
-    return`<div><span class="kpi"><span class="kv">${f(d.total)}</span><span class="kl">Lifetime Revenue</span></span><span class="kpi"><span class="kv">${d.count}</span><span class="kl">Total Orders</span></span><span class="kpi"><span class="kv">${f(d.monthRev)}</span><span class="kl">This Month</span></span><span class="kpi"><span class="kv">${f(d.fyRev)}</span><span class="kl">Financial Year</span></span><span class="kpi"><span class="kv">${d.fulfilled}</span><span class="kl">Fulfilled</span></span><span class="kpi"><span class="kv">${d.pending}</span><span class="kl">Pending</span></span></div>
+    return`<div><span class="kpi"><span class="kv">${f(d.monthRev)}</span><span class="kl">This Month Revenue</span></span><span class="kpi"><span class="kv">${f(d.fyRev)}</span><span class="kl">Financial Year Revenue</span></span><span class="kpi"><span class="kv">${f(d.total)}</span><span class="kl">Lifetime Revenue</span></span><span class="kpi"><span class="kv">${d.monthCount}</span><span class="kl">This Month Orders</span></span><span class="kpi"><span class="kv">${d.fyCount}</span><span class="kl">Financial Year Orders</span></span><span class="kpi"><span class="kv">${d.count}</span><span class="kl">Lifetime Orders</span></span></div>
 <h2>Monthly Revenue (Last 6 Months)</h2><table><thead><tr><th>Month</th><th>Orders</th><th class="thr">Revenue</th></tr></thead><tbody>${d.monthData.map(m=>`<tr><td>${m.label}</td><td>${m.orders}</td><td class="num">${f(m.rev)}</td></tr>`).join("")}</tbody></table>
 <h2>Top 10 Customers</h2><table><thead><tr><th>#</th><th>Customer</th><th>Orders</th><th class="thr">Total Spend</th></tr></thead><tbody>${d.topCusts.map((c,i)=>`<tr><td>${i+1}</td><td>${c.name}</td><td>${c.orders}</td><td class="num">${f(c.total)}</td></tr>`).join("")}</tbody></table>
 <h2>Payment Method Breakdown</h2><table><thead><tr><th>Method</th><th class="thr">Revenue</th></tr></thead><tbody>${Object.entries(d.payMap).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr><td>${k}</td><td class="num">${f(v)}</td></tr>`).join("")}</tbody></table>`;
@@ -139,12 +160,12 @@ export default function ReportsPanel({shop,sales=[],customers=[],exps=[],purch=[
       return(
         <div>
           <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
+            <KPI l="This Month Revenue" v={fmtAmt(shop,d.monthRev)} shop={shop}/>
+            <KPI l="Financial Year Revenue" v={fmtAmt(shop,d.fyRev)} shop={shop}/>
             <KPI l="Lifetime Revenue" v={fmtAmt(shop,d.total)} shop={shop}/>
-            <KPI l="This Month" v={fmtAmt(shop,d.monthRev)} shop={shop}/>
-            <KPI l="Financial Year" v={fmtAmt(shop,d.fyRev)} shop={shop}/>
-            <KPI l="Total Orders" v={d.count} shop={shop}/>
-            <KPI l="Fulfilled" v={d.fulfilled} shop={shop}/>
-            <KPI l="Pending" v={d.pending} shop={shop}/>
+            <KPI l="This Month Orders" v={d.monthCount} shop={shop}/>
+            <KPI l="Financial Year Orders" v={d.fyCount} shop={shop}/>
+            <KPI l="Lifetime Orders" v={d.count} shop={shop}/>
           </div>
           <p style={{margin:"0 0 6px",fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>Last 6 Months</p>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:14}}>
