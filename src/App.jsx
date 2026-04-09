@@ -5985,7 +5985,7 @@ export default function App(){
 
   if(!user) return <LoginScreen users={users} onLogin={handleLogin}/>;
 
-  const allowedShops=(user.shops||SHOP_IDS);
+  const allowedShops=(user.shops&&user.shops.length>0)?user.shops:SHOP_IDS;
 
   // Auto-route staff directly to their assigned shop
   const activeShop = shop || (user.role==="staff" && allowedShops.length===1 ? allowedShops[0] : null);

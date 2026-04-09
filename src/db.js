@@ -534,7 +534,7 @@ export const dbLoadUsers = async () => {
     initials: r.initials || '',
     role:     r.role || 'staff',
     pin:      r.pin || '',
-    shops:    r.shops ? r.shops.split(',').filter(Boolean) : [],
+    shops:    r.shops ? r.shops.split(',').filter(Boolean) : null,
     avatar:   r.avatar || '',
   }));
 };
@@ -547,7 +547,7 @@ export const dbSaveUser = async (u) => {
     initials: u.initials || '',
     role:     u.role || 'staff',
     pin:      u.pin || '',
-    shops:    Array.isArray(u.shops) ? u.shops.join(',') : (u.shops || ''),
+    shops:    Array.isArray(u.shops) && u.shops.length > 0 ? u.shops.join(',') : '',
     avatar:   u.avatar || '',
   };
   const { error } = await sb.from('app_users').upsert(payload, { onConflict: 'id' });
