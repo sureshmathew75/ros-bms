@@ -519,3 +519,45 @@ export const dbDeleteProduct = async (id, shopId) => {
   if (error) console.error('Delete product error:', error);
   else console.log('✅ Product deleted:', id);
 };
+
+/* \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550
+   APP USERS
+   \u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550\u2550 */
+
+export const dbLoadUsers = async () => {
+  if (!sb) return null;
+  const { data, error } = await sb.from('app_users').select('*');
+  if (error) { console.error('Load users error:', error); return null; }
+  return data.map(r => ({
+    id:       r.id,
+    name:     r.name || '',
+    initials: r.initials || '',
+    role:     r.role || 'staff',
+    pin:      r.pin || '',
+    shops:    r.shops ? r.shops.split(',').filter(Boolean) : [],
+    avatar:   r.avatar || '',
+  }));
+};
+
+export const dbSaveUser = async (u) => {
+  if (!sb) return;
+  const payload = {
+    id:       u.id,
+    name:     u.name || '',
+    initials: u.initials || '',
+    role:     u.role || 'staff',
+    pin:      u.pin || '',
+    shops:    Array.isArray(u.shops) ? u.shops.join(',') : (u.shops || ''),
+    avatar:   u.avatar || '',
+  };
+  const { error } = await sb.from('app_users').upsert(payload, { onConflict: 'id' });
+  if (error) console.error('Save user error:', error);
+  else console.log('\u2705 User saved:', u.id);
+};
+
+export const dbDeleteUser = async (id) => {
+  if (!sb) return;
+  const { error } = await sb.from('app_users').delete().eq('id', id);
+  if (error) console.error('Delete user error:', error);
+  else console.log('\u2705 User deleted:', id);
+};
