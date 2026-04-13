@@ -2003,8 +2003,8 @@ return(
           <EditSaleForm
             shopId={shopId} shop={shop} sale={editRow} customers={customers}
             onSave={(updated)=>{
-              // Update UI instantly so sales list reflects new status immediately
-              setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>x.id===updated.id?{...x,...updated}:x)}));
+              // Update UI instantly — match by the ORIGINAL editRow.id in case the invoice number changed
+              setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>x.id===editRow.id?{...x,...updated}:x)}));
               setModal(null);setEditRow(null);
               // Persist to Supabase then reload to confirm sync
               dbSaveSale(shopId,updated).then(()=>{
@@ -3514,6 +3514,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     adjNote:     sale.adjNote||"",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const [invEditing,setInvEditing]=useState(false);
 
   const hasLines=Array.isArray(sale.saleLines)&&sale.saleLines.length>0;
 
@@ -3579,8 +3580,24 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
         </div>
         <div>
           <label style={lbl}>Invoice Number</label>
-          <input value={form.invoiceNo} readOnly
-            style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/>
+          <div style={{display:"flex",gap:6,alignItems:"center"}}>
+            <input value={form.invoiceNo}
+              readOnly={!invEditing}
+              onChange={e=>set("invoiceNo",e.target.value)}
+              style={{...inp,flex:1,background:invEditing?"white":"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:invEditing?"text":"default",border:"1px solid "+(invEditing?shop.accent:"#e2e8f0")}}
+              onFocus={fo} onBlur={bl}/>
+            <button type="button"
+              onClick={()=>setInvEditing(v=>!v)}
+              title={invEditing?"Lock invoice number":"Edit invoice number"}
+              style={{flexShrink:0,width:34,height:34,borderRadius:8,border:"1px solid "+(invEditing?shop.accent:"#e2e8f0"),background:invEditing?shop.accent+"18":"#f8fafc",color:invEditing?shop.accent:"#94a3b8",cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}}>
+              {invEditing?"🔒":"✏️"}
+            </button>
+          </div>
+          {invEditing&&(
+            <p style={{margin:"5px 0 0",fontSize:11,color:"#d97706",fontWeight:600}}>
+              ⚠️ Changing the invoice number will update the record ID. Use with care.
+            </p>
+          )}
         </div>
       </div>
 
@@ -3858,7 +3875,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       </div>
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...form,id:sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||""})}
+        <button onClick={()=>onSave({...form,id:form.invoiceNo,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||""})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
