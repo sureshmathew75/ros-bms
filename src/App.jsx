@@ -2003,8 +2003,8 @@ return(
           <EditSaleForm
             shopId={shopId} shop={shop} sale={editRow} customers={customers}
             onSave={(updated)=>{
-              // Update UI instantly — match by the ORIGINAL editRow.id in case the invoice number changed
-              setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>x.id===editRow.id?{...x,...updated}:x)}));
+              // Update UI instantly so sales list reflects new status immediately
+              setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>x.id===updated.id?{...x,...updated}:x)}));
               setModal(null);setEditRow(null);
               // Persist to Supabase then reload to confirm sync
               dbSaveSale(shopId,updated).then(()=>{
@@ -3153,7 +3153,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
     }
   };
 
-  // All 22 export columns — all ON by default
+  // All 24 export columns — all ON by default
   const ALL_COLS=[
     {key:"sale_id",       label:"Sale ID"},
     {key:"date",          label:"Date"},
@@ -3175,8 +3175,10 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
     {key:"exchange",      label:"Exchange"},
     {key:"refund",        label:"Refund"},
     {key:"tag",           label:"Tag"},
+    {key:"pur_inv_no",    label:"Pur. Inv. Number"},
+    {key:"pur_inv_date",  label:"Pur. Inv. Date"},
+    {key:"pur_amount",    label:"Pur. Inv. Amount"},
     {key:"remarks",       label:"Remarks"},
-    {key:"re",            label:"RE"},
   ];
 
   const initCols=ALL_COLS.reduce((acc,c)=>({...acc,[c.key]:true}),{});
@@ -3216,7 +3218,9 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
       refund:        s.refundAmt||"",
       tag:           s.tag||"",
       remarks:       s.rem||s.remarks||"",
-      re:            s.re||"",
+      pur_inv_no:    s.purInvNo||"",
+      pur_inv_date:  s.purInvDate||"",
+      pur_amount:    s.purAmount||"",
     };
   };
 
@@ -3333,7 +3337,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
       <div style={{background:"#f8fafc",borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div>
           <p style={{margin:0,fontSize:13,fontWeight:700,color:"#1e293b"}}>📄 Download Template</p>
-          <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>All 22 columns pre-labelled — fill and upload</p>
+          <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>All 24 columns pre-labelled — fill and upload</p>
         </div>
         <button onClick={()=>{
             const header=ALL_COLS.map(c=>c.label).join(",");
@@ -3512,9 +3516,11 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     adjAmt:      sale.adjAmt||"",
     adjDate:     sale.adjDate||"",
     adjNote:     sale.adjNote||"",
+    purInvNo:    sale.purInvNo||"",
+    purInvDate:  sale.purInvDate||"",
+    purAmount:   sale.purAmount||"",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-  const [invEditing,setInvEditing]=useState(false);
 
   const hasLines=Array.isArray(sale.saleLines)&&sale.saleLines.length>0;
 
@@ -3580,24 +3586,8 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
         </div>
         <div>
           <label style={lbl}>Invoice Number</label>
-          <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            <input value={form.invoiceNo}
-              readOnly={!invEditing}
-              onChange={e=>set("invoiceNo",e.target.value)}
-              style={{...inp,flex:1,background:invEditing?"white":"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:invEditing?"text":"default",border:"1px solid "+(invEditing?shop.accent:"#e2e8f0")}}
-              onFocus={fo} onBlur={bl}/>
-            <button type="button"
-              onClick={()=>setInvEditing(v=>!v)}
-              title={invEditing?"Lock invoice number":"Edit invoice number"}
-              style={{flexShrink:0,width:34,height:34,borderRadius:8,border:"1px solid "+(invEditing?shop.accent:"#e2e8f0"),background:invEditing?shop.accent+"18":"#f8fafc",color:invEditing?shop.accent:"#94a3b8",cursor:"pointer",fontSize:15,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}}>
-              {invEditing?"🔒":"✏️"}
-            </button>
-          </div>
-          {invEditing&&(
-            <p style={{margin:"5px 0 0",fontSize:11,color:"#d97706",fontWeight:600}}>
-              ⚠️ Changing the invoice number will update the record ID. Use with care.
-            </p>
-          )}
+          <input value={form.invoiceNo} readOnly
+            style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/>
         </div>
       </div>
 
@@ -3874,8 +3864,33 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
         <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Any additional notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
       </div>
 
+      {shopId==="ros-india"&&(
+        <>
+          <Divider title="Purchase Details"/>
+          <div style={{marginBottom:16,background:"#f0fdf4",borderRadius:12,padding:"14px",border:"1px solid #bbf7d0"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+              <div>
+                <label style={{...lbl,color:"#166534"}}>🧾 Pur. Inv. No.</label>
+                <input value={form.purInvNo} onChange={e=>set("purInvNo",e.target.value)}
+                  placeholder="Supplier invoice no." style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/>
+              </div>
+              <div>
+                <label style={{...lbl,color:"#166534"}}>📅 Pur. Inv. Date</label>
+                <input type="date" value={form.purInvDate} onChange={e=>set("purInvDate",e.target.value)}
+                  style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/>
+              </div>
+            </div>
+            <div>
+              <label style={{...lbl,color:"#166534"}}>💰 Pur. Amount ({shop.symbol})</label>
+              <input type="number" value={form.purAmount} onChange={e=>set("purAmount",e.target.value)}
+                placeholder="0.00" style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/>
+            </div>
+          </div>
+        </>
+      )}
+
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...form,id:form.invoiceNo,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||""})}
+        <button onClick={()=>onSave({...form,id:form.invoiceNo,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
@@ -4564,6 +4579,9 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     refundAmt:   "",
     tag:         "",
     remarks:     "",
+    purInvNo:    "",
+    purInvDate:  "",
+    purAmount:   "",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -4600,7 +4618,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     const filledLines=lines.filter(l=>l.name.trim()||(parseFloat(l.price)>0));
     const combinedItem=filledLines.map(l=>`${l.name}(x${l.qty})`).join(", ")||"Sale";
     const combinedQty=filledLines.reduce((s,l)=>s+(parseFloat(l.qty)||0),0)||1;
-    onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel});
+    onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel,purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0});
   };
 
   return(<>
@@ -4749,6 +4767,31 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
 
       <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
       <div style={{marginBottom:16}}><label style={lbl}>Remarks</label><textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Any additional notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/></div>
+
+      {shopId==="ros-india"&&(
+        <>
+          <Divider title="Purchase Details"/>
+          <div style={{marginBottom:16,background:"#f0fdf4",borderRadius:12,padding:"14px",border:"1px solid #bbf7d0"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+              <div>
+                <label style={{...lbl,color:"#166534"}}>🧾 Pur. Inv. No.</label>
+                <input value={form.purInvNo} onChange={e=>set("purInvNo",e.target.value)}
+                  placeholder="Supplier invoice no." style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/>
+              </div>
+              <div>
+                <label style={{...lbl,color:"#166534"}}>📅 Pur. Inv. Date</label>
+                <input type="date" value={form.purInvDate} onChange={e=>set("purInvDate",e.target.value)}
+                  style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/>
+              </div>
+            </div>
+            <div>
+              <label style={{...lbl,color:"#166534"}}>💰 Pur. Amount ({shop.symbol})</label>
+              <input type="number" value={form.purAmount} onChange={e=>set("purAmount",e.target.value)}
+                placeholder="0.00" style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/>
+            </div>
+          </div>
+        </>
+      )}
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
         <button onClick={handleSave} style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>

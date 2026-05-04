@@ -858,7 +858,9 @@ export default function SalesPanel({
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
             <thead>
               <tr style={{ background: "#f8fafc" }}>
-                {["Invoice", "Date", "Customer", "Item", "Amount", "Payment", "Status", "Tags", "Actions"]
+                {["Invoice", "Date", "Customer", "Item", "Amount", "Payment", "Status", "Tags",
+                  ...(shopId==="ros-india" ? ["Pur. Amount"] : []),
+                  "Actions"]
                   .map((h, i) => (
                     <th key={h} style={{
                       padding: "11px 16px", textAlign: (i >= 4 && i !== 7) ? "right" : "left",
@@ -876,7 +878,7 @@ export default function SalesPanel({
               {/* Empty state */}
               {rowsWithSeparators.length === 0 && (
                 <tr>
-                  <td colSpan={9} style={{ padding: "52px 16px", textAlign: "center" }}>
+                  <td colSpan={shopId==="ros-india" ? 10 : 9} style={{ padding: "52px 16px", textAlign: "center" }}>
                     <div style={{ fontSize: 36, marginBottom: 10 }}>🛒</div>
                     <p style={{ margin: 0, fontWeight: 700, color: "#94a3b8", fontSize: 14 }}>
                       No {statusTab !== "ALL" ? activeTabCfg.label.toLowerCase() + " " : ""}sales found
@@ -896,7 +898,7 @@ export default function SalesPanel({
                 if (row._type === "fy") {
                   return (
                     <tr key={`fy-${row._fyStart}-${idx}`}>
-                      <td colSpan={9} style={{ padding: 0 }}>
+                      <td colSpan={shopId==="ros-india" ? 10 : 9} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", gap: 10,
                           padding: "9px 16px",
@@ -928,7 +930,7 @@ export default function SalesPanel({
                 if (row._type === "month") {
                   return (
                     <tr key={`month-${row._monthKey}-${idx}`}>
-                      <td colSpan={9} style={{ padding: 0 }}>
+                      <td colSpan={shopId==="ros-india" ? 10 : 9} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", gap: 10,
                           padding: "6px 16px",
@@ -1053,6 +1055,21 @@ export default function SalesPanel({
                         </div>
                       ) : <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>}
                     </td>
+                    {/* Pur. Amount — ROS INDIA only */}
+                    {shopId==="ros-india"&&(
+                      <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                        {s.purAmount ? (
+                          <span style={{
+                            fontFamily: "DM Mono, monospace", fontSize: 12, fontWeight: 700,
+                            color: "#166534", background: "#f0fdf4",
+                            border: "1px solid #bbf7d0", borderRadius: 7,
+                            padding: "3px 9px", whiteSpace: "nowrap",
+                          }}>
+                            {shop.symbol}{Number(s.purAmount).toLocaleString()}
+                          </span>
+                        ) : <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>}
+                      </td>
+                    )}
                     {/* Actions */}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
