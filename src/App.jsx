@@ -1635,11 +1635,20 @@ return(
                               </p>
                               <p style={{margin:0,fontSize:26,fontWeight:900,color:"white",letterSpacing:"-0.8px",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,monthSales)}</p>
                             </div>
-                            <div style={{position:"relative",width:64,height:64,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                              <Ring pct={monthPct} color="#67e8f9" size={64} stroke={6}/>
-                              <div style={{position:"absolute",textAlign:"center"}}>
-                                <p style={{margin:0,fontSize:11,fontWeight:900,color:"white"}}>{Math.round(monthPct*100)}%</p>
+                            <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,flexShrink:0}}>
+                              <div style={{position:"relative",width:64,height:64,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                                <Ring pct={monthPct} color="#67e8f9" size={64} stroke={6}/>
+                                <div style={{position:"absolute",textAlign:"center"}}>
+                                  <p style={{margin:0,fontSize:11,fontWeight:900,color:"white"}}>{Math.round(monthPct*100)}%</p>
+                                </div>
                               </div>
+                              {monthTarget>0&&(
+                                <p style={{margin:0,fontSize:8,color:"rgba(255,255,255,0.45)",fontFamily:"DM Mono,monospace",textAlign:"center",lineHeight:1.3}}>
+                                  {monthSales>=monthTarget
+                                    ? "🎯 Target achieved!"
+                                    : fmt(shopId,monthTarget-monthSales)+" remaining"}
+                                </p>
+                              )}
                             </div>
                           </div>
                           <div style={{height:4,background:"rgba(0,0,0,0.2)",borderRadius:999,overflow:"hidden",marginTop:4}}>
@@ -3932,7 +3941,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
   const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",padding:"0 20px 4px"}}>
+    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
 
       {/* highlight banner */}
       <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
