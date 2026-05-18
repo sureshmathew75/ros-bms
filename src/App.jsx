@@ -21,7 +21,7 @@ import {
   STAGE_THEME
 } from "./constants";
 import { formatCurrency, formatDate, formatNumber } from "./utils";
-import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser } from "./db";
+import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -196,14 +196,14 @@ const Badge=({l})=>{
   return <span style={{display:"inline-flex",alignItems:"center",padding:"2px 10px",borderRadius:999,fontSize:11,fontWeight:700,background:b.bg,color:b.c,border:"1px solid "+b.b}}>{l}</span>;
 };
 const Modal=({title,onClose,accent,children})=>(
-  <div style={{position:"fixed",inset:0,zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+  <div style={{position:"fixed",inset:0,zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:"12px 16px"}}>
     <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(6px)"}}/>
-    <div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.20)",width:"100%",maxWidth:560,maxHeight:"90vh",overflowY:"auto"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"18px 24px",borderBottom:"1px solid #f1f5f9",background:accent+"12",borderRadius:"20px 20px 0 0"}}>
+    <div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.20)",width:"100%",maxWidth:560,maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 20px",borderBottom:"1px solid #f1f5f9",background:accent+"12",borderRadius:"20px 20px 0 0",flexShrink:0}}>
         <h3 style={{margin:0,fontSize:16,fontWeight:800,color:"#0f172a"}}>{title}</h3>
         <button onClick={onClose} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:20,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>×</button>
       </div>
-      <div style={{padding:24}}>{children}</div>
+      <div style={{padding:"20px 20px 8px",overflowY:"auto",flex:1}}>{children}</div>
     </div>
   </div>
 );
@@ -286,7 +286,7 @@ const calcShopStats=(data=[])=>{
   const isMonth=s=>{const dt=parseDate(s.date);return dt&&dt.getFullYear()===y&&dt.getMonth()===mo;};
 
   const isRefunded=s=>(s.ful||s.status)==="REFUNDED";
-  const rev=(arr)=>arr.filter(s=>!isRefunded(s)).reduce((a,s)=>a+(Number(s.amount)||0)-(Number(s.adjAmt)||0),0);
+  const rev=(arr)=>arr.filter(s=>!isRefunded(s)).reduce((a,s)=>a+(Number(s.amount)||0),0);
 
   // Month and today filtered within current FY only
   const monthArr=curFYData.filter(s=>isMonth(s));
@@ -767,13 +767,6 @@ const normaliseSale=(s)=>{
   const discount = Number(s.discount !== undefined ? s.discount : s.discount_amt || 0) || 0;
   const otherCharges = Number(s.otherCharges !== undefined ? s.otherCharges : s.other_charges || 0) || 0;
   const otherChargesLabel = s.otherChargesLabel || s.other_charges_label || "Other Charges";
-  const adjAmt = Number(s.adjAmt !== undefined ? s.adjAmt : s.adj_amt || 0) || 0;
-  const adjType = s.adjType || s.adj_type || "";
-  const adjDate = s.adjDate || s.adj_date || "";
-  const adjNote = s.adjNote || s.adj_note || "";
-  const shopInvoiceNo = s.shopInvoiceNo || s.shop_invoice_no || "";
-  const refundDate = s.refundDate || s.refund_date || "";
-  const exchangeDate = s.exchangeDate || s.exchange_date || "";
   return {
     ...s,
     item:             displayItem,
@@ -783,13 +776,6 @@ const normaliseSale=(s)=>{
     discount,
     otherCharges,
     otherChargesLabel,
-    adjAmt,
-    adjType,
-    adjDate,
-    adjNote,
-    shopInvoiceNo,
-    refundDate,
-    exchangeDate,
   };
 };
 
@@ -853,10 +839,9 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const _invTaxR    = invoiceRow ? ((invoiceRow.taxRate!==undefined&&invoiceRow.taxRate!==null?invoiceRow.taxRate:0)/100) : 0;
   const _invInc     = _invTaxR===0 ? true : (invoiceRow ? invoiceRow.taxInclusive!==false : true);
   const _invEntered = invoiceRow ? Number(invoiceRow.amount)||0 : 0;
-  const _invAdjAmt  = invoiceRow ? Number(invoiceRow.adjAmt)||0 : 0;
   const invSubtotal = _invInc ? parseFloat((_invEntered/(1+_invTaxR)).toFixed(2)) : _invEntered;
   const invTaxAmt   = parseFloat((invSubtotal*_invTaxR).toFixed(2));
-  const invGrand    = parseFloat((invSubtotal+invTaxAmt-_invAdjAmt).toFixed(2));
+  const invGrand    = parseFloat((invSubtotal+invTaxAmt).toFixed(2));
 
   const shop=SHOPS.find(s=>s.id===shopId);
   const sales=salesData[shopId]||[];
@@ -2017,7 +2002,7 @@ return(
                     const ti=tr===0?true:(s.taxInclusive!==undefined?s.taxInclusive!==false:true);
                     let sl=decodedLines||s.saleLines||s.sale_lines||null;
                     if(typeof sl==="string"){try{sl=JSON.parse(sl);}catch{sl=null;}}
-                    return {...s,item:displayItem,taxRate:tr,taxInclusive:ti,saleLines:Array.isArray(sl)?sl:null,discount:Number(s.discount||s.discount_amt)||0,otherCharges:Number(s.otherCharges||s.other_charges)||0,adjAmt:Number(s.adjAmt||s.adj_amt)||0,adjType:s.adjType||s.adj_type||"",adjDate:s.adjDate||s.adj_date||"",adjNote:s.adjNote||s.adj_note||"",shopInvoiceNo:s.shopInvoiceNo||s.shop_invoice_no||"",refundDate:s.refundDate||s.refund_date||"",exchangeDate:s.exchangeDate||s.exchange_date||""};
+                    return {...s,item:displayItem,taxRate:tr,taxInclusive:ti,saleLines:Array.isArray(sl)?sl:null,discount:Number(s.discount||s.discount_amt)||0,otherCharges:Number(s.otherCharges||s.other_charges)||0};
                   })}));
                 }).catch(()=>{});
               }).catch(err=>console.error("❌ Edit save failed:",err));
@@ -2044,13 +2029,12 @@ return(
       {/* ══ PRINT STYLE + OVERLAY ══ */}
       {printMode&&invoiceRow&&(()=>{
         const inv=invoiceRow,sym=shop.symbol,total=Number(inv.amount)||0,isIndia=shopId==="ros-india";
-        const invAdjAmt=Number(inv.adjAmt)||0;
         const rPct=inv.taxRate!==undefined&&inv.taxRate!==null?inv.taxRate:0;
         const taxRate=rPct/100;
         const inclusive=taxRate===0?true:inv.taxInclusive!==false;
         const subtotal=inclusive?parseFloat((total/(1+taxRate)).toFixed(2)):total;
         const taxAmt=parseFloat((subtotal*taxRate).toFixed(2));
-        const grand=parseFloat((subtotal+taxAmt-invAdjAmt).toFixed(2));
+        const grand=parseFloat((subtotal+taxAmt).toFixed(2));
         const cgst=parseFloat((taxAmt/2).toFixed(2));
         const tRows=rPct===0?[["Amount (no tax)",total]]:isIndia?[["Subtotal (excl. tax)",subtotal],["CGST ("+(rPct/2)+"%)",cgst],["SGST ("+(rPct/2)+"%)",cgst]]:[["Subtotal (excl. tax)",subtotal],["Tax ("+rPct+"%)",taxAmt]];
         const n=Math.round(total);const ons=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];const tns=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
@@ -2185,12 +2169,6 @@ return(
                       <span style={{fontSize:13,fontWeight:600}}>{v===0?sym+"0.00":sym+Number(v).toLocaleString()}</span>
                     </div>
                   ))}
-                  {invAdjAmt>0&&(
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
-                      <span style={{fontSize:13,color:"#d97706"}}>{inv.adjType||"Adjustment"}</span>
-                      <span style={{fontSize:13,fontWeight:600,color:"#d97706"}}>{sym}-{Number(invAdjAmt).toLocaleString()}</span>
-                    </div>
-                  )}
                   <div style={{borderTop:"2px solid #0f172a",paddingTop:10,marginTop:4}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
                       <span style={{fontSize:15,fontWeight:900}}>GRAND TOTAL</span>
@@ -2230,10 +2208,9 @@ return(
         const tR=rPct/100;
         const inc=tR===0?true:inv.taxInclusive!==false;
         const ent=Number(inv.amount)||0;
-        const pdfAdjAmt=Number(inv.adjAmt)||0;
         const sub=inc?parseFloat((ent/(1+tR)).toFixed(2)):ent;
         const tax=parseFloat((sub*tR).toFixed(2));
-        const grd=parseFloat((sub+tax-pdfAdjAmt).toFixed(2));
+        const grd=parseFloat((sub+tax).toFixed(2));
         const cgst=parseFloat((tax/2).toFixed(2));
         return(
           <div style={{position:"fixed",inset:0,zIndex:9999,background:"white",overflowY:"auto"}}>
@@ -2579,7 +2556,6 @@ return(
                 <div>
                   {invoiceRow&&(()=>{
                     const entered  = Number(invoiceRow.amount)||0;
-                    const previewAdjAmt = Number(invoiceRow.adjAmt)||0;
                     const isIndia  = shopId==="ros-india";
                     const rateDisplay = (invoiceRow.taxRate!==undefined&&invoiceRow.taxRate!==null ? invoiceRow.taxRate : 0);
                     const taxRate  = rateDisplay / 100;
@@ -2590,7 +2566,7 @@ return(
                       ? parseFloat((entered / (1 + taxRate)).toFixed(2))
                       : entered;
                     const taxAmt   = parseFloat((subtotal * taxRate).toFixed(2));
-                    const grand    = parseFloat((subtotal + taxAmt - previewAdjAmt).toFixed(2));
+                    const grand    = parseFloat((subtotal + taxAmt).toFixed(2));
                     const cgst     = parseFloat((taxAmt / 2).toFixed(2));
                     const sgst     = parseFloat((taxAmt / 2).toFixed(2));
                     const rows = rateDisplay===0
@@ -2605,8 +2581,6 @@ return(
                             ["Subtotal (excl. tax)", subtotal],
                             ["Tax ("+rateDisplay+"%)", taxAmt],
                           ];
-                    const adjRows=previewAdjAmt>0?[["Post-Sale Adj. ("+(invoiceRow.adjType||"Adjustment")+")",-previewAdjAmt]]:[];
-                    const allRows=[...rows,...adjRows];
                     return <>
                       {/* Tax mode badge */}
                       <div style={{marginBottom:8}}>
@@ -2617,10 +2591,10 @@ return(
                           {rateDisplay===0?"No Tax":(inclusive?"Tax Inclusive":"Tax Exclusive")+" · "+rateDisplay+"%"}
                         </span>
                       </div>
-                      {allRows.map(([k,v])=>(
+                      {rows.map(([k,v])=>(
                         <div key={k} style={{display:"flex",justifyContent:"space-between",marginBottom:7}}>
-                          <span style={{fontSize:13,color:v<0?"#d97706":"#64748b"}}>{k}</span>
-                          <span style={{fontSize:13,fontWeight:600,color:v<0?"#d97706":"#374151"}}>{v<0?"\u2212 "+fmt(shopId,Math.abs(v)):fmt(shopId,v)}</span>
+                          <span style={{fontSize:13,color:"#64748b"}}>{k}</span>
+                          <span style={{fontSize:13,fontWeight:600,color:"#374151"}}>{fmt(shopId,v)}</span>
                         </div>
                       ))}
                       <div style={{borderTop:"2px solid #0f172a",paddingTop:10,marginTop:6}}>
@@ -2728,7 +2702,7 @@ return(
                   <div style={{display:"flex",justifyContent:"space-between"}}>
                     <span style={{fontSize:12,color:"#64748b"}}>Amount</span>
                     <span style={{fontSize:14,fontWeight:900,color:shop.accent}}>
-                      {fmt(shopId,(Number(selRow.amount)||0)-(Number(selRow.adjAmt)||0))}
+                      {fmt(shopId,Number(selRow.amount)||0)}
                     </span>
                   </div>
                 </div>
@@ -2742,7 +2716,7 @@ return(
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
                     <span style={{fontSize:12,color:"#64748b"}}>Total</span>
                     <span style={{fontSize:14,fontWeight:900,color:shop.accent}}>
-                      {fmt(shopId,(Number(selRow.amount)||0)-(Number(selRow.adjAmt)||0))}
+                      {fmt(shopId,Number(selRow.amount)||0)}
                     </span>
                   </div>
                   {/* Fulfillment Timeline */}
@@ -2786,7 +2760,7 @@ return(
               {/* ── LINE ITEMS ── */}
               {(()=>{
                 const hasLines=Array.isArray(selRow.saleLines)&&selRow.saleLines.length>0;
-                const grandTotal=(Number(selRow.amount)||0)-(Number(selRow.adjAmt)||0);
+                const grandTotal=Number(selRow.amount)||0;
                 const discountAmt=Number(selRow.discount)||0;
                 const otherChargesAmt=Number(selRow.otherCharges)||0;
                 const taxRatePct=selRow.taxRate!=null?selRow.taxRate:0;
@@ -2855,12 +2829,6 @@ return(
                           <span style={{fontSize:12,fontWeight:600,color:"#374151"}}>{fmt(shopId,parseFloat((grandTotal*(taxRatePct/100)/(1+taxRatePct/100)).toFixed(2)))}</span>
                         </div>
                       )}
-                      {(Number(selRow.adjAmt)||0)>0&&(
-                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                          <span style={{fontSize:12,color:"#d97706"}}>{selRow.adjType||"Adjustment"}</span>
-                          <span style={{fontSize:12,fontWeight:600,color:"#d97706"}}>\u2212 {fmt(shopId,Number(selRow.adjAmt)||0)}</span>
-                        </div>
-                      )}
                       <div style={{display:"flex",justifyContent:"space-between",borderTop:"2px solid #0f172a",paddingTop:8}}>
                         <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>Grand Total</span>
                         <span style={{fontSize:15,fontWeight:900,color:shop.accent}}>{fmt(shopId,grandTotal)}</span>
@@ -2881,7 +2849,7 @@ return(
                 {/* totals */}
                 <div style={{border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 16px"}}>
                   {(()=>{
-                    const amt=(Number(selRow.amount)||0)-(Number(selRow.adjAmt)||0);
+                    const amt=Number(selRow.amount)||0;
                     const rPct=selRow.taxRate!=null?selRow.taxRate:0;
                     const r=rPct/100;
                     // amount is always the final grand total as entered/saved
@@ -2913,12 +2881,6 @@ return(
                         <span style={{fontSize:12,color:"#64748b"}}>Balance Due</span>
                         <span style={{fontSize:12,fontWeight:700,color:"#15803d"}}>{shop.symbol}0</span>
                       </div>
-                      {(Number(selRow.adjAmt)||0)>0&&(
-                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
-                          <span style={{fontSize:12,color:"#d97706"}}>{selRow.adjType||"Adjustment"}</span>
-                          <span style={{fontSize:12,fontWeight:600,color:"#d97706"}}>\u2212 {fmt(shopId,Number(selRow.adjAmt)||0)}</span>
-                        </div>
-                      )}
                       <div style={{display:"flex",justifyContent:"space-between"}}>
                         <span style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>Grand Total</span>
                         <span style={{fontSize:16,fontWeight:900,color:shop.accent}}>{fmt(shopId,amt)}</span>
@@ -3153,7 +3115,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
     }
   };
 
-  // All 24 export columns — all ON by default
+  // All 22 export columns — all ON by default
   const ALL_COLS=[
     {key:"sale_id",       label:"Sale ID"},
     {key:"date",          label:"Date"},
@@ -3175,10 +3137,8 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
     {key:"exchange",      label:"Exchange"},
     {key:"refund",        label:"Refund"},
     {key:"tag",           label:"Tag"},
-    {key:"pur_inv_no",    label:"Pur. Inv. Number"},
-    {key:"pur_inv_date",  label:"Pur. Inv. Date"},
-    {key:"pur_amount",    label:"Pur. Inv. Amount"},
     {key:"remarks",       label:"Remarks"},
+    {key:"re",            label:"RE"},
   ];
 
   const initCols=ALL_COLS.reduce((acc,c)=>({...acc,[c.key]:true}),{});
@@ -3218,9 +3178,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
       refund:        s.refundAmt||"",
       tag:           s.tag||"",
       remarks:       s.rem||s.remarks||"",
-      pur_inv_no:    s.purInvNo||"",
-      pur_inv_date:  s.purInvDate||"",
-      pur_amount:    s.purAmount||"",
+      re:            s.re||"",
     };
   };
 
@@ -3337,7 +3295,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
       <div style={{background:"#f8fafc",borderRadius:12,padding:"12px 16px",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
         <div>
           <p style={{margin:0,fontSize:13,fontWeight:700,color:"#1e293b"}}>📄 Download Template</p>
-          <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>All 24 columns pre-labelled — fill and upload</p>
+          <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>All 22 columns pre-labelled — fill and upload</p>
         </div>
         <button onClick={()=>{
             const header=ALL_COLS.map(c=>c.label).join(",");
@@ -3505,20 +3463,11 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     returnReqDate: sale.returnReqDate||"",
     returnRcvd:  sale.returnRcvd||"",
     refundAmt:   sale.refundAmt||"",
-    refundDate:  sale.refundDate||"",
-    exchangeDate: sale.exchangeDate||"",
     tag:         sale.tag||"",
     remarks:     sale.rem||sale.remarks||"",
     taxInclusive: sale.taxInclusive !== false,
     taxRate:      sale.taxRate !== undefined ? sale.taxRate : 0,
     phoneSavedOn: sale.phoneSavedOn||"UK 888",
-    adjType:     sale.adjType||"",
-    adjAmt:      sale.adjAmt||"",
-    adjDate:     sale.adjDate||"",
-    adjNote:     sale.adjNote||"",
-    purInvNo:    sale.purInvNo||"",
-    purInvDate:  sale.purInvDate||"",
-    purAmount:   sale.purAmount||"",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -3561,8 +3510,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
 
   const isReturnRequested=["RETURN REQUESTED","RTRN REQSTD"].includes(form.status);
   const isReturnReceived=["RETURN RECEIVED","RETRN RCVD"].includes(form.status);
-  const isExchanged=form.status==="EXCHANGED";
-  const isRefunded=form.status==="REFUNDED";
+  const isRefundOnly=["EXCHANGED","REFUNDED"].includes(form.status);
   const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","WORK IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
   const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
@@ -3748,11 +3696,19 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       </div>
 
       <Divider title="Payment"/>
-      <div style={{marginBottom:16}}>
-        <label style={lbl}>Payment By</label>
-        <select value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
-          {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
-        </select>
+      <div style={{display:"grid",gridTemplateColumns:form.payBy==="SHOP"?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
+        <div>
+          <label style={lbl}>Payment By</label>
+          <select value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
+            {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
+          </select>
+        </div>
+        {form.payBy==="SHOP"&&(
+          <div>
+            <label style={lbl}>Shop Invoice No.</label>
+            <input value={form.shopInvoiceNo||""} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 12345" style={inp} onFocus={fo} onBlur={bl}/>
+          </div>
+        )}
       </div>
 
       <Divider title="Delivery"/>
@@ -3791,35 +3747,23 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       {isReturnReceived&&(
         <>
           <Divider title="Return Received"/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#fff5f5",borderRadius:12,padding:"14px",border:"1px solid #fecaca"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#fff5f5",borderRadius:12,padding:"14px",border:"1px solid #fecaca"}}>
             <div>
               <label style={{...lbl,color:"#dc2626"}}>📬 Return Received Date</label>
               <input type="date" value={form.returnRcvd} onChange={e=>set("returnRcvd",e.target.value)} style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/>
             </div>
-          </div>
-        </>
-      )}
-
-      {isExchanged&&(
-        <>
-          <Divider title="Exchange"/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#eef2ff",borderRadius:12,padding:"14px",border:"1px solid #c7d2fe"}}>
             <div>
-              <label style={{...lbl,color:"#4338ca"}}>🔄 Exchange Item Sent Date</label>
-              <input type="date" value={form.exchangeDate} onChange={e=>set("exchangeDate",e.target.value)} style={{...inp,border:"1px solid #c7d2fe"}} onFocus={fo} onBlur={bl}/>
+              <label style={{...lbl,color:"#dc2626"}}>💸 Refunded Amount ({shop.symbol})</label>
+              <input type="number" value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/>
             </div>
           </div>
         </>
       )}
 
-      {isRefunded&&(
+      {isRefundOnly&&(
         <>
           <Divider title="Refund"/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#f5f3ff",borderRadius:12,padding:"14px",border:"1px solid #ddd6fe"}}>
-            <div>
-              <label style={{...lbl,color:"#6b21a8"}}>📅 Refund Date</label>
-              <input type="date" value={form.refundDate} onChange={e=>set("refundDate",e.target.value)} style={{...inp,border:"1px solid #ddd6fe"}} onFocus={fo} onBlur={bl}/>
-            </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#f5f3ff",borderRadius:12,padding:"14px",border:"1px solid #ddd6fe"}}>
             <div>
               <label style={{...lbl,color:"#6b21a8"}}>💸 Refunded Amount ({shop.symbol})</label>
               <input type="number" value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #ddd6fe"}} onFocus={fo} onBlur={bl}/>
@@ -3828,69 +3772,14 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
         </>
       )}
 
-      <Divider title="Post-Sale Adjustment"/>
-      <div style={{background:"#fffbeb",borderRadius:12,padding:"14px",border:"1px solid #fde68a",marginBottom:16}}>
-        <p style={{margin:"0 0 10px",fontSize:11,color:"#92400e",fontWeight:600}}>🔧 Use this section to record any discount or partial refund given after the sale (e.g. damaged item, defect).</p>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-          <div>
-            <label style={{...lbl,color:"#92400e"}}>Adjustment Type</label>
-            <select value={form.adjType} onChange={e=>set("adjType",e.target.value)} style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}>
-              <option value="">-- None --</option>
-              <option value="Discount">Discount</option>
-              <option value="Partial Refund">Partial Refund</option>
-              <option value="Other">Other</option>
-            </select>
-          </div>
-          <div>
-            <label style={{...lbl,color:"#92400e"}}>Adjustment Date</label>
-            <input type="date" value={form.adjDate} onChange={e=>set("adjDate",e.target.value)} style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
-          </div>
-        </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-          <div>
-            <label style={{...lbl,color:"#92400e"}}>💰 Adjustment Amount ({shop.symbol})</label>
-            <input type="number" value={form.adjAmt} onChange={e=>set("adjAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
-          </div>
-          <div>
-            <label style={{...lbl,color:"#92400e"}}>📝 Reason / Note</label>
-            <input type="text" value={form.adjNote} onChange={e=>set("adjNote",e.target.value)} placeholder="e.g. damaged zip, colour mismatch…" style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
-          </div>
-        </div>
-      </div>
-
       <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
       <div style={{marginBottom:16}}>
         <label style={lbl}>Remarks</label>
         <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Any additional notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
       </div>
 
-      {shopId==="ros-india"&&(
-        <>
-          <Divider title="Purchase Details"/>
-          <div style={{marginBottom:16,background:"#f0fdf4",borderRadius:12,padding:"14px",border:"1px solid #bbf7d0"}}>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-              <div>
-                <label style={{...lbl,color:"#166534"}}>🧾 Pur. Inv. No.</label>
-                <input value={form.purInvNo} onChange={e=>set("purInvNo",e.target.value)}
-                  placeholder="Supplier invoice no." style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/>
-              </div>
-              <div>
-                <label style={{...lbl,color:"#166534"}}>📅 Pur. Inv. Date</label>
-                <input type="date" value={form.purInvDate} onChange={e=>set("purInvDate",e.target.value)}
-                  style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/>
-              </div>
-            </div>
-            <div>
-              <label style={{...lbl,color:"#166534"}}>💰 Pur. Amount ({shop.symbol})</label>
-              <input type="number" value={form.purAmount} onChange={e=>set("purAmount",e.target.value)}
-                placeholder="0.00" style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/>
-            </div>
-          </div>
-        </>
-      )}
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...form,id:form.invoiceNo,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0})}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:12,paddingTop:10,marginTop:8,borderTop:"1px solid #f1f5f9"}}>
+        <button onClick={()=>onSave({...form,id:sale.id,ful:form.status,pay:form.payBy,rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
@@ -4579,9 +4468,6 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     refundAmt:   "",
     tag:         "",
     remarks:     "",
-    purInvNo:    "",
-    purInvDate:  "",
-    purAmount:   "",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -4618,7 +4504,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     const filledLines=lines.filter(l=>l.name.trim()||(parseFloat(l.price)>0));
     const combinedItem=filledLines.map(l=>`${l.name}(x${l.qty})`).join(", ")||"Sale";
     const combinedQty=filledLines.reduce((s,l)=>s+(parseFloat(l.qty)||0),0)||1;
-    onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel,purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0});
+    onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel});
   };
 
   return(<>
@@ -4767,31 +4653,6 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
 
       <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
       <div style={{marginBottom:16}}><label style={lbl}>Remarks</label><textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Any additional notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/></div>
-
-      {shopId==="ros-india"&&(
-        <>
-          <Divider title="Purchase Details"/>
-          <div style={{marginBottom:16,background:"#f0fdf4",borderRadius:12,padding:"14px",border:"1px solid #bbf7d0"}}>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-              <div>
-                <label style={{...lbl,color:"#166534"}}>🧾 Pur. Inv. No.</label>
-                <input value={form.purInvNo} onChange={e=>set("purInvNo",e.target.value)}
-                  placeholder="Supplier invoice no." style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/>
-              </div>
-              <div>
-                <label style={{...lbl,color:"#166534"}}>📅 Pur. Inv. Date</label>
-                <input type="date" value={form.purInvDate} onChange={e=>set("purInvDate",e.target.value)}
-                  style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/>
-              </div>
-            </div>
-            <div>
-              <label style={{...lbl,color:"#166534"}}>💰 Pur. Amount ({shop.symbol})</label>
-              <input type="number" value={form.purAmount} onChange={e=>set("purAmount",e.target.value)}
-                placeholder="0.00" style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/>
-            </div>
-          </div>
-        </>
-      )}
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
         <button onClick={handleSave} style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
@@ -5356,7 +5217,6 @@ const SettingsPanel=({users,setUsers,currentUser,onClose})=>{
   const deleteUser=id=>{
     if(id===currentUser.id){alert("You cannot delete your own account.");return;}
     setUsers(prev=>prev.filter(u=>u.id!==id));
-    dbDeleteUser(id).catch(err=>console.error("Delete user failed:",err));
   };
 
   const addUser=()=>{
@@ -5958,18 +5818,20 @@ export default function App(){
   // Always start logged-out — login page shown on every fresh load
   const [user,setUser]=useState(null);
   const [shop,setShop]=useState(null);
-  const [users,setUsers]=useState(INITIAL_USERS);
-  // Load users from Supabase on mount
-  useEffect(()=>{
-    dbLoadUsers().then(data=>{
-      if(data&&data.length>0) setUsers(data);
-    }).catch(()=>{});
-  },[]);
+  const [users,setUsers]=useState(()=>{
+    try{
+      const s=localStorage.getItem("ros_users");
+      if(s){
+        const parsed=JSON.parse(s);
+        if(Array.isArray(parsed)&&parsed.length>0) return parsed;
+      }
+    }catch{}
+    return INITIAL_USERS;
+  });
   const setUsersPersist=(updater)=>{
     setUsers(prev=>{
       const next=typeof updater==="function"?updater(prev):updater;
-      // Persist each changed user to Supabase
-      next.forEach(u=>dbSaveUser(u).catch(err=>console.error("Save user failed:",err)));
+      try{localStorage.setItem("ros_users",JSON.stringify(next));}catch{}
       return next;
     });
   };
@@ -6045,7 +5907,7 @@ export default function App(){
 
   if(!user) return <LoginScreen users={users} onLogin={handleLogin}/>;
 
-  const allowedShops=(user.shops&&user.shops.length>0)?user.shops:SHOP_IDS;
+  const allowedShops=(user.shops||SHOP_IDS);
 
   // Auto-route staff directly to their assigned shop
   const activeShop = shop || (user.role==="staff" && allowedShops.length===1 ? allowedShops[0] : null);
