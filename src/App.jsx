@@ -1643,7 +1643,7 @@ return(
                                 </div>
                               </div>
                               {monthTarget>0&&(
-                                <p style={{margin:0,fontSize:8,color:"white",fontFamily:"DM Mono,monospace",textAlign:"center",lineHeight:1.3}}>
+                                <p style={{margin:0,fontSize:8,color:"rgba(255,255,255,0.45)",fontFamily:"DM Mono,monospace",textAlign:"center",lineHeight:1.3}}>
                                   {monthSales>=monthTarget
                                     ? "🎯 Target achieved!"
                                     : fmt(shopId,monthTarget-monthSales)+" remaining"}
@@ -1672,7 +1672,7 @@ return(
                                 <button onClick={()=>setEditingTarget(false)} style={{fontSize:9,background:"none",border:"none",color:"rgba(255,255,255,0.5)",cursor:"pointer",padding:"2px 4px"}}>✕</button>
                               </div>
                             ):(
-                              <button onClick={()=>{setTargetInput(String(monthTarget||""));setEditingTarget(true);}} style={{fontSize:9,fontWeight:700,background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.25)",borderRadius:6,color:"rgba(255,255,255,0.7)",padding:"3px 9px",cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>
+                              <button onClick={()=>{setTargetInput(String(monthTarget||""));setEditingTarget(true);}} style={{fontSize:9,fontWeight:700,background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.25)",borderRadius:6,color:"white",padding:"3px 9px",cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>
                                 ✏️ Target: {monthTarget>0?fmt(shopId,monthTarget):"Set target"}
                               </button>
                             )}
