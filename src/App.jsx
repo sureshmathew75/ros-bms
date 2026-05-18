@@ -206,7 +206,7 @@ const Modal=({title,onClose,accent,children,wide=false})=>{
         <h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>{title}</h3>
         <button onClick={onClose} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
       </div>
-      <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>{children}</div>
+      <div style={{flex:1,overflow:"hidden"}}>{children}</div>
     </div>
   </div>
 );};
@@ -3893,6 +3893,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     purInvNo:    sale.purInvNo||"",
     purInvDate:  sale.purInvDate||"",
     purAmount:   sale.purAmount||"",
+    shopInvoiceNo: sale.shopInvoiceNo||sale.shop_invoice_no||"",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -3941,272 +3942,265 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
   const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
   return(
-    <div style={{display:"flex",flexDirection:"column",maxHeight:"72vh",overflowY:"auto"}}>
-      {/* ── Scrollable body with consistent horizontal padding ── */}
-      <div style={{padding:"20px 24px",display:"flex",flexDirection:"column",gap:0}}>
+    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
 
-      {/* ── Banner ── */}
-      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"30",borderRadius:14,padding:"12px 16px",marginBottom:20,display:"flex",alignItems:"center",gap:12,boxShadow:"0 1px 4px "+shop.accent+"15"}}>
-        <div style={{width:36,height:36,borderRadius:10,background:shop.accent+"20",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-          <span style={{fontSize:18}}>✏️</span>
+      {/* highlight banner */}
+      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:20}}>✏️</span>
+        <div>
+          <p style={{margin:0,fontWeight:800,fontSize:13,color:shop.accentText}}>Editing Sale {form.invoiceNo}</p>
+          <p style={{margin:0,fontSize:11,color:shop.accent}}>All changes will update the sales record immediately on save</p>
+        </div>
+      </div>
+
+      <Divider title="Basic Info"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div>
+          <label style={lbl}>Date</label>
+          <input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
         </div>
         <div>
-          <p style={{margin:0,fontWeight:800,fontSize:13,color:shop.accentText,letterSpacing:"0.01em"}}>Editing Sale {form.invoiceNo}</p>
-          <p style={{margin:"2px 0 0",fontSize:11,color:shop.accent+"cc"}}>All changes will update the sales record immediately on save</p>
+          <label style={lbl}>Invoice Number</label>
+          <input value={form.invoiceNo} readOnly
+            style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/>
+        </div>
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={lbl}>Shop Invoice No.</label>
+          <input value={form.shopInvoiceNo||""} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="Supplier / shop invoice number…" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/>
         </div>
       </div>
 
-      {/* ── Section: Basic Info ── */}
-      <div style={{marginBottom:20}}>
-        <Divider title="Basic Info"/>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-          <div>
-            <label style={lbl}>Date</label>
-            <input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
-          </div>
-          <div>
-            <label style={lbl}>Invoice Number</label>
-            <input value={form.invoiceNo} readOnly
-              style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default",border:"1px solid #e2e8f0"}}/>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Section: Customer ── */}
-      <div style={{marginBottom:20}}>
-        <Divider title="Customer"/>
-        <div style={{background:"#f8fafc",borderRadius:14,padding:"16px",border:"1px solid #e2e8f0",display:"flex",flexDirection:"column",gap:14}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-            <div>
-              <label style={lbl}>Customer Name</label>
-              <select value={form.customer} onChange={e=>set("customer",e.target.value)} style={inp}>
-                <option value="">Select customer…</option>
-                {form.customer && !customers.some(c=>c.name===form.customer) && (
-                  <option value={form.customer}>{form.customer} (imported)</option>
-                )}
-                {customers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
-              </select>
-            </div>
-            <div>
-              <label style={lbl}>Contact Number</label>
-              <input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
-            </div>
-          </div>
-          <div>
-            <label style={lbl}>Phone Number Saved On</label>
-            <select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>
-              {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={lbl}>Address</label>
-            <textarea value={form.address} onChange={e=>set("address",e.target.value)}
-              rows={2} placeholder="Customer address…"
-              style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
-          </div>
-        </div>
-      </div>
-
-      {/* ── Section: Order Details ── */}
-      <div style={{marginBottom:20}}>
-        <Divider title="Order Details"/>
-
-        {/* Editable multi-item lines */}
-        {hasLines&&(
-          <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:12,padding:"14px 16px",marginBottom:14}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-              <p style={{margin:0,fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>Items</p>
-              <button type="button" onClick={addLine}
-                style={{fontSize:11,fontWeight:700,color:shop.accent,background:shop.accentBg,border:"1px solid "+shop.accent+"44",borderRadius:6,padding:"4px 12px",cursor:"pointer",fontFamily:"inherit"}}>
-                + Add Item
-              </button>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 60px 90px 70px 28px",gap:4,marginBottom:6}}>
-              {["Item","Qty","Price","Total",""].map((h,i)=>(
-                <span key={i} style={{fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.04em",textAlign:i>0?"right":"left"}}>{h}</span>
-              ))}
-            </div>
-            {editLines.map((l,i)=>{
-              const lineTotal=parseFloat(((parseFloat(l.qty)||1)*(parseFloat(l.price)||0)).toFixed(2));
-              return(
-                <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 60px 90px 70px 28px",gap:4,marginBottom:6,alignItems:"center"}}>
-                  <input value={l.name} onChange={e=>setLine(i,"name",e.target.value)}
-                    placeholder="Item name"
-                    style={{...inp,fontSize:12,padding:"6px 9px"}} onFocus={fo} onBlur={bl}/>
-                  <input type="number" onWheel={e=>e.target.blur()} min="1" value={l.qty} onChange={e=>setLine(i,"qty",e.target.value)}
-                    style={{...inp,fontSize:12,padding:"6px 6px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
-                  <input type="number" onWheel={e=>e.target.blur()} min="0" step="0.01" value={l.price} onChange={e=>setLine(i,"price",e.target.value)}
-                    placeholder="0.00"
-                    style={{...inp,fontSize:12,padding:"6px 6px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
-                  <span style={{fontSize:12,fontWeight:700,color:shop.accent,textAlign:"right",paddingRight:4}}>
-                    {shop.symbol}{lineTotal.toLocaleString()}
-                  </span>
-                  <button type="button" onClick={()=>removeLine(i)}
-                    title="Remove item"
-                    style={{width:24,height:24,borderRadius:6,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,padding:0,fontFamily:"inherit"}}>
-                    ×
-                  </button>
-                </div>
-              );
-            })}
-            {editLines.length===0&&(
-              <p style={{margin:"4px 0 0",fontSize:11,color:"#94a3b8",fontStyle:"italic"}}>No items — click "+ Add Item" to add one.</p>
+      <Divider title="Customer"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div>
+          <label style={lbl}>Customer Name</label>
+          <select value={form.customer} onChange={e=>set("customer",e.target.value)} style={inp}>
+            <option value="">Select customer…</option>
+            {/* If the sale's customer is not in the CRM (e.g. imported), show them as a selectable option */}
+            {form.customer && !customers.some(c=>c.name===form.customer) && (
+              <option value={form.customer}>{form.customer} (imported)</option>
             )}
-          </div>
-        )}
-
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-          {!hasLines&&(
-            <div style={{gridColumn:"1/-1"}}>
-              <label style={lbl}>Item / Product</label>
-              <input value={form.item} onChange={e=>set("item",e.target.value)} placeholder="Item name" style={inp} onFocus={fo} onBlur={bl}/>
-            </div>
-          )}
-          {!hasLines&&(
-            <div>
-              <label style={lbl}>Quantity</label>
-              <input type="number" onWheel={e=>e.target.blur()} min="1" value={form.qty} onChange={e=>set("qty",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
-            </div>
-          )}
-          <div style={{gridColumn:"1/-1"}}>
-            {/* GST TOGGLE + RATE */}
-            <div style={{background:form.taxRate===0?"#f8fafc":(form.taxInclusive?"#f0fdf4":"#eff6ff"),border:"1px solid "+(form.taxRate===0?"#e2e8f0":(form.taxInclusive?"#bbf7d0":"#bfdbfe")),borderRadius:12,padding:"14px 16px",marginBottom:12}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
-                <div>
-                  <p style={{margin:0,fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>GST / Tax</p>
-                  <p style={{margin:"2px 0 0",fontSize:12,fontWeight:700,color:form.taxRate===0?"#94a3b8":(form.taxInclusive?"#15803d":"#1d4ed8")}}>
-                    {form.taxRate===0?"No tax applied":(form.taxInclusive?"Price includes tax — calculated backwards":"Tax added on top")}
-                  </p>
-                </div>
-                {form.taxRate>0&&(
-                  <div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}} onClick={()=>set("taxInclusive",!form.taxInclusive)}>
-                    <span style={{fontSize:12,fontWeight:700,color:"#64748b"}}>{form.taxInclusive?"Inclusive":"Exclusive"}</span>
-                    <div style={{width:44,height:24,borderRadius:999,background:form.taxInclusive?shop.accent:"#cbd5e1",position:"relative",transition:"background 0.2s",boxShadow:"inset 0 1px 3px rgba(0,0,0,0.15)"}}>
-                      <div style={{position:"absolute",top:3,left:form.taxInclusive?22:3,width:18,height:18,borderRadius:"50%",background:"white",transition:"left 0.2s",boxShadow:"0 1px 4px rgba(0,0,0,0.2)"}}/>
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                <span style={{fontSize:11,fontWeight:700,color:"#64748b",marginRight:4}}>Tax Rate:</span>
-                {[0,5,10,18,20].map(r=>(
-                  <button key={r} type="button" onClick={()=>set("taxRate",Number(r))}
-                    style={{padding:"4px 12px",borderRadius:999,border:"2px solid "+(Number(form.taxRate)===r?shop.accent:"#e2e8f0"),
-                      background:Number(form.taxRate)===r?shop.accent:"white",color:Number(form.taxRate)===r?"white":"#374151",
-                      fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>
-                    {r}%
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Amount + Tax Breakdown */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-              <div>
-                <label style={lbl}>
-                  Grand Total ({shop.symbol}) — {form.taxRate===0?"no tax":form.taxInclusive?"incl. tax":"excl. tax"}
-                </label>
-                <input type="number" onWheel={e=>e.target.blur()} value={form.amount} onChange={e=>set("amount",e.target.value)}
-                  placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
-              </div>
-              {form.amount&&Number(form.amount)>0&&(()=>{
-                const a=Number(form.amount);
-                const rate=(form.taxRate||0)/100;
-                const subtotal=form.taxInclusive?parseFloat((a/(1+rate)).toFixed(2)):a;
-                const tax=form.taxInclusive?parseFloat((a-subtotal).toFixed(2)):parseFloat((a*rate).toFixed(2));
-                const grand=form.taxInclusive?a:parseFloat((a+tax).toFixed(2));
-                return(
-                  <div style={{background:"#f8fafc",borderRadius:10,padding:"12px 14px",border:"1px solid #e2e8f0"}}>
-                    <p style={{margin:"0 0 6px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>Tax Breakdown</p>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                      <span style={{fontSize:11,color:"#64748b"}}>Subtotal</span>
-                      <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>{shop.symbol}{subtotal.toLocaleString()}</span>
-                    </div>
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
-                      <span style={{fontSize:11,color:"#64748b"}}>{(form.taxRate||0)===0?"No Tax":("Tax "+form.taxRate+"%")}</span>
-                      <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>{shop.symbol}{tax.toLocaleString()}</span>
-                    </div>
-                    <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid #e2e8f0",paddingTop:4,marginTop:4}}>
-                      <span style={{fontSize:12,fontWeight:800,color:"#0f172a"}}>Grand Total</span>
-                      <span style={{fontSize:12,fontWeight:900,color:shop.accent}}>{shop.symbol}{grand.toLocaleString()}</span>
-                    </div>
-                  </div>
-                );
-              })()}
-            </div>
-          </div>
-        </div>
-      </div>{/* end Order Details section */}
-
-      {/* ── Section: Payment ── */}
-      <div style={{marginBottom:20}}>
-        <Divider title="Payment"/>
-        <div>
-          <label style={lbl}>Payment By</label>
-          <select value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
-            {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
+            {customers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
           </select>
         </div>
+        <div>
+          <label style={lbl}>Contact Number</label>
+          <input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={lbl}>Phone Number Saved On</label>
+          <select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>
+            {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
+          </select>
+        </div>
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={lbl}>Address</label>
+          <textarea value={form.address} onChange={e=>set("address",e.target.value)}
+            rows={2} placeholder="Customer address…"
+            style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
+        </div>
       </div>
 
-      {/* ── Section: Delivery ── */}
-      <div style={{marginBottom:20}}>
-        <Divider title="Delivery"/>
-        <div style={{background:"#f8fafc",borderRadius:14,padding:"16px",border:"1px solid #e2e8f0",display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+      <Divider title="Order Details"/>
+
+      {/* Editable multi-item lines */}
+      {hasLines&&(
+        <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+            <p style={{margin:0,fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>Items</p>
+            <button type="button" onClick={addLine}
+              style={{fontSize:11,fontWeight:700,color:shop.accent,background:shop.accentBg,border:"1px solid "+shop.accent+"44",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontFamily:"inherit"}}>
+              + Add Item
+            </button>
+          </div>
+          {/* Column headers */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 60px 90px 70px 28px",gap:4,marginBottom:4}}>
+            {["Item","Qty","Price","Total",""].map((h,i)=>(
+              <span key={i} style={{fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.04em",textAlign:i>0?"right":"left",paddingRight:i===3?4:0}}>{h}</span>
+            ))}
+          </div>
+          {editLines.map((l,i)=>{
+            const lineTotal=parseFloat(((parseFloat(l.qty)||1)*(parseFloat(l.price)||0)).toFixed(2));
+            return(
+              <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 60px 90px 70px 28px",gap:4,marginBottom:6,alignItems:"center"}}>
+                <input value={l.name} onChange={e=>setLine(i,"name",e.target.value)}
+                  placeholder="Item name"
+                  style={{...inp,fontSize:12,padding:"6px 9px"}} onFocus={fo} onBlur={bl}/>
+                <input type="number" onWheel={e=>e.target.blur()} min="1" value={l.qty} onChange={e=>setLine(i,"qty",e.target.value)}
+                  style={{...inp,fontSize:12,padding:"6px 6px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
+                <input type="number" onWheel={e=>e.target.blur()} min="0" step="0.01" value={l.price} onChange={e=>setLine(i,"price",e.target.value)}
+                  placeholder="0.00"
+                  style={{...inp,fontSize:12,padding:"6px 6px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
+                <span style={{fontSize:12,fontWeight:700,color:shop.accent,textAlign:"right",paddingRight:4}}>
+                  {shop.symbol}{lineTotal.toLocaleString()}
+                </span>
+                <button type="button" onClick={()=>removeLine(i)}
+                  title="Remove item"
+                  style={{width:24,height:24,borderRadius:6,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,padding:0,fontFamily:"inherit"}}>
+                  ×
+                </button>
+              </div>
+            );
+          })}
+          {editLines.length===0&&(
+            <p style={{margin:"4px 0 0",fontSize:11,color:"#94a3b8",fontStyle:"italic"}}>No items — click "+ Add Item" to add one.</p>
+          )}
+        </div>
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        {!hasLines&&(
+          <div style={{gridColumn:"1/-1"}}>
+            <label style={lbl}>Item / Product</label>
+            <input value={form.item} onChange={e=>set("item",e.target.value)} placeholder="Item name" style={inp} onFocus={fo} onBlur={bl}/>
+          </div>
+        )}
+        {!hasLines&&(
           <div>
-            <label style={lbl}>Delivery Status</label>
-            <select value={form.status} onChange={e=>set("status",e.target.value)}
-              style={{...inp,fontWeight:700,color:statusColor[form.status]||"#374151"}}>
-              {(shopId==="ros-india"
-                ? ["ORDER NOT PLACED","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]
-                : ["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]
-              ).map(o=>(
-                <option key={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>
+            <label style={lbl}>Quantity</label>
+            <input type="number" onWheel={e=>e.target.blur()} min="1" value={form.qty} onChange={e=>set("qty",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
+          </div>
+        )}
+        <div style={{gridColumn:"1/-1"}}>
+          {/* GST TOGGLE + RATE */}
+          <div style={{background:form.taxRate===0?"#f8fafc":(form.taxInclusive?"#f0fdf4":"#eff6ff"),border:"1px solid "+(form.taxRate===0?"#e2e8f0":(form.taxInclusive?"#bbf7d0":"#bfdbfe")),borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
+              <div>
+                <p style={{margin:0,fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>GST / Tax</p>
+                <p style={{margin:"2px 0 0",fontSize:12,fontWeight:700,color:form.taxRate===0?"#94a3b8":(form.taxInclusive?"#15803d":"#1d4ed8")}}>
+                  {form.taxRate===0?"No tax applied":(form.taxInclusive?"Price includes tax — calculated backwards":"Tax added on top")}
+                </p>
+              </div>
+              {form.taxRate>0&&(
+                <div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}} onClick={()=>set("taxInclusive",!form.taxInclusive)}>
+                  <span style={{fontSize:12,fontWeight:700,color:"#64748b"}}>{form.taxInclusive?"Inclusive":"Exclusive"}</span>
+                  <div style={{width:44,height:24,borderRadius:999,background:form.taxInclusive?shop.accent:"#cbd5e1",position:"relative",transition:"background 0.2s",boxShadow:"inset 0 1px 3px rgba(0,0,0,0.15)"}}>
+                    <div style={{position:"absolute",top:3,left:form.taxInclusive?22:3,width:18,height:18,borderRadius:"50%",background:"white",transition:"left 0.2s",boxShadow:"0 1px 4px rgba(0,0,0,0.2)"}}/>
+                  </div>
+                </div>
+              )}
+            </div>
+            {/* Tax Rate Buttons */}
+            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+              <span style={{fontSize:11,fontWeight:700,color:"#64748b",marginRight:4}}>Tax Rate:</span>
+              {[0,5,10,18,20].map(r=>(
+                <button key={r} type="button" onClick={()=>set("taxRate",Number(r))}
+                  style={{padding:"4px 12px",borderRadius:999,border:"2px solid "+(Number(form.taxRate)===r?shop.accent:"#e2e8f0"),
+                    background:Number(form.taxRate)===r?shop.accent:"white",color:Number(form.taxRate)===r?"white":"#374151",
+                    fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>
+                  {r}%
+                </button>
               ))}
-            </select>
+            </div>
           </div>
-          <div>
-            <label style={lbl}>Sent / Dispatch Date</label>
-            <input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
+
+          {/* Amount input */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <div>
+              <label style={lbl}>
+                Grand Total ({shop.symbol}) — {form.taxRate===0?"no tax":form.taxInclusive?"incl. tax":"excl. tax"}
+              </label>
+              <input type="number" onWheel={e=>e.target.blur()} value={form.amount} onChange={e=>set("amount",e.target.value)}
+                placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+            </div>
+            {/* Tax breakdown preview */}
+            {form.amount&&Number(form.amount)>0&&(()=>{
+              const a=Number(form.amount);
+              const rate=(form.taxRate||0)/100;
+              const subtotal=form.taxInclusive?parseFloat((a/(1+rate)).toFixed(2)):a;
+              const tax=form.taxInclusive?parseFloat((a-subtotal).toFixed(2)):parseFloat((a*rate).toFixed(2));
+              const grand=form.taxInclusive?a:parseFloat((a+tax).toFixed(2));
+              return(
+                <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",border:"1px solid #e2e8f0"}}>
+                  <p style={{margin:"0 0 6px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>Tax Breakdown</p>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                    <span style={{fontSize:11,color:"#64748b"}}>Subtotal</span>
+                    <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>{shop.symbol}{subtotal.toLocaleString()}</span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                    <span style={{fontSize:11,color:"#64748b"}}>{(form.taxRate||0)===0?"No Tax":("Tax "+form.taxRate+"%")}</span>
+                    <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>{shop.symbol}{tax.toLocaleString()}</span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid #e2e8f0",paddingTop:4,marginTop:4}}>
+                    <span style={{fontSize:12,fontWeight:800,color:"#0f172a"}}>Grand Total</span>
+                    <span style={{fontSize:12,fontWeight:900,color:shop.accent}}>{shop.symbol}{grand.toLocaleString()}</span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
+        </div>
+      </div>
+
+      <Divider title="Payment"/>
+      <div style={{marginBottom:16}}>
+        <label style={lbl}>Payment By</label>
+        <select value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
+          {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
+        </select>
+      </div>
+
+      <Divider title="Delivery"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#f8fafc",borderRadius:12,padding:"14px",border:"1px solid #e2e8f0"}}>
+        <div>
+          <label style={lbl}>Delivery Status</label>
+          <select value={form.status} onChange={e=>set("status",e.target.value)}
+            style={{...inp,fontWeight:700,color:statusColor[form.status]||"#374151"}}>
+            {(shopId==="ros-india"
+              ? ["ORDER NOT PLACED","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]
+              : ["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]
+            ).map(o=>(
+              <option key={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label style={lbl}>Sent / Dispatch Date</label>
+          <input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
         </div>
       </div>
 
       {isReturnRequested&&(
-        <div style={{marginBottom:20}}>
+        <>
           <Divider title="Return Request"/>
-          <div style={{background:"#fff7ed",borderRadius:14,padding:"16px",border:"1px solid #fed7aa"}}>
-            <label style={{...lbl,color:"#c2410c"}}>↩️ Return Request Date</label>
-            <input type="date" value={form.returnReqDate} onChange={e=>set("returnReqDate",e.target.value)} style={{...inp,border:"1px solid #fed7aa"}} onFocus={fo} onBlur={bl}/>
-            <p style={{margin:"8px 0 0",fontSize:11,color:"#92400e"}}>Record when the customer requested this return. Mark as <strong>Return Received</strong> once the item arrives back.</p>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#fff7ed",borderRadius:12,padding:"14px",border:"1px solid #fed7aa"}}>
+            <div>
+              <label style={{...lbl,color:"#c2410c"}}>↩️ Return Request Date</label>
+              <input type="date" value={form.returnReqDate} onChange={e=>set("returnReqDate",e.target.value)} style={{...inp,border:"1px solid #fed7aa"}} onFocus={fo} onBlur={bl}/>
+              <p style={{margin:"6px 0 0",fontSize:11,color:"#92400e"}}>Record when the customer requested this return. Mark as <strong>Return Received</strong> once the item arrives back.</p>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {isReturnReceived&&(
-        <div style={{marginBottom:20}}>
+        <>
           <Divider title="Return Received"/>
-          <div style={{background:"#fff5f5",borderRadius:14,padding:"16px",border:"1px solid #fecaca"}}>
-            <label style={{...lbl,color:"#dc2626"}}>📬 Return Received Date</label>
-            <input type="date" value={form.returnRcvd} onChange={e=>set("returnRcvd",e.target.value)} style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#fff5f5",borderRadius:12,padding:"14px",border:"1px solid #fecaca"}}>
+            <div>
+              <label style={{...lbl,color:"#dc2626"}}>📬 Return Received Date</label>
+              <input type="date" value={form.returnRcvd} onChange={e=>set("returnRcvd",e.target.value)} style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {isExchanged&&(
-        <div style={{marginBottom:20}}>
+        <>
           <Divider title="Exchange"/>
-          <div style={{background:"#eef2ff",borderRadius:14,padding:"16px",border:"1px solid #c7d2fe"}}>
-            <label style={{...lbl,color:"#4338ca"}}>🔄 Exchange Item Sent Date</label>
-            <input type="date" value={form.exchangeDate} onChange={e=>set("exchangeDate",e.target.value)} style={{...inp,border:"1px solid #c7d2fe"}} onFocus={fo} onBlur={bl}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#eef2ff",borderRadius:12,padding:"14px",border:"1px solid #c7d2fe"}}>
+            <div>
+              <label style={{...lbl,color:"#4338ca"}}>🔄 Exchange Item Sent Date</label>
+              <input type="date" value={form.exchangeDate} onChange={e=>set("exchangeDate",e.target.value)} style={{...inp,border:"1px solid #c7d2fe"}} onFocus={fo} onBlur={bl}/>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {isRefunded&&(
-        <div style={{marginBottom:20}}>
+        <>
           <Divider title="Refund"/>
-          <div style={{background:"#f5f3ff",borderRadius:14,padding:"16px",border:"1px solid #ddd6fe",display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#f5f3ff",borderRadius:12,padding:"14px",border:"1px solid #ddd6fe"}}>
             <div>
               <label style={{...lbl,color:"#6b21a8"}}>📅 Refund Date</label>
               <input type="date" value={form.refundDate} onChange={e=>set("refundDate",e.target.value)} style={{...inp,border:"1px solid #ddd6fe"}} onFocus={fo} onBlur={bl}/>
@@ -4216,57 +4210,50 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
               <input type="number" onWheel={e=>e.target.blur()} value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #ddd6fe"}} onFocus={fo} onBlur={bl}/>
             </div>
           </div>
-        </div>
+        </>
       )}
 
-      {/* ── Section: Post-Sale Adjustment ── */}
-      <div style={{marginBottom:20}}>
-        <Divider title="Post-Sale Adjustment"/>
-        <div style={{background:"#fffbeb",borderRadius:14,padding:"16px",border:"1px solid #fde68a"}}>
-          <p style={{margin:"0 0 12px",fontSize:11,color:"#92400e",fontWeight:600}}>🔧 Use this section to record any discount or partial refund given after the sale (e.g. damaged item, defect).</p>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
-            <div>
-              <label style={{...lbl,color:"#92400e"}}>Adjustment Type</label>
-              <select value={form.adjType} onChange={e=>set("adjType",e.target.value)} style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}>
-                <option value="">-- None --</option>
-                <option value="Discount">Discount</option>
-                <option value="Partial Refund">Partial Refund</option>
-                <option value="Other">Other</option>
-              </select>
-            </div>
-            <div>
-              <label style={{...lbl,color:"#92400e"}}>Adjustment Date</label>
-              <input type="date" value={form.adjDate} onChange={e=>set("adjDate",e.target.value)} style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
-            </div>
+      <Divider title="Post-Sale Adjustment"/>
+      <div style={{background:"#fffbeb",borderRadius:12,padding:"14px",border:"1px solid #fde68a",marginBottom:16}}>
+        <p style={{margin:"0 0 10px",fontSize:11,color:"#92400e",fontWeight:600}}>🔧 Use this section to record any discount or partial refund given after the sale (e.g. damaged item, defect).</p>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+          <div>
+            <label style={{...lbl,color:"#92400e"}}>Adjustment Type</label>
+            <select value={form.adjType} onChange={e=>set("adjType",e.target.value)} style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}>
+              <option value="">-- None --</option>
+              <option value="Discount">Discount</option>
+              <option value="Partial Refund">Partial Refund</option>
+              <option value="Other">Other</option>
+            </select>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
-            <div>
-              <label style={{...lbl,color:"#92400e"}}>💰 Adjustment Amount ({shop.symbol})</label>
-              <input type="number" onWheel={e=>e.target.blur()} value={form.adjAmt} onChange={e=>set("adjAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
-            </div>
-            <div>
-              <label style={{...lbl,color:"#92400e"}}>📝 Reason / Note</label>
-              <input type="text" value={form.adjNote} onChange={e=>set("adjNote",e.target.value)} placeholder="e.g. damaged zip, colour mismatch…" style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
-            </div>
+          <div>
+            <label style={{...lbl,color:"#92400e"}}>Adjustment Date</label>
+            <input type="date" value={form.adjDate} onChange={e=>set("adjDate",e.target.value)} style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
+          </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+          <div>
+            <label style={{...lbl,color:"#92400e"}}>💰 Adjustment Amount ({shop.symbol})</label>
+            <input type="number" onWheel={e=>e.target.blur()} value={form.adjAmt} onChange={e=>set("adjAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
+          </div>
+          <div>
+            <label style={{...lbl,color:"#92400e"}}>📝 Reason / Note</label>
+            <input type="text" value={form.adjNote} onChange={e=>set("adjNote",e.target.value)} placeholder="e.g. damaged zip, colour mismatch…" style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
           </div>
         </div>
       </div>
 
-      {/* ── Tags & Remarks ── */}
-      <div style={{marginBottom:20}}>
-        <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
-        <div style={{marginTop:14}}>
-          <label style={lbl}>Remarks</label>
-          <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Any additional notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
-        </div>
+      <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
+      <div style={{marginBottom:16}}>
+        <label style={lbl}>Remarks</label>
+        <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Any additional notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
       </div>
 
-      {/* ── Section: Purchase Details (India only) ── */}
       {shopId==="ros-india"&&(
-        <div style={{marginBottom:20}}>
-          <div style={{margin:"0 0 12px",fontWeight:800,fontSize:11,color:"#166534",letterSpacing:"0.07em",textTransform:"uppercase",borderBottom:"1px solid #bbf7d0",paddingBottom:6}}>Purchase Details</div>
-          <div style={{background:"#f0fdf4",borderRadius:14,padding:"16px",border:"1px solid #bbf7d0"}}>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+        <>
+          <div style={{margin:"4px 0 10px",fontWeight:800,fontSize:11,color:"#166534",letterSpacing:"0.07em",textTransform:"uppercase",borderBottom:"1px solid #bbf7d0",paddingBottom:6}}>Purchase Details</div>
+          <div style={{marginBottom:16,background:"#f0fdf4",borderRadius:12,padding:"14px",border:"1px solid #bbf7d0"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
               <div>
                 <label style={{...lbl,color:"#166534"}}>🧾 Pur. Inv. No.</label>
                 <input value={form.purInvNo} onChange={e=>set("purInvNo",e.target.value)}
@@ -4284,19 +4271,16 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
                 placeholder="0.00" style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/>
             </div>
           </div>
-        </div>
+        </>
       )}
 
-      </div>{/* end scrollable body */}
-
-      {/* ── Sticky Footer Buttons ── */}
-      <div style={{flexShrink:0,display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,padding:"14px 24px",borderTop:"1px solid #f1f5f9",background:"white",boxShadow:"0 -2px 12px rgba(0,0,0,0.05)"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
         <button onClick={()=>onSave({...form,id:form.invoiceNo||sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0})}
-          style={{padding:"13px 0",borderRadius:12,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44",letterSpacing:"0.01em"}}>
+          style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
         <button onClick={onClose}
-          style={{padding:"13px 0",borderRadius:12,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
+          style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
           Cancel
         </button>
       </div>
@@ -5037,6 +5021,10 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 <div><label style={lbl}>Date</label><input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
                 <div><label style={lbl}>Invoice No.</label>
                   <div style={{display:"flex",gap:4}}><input value={form.invoiceNo} readOnly={!form.invEditing} onChange={e=>set("invoiceNo",e.target.value)} style={{...inp,flex:1,background:form.invEditing?"white":"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:10,color:shop.accent}} onFocus={fo} onBlur={bl}/><button onClick={()=>set("invEditing",!form.invEditing)} style={{width:28,height:28,borderRadius:7,cursor:"pointer",border:"1px solid #e2e8f0",background:"#f8fafc",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center"}}>{form.invEditing?"✓":"✏️"}</button></div>
+                </div>
+                <div style={{gridColumn:"1/-1"}}>
+                  <label style={lbl}>Shop Invoice No.</label>
+                  <input value={form.shopInvoiceNo} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="Supplier / shop invoice number…" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/>
                 </div>
               </div>
             </div>
