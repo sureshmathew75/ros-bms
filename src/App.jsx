@@ -203,7 +203,7 @@ const Modal=({title,onClose,accent,children})=>(
         <h3 style={{margin:0,fontSize:16,fontWeight:800,color:"#0f172a"}}>{title}</h3>
         <button onClick={onClose} style={{width:32,height:32,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:20,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>×</button>
       </div>
-      <div style={{padding:"20px 20px 8px",overflowY:"auto",flex:1}}>{children}</div>
+      <div style={{padding:"20px 24px 8px",overflowY:"auto",flex:1}}>{children}</div>
     </div>
   </div>
 );
@@ -3458,6 +3458,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     qty:         sale.qty||"1",
     amount:      sale.amount||"",
     payBy:       sale.pay||"SHOP",
+    shopInvoiceNo: sale.shopInvoiceNo||"",
     status:      (sale.ful||sale.status||"PENDING").toUpperCase(),
     sentDate:    sale.sentDate||"",
     returnReqDate: sale.returnReqDate||"",
@@ -3515,7 +3516,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
   const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
+    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",padding:"0 4px 0 2px"}}>
 
       {/* highlight banner */}
       <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
