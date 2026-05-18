@@ -49,6 +49,9 @@ export const dbSaveSale = async (shopId, sale) => {
     adj_amt:         Number(sale.adjAmt) || 0,
     adj_date:        String(sale.adjDate || ''),
     adj_note:        String(sale.adjNote || ''),
+    pur_inv_no:      String(sale.purInvNo || ''),
+    pur_inv_date:    String(sale.purInvDate || ''),
+    pur_amount:      Number(sale.purAmount) || 0,
   };
 
   // Extended columns — added later; sent only if table supports them
@@ -160,6 +163,9 @@ export const dbLoadSales = async (shopId) => {
     adjAmt:        Number(r.adj_amt) || 0,
     adjDate:       r.adj_date || '',
     adjNote:       r.adj_note || '',
+    purInvNo:      r.pur_inv_no || '',
+    purInvDate:    r.pur_inv_date || '',
+    purAmount:     Number(r.pur_amount) || 0,
   }));
   return mapped.sort((a, b) => parseDateMs(b.date) - parseDateMs(a.date));
 };
