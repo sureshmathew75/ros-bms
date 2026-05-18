@@ -21,7 +21,7 @@ import {
   STAGE_THEME
 } from "./constants";
 import { formatCurrency, formatDate, formatNumber } from "./utils";
-import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic } from "./db";
+import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -195,23 +195,22 @@ const Badge=({l})=>{
   const b=BSTYLE[l]||{bg:"#f1f5f9",c:"#475569",b:"#e2e8f0"};
   return <span style={{display:"inline-flex",alignItems:"center",padding:"2px 10px",borderRadius:999,fontSize:11,fontWeight:700,background:b.bg,color:b.c,border:"1px solid "+b.b}}>{l}</span>;
 };
-const Modal=({title,onClose,accent,children,badge})=>(
-  <div style={{position:"fixed",inset:0,zIndex:60,display:"flex",alignItems:"center",justifyContent:"center",padding:"12px 16px"}}>
+const Modal=({title,onClose,accent,children,wide=false})=>{
+  const isMob=window.innerWidth<640;
+  const h=isMob?"92vh":"88vh";
+  return(
+  <div style={{position:"fixed",inset:0,zIndex:60,display:"flex",alignItems:isMob?"flex-end":"center",justifyContent:"center",padding:isMob?0:"20px"}}>
     <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(6px)"}}/>
-    <div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.20)",width:"100%",maxWidth:580,maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"14px 20px",borderBottom:"1px solid #f1f5f9",background:accent+"12",borderRadius:"20px 20px 0 0",flexShrink:0}}>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          <h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>{title}</h3>
-        </div>
-        <div style={{display:"flex",alignItems:"center",gap:10}}>
-          {badge&&<span style={{fontSize:13,fontWeight:900,color:"white",background:accent,borderRadius:8,padding:"3px 10px",letterSpacing:"0.01em"}}>{badge}</span>}
-          <button onClick={onClose} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>×</button>
-        </div>
+    <div style={{position:"relative",background:"white",borderRadius:isMob?"20px 20px 0 0":"20px",boxShadow:"0 32px 64px rgba(0,0,0,0.20)",width:"100%",maxWidth:isMob?"100%":wide?900:580,height:h,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"13px 18px",borderBottom:"1px solid #f1f5f9",background:accent+"12"}}>
+        <h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>{title}</h3>
+        <button onClick={onClose} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
       </div>
-      <div style={{padding:"16px 20px 8px",overflowY:"auto",flex:1}}>{children}</div>
+      <div style={{flex:1,overflow:"hidden"}}>{children}</div>
     </div>
   </div>
-);
+);};
+
 
 /* ─── Per-shop logo image map — uses the same imports as shop.logo ─── */
 const SHOP_LOGO_SRC = {
@@ -291,7 +290,7 @@ const calcShopStats=(data=[])=>{
   const isMonth=s=>{const dt=parseDate(s.date);return dt&&dt.getFullYear()===y&&dt.getMonth()===mo;};
 
   const isRefunded=s=>(s.ful||s.status)==="REFUNDED";
-  const rev=(arr)=>arr.filter(s=>!isRefunded(s)).reduce((a,s)=>a+(Number(s.amount)||0),0);
+  const rev=(arr)=>arr.filter(s=>!isRefunded(s)).reduce((a,s)=>a+(Number(s.amount)||0)-(Number(s.adjAmt)||0),0);
 
   // Month and today filtered within current FY only
   const monthArr=curFYData.filter(s=>isMonth(s));
@@ -772,6 +771,16 @@ const normaliseSale=(s)=>{
   const discount = Number(s.discount !== undefined ? s.discount : s.discount_amt || 0) || 0;
   const otherCharges = Number(s.otherCharges !== undefined ? s.otherCharges : s.other_charges || 0) || 0;
   const otherChargesLabel = s.otherChargesLabel || s.other_charges_label || "Other Charges";
+  const adjAmt = Number(s.adjAmt !== undefined ? s.adjAmt : s.adj_amt || 0) || 0;
+  const adjType = s.adjType || s.adj_type || "";
+  const adjDate = s.adjDate || s.adj_date || "";
+  const adjNote = s.adjNote || s.adj_note || "";
+  const shopInvoiceNo = s.shopInvoiceNo || s.shop_invoice_no || "";
+  const refundDate = s.refundDate || s.refund_date || "";
+  const exchangeDate = s.exchangeDate || s.exchange_date || "";
+  const purInvNo   = s.purInvNo   || s.pur_inv_no   || "";
+  const purInvDate = s.purInvDate || s.pur_inv_date || "";
+  const purAmount  = Number(s.purAmount !== undefined ? s.purAmount : s.pur_amount || 0) || 0;
   return {
     ...s,
     item:             displayItem,
@@ -781,6 +790,16 @@ const normaliseSale=(s)=>{
     discount,
     otherCharges,
     otherChargesLabel,
+    adjAmt,
+    adjType,
+    adjDate,
+    adjNote,
+    shopInvoiceNo,
+    refundDate,
+    exchangeDate,
+    purInvNo,
+    purInvDate,
+    purAmount,
   };
 };
 
@@ -795,6 +814,11 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [selCustomer,setSelCustomer]=useState(null);
   const [openMenu,setOpenMenu]=useState(null);
   const [invoiceRow,setInvoiceRow]=useState(null);
+  const [itemView,setItemView]=useState("month");
+  const [selectedBar,setSelectedBar]=useState(null);
+  const [monthTarget,setMonthTarget]=useState(0);
+  const [editingTarget,setEditingTarget]=useState(false);
+  const [targetInput,setTargetInput]=useState("");
   const [printMode,setPrintMode]=useState(false);
   // salesData, setSalesData, customers, setCustomers all received as props from App
   const [coll,setColl]=useState(false);
@@ -844,9 +868,10 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const _invTaxR    = invoiceRow ? ((invoiceRow.taxRate!==undefined&&invoiceRow.taxRate!==null?invoiceRow.taxRate:0)/100) : 0;
   const _invInc     = _invTaxR===0 ? true : (invoiceRow ? invoiceRow.taxInclusive!==false : true);
   const _invEntered = invoiceRow ? Number(invoiceRow.amount)||0 : 0;
+  const _invAdjAmt  = invoiceRow ? Number(invoiceRow.adjAmt)||0 : 0;
   const invSubtotal = _invInc ? parseFloat((_invEntered/(1+_invTaxR)).toFixed(2)) : _invEntered;
   const invTaxAmt   = parseFloat((invSubtotal*_invTaxR).toFixed(2));
-  const invGrand    = parseFloat((invSubtotal+invTaxAmt).toFixed(2));
+  const invGrand    = parseFloat((invSubtotal+invTaxAmt-_invAdjAmt).toFixed(2));
 
   const shop=SHOPS.find(s=>s.id===shopId);
   const sales=salesData[shopId]||[];
@@ -1015,6 +1040,10 @@ return(
     <div style={{display:"flex",minHeight:"100vh",background:"#f0f4f8",fontFamily:"'DM Sans',system-ui,sans-serif"}}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800;900&family=DM+Mono:wght@400;500&family=Arimo:wght@400;500;600;700&display=swap" rel="stylesheet"/>
       <style>{`
+        /* ── Remove number input spinners globally ── */
+        input[type=number]::-webkit-inner-spin-button,
+        input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0;}
+        input[type=number]{-moz-appearance:textfield;appearance:textfield;}
         .sb-nav-btn:hover .sb-label{opacity:1!important;}
         .sb-nav-btn{position:relative;}
         .sb-tooltip{
@@ -1530,188 +1559,534 @@ return(
                   })}
                 </div>
 
-                {/* ── 6 KPI CARDS — 9:16 portrait ratio ── */}
-                <div className="mob-kpi-grid" style={{display:"grid",gridTemplateColumns:isMobile?"repeat(2,1fr)":"repeat(6,1fr)",gap:isMobile?10:14,marginBottom:28}}>
-                  {kpis.map((k,i)=>{
-                    const isH=hov==="kpi-"+i;
-                    return(
-                      <div key={i} className="mob-kpi-card"
-                        onMouseEnter={()=>setHov("kpi-"+i)}
-                        onMouseLeave={()=>setHov(null)}
-                        style={{
-                          borderRadius:isMobile?14:18,overflow:"hidden",
-                          background:k.grad,
-                          position:"relative",
-                          cursor:"default",
-                          aspectRatio:isMobile?"unset":"9/16",
-                          minHeight:isMobile?120:undefined,
-                          display:"flex",flexDirection:"column",
-                          transform:isH?"translateY(-6px) scale(1.03)":"translateY(0) scale(1)",
-                          transition:"all 0.25s cubic-bezier(0.34,1.56,0.64,1)",
-                          boxShadow:isH
-                            ?"0 22px 44px -8px "+k.glow+",0 6px 18px rgba(0,0,0,0.14)"
-                            :"0 5px 18px "+k.glow+",0 2px 5px rgba(0,0,0,0.07)",
-                        }}>
+                {/* ── GRAPHICAL KPI SECTION ── */}
+                {(()=>{
+                  // Mini sparkline data — last 7 days of sales
+                  const last7=Array.from({length:7},(_,i)=>{
+                    const d=new Date(); d.setDate(d.getDate()-6+i);
+                    const ds=d.toISOString().slice(0,10);
+                    return sales.filter(s=>s.date===ds&&(s.ful||s.status)!=="REFUNDED").reduce((a,s)=>a+(Number(s.amount)||0),0);
+                  });
+                  const spark7Max=Math.max(...last7,1);
+                  const SparkLine=({data,color,h=32,w=80})=>{
+                    const pts=data.map((v,i)=>`${Math.round(i*(w/(data.length-1))||0)},${Math.round(h-(v/Math.max(...data,1))*h*0.85)}`).join(" ");
+                    return(<svg width={w} height={h} style={{display:"block"}}>
+                      <polyline points={pts} fill="none" stroke={color} strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" opacity={0.8}/>
+                      {data.map((v,i)=>i===data.length-1&&<circle key={i} cx={Math.round(i*(w/(data.length-1))||0)} cy={Math.round(h-(v/Math.max(...data,1))*h*0.85)} r={2.5} fill={color}/>)}
+                    </svg>);
+                  };
+                  // Ring gauge component
+                  const Ring=({pct,color,size=52,stroke=5})=>{
+                    const r=size/2-stroke;const c=2*Math.PI*r;
+                    return(<svg width={size} height={size}>
+                      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke="#f1f5f9" strokeWidth={stroke}/>
+                      <circle cx={size/2} cy={size/2} r={r} fill="none" stroke={color} strokeWidth={stroke}
+                        strokeDasharray={c} strokeDashoffset={c*(1-Math.min(pct,1))}
+                        strokeLinecap="round" transform={`rotate(-90 ${size/2} ${size/2})`}/>
+                    </svg>);
+                  };
+                  const storedTarget=()=>{try{const v=localStorage.getItem("ros_monthTarget_"+shopId);return v?Number(v):shop.monthRevenue||0;}catch{return shop.monthRevenue||0;}};
+                  if(monthTarget===0&&storedTarget()>0&&!editingTarget){setMonthTarget(storedTarget());}
+                  const saveTarget=()=>{const v=parseFloat(targetInput)||0;setMonthTarget(v);try{localStorage.setItem("ros_monthTarget_"+shopId,String(v));}catch{}setEditingTarget(false);};
+                  const fyTarget=(monthTarget||1)*12;
+                  const monthPct=Math.min(monthSales/(monthTarget||1),1);
+                  const fyPct=Math.min(fySales/(fyTarget||1),1);
 
-                        {/* mesh grid overlay */}
-                        <div style={{
-                          position:"absolute",inset:0,zIndex:0,pointerEvents:"none",
-                          backgroundImage:"radial-gradient(rgba(255,255,255,0.10) 1px,transparent 1px)",
-                          backgroundSize:"16px 16px",
-                        }}/>
+                  return(<div style={{marginBottom:24}}>
 
-                        {/* glowing orb bottom-right */}
-                        <div style={{
-                          position:"absolute",bottom:-50,right:-50,width:130,height:130,
-                          borderRadius:"50%",background:"rgba(255,255,255,0.07)",
-                          pointerEvents:"none",zIndex:0,filter:"blur(24px)",
-                        }}/>
+                    {/* ── ROW 1: Two wide feature cards ── */}
+                    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
 
-                        {/* glowing orb top-left */}
-                        <div style={{
-                          position:"absolute",top:-30,left:-30,width:90,height:90,
-                          borderRadius:"50%",background:"rgba(255,255,255,0.09)",
-                          pointerEvents:"none",zIndex:0,filter:"blur(18px)",
-                        }}/>
-
-                        {/* large watermark icon */}
-                        <div style={{
-                          position:"absolute",bottom:20,right:-8,fontSize:72,lineHeight:1,
-                          opacity:isH?0.20:0.08,pointerEvents:"none",zIndex:0,
-                          transition:"opacity 0.3s,transform 0.3s",
-                          transform:isH?"scale(1.12) rotate(-8deg)":"scale(1) rotate(0deg)",
-                        }}>{k.icon}</div>
-
-                        {/* ── TOP SECTION: icon + tag ── */}
-                        <div style={{position:"relative",zIndex:1,padding:"16px 14px 0",flex:"0 0 auto"}}>
-                          {/* status tag top-right */}
-                          <div style={{display:"flex",justifyContent:"flex-end",marginBottom:14}}>
-                            <span style={{
-                              fontSize:9,fontWeight:800,padding:"3px 9px",borderRadius:999,
-                              background:k.tagGreen?"rgba(255,255,255,0.20)":"rgba(220,38,38,0.35)",
-                              color:"white",letterSpacing:"0.06em",textTransform:"uppercase",
-                              border:"1px solid rgba(255,255,255,0.18)",
-                              backdropFilter:"blur(4px)",
-                            }}>{k.tag}</span>
+                      {/* Today + Weekly sparkline */}
+                      <div style={{borderRadius:16,background:"linear-gradient(135deg,#0f172a 0%,#1e3a8a 60%,#3b82f6 100%)",padding:"18px 20px",position:"relative",overflow:"hidden",boxShadow:"0 8px 24px rgba(59,130,246,0.3)"}}>
+                        <div style={{position:"absolute",top:-30,right:-30,width:120,height:120,borderRadius:"50%",background:"rgba(255,255,255,0.05)",filter:"blur(20px)"}}/>
+                        <div style={{position:"absolute",bottom:-20,left:40,width:80,height:80,borderRadius:"50%",background:"rgba(59,130,246,0.15)",filter:"blur(16px)"}}/>
+                        <div style={{position:"relative",zIndex:1}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+                            <div>
+                              <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.07em"}}>Today's Revenue</p>
+                              <p style={{margin:0,fontSize:28,fontWeight:900,color:"white",letterSpacing:"-1px",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,todaySales)}</p>
+                            </div>
+                            <span style={{fontSize:9,fontWeight:800,padding:"4px 10px",borderRadius:999,background:todaySales>0?"rgba(134,239,172,0.2)":"rgba(255,255,255,0.1)",color:todaySales>0?"#86efac":"rgba(255,255,255,0.5)",border:"1px solid "+(todaySales>0?"rgba(134,239,172,0.4)":"rgba(255,255,255,0.15)"),letterSpacing:"0.06em"}}>{todaySales>0?"● LIVE":"○ NO SALES"}</span>
                           </div>
-
-                          {/* icon badge */}
-                          <div style={{
-                            width:46,height:46,borderRadius:14,marginBottom:16,
-                            background:"rgba(255,255,255,0.16)",
-                            backdropFilter:"blur(10px)",
-                            display:"flex",alignItems:"center",justifyContent:"center",
-                            fontSize:22,
-                            boxShadow:"0 4px 12px rgba(0,0,0,0.15),inset 0 1px 0 rgba(255,255,255,0.25)",
-                            transform:isH?"scale(1.08)":"scale(1)",
-                            transition:"transform 0.25s cubic-bezier(0.34,1.56,0.64,1)",
-                          }}>{k.icon}</div>
-                        </div>
-
-                        {/* ── MIDDLE SECTION: value + label + sub ── */}
-                        <div style={{position:"relative",zIndex:1,padding:"0 14px",flex:"1 1 auto",display:"flex",flexDirection:"column",justifyContent:"center"}}>
-                          {/* value */}
-                          <p style={{
-                            margin:"0 0 4px",
-                            fontSize:k.value.length>7?18:24,
-                            fontWeight:800,color:"white",
-                            letterSpacing:"-0.5px",lineHeight:1,
-                            fontFamily:"'Arimo',Arial,sans-serif",
-                            textShadow:"0 2px 10px rgba(0,0,0,0.25)",
-                          }}>{k.value}</p>
-
-                          {/* label */}
-                          <p style={{
-                            margin:"0 0 3px",fontSize:12,fontWeight:700,
-                            color:"rgba(255,255,255,0.95)",
-                            fontFamily:"'Arimo',Arial,sans-serif",
-                            letterSpacing:"0.01em",lineHeight:1.3,
-                          }}>{k.label}</p>
-
-                          {/* sub */}
-                          <p style={{
-                            margin:0,fontSize:9,
-                            color:"rgba(255,255,255,0.52)",fontWeight:500,
-                            lineHeight:1.4,
-                          }}>{k.sub}</p>
-                        </div>
-
-                        {/* ── BOTTOM SECTION: divider + trend + progress ── */}
-                        <div style={{position:"relative",zIndex:1,flex:"0 0 auto"}}>
-                          {/* divider */}
-                          <div style={{height:"1px",background:"rgba(255,255,255,0.12)",margin:"0 14px 10px"}}/>
-
-                          {/* trend row */}
-                          <div style={{display:"flex",alignItems:"center",gap:5,padding:"0 14px 12px"}}>
-                            <span style={{
-                              fontSize:10,fontWeight:800,
-                              color:k.trend==="up"?"#86efac":k.trend==="ok"?"#86efac":"#fca5a5",
-                            }}>
-                              {k.trend==="up"?"▲":k.trend==="ok"?"✓":"▼"}
-                            </span>
-                            <span style={{fontSize:10,color:"rgba(255,255,255,0.65)",fontWeight:600,lineHeight:1.3}}>{k.trendVal}</span>
-                          </div>
-
-                          {/* progress bar */}
-                          <div style={{height:4,background:"rgba(0,0,0,0.22)"}}>
-                            <div style={{
-                              height:"100%",
-                              width:isH?k.progress+"%":"0%",
-                              background:"rgba(255,255,255,0.60)",
-                              borderRadius:"0 3px 3px 0",
-                              transition:"width 0.65s cubic-bezier(0.4,0,0.2,1) 0.08s",
-                              boxShadow:"0 0 10px rgba(255,255,255,0.55)",
-                            }}/>
+                          <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between"}}>
+                            <div>
+                              <p style={{margin:"0 0 2px",fontSize:9,fontWeight:600,color:"rgba(255,255,255,0.4)"}}>Last 7 days</p>
+                              <SparkLine data={last7} color="#60a5fa" h={36} w={110}/>
+                            </div>
+                            <div style={{textAlign:"right"}}>
+                              <p style={{margin:"0 0 2px",fontSize:9,color:"rgba(255,255,255,0.4)",fontWeight:600}}>This Month</p>
+                              <p style={{margin:0,fontSize:16,fontWeight:800,color:"#60a5fa",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,monthSales)}</p>
+                              <p style={{margin:0,fontSize:9,color:"rgba(255,255,255,0.4)"}}>{monthCount} orders</p>
+                            </div>
                           </div>
                         </div>
-
                       </div>
-                    );
-                  })}
-                </div>
 
-                {/* ── RECENT SALES TABLE ── */}
-                <div style={{background:"white",borderRadius:16,border:"1px solid #f1f5f9",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",marginBottom:24,overflow:"hidden"}}>
-                  <div style={{padding:"16px 20px",borderBottom:"1px solid #f1f5f9",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                    <div>
-                      <p style={{margin:0,fontWeight:800,fontSize:15,color:"#0f172a"}}>Recent Sales</p>
-                      <p style={{margin:0,fontSize:11,color:"#94a3b8",fontWeight:500}}>Latest {Math.min(5,sales.length)} transactions</p>
+                      {/* Monthly Target — wide card with editable target */}
+                      <div style={{borderRadius:16,background:"linear-gradient(135deg,#164e63 0%,#0e7490 55%,#06b6d4 100%)",padding:"18px 20px",position:"relative",overflow:"hidden",boxShadow:"0 8px 24px rgba(6,182,212,0.3)"}}>
+                        <div style={{position:"absolute",top:-20,right:-20,width:100,height:100,borderRadius:"50%",background:"rgba(255,255,255,0.05)",filter:"blur(18px)"}}/>
+                        <div style={{position:"relative",zIndex:1}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                            <div>
+                              <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.07em"}}>Monthly Target</p>
+                              <p style={{margin:"0 0 4px",fontSize:9,color:"rgba(255,255,255,0.4)"}}>
+                                {now.toLocaleString("default",{month:"long",year:"numeric"})}
+                              </p>
+                              <p style={{margin:0,fontSize:26,fontWeight:900,color:"white",letterSpacing:"-0.8px",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,monthSales)}</p>
+                            </div>
+                            <div style={{position:"relative",width:64,height:64,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                              <Ring pct={monthPct} color="#67e8f9" size={64} stroke={6}/>
+                              <div style={{position:"absolute",textAlign:"center"}}>
+                                <p style={{margin:0,fontSize:11,fontWeight:900,color:"white"}}>{Math.round(monthPct*100)}%</p>
+                              </div>
+                            </div>
+                          </div>
+                          <div style={{height:4,background:"rgba(0,0,0,0.2)",borderRadius:999,overflow:"hidden",marginTop:4}}>
+                            <div style={{height:"100%",width:Math.round(monthPct*100)+"%",background:"linear-gradient(90deg,#67e8f9,#a5f3fc)",borderRadius:999}}/>
+                          </div>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:8}}>
+                            <p style={{margin:0,fontSize:9,color:"rgba(255,255,255,0.45)"}}>{monthCount} orders</p>
+                            {editingTarget?(
+                              <div style={{display:"flex",alignItems:"center",gap:5}}>
+                                <span style={{fontSize:9,color:"rgba(255,255,255,0.6)"}}>{shop.symbol}</span>
+                                <input
+                                  autoFocus
+                                  type="number"
+                                  value={targetInput}
+                                  onChange={e=>setTargetInput(e.target.value)}
+                                  onKeyDown={e=>{if(e.key==="Enter")saveTarget();if(e.key==="Escape")setEditingTarget(false);}}
+                                  onWheel={e=>e.target.blur()}
+                                  style={{width:80,fontSize:11,fontWeight:700,background:"rgba(255,255,255,0.15)",border:"1px solid rgba(255,255,255,0.4)",borderRadius:6,color:"white",padding:"2px 6px",outline:"none",fontFamily:"DM Mono,monospace"}}
+                                />
+                                <button onClick={saveTarget} style={{fontSize:9,fontWeight:700,background:"rgba(255,255,255,0.2)",border:"1px solid rgba(255,255,255,0.4)",borderRadius:5,color:"white",padding:"3px 8px",cursor:"pointer",fontFamily:"inherit"}}>✓</button>
+                                <button onClick={()=>setEditingTarget(false)} style={{fontSize:9,background:"none",border:"none",color:"rgba(255,255,255,0.5)",cursor:"pointer",padding:"2px 4px"}}>✕</button>
+                              </div>
+                            ):(
+                              <button onClick={()=>{setTargetInput(String(monthTarget||""));setEditingTarget(true);}} style={{fontSize:9,fontWeight:700,background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.25)",borderRadius:6,color:"rgba(255,255,255,0.7)",padding:"3px 9px",cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>
+                                ✏️ Target: {monthTarget>0?fmt(shopId,monthTarget):"Set target"}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <button onClick={()=>setTab("sales")} style={{fontSize:12,fontWeight:700,color:shop.accent,background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:8,padding:"5px 12px",cursor:"pointer",fontFamily:"inherit"}}>View All →</button>
-                  </div>
-                  <table style={{width:"100%",borderCollapse:"collapse"}}>
-                    <thead>
-                      <tr style={{background:"#f8fafc"}}>
-                        {["ID","Customer","Amount","Status","Date"].map(h=>(
-                          <th key={h} style={{padding:"10px 16px",textAlign:"left",fontSize:11,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</th>
+
+                    {/* ── ROW 2: Four compact stat cards ── */}
+                    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:12}}>
+
+                      {/* Financial Year — compact */}
+                      <div style={{borderRadius:14,background:"linear-gradient(135deg,#064e3b,#065f46,#059669)",padding:"16px",position:"relative",overflow:"hidden",boxShadow:"0 6px 18px rgba(5,150,105,0.25)"}}>
+                        <div style={{position:"absolute",bottom:-15,right:-15,width:70,height:70,borderRadius:"50%",background:"rgba(255,255,255,0.07)",filter:"blur(12px)"}}/>
+                        <div style={{position:"relative",zIndex:1}}>
+                          <p style={{margin:"0 0 1px",fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Financial Year</p>
+                          <p style={{margin:"0 0 5px",fontSize:9,color:"rgba(255,255,255,0.35)"}}>Apr {fyStart.getFullYear()} – Mar {fyStart.getFullYear()+1}</p>
+                          <p style={{margin:"0 0 6px",fontSize:18,fontWeight:900,color:"white",fontFamily:"DM Mono,monospace",letterSpacing:"-0.5px"}}>{fmt(shopId,fySales)}</p>
+                          <div style={{height:3,background:"rgba(0,0,0,0.2)",borderRadius:999,overflow:"hidden"}}>
+                            <div style={{height:"100%",width:Math.round(fyPct*100)+"%",background:"linear-gradient(90deg,#34d399,#6ee7b7)",borderRadius:999}}/>
+                          </div>
+                          <div style={{display:"flex",justifyContent:"space-between",marginTop:5}}>
+                            <p style={{margin:0,fontSize:9,color:"rgba(255,255,255,0.4)"}}>{fyCount} orders</p>
+                            <p style={{margin:0,fontSize:9,color:"#34d399",fontWeight:700}}>{Math.round(fyPct*100)}%</p>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Pending orders */}
+                      <div style={{borderRadius:14,background:"linear-gradient(135deg,#78350f,#92400e,#d97706)",padding:"16px",position:"relative",overflow:"hidden",boxShadow:"0 6px 18px rgba(217,119,6,0.25)"}}>
+                        <div style={{position:"absolute",bottom:-15,right:-15,width:70,height:70,borderRadius:"50%",background:"rgba(255,255,255,0.07)",filter:"blur(12px)"}}/>
+                        <div style={{position:"relative",zIndex:1}}>
+                          <p style={{margin:"0 0 6px",fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Pending Orders</p>
+                          <div style={{display:"flex",alignItems:"center",gap:8}}>
+                            <p style={{margin:0,fontSize:36,fontWeight:900,color:"white",lineHeight:1,fontFamily:"DM Mono,monospace"}}>{pendingOrders}</p>
+                            <div>
+                              <p style={{margin:"0 0 2px",fontSize:9,color:pendingOrders>0?"#fde68a":"#86efac",fontWeight:700}}>{pendingOrders>0?"⚠ Needs action":"✓ All clear"}</p>
+                              <div style={{display:"flex",gap:2}}>{Array.from({length:Math.min(pendingOrders,8)}).map((_,i)=><div key={i} style={{width:5,height:5,borderRadius:1,background:"rgba(255,255,255,0.5)"}}/>)}</div>
+                            </div>
+                          </div>
+                          <p style={{margin:"6px 0 0",fontSize:9,color:"rgba(255,255,255,0.4)"}}>Awaiting fulfilment</p>
+                        </div>
+                      </div>
+
+                      {/* Returns */}
+                      <div style={{borderRadius:14,background:"linear-gradient(135deg,#831843,#9d174d,#e95597)",padding:"16px",position:"relative",overflow:"hidden",boxShadow:"0 6px 18px rgba(233,85,151,0.25)"}}>
+                        <div style={{position:"absolute",bottom:-15,right:-15,width:70,height:70,borderRadius:"50%",background:"rgba(255,255,255,0.07)",filter:"blur(12px)"}}/>
+                        <div style={{position:"relative",zIndex:1}}>
+                          <p style={{margin:"0 0 6px",fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Returns This Month</p>
+                          <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+                            <p style={{margin:0,fontSize:36,fontWeight:900,color:"white",lineHeight:1,fontFamily:"DM Mono,monospace"}}>{monthReturns}</p>
+                            <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.6)"}}>returned</p>
+                          </div>
+                          <div style={{marginTop:8,height:3,background:"rgba(0,0,0,0.2)",borderRadius:999}}>
+                            <div style={{height:"100%",width:Math.min(monthReturns*20,100)+"%",background:"rgba(255,255,255,0.5)",borderRadius:999}}/>
+                          </div>
+                          <p style={{margin:"5px 0 0",fontSize:9,color:monthReturns===0?"#86efac":"#fca5a5",fontWeight:700}}>{monthReturns===0?"✓ None this month":"↩ Returned / Exchanged"}</p>
+                        </div>
+                      </div>
+
+                      {/* Refunds */}
+                      <div style={{borderRadius:14,background:"linear-gradient(135deg,#2e1065,#5b21b6,#7c3aed)",padding:"16px",position:"relative",overflow:"hidden",boxShadow:"0 6px 18px rgba(124,58,237,0.25)"}}>
+                        <div style={{position:"absolute",bottom:-15,right:-15,width:70,height:70,borderRadius:"50%",background:"rgba(255,255,255,0.07)",filter:"blur(12px)"}}/>
+                        <div style={{position:"relative",zIndex:1}}>
+                          <p style={{margin:"0 0 6px",fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Refunds This Month</p>
+                          <p style={{margin:"0 0 4px",fontSize:monthRefunds>0?22:28,fontWeight:900,color:"white",fontFamily:"DM Mono,monospace",letterSpacing:"-0.5px"}}>{monthRefunds>0?fmt(shopId,monthRefunds):"—"}</p>
+                          <div style={{display:"flex",alignItems:"center",gap:6,marginTop:6}}>
+                            <span style={{fontSize:14}}>{monthRefunds===0?"✅":"💸"}</span>
+                            <p style={{margin:0,fontSize:9,color:monthRefunds===0?"#86efac":"#fca5a5",fontWeight:700}}>{monthRefunds===0?"No refunds issued":"Total refunded value"}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>);
+                })()}
+
+                {/* ── ANALYTICS SECTION ── */}
+                {(()=>{
+                  const now2=new Date();
+                  const curMonth=now2.getMonth();
+                  const curYear=now2.getFullYear();
+                  const sym=shop.symbol||"£";
+                  const fyStartM=now2.getMonth()<3?new Date(curYear-1,3,1):new Date(curYear,3,1);
+
+                  // Last 12 months
+                  const last6=Array.from({length:12},(_,i)=>{
+                    const d=new Date(curYear,curMonth-11+i,1);
+                    return{month:d.getMonth(),year:d.getFullYear(),label:d.toLocaleString("default",{month:"short"})+"'"+String(d.getFullYear()).slice(-2)};
+                  });
+                  // Match ReportsPanel EXACTLY: same date parse (new Date), same rev logic
+                  const isRef2=s=>(s.ful||s.status)==="REFUNDED";
+                  const netAmt2=s=>(Number(s.amount)||0)-(Number(s.adjAmt)||0);
+                  const rev2=arr=>arr.filter(s=>!isRef2(s)).reduce((a,s)=>a+netAmt2(s),0);
+                  const monthRevArr=last6.map((m,idx)=>{
+                    if(idx===11)return Math.round(monthSales);
+                    const filtered=sales.filter(s=>{const d=new Date(s.date);return d&&!isNaN(d)&&d.getMonth()===m.month&&d.getFullYear()===m.year;});
+                    return Math.round(rev2(filtered));
+                  });
+                  const monthPurArr=last6.map(m=>{
+                    const v=purch.filter(p=>{const d=parseDate(p.date||p.createdAt||p.created_at||"");return d&&d.getMonth()===m.month&&d.getFullYear()===m.year;}).reduce((a,p)=>a+(Number(p.amount||p.total||p.amt||0)),0);
+                    return Math.round(v);
+                  });
+                  const maxBar=Math.max(...monthRevArr,...monthPurArr,1);
+
+                  // Item breakdowns — accurate parsing of both saleLines and legacy item strings
+                  const cleanItemName=name=>{
+                    // Strip trailing (xN) suffix that leaks from legacy encoding
+                    const cleaned=(name||"").replace(/\(x\d+\)$/i,"").replace(/\(X\d+\)$/i,"").trim().toUpperCase();
+                    return cleaned||"OTHER";
+                  };
+                  const getItems=(arr)=>{
+                    const m={};
+                    arr.filter(s=>(s.ful||s.status)!=="REFUNDED").forEach(s=>{
+                      if(Array.isArray(s.saleLines)&&s.saleLines.length>0){
+                        // Modern sales: use saleLines directly
+                        s.saleLines.forEach(l=>{
+                          const k=cleanItemName(l.name);
+                          m[k]=(m[k]||0)+(Number(l.qty)||1);
+                        });
+                      } else {
+                        // Legacy sales: parse item string like "SALWAR(x1), DRESS(x2)"
+                        const itemStr=s.item||"";
+                        const qty=Number(s.qty)||1;
+                        const parsed=parseLegacyItems(itemStr,qty,Number(s.amount)||0);
+                        parsed.forEach(l=>{
+                          const k=cleanItemName(l.name);
+                          if(k==="PRODUCT/SERVICE"||k==="OTHER"||k==="")return;
+                          m[k]=(m[k]||0)+(Number(l.qty)||1);
+                        });
+                      }
+                    });
+                    return Object.entries(m).sort((a,b)=>b[1]-a[1]).slice(0,8);
+                  };
+                  const topItems=getItems(sales);
+                  const topMonthItems=getItems(sales.filter(s=>{const d=new Date(s.date);return d&&!isNaN(d)&&d.getMonth()===curMonth&&d.getFullYear()===curYear;}));
+                  const topFyItems=getItems(sales.filter(s=>{const d=new Date(s.date);return d&&!isNaN(d)&&d>=fyStartM;}));
+                  const itemColors=["#3b82f6","#06b6d4","#10b981","#f59e0b","#e95597","#a78bfa","#f97316","#64748b"];
+
+                  // Purchase stats — use parseDate and check all possible date fields
+                  const getPurDate=p=>parseDate(p.date||p.createdAt||p.created_at||"");
+                  const purMonth=purch.filter(p=>{const d=getPurDate(p);return d&&d.getMonth()===curMonth&&d.getFullYear()===curYear;}).reduce((a,p)=>a+(Number(p.amount||p.total||p.amt||0)),0);
+                  const purFY=purch.filter(p=>{const d=getPurDate(p);return d&&d>=fyStartM;}).reduce((a,p)=>a+(Number(p.amount||p.total||p.amt||0)),0);
+                  const purAll=purch.reduce((a,p)=>a+(Number(p.amount||p.total||p.amt||0)),0);
+                  const saleFY=rev2(sales.filter(s=>{const d=new Date(s.date);return d&&!isNaN(d)&&d>=fyStartM;}));
+                  const saleAll=rev2(sales);
+                  // Use same monthSales as KPI card so profit card stays consistent
+                  const thisMonthSales=monthSales;
+
+                  // Donut chart
+                  const Donut=({items,colors,size=130})=>{
+                    const total=items.reduce((a,b)=>a+b[1],0)||1;
+                    let cum=0;
+                    const slices=items.map((it,i)=>{
+                      const pct=it[1]/total,st=cum;cum+=pct;
+                      const ang=a=>({x:Math.cos(2*Math.PI*a-Math.PI/2),y:Math.sin(2*Math.PI*a-Math.PI/2)});
+                      const s=ang(st),e=ang(cum),r=size/2-10,cx=size/2,cy=size/2;
+                      return{key:it[0],color:colors[i%colors.length],d:`M${cx},${cy} L${cx+r*s.x},${cy+r*s.y} A${r},${r},0,${pct>0.5?1:0},1,${cx+r*e.x},${cy+r*e.y} Z`};
+                    });
+                    return(<svg width={size} height={size} style={{filter:"drop-shadow(0 2px 8px rgba(0,0,0,0.10))"}}>
+                      {slices.map(sl=><path key={sl.key} d={sl.d} fill={sl.color} stroke="white" strokeWidth={2}/>)}
+                      <circle cx={size/2} cy={size/2} r={size/2-24} fill="white"/>
+                      <text x={size/2} y={size/2-3} textAnchor="middle" fontSize={12} fontWeight={800} fill="#0f172a">{items.length}</text>
+                      <text x={size/2} y={size/2+11} textAnchor="middle" fontSize={9} fill="#94a3b8">types</text>
+                    </svg>);
+                  };
+
+                  const displayItems=itemView==="month"?topMonthItems:itemView==="fy"?topFyItems:topItems;
+                  const dispTotal=displayItems.reduce((a,b)=>a+b[1],0)||1;
+
+                  return(<div>
+
+                    {/* ROW 1: Bar chart + Profit cards */}
+                    <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"2fr 1fr",gap:14,marginBottom:14}}>
+                      <div style={{background:"white",borderRadius:16,border:"1px solid #f1f5f9",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",padding:"18px 20px"}}>
+                        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+                          <div><p style={{margin:0,fontWeight:800,fontSize:14,color:"#0f172a"}}>Sales vs Purchases</p><p style={{margin:0,fontSize:11,color:"#94a3b8"}}>Last 12 months</p></div>
+                          <div style={{display:"flex",gap:12}}>
+                            {[[shop.accent,"Sales"],["#94a3b8","Purchases"]].map(([c,l])=>(
+                              <span key={l} style={{display:"flex",alignItems:"center",gap:5,fontSize:11,color:"#64748b",fontWeight:600}}>
+                                <span style={{width:10,height:10,borderRadius:3,background:c,display:"inline-block"}}/>{l}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        {/* 12-month totals strip */}
+                        {(()=>{
+                          const total12Sales=monthRevArr.reduce((a,v)=>a+v,0);
+                          const total12Purch=monthPurArr.reduce((a,v)=>a+v,0);
+                          const total12Profit=total12Sales-total12Purch;
+                          return(
+                            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14,background:"#f8fafc",borderRadius:10,padding:"10px 14px",border:"1px solid #f1f5f9"}}>
+                              <div>
+                                <p style={{margin:"0 0 1px",fontSize:9,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>12-Month Sales</p>
+                                <p style={{margin:0,fontSize:15,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace",letterSpacing:"-0.3px"}}>{sym}{Math.round(total12Sales).toLocaleString()}</p>
+                              </div>
+                              <div>
+                                <p style={{margin:"0 0 1px",fontSize:9,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>12-Month Purchases</p>
+                                <p style={{margin:0,fontSize:15,fontWeight:900,color:"#64748b",fontFamily:"DM Mono,monospace",letterSpacing:"-0.3px"}}>{sym}{Math.round(total12Purch).toLocaleString()}</p>
+                              </div>
+                              <div>
+                                <p style={{margin:"0 0 1px",fontSize:9,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>12-Month Profit</p>
+                                <p style={{margin:0,fontSize:15,fontWeight:900,color:total12Profit>=0?"#10b981":"#ef4444",fontFamily:"DM Mono,monospace",letterSpacing:"-0.3px"}}>{total12Profit<0?"-":""}{sym}{Math.round(Math.abs(total12Profit)).toLocaleString()}</p>
+                              </div>
+                            </div>
+                          );
+                        })()}
+                        {/* SVG bar chart — hover to reveal month detail */}
+                        {(()=>{
+                          const W=580,H=160,pad={l:46,r:8,b:20,t:4};
+                          const chartW=W-pad.l-pad.r;
+                          const chartH=H-pad.t-pad.b;
+                          const n=last6.length;
+                          const groupW=chartW/n;
+                          const barW=Math.max(4,Math.floor(groupW*0.38));
+                          const gap=Math.max(1,Math.floor(groupW*0.06));
+                          const hovered=selectedBar;
+                          // Round up to a clean number whose quarter-steps are all whole numbers
+                          const niceMax=raw=>{
+                            if(raw<=0)return 400;
+                            // Find magnitude, then pick the smallest clean ceiling divisible by 4
+                            const mag=Math.pow(10,Math.floor(Math.log10(raw)));
+                            const steps=[1,2,4,5,10,20,40,50,100,200,400,500,1000];
+                            for(const s of steps){
+                              const candidate=Math.ceil(raw/(s*mag))*(s*mag);
+                              if(candidate>=raw&&candidate%4===0)return candidate;
+                            }
+                            return Math.ceil(raw/4)*4;
+                          };
+                          const chartMax=niceMax(maxBar);
+                          // Tick values at 25/50/75/100% — guaranteed whole numbers
+                          const ticks=[0.25,0.5,0.75,1].map(r=>Math.round(chartMax*r));
+                          // Format: no decimals ever
+                          const fmtScale=n=>{
+                            if(shopId==="ros-india"){
+                              if(n>=100000)return(n/100000)+"L";
+                              if(n>=1000)return(n/1000)+"k";
+                            } else {
+                              if(n>=1000000)return(n/1000000)+"M";
+                              if(n>=1000)return(n/1000)+"k";
+                            }
+                            return String(n);
+                          };
+                          return(
+                            <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display:"block",overflow:"visible"}}>
+                              {/* Y-axis grid lines + scale labels */}
+                              {ticks.map((tickVal,ti)=>{
+                                const r=tickVal/chartMax;
+                                const y=pad.t+chartH*(1-r);
+                                return(<g key={ti}>
+                                  <line x1={pad.l} x2={W-pad.r} y1={y} y2={y} stroke="#f1f5f9" strokeWidth={1}/>
+                                  <text x={pad.l-5} y={y+3.5} textAnchor="end" fontSize={8} fill="#94a3b8" fontWeight={600}>{fmtScale(tickVal)}</text>
+                                </g>);
+                              })}
+                              {/* Y-axis baseline */}
+                              <line x1={pad.l} x2={pad.l} y1={pad.t} y2={pad.t+chartH} stroke="#e2e8f0" strokeWidth={1}/>
+                              {last6.map((m,i)=>{
+                                const cx=pad.l+i*groupW+groupW/2;
+                                const sH=Math.max(3,Math.round((monthRevArr[i]/chartMax)*chartH));
+                                const pH=Math.max(3,Math.round((monthPurArr[i]/chartMax)*chartH));
+                                const sy=pad.t+chartH-sH;
+                                const py=pad.t+chartH-pH;
+                                const sx=cx-barW-gap/2;
+                                const px=cx+gap/2;
+                                const isHov=hovered===i;
+                                return(
+                                  <g key={m.label}
+                                    onMouseEnter={()=>setSelectedBar(i)}
+                                    onMouseLeave={()=>setSelectedBar(null)}
+                                    style={{cursor:"default"}}>
+                                    <rect x={cx-groupW/2} y={pad.t} width={groupW} height={chartH} fill="transparent"/>
+                                    {isHov&&<rect x={cx-groupW/2+1} y={pad.t} width={groupW-2} height={chartH} fill={shop.accent} fillOpacity={0.07} rx={3}/>}
+                                    <rect x={sx} y={sy} width={barW} height={sH} fill={shop.accent} fillOpacity={isHov?1:0.7} rx={2}/>
+                                    <rect x={px} y={py} width={barW} height={pH} fill="#94a3b8" fillOpacity={isHov?1:0.6} rx={2}/>
+                                    <text x={cx} y={H-4} textAnchor="middle" fontSize={7.5} fill={isHov?shop.accent:"#94a3b8"} fontWeight={isHov?800:600}>{m.label}</text>
+                                  </g>
+                                );
+                              })}
+
+                              {/* Floating tooltip inside SVG */}
+                              {hovered!==null&&(()=>{
+                                const m=last6[hovered];
+                                const s=monthRevArr[hovered];
+                                const p=monthPurArr[hovered];
+                                const profit=s-p;
+                                const cx=pad.l+hovered*groupW+groupW/2;
+                                // tooltip width/height
+                                const TW=168,TH=72,TR=7;
+                                // position: prefer right of bar, flip left if near right edge
+                                const tx=cx+groupW/2+4+TW>W ? cx-groupW/2-4-TW : cx+groupW/2+4;
+                                const ty=Math.max(pad.t, Math.min(pad.t+chartH-TH, pad.t+chartH/2-TH/2));
+                                const profitColor=profit>=0?"#10b981":"#ef4444";
+                                return(
+                                  <g style={{pointerEvents:"none"}}>
+                                    {/* shadow */}
+                                    <rect x={tx+2} y={ty+2} width={TW} height={TH} rx={TR} fill="rgba(0,0,0,0.08)"/>
+                                    {/* card bg */}
+                                    <rect x={tx} y={ty} width={TW} height={TH} rx={TR} fill="white" stroke={shop.accent} strokeWidth={0.8} strokeOpacity={0.4}/>
+                                    {/* header strip */}
+                                    <rect x={tx} y={ty} width={TW} height={18} rx={TR} fill={shop.accent} fillOpacity={0.12}/>
+                                    <rect x={tx} y={ty+11} width={TW} height={7} fill={shop.accent} fillOpacity={0.12}/>
+                                    {/* month label */}
+                                    <text x={tx+TW/2} y={ty+12} textAnchor="middle" fontSize={9} fontWeight={700} fill={shop.accent} letterSpacing={1}>{m.label.toUpperCase()}</text>
+                                    {/* divider */}
+                                    <line x1={tx+10} x2={tx+TW-10} y1={ty+20} y2={ty+20} stroke="#f1f5f9" strokeWidth={1}/>
+                                    {/* Sales row */}
+                                    <text x={tx+10} y={ty+33} fontSize={8} fill="#94a3b8" fontWeight={600}>SALES</text>
+                                    <text x={tx+TW-10} y={ty+33} textAnchor="end" fontSize={10} fontWeight={800} fill={shop.accent}>{sym}{s.toLocaleString()}</text>
+                                    {/* Purchases row */}
+                                    <text x={tx+10} y={ty+47} fontSize={8} fill="#94a3b8" fontWeight={600}>PURCHASES</text>
+                                    <text x={tx+TW-10} y={ty+47} textAnchor="end" fontSize={10} fontWeight={800} fill="#64748b">{sym}{p.toLocaleString()}</text>
+                                    {/* divider */}
+                                    <line x1={tx+10} x2={tx+TW-10} y1={ty+52} y2={ty+52} stroke="#f1f5f9" strokeWidth={1}/>
+                                    {/* Profit row */}
+                                    <text x={tx+10} y={ty+64} fontSize={8} fill="#94a3b8" fontWeight={600}>PROFIT</text>
+                                    <text x={tx+TW-10} y={ty+64} textAnchor="end" fontSize={10} fontWeight={800} fill={profitColor}>{profit<0?"-":""}{sym}{Math.abs(profit).toLocaleString()}</text>
+                                  </g>
+                                );
+                              })()}
+                            </svg>
+                          );
+                        })()}
+                      </div>
+
+                      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                        {[
+                          {label:"This Month Profit",val:thisMonthSales-purMonth,sub:"Sales − Purchases",pos:"#10b981",neg:"#ef4444",posBg:"#f0fdf4",negBg:"#fff5f5",posBorder:"#bbf7d0",negBorder:"#fecaca",icon:"📈"},
+                          {label:"FY Profit",val:saleFY-purFY,sub:"Apr – Mar",pos:"#3b82f6",neg:"#ef4444",posBg:"#eff6ff",negBg:"#fff5f5",posBorder:"#bfdbfe",negBorder:"#fecaca",icon:"📊"},
+                          {label:"All-Time Revenue",val:saleAll,sub:sales.length+" total sales",pos:shop.accent,neg:shop.accent,posBg:shop.accentBg,negBg:shop.accentBg,posBorder:shop.accent+"44",negBorder:shop.accent+"44",icon:"💰"},
+                        ].map((row,i)=>{
+                          const isPos=row.val>=0;
+                          return(<div key={i} style={{background:isPos?row.posBg:row.negBg,borderRadius:13,border:"1px solid "+(isPos?row.posBorder:row.negBorder),padding:"12px 16px",flex:1,position:"relative",overflow:"hidden"}}>
+                            <div style={{position:"absolute",right:10,top:10,fontSize:22,opacity:0.12}}>{row.icon}</div>
+                            <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>{row.label}</p>
+                            <p style={{margin:"0 0 1px",fontSize:20,fontWeight:900,color:isPos?row.pos:row.neg,letterSpacing:"-0.5px",fontFamily:"DM Mono,monospace"}}>{sym}{Math.round(Math.abs(row.val)).toLocaleString()}{!isPos?" (loss)":""}</p>
+                            <p style={{margin:0,fontSize:10,color:"#94a3b8"}}>{row.sub}</p>
+                          </div>);
+                        })}
+                      </div>
+                    </div>
+
+                    {/* ROW 2: Item breakdown */}
+                    <div style={{background:"white",borderRadius:16,border:"1px solid #f1f5f9",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",padding:"18px 20px",marginBottom:14}}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14,flexWrap:"wrap",gap:8}}>
+                        <div>
+                          <div style={{display:"flex",alignItems:"center",gap:10}}>
+                            <p style={{margin:0,fontWeight:800,fontSize:14,color:"#0f172a"}}>Items Sold by Type</p>
+                            {dispTotal>0&&<span style={{fontSize:11,fontWeight:700,color:shop.accent,background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:999,padding:"2px 10px"}}>{dispTotal} units total</span>}
+                          </div>
+                          <p style={{margin:"2px 0 0",fontSize:11,color:"#94a3b8"}}>Quantity per product category · excludes refunded</p>
+                        </div>
+                        <div style={{display:"flex",gap:5}}>
+                          {[["month","This Month"],["fy","This FY"],["all","All Time"]].map(([v,l])=>(
+                            <button key={v} onClick={()=>setItemView(v)} style={{padding:"5px 11px",borderRadius:8,border:"1px solid "+(itemView===v?shop.accent+"66":"#e2e8f0"),background:itemView===v?shop.accentBg:"white",color:itemView===v?shop.accent:"#64748b",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>{l}</button>
+                          ))}
+                        </div>
+                      </div>
+                      {displayItems.length===0
+                        ?<p style={{margin:"20px 0",textAlign:"center",color:"#cbd5e1",fontSize:13}}>No sales data for this period</p>
+                        :<div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr auto",gap:20,alignItems:"center"}}>
+                          <div>
+                            {displayItems.map((it,i)=>{
+                              const pct=Math.round((it[1]/dispTotal)*100);
+                              return(<div key={it[0]} style={{marginBottom:10}}>
+                                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                                  <span style={{display:"flex",alignItems:"center",gap:6,fontSize:12,fontWeight:700,color:"#374151"}}>
+                                    <span style={{width:9,height:9,borderRadius:2,background:itemColors[i%itemColors.length],display:"inline-block",flexShrink:0}}/>
+                                    {it[0]}
+                                  </span>
+                                  <span style={{display:"flex",alignItems:"center",gap:8}}>
+                                    <span style={{fontSize:13,fontWeight:900,color:"#0f172a",fontFamily:"DM Mono,monospace"}}>{it[1]}</span>
+                                    <span style={{fontSize:10,fontWeight:600,color:"#94a3b8",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:6,padding:"1px 6px"}}>{pct}%</span>
+                                  </span>
+                                </div>
+                                <div style={{height:8,background:"#f1f5f9",borderRadius:999,overflow:"hidden"}}>
+                                  <div style={{height:"100%",width:pct+"%",background:itemColors[i%itemColors.length],borderRadius:999,transition:"width 0.8s cubic-bezier(0.4,0,0.2,1)"}}/>
+                                </div>
+                              </div>);
+                            })}
+                          </div>
+                          {!isMobile&&<div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
+                            <Donut items={displayItems} colors={itemColors} size={130}/>
+                            <div style={{display:"flex",flexWrap:"wrap",gap:4,justifyContent:"center",maxWidth:160}}>
+                              {displayItems.slice(0,6).map((it,i)=>(
+                                <span key={it[0]} style={{fontSize:9,fontWeight:700,color:itemColors[i%itemColors.length],background:itemColors[i%itemColors.length]+"18",border:"1px solid "+itemColors[i%itemColors.length]+"33",borderRadius:999,padding:"2px 7px"}}>{it[0]}</span>
+                              ))}
+                            </div>
+                          </div>}
+                        </div>
+                      }
+                    </div>
+
+                    {/* ROW 3: Purchase overview */}
+                    <div style={{background:"white",borderRadius:16,border:"1px solid #f1f5f9",boxShadow:"0 2px 10px rgba(0,0,0,0.05)",padding:"18px 20px",marginBottom:14}}>
+                      <p style={{margin:"0 0 12px",fontWeight:800,fontSize:14,color:"#0f172a"}}>Purchase Overview</p>
+                      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:10}}>
+                        {[
+                          {label:"This Month",val:purMonth,count:purch.filter(p=>{const d=getPurDate(p);return d&&d.getMonth()===curMonth&&d.getFullYear()===curYear;}).length,col:"#06b6d4",bg:"#ecfeff",border:"#a5f3fc"},
+                          {label:"This FY",val:purFY,count:purch.filter(p=>{const d=getPurDate(p);return d&&d>=fyStartM;}).length,col:"#10b981",bg:"#f0fdf4",border:"#bbf7d0"},
+                          {label:"All Time",val:purAll,count:purch.length,col:"#a78bfa",bg:"#f5f3ff",border:"#ddd6fe"},
+                          {label:"Avg per Purchase",val:purch.length>0?purAll/purch.length:0,count:null,col:"#f59e0b",bg:"#fffbeb",border:"#fde68a"},
+                        ].map((p,i)=>(
+                          <div key={i} style={{background:p.bg,borderRadius:12,border:"1px solid "+p.border,padding:"12px 14px"}}>
+                            <p style={{margin:"0 0 3px",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>{p.label}</p>
+                            <p style={{margin:"0 0 2px",fontSize:17,fontWeight:900,color:p.col,letterSpacing:"-0.3px"}}>{sym}{Math.round(p.val).toLocaleString()}</p>
+                            {p.count!==null&&<p style={{margin:0,fontSize:10,color:"#94a3b8"}}>{p.count} purchase{p.count!==1?"s":""}</p>}
+                          </div>
                         ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sales.slice(0,5).map((s,i)=>(
-                        <tr key={s.id} style={{borderTop:"1px solid #f1f5f9",background:STATUS_ROW_BG[s.ful||s.status]||(i%2===0?"white":"#fafafa")}}>
-                          <td style={{padding:"11px 16px",fontSize:12,fontWeight:700,color:shop.accent}}>{s.id}</td>
-                          <td style={{padding:"11px 16px",fontSize:13,color:"#374151",fontWeight:600}}>{s.customer}</td>
-                          <td style={{padding:"11px 16px",fontSize:13,fontWeight:800,color:"#0f172a"}}>{fmt(shopId,s.amount)}</td>
-                          <td style={{padding:"11px 16px"}}><Badge l={s.ful||s.status||"PENDING"}/></td>
-                          <td style={{padding:"11px 16px",fontSize:12,color:"#94a3b8"}}>{s.date}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* ── LOW STOCK ALERT ── */}
-                {lowStk.length>0&&(
-                  <div style={{background:"#fff7ed",borderRadius:14,border:"1px solid #fed7aa",padding:"14px 18px",display:"flex",alignItems:"center",gap:12}}>
-                    <span style={{fontSize:22}}>⚠️</span>
-                    <div>
-                      <p style={{margin:0,fontWeight:800,fontSize:13,color:"#c2410c"}}>{lowStk.length} product{lowStk.length>1?"s":""} low on stock</p>
-                      <p style={{margin:0,fontSize:11,color:"#ea580c"}}>{lowStk.map(p=>p.name).join(" · ")}</p>
+                      </div>
                     </div>
-                    <button onClick={()=>setTab("products")} style={{marginLeft:"auto",fontSize:12,fontWeight:700,color:"#c2410c",background:"white",border:"1px solid #fed7aa",borderRadius:8,padding:"5px 12px",cursor:"pointer",fontFamily:"inherit"}}>View Products →</button>
-                  </div>
-                )}
+
+                    {/* LOW STOCK */}
+                    {lowStk.length>0&&(
+                      <div style={{background:"#fff7ed",borderRadius:14,border:"1px solid #fed7aa",padding:"14px 18px",display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+                        <span style={{fontSize:22}}>⚠️</span>
+                        <div>
+                          <p style={{margin:0,fontWeight:800,fontSize:13,color:"#c2410c"}}>{lowStk.length} product{lowStk.length>1?"s":""} low on stock</p>
+                          <p style={{margin:0,fontSize:11,color:"#ea580c"}}>{lowStk.map(p=>p.name).join(" · ")}</p>
+                        </div>
+                        <button onClick={()=>setTab("products")} style={{marginLeft:"auto",fontSize:12,fontWeight:700,color:"#c2410c",background:"white",border:"1px solid #fed7aa",borderRadius:8,padding:"5px 12px",cursor:"pointer",fontFamily:"inherit"}}>View Products →</button>
+                      </div>
+                    )}
+                  </div>);
+                })()}
               </div>
             );
           })()}
@@ -1989,7 +2364,7 @@ return(
 
       {/* ── EDIT SALE MODAL ── */}
       {modal==="edit-sale"&&editRow&&(
-        <Modal title={"✏️ Edit Sale — "+editRow.id} onClose={()=>{setModal(null);setEditRow(null);}} accent={shop.accent} badge={fmt(shopId,(Number(editRow.amount)||0)-(Number(editRow.adjAmt)||0))}>
+        <Modal title={"✏️ Edit Sale — "+editRow.id} onClose={()=>{setModal(null);setEditRow(null);}} accent={shop.accent}>
           <EditSaleForm
             shopId={shopId} shop={shop} sale={editRow} customers={customers}
             onSave={(updated)=>{
@@ -2007,7 +2382,7 @@ return(
                     const ti=tr===0?true:(s.taxInclusive!==undefined?s.taxInclusive!==false:true);
                     let sl=decodedLines||s.saleLines||s.sale_lines||null;
                     if(typeof sl==="string"){try{sl=JSON.parse(sl);}catch{sl=null;}}
-                    return {...s,item:displayItem,taxRate:tr,taxInclusive:ti,saleLines:Array.isArray(sl)?sl:null,discount:Number(s.discount||s.discount_amt)||0,otherCharges:Number(s.otherCharges||s.other_charges)||0};
+                    return {...s,item:displayItem,taxRate:tr,taxInclusive:ti,saleLines:Array.isArray(sl)?sl:null,discount:Number(s.discount||s.discount_amt)||0,otherCharges:Number(s.otherCharges||s.other_charges)||0,adjAmt:Number(s.adjAmt||s.adj_amt)||0,adjType:s.adjType||s.adj_type||"",adjDate:s.adjDate||s.adj_date||"",adjNote:s.adjNote||s.adj_note||"",shopInvoiceNo:s.shopInvoiceNo||s.shop_invoice_no||"",refundDate:s.refundDate||s.refund_date||"",exchangeDate:s.exchangeDate||s.exchange_date||""};
                   })}));
                 }).catch(()=>{});
               }).catch(err=>console.error("❌ Edit save failed:",err));
@@ -2034,12 +2409,13 @@ return(
       {/* ══ PRINT STYLE + OVERLAY ══ */}
       {printMode&&invoiceRow&&(()=>{
         const inv=invoiceRow,sym=shop.symbol,total=Number(inv.amount)||0,isIndia=shopId==="ros-india";
+        const invAdjAmt=Number(inv.adjAmt)||0;
         const rPct=inv.taxRate!==undefined&&inv.taxRate!==null?inv.taxRate:0;
         const taxRate=rPct/100;
         const inclusive=taxRate===0?true:inv.taxInclusive!==false;
         const subtotal=inclusive?parseFloat((total/(1+taxRate)).toFixed(2)):total;
         const taxAmt=parseFloat((subtotal*taxRate).toFixed(2));
-        const grand=parseFloat((subtotal+taxAmt).toFixed(2));
+        const grand=parseFloat((subtotal+taxAmt-invAdjAmt).toFixed(2));
         const cgst=parseFloat((taxAmt/2).toFixed(2));
         const tRows=rPct===0?[["Amount (no tax)",total]]:isIndia?[["Subtotal (excl. tax)",subtotal],["CGST ("+(rPct/2)+"%)",cgst],["SGST ("+(rPct/2)+"%)",cgst]]:[["Subtotal (excl. tax)",subtotal],["Tax ("+rPct+"%)",taxAmt]];
         const n=Math.round(total);const ons=["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];const tns=["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
@@ -2174,6 +2550,12 @@ return(
                       <span style={{fontSize:13,fontWeight:600}}>{v===0?sym+"0.00":sym+Number(v).toLocaleString()}</span>
                     </div>
                   ))}
+                  {invAdjAmt>0&&(
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:8}}>
+                      <span style={{fontSize:13,color:"#d97706"}}>{inv.adjType||"Adjustment"}</span>
+                      <span style={{fontSize:13,fontWeight:600,color:"#d97706"}}>{sym}-{Number(invAdjAmt).toLocaleString()}</span>
+                    </div>
+                  )}
                   <div style={{borderTop:"2px solid #0f172a",paddingTop:10,marginTop:4}}>
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
                       <span style={{fontSize:15,fontWeight:900}}>GRAND TOTAL</span>
@@ -2213,9 +2595,10 @@ return(
         const tR=rPct/100;
         const inc=tR===0?true:inv.taxInclusive!==false;
         const ent=Number(inv.amount)||0;
+        const pdfAdjAmt=Number(inv.adjAmt)||0;
         const sub=inc?parseFloat((ent/(1+tR)).toFixed(2)):ent;
         const tax=parseFloat((sub*tR).toFixed(2));
-        const grd=parseFloat((sub+tax).toFixed(2));
+        const grd=parseFloat((sub+tax-pdfAdjAmt).toFixed(2));
         const cgst=parseFloat((tax/2).toFixed(2));
         return(
           <div style={{position:"fixed",inset:0,zIndex:9999,background:"white",overflowY:"auto"}}>
@@ -2561,6 +2944,7 @@ return(
                 <div>
                   {invoiceRow&&(()=>{
                     const entered  = Number(invoiceRow.amount)||0;
+                    const previewAdjAmt = Number(invoiceRow.adjAmt)||0;
                     const isIndia  = shopId==="ros-india";
                     const rateDisplay = (invoiceRow.taxRate!==undefined&&invoiceRow.taxRate!==null ? invoiceRow.taxRate : 0);
                     const taxRate  = rateDisplay / 100;
@@ -2571,7 +2955,7 @@ return(
                       ? parseFloat((entered / (1 + taxRate)).toFixed(2))
                       : entered;
                     const taxAmt   = parseFloat((subtotal * taxRate).toFixed(2));
-                    const grand    = parseFloat((subtotal + taxAmt).toFixed(2));
+                    const grand    = parseFloat((subtotal + taxAmt - previewAdjAmt).toFixed(2));
                     const cgst     = parseFloat((taxAmt / 2).toFixed(2));
                     const sgst     = parseFloat((taxAmt / 2).toFixed(2));
                     const rows = rateDisplay===0
@@ -2586,6 +2970,8 @@ return(
                             ["Subtotal (excl. tax)", subtotal],
                             ["Tax ("+rateDisplay+"%)", taxAmt],
                           ];
+                    const adjRows=previewAdjAmt>0?[["Post-Sale Adj. ("+(invoiceRow.adjType||"Adjustment")+")",-previewAdjAmt]]:[];
+                    const allRows=[...rows,...adjRows];
                     return <>
                       {/* Tax mode badge */}
                       <div style={{marginBottom:8}}>
@@ -2596,10 +2982,10 @@ return(
                           {rateDisplay===0?"No Tax":(inclusive?"Tax Inclusive":"Tax Exclusive")+" · "+rateDisplay+"%"}
                         </span>
                       </div>
-                      {rows.map(([k,v])=>(
+                      {allRows.map(([k,v])=>(
                         <div key={k} style={{display:"flex",justifyContent:"space-between",marginBottom:7}}>
-                          <span style={{fontSize:13,color:"#64748b"}}>{k}</span>
-                          <span style={{fontSize:13,fontWeight:600,color:"#374151"}}>{fmt(shopId,v)}</span>
+                          <span style={{fontSize:13,color:v<0?"#d97706":"#64748b"}}>{k}</span>
+                          <span style={{fontSize:13,fontWeight:600,color:v<0?"#d97706":"#374151"}}>{v<0?"\u2212 "+fmt(shopId,Math.abs(v)):fmt(shopId,v)}</span>
                         </div>
                       ))}
                       <div style={{borderTop:"2px solid #0f172a",paddingTop:10,marginTop:6}}>
@@ -2688,10 +3074,13 @@ return(
                   <span style={{display:"inline-flex",alignItems:"center",gap:4,
                     background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:999,
                     padding:"2px 10px",fontSize:10,fontWeight:700,color:"#1d4ed8",
-                    marginBottom:6,letterSpacing:"0.02em"}}>
+                    marginBottom:8,letterSpacing:"0.02em"}}>
                     📱 {selRow.phoneSavedOn||"UK 888"}
                   </span>
-                  <p style={{margin:0,fontSize:12,color:"#64748b"}}>{selRow.address||"—"}</p>
+                  <div style={{marginTop:4,paddingTop:8,borderTop:"1px solid #f1f5f9"}}>
+                    <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>📍 Address</p>
+                    <p style={{margin:0,fontSize:12,color:selRow.address?"#374151":"#cbd5e1",lineHeight:1.5}}>{selRow.address||"—"}</p>
+                  </div>
                 </div>
 
                 {/* PAYMENT */}
@@ -2707,7 +3096,7 @@ return(
                   <div style={{display:"flex",justifyContent:"space-between"}}>
                     <span style={{fontSize:12,color:"#64748b"}}>Amount</span>
                     <span style={{fontSize:14,fontWeight:900,color:shop.accent}}>
-                      {fmt(shopId,Number(selRow.amount)||0)}
+                      {fmt(shopId,(Number(selRow.amount)||0)-(Number(selRow.adjAmt)||0))}
                     </span>
                   </div>
                 </div>
@@ -2721,7 +3110,7 @@ return(
                   <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
                     <span style={{fontSize:12,color:"#64748b"}}>Total</span>
                     <span style={{fontSize:14,fontWeight:900,color:shop.accent}}>
-                      {fmt(shopId,Number(selRow.amount)||0)}
+                      {fmt(shopId,(Number(selRow.amount)||0)-(Number(selRow.adjAmt)||0))}
                     </span>
                   </div>
                   {/* Fulfillment Timeline */}
@@ -2765,7 +3154,7 @@ return(
               {/* ── LINE ITEMS ── */}
               {(()=>{
                 const hasLines=Array.isArray(selRow.saleLines)&&selRow.saleLines.length>0;
-                const grandTotal=Number(selRow.amount)||0;
+                const grandTotal=(Number(selRow.amount)||0)-(Number(selRow.adjAmt)||0);
                 const discountAmt=Number(selRow.discount)||0;
                 const otherChargesAmt=Number(selRow.otherCharges)||0;
                 const taxRatePct=selRow.taxRate!=null?selRow.taxRate:0;
@@ -2834,6 +3223,12 @@ return(
                           <span style={{fontSize:12,fontWeight:600,color:"#374151"}}>{fmt(shopId,parseFloat((grandTotal*(taxRatePct/100)/(1+taxRatePct/100)).toFixed(2)))}</span>
                         </div>
                       )}
+                      {(Number(selRow.adjAmt)||0)>0&&(
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                          <span style={{fontSize:12,color:"#d97706"}}>{selRow.adjType||"Adjustment"}</span>
+                          <span style={{fontSize:12,fontWeight:600,color:"#d97706"}}>\u2212 {fmt(shopId,Number(selRow.adjAmt)||0)}</span>
+                        </div>
+                      )}
                       <div style={{display:"flex",justifyContent:"space-between",borderTop:"2px solid #0f172a",paddingTop:8}}>
                         <span style={{fontSize:14,fontWeight:900,color:"#0f172a"}}>Grand Total</span>
                         <span style={{fontSize:15,fontWeight:900,color:shop.accent}}>{fmt(shopId,grandTotal)}</span>
@@ -2854,7 +3249,7 @@ return(
                 {/* totals */}
                 <div style={{border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 16px"}}>
                   {(()=>{
-                    const amt=Number(selRow.amount)||0;
+                    const amt=(Number(selRow.amount)||0)-(Number(selRow.adjAmt)||0);
                     const rPct=selRow.taxRate!=null?selRow.taxRate:0;
                     const r=rPct/100;
                     // amount is always the final grand total as entered/saved
@@ -2886,6 +3281,12 @@ return(
                         <span style={{fontSize:12,color:"#64748b"}}>Balance Due</span>
                         <span style={{fontSize:12,fontWeight:700,color:"#15803d"}}>{shop.symbol}0</span>
                       </div>
+                      {(Number(selRow.adjAmt)||0)>0&&(
+                        <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}>
+                          <span style={{fontSize:12,color:"#d97706"}}>{selRow.adjType||"Adjustment"}</span>
+                          <span style={{fontSize:12,fontWeight:600,color:"#d97706"}}>\u2212 {fmt(shopId,Number(selRow.adjAmt)||0)}</span>
+                        </div>
+                      )}
                       <div style={{display:"flex",justifyContent:"space-between"}}>
                         <span style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>Grand Total</span>
                         <span style={{fontSize:16,fontWeight:900,color:shop.accent}}>{fmt(shopId,amt)}</span>
@@ -3463,18 +3864,26 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     qty:         sale.qty||"1",
     amount:      sale.amount||"",
     payBy:       sale.pay||"SHOP",
-    shopInvoiceNo: sale.shopInvoiceNo||"",
     status:      (sale.ful||sale.status||"PENDING").toUpperCase(),
     sentDate:    sale.sentDate||"",
     returnReqDate: sale.returnReqDate||"",
     returnRcvd:  sale.returnRcvd||"",
     refundAmt:   sale.refundAmt||"",
+    refundDate:  sale.refundDate||"",
+    exchangeDate: sale.exchangeDate||"",
     tag:         sale.tag||"",
     remarks:     sale.rem||sale.remarks||"",
     taxInclusive: sale.taxInclusive !== false,
     taxRate:      sale.taxRate !== undefined ? sale.taxRate : 0,
     phoneSavedOn: sale.phoneSavedOn||"UK 888",
     address:     sale.address||"",
+    adjType:     sale.adjType||"",
+    adjAmt:      sale.adjAmt||"",
+    adjDate:     sale.adjDate||"",
+    adjNote:     sale.adjNote||"",
+    purInvNo:    sale.purInvNo||"",
+    purInvDate:  sale.purInvDate||"",
+    purAmount:   sale.purAmount||"",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -3517,211 +3926,286 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
 
   const isReturnRequested=["RETURN REQUESTED","RTRN REQSTD"].includes(form.status);
   const isReturnReceived=["RETURN RECEIVED","RETRN RCVD"].includes(form.status);
-  const isRefundOnly=["EXCHANGED","REFUNDED"].includes(form.status);
+  const isExchanged=form.status==="EXCHANGED";
+  const isRefunded=form.status==="REFUNDED";
   const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","WORK IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
   const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:0}}>
+    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
 
-      <div style={{background:"#f8fafc",borderRadius:12,padding:"12px 14px",marginBottom:12,border:"1px solid #f1f5f9"}}>
-        <p style={{margin:"0 0 10px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em"}}>Basic Info</p>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          <div>
-            <label style={lbl}>Date</label>
-            <input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
-          </div>
-          <div>
-            <label style={lbl}>Invoice No.</label>
-            <input value={form.invoiceNo} readOnly style={{...inp,background:"#f1f5f9",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/>
-          </div>
+      {/* highlight banner */}
+      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:20}}>✏️</span>
+        <div>
+          <p style={{margin:0,fontWeight:800,fontSize:13,color:shop.accentText}}>Editing Sale {form.invoiceNo}</p>
+          <p style={{margin:0,fontSize:11,color:shop.accent}}>All changes will update the sales record immediately on save</p>
         </div>
       </div>
 
-      <div style={{background:"#f8fafc",borderRadius:12,padding:"12px 14px",marginBottom:12,border:"1px solid #f1f5f9"}}>
-        <p style={{margin:"0 0 10px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em"}}>Customer</p>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-          <div>
-            <label style={lbl}>Customer Name</label>
-            <select value={form.customer} onChange={e=>set("customer",e.target.value)} style={inp}>
-              <option value="">Select customer...</option>
-              {form.customer&&!customers.some(c=>c.name===form.customer)&&(
-                <option value={form.customer}>{form.customer} (imported)</option>
-              )}
-              {customers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={lbl}>Contact Number</label>
-            <input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
-          </div>
+      <Divider title="Basic Info"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div>
+          <label style={lbl}>Date</label>
+          <input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
         </div>
         <div>
-          <label style={lbl}>Phone Saved On</label>
+          <label style={lbl}>Invoice Number</label>
+          <input value={form.invoiceNo} readOnly
+            style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/>
+        </div>
+      </div>
+
+      <Divider title="Customer"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div>
+          <label style={lbl}>Customer Name</label>
+          <select value={form.customer} onChange={e=>set("customer",e.target.value)} style={inp}>
+            <option value="">Select customer…</option>
+            {/* If the sale's customer is not in the CRM (e.g. imported), show them as a selectable option */}
+            {form.customer && !customers.some(c=>c.name===form.customer) && (
+              <option value={form.customer}>{form.customer} (imported)</option>
+            )}
+            {customers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={lbl}>Contact Number</label>
+          <input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={lbl}>Phone Number Saved On</label>
           <select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>
             {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
           </select>
         </div>
-        <div style={{marginTop:8}}>
+        <div style={{gridColumn:"1/-1"}}>
           <label style={lbl}>Address</label>
-          <textarea value={form.address||""} onChange={e=>set("address",e.target.value)} rows={2} placeholder="Customer address..." style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
+          <textarea value={form.address} onChange={e=>set("address",e.target.value)}
+            rows={2} placeholder="Customer address…"
+            style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
         </div>
       </div>
 
-      <div style={{background:"#f8fafc",borderRadius:12,padding:"12px 14px",marginBottom:12,border:"1px solid #f1f5f9"}}>
-        <p style={{margin:"0 0 10px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em"}}>Order Details</p>
+      <Divider title="Order Details"/>
 
-        {hasLines&&(
-          <div style={{marginBottom:10}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
-              <span style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em"}}>Items</span>
-              <button type="button" onClick={addLine} style={{fontSize:11,fontWeight:700,color:shop.accent,background:shop.accentBg,border:"1px solid "+shop.accent+"44",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontFamily:"inherit"}}>+ Add Item</button>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 56px 80px 64px 26px",gap:4,marginBottom:4}}>
-              {["Item","Qty","Price","Total",""].map((h,i)=>(
-                <span key={i} style={{fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.04em",textAlign:i>0?"right":"left"}}>{h}</span>
-              ))}
-            </div>
-            {editLines.map((l,i)=>{
-              const lineTotal=parseFloat(((parseFloat(l.qty)||1)*(parseFloat(l.price)||0)).toFixed(2));
-              return(
-                <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 56px 80px 64px 26px",gap:4,marginBottom:6,alignItems:"center"}}>
-                  <input value={l.name} onChange={e=>setLine(i,"name",e.target.value)} placeholder="Item name" style={{...inp,fontSize:12,padding:"6px 8px"}} onFocus={fo} onBlur={bl}/>
-                  <input type="number" min="1" value={l.qty} onChange={e=>setLine(i,"qty",e.target.value)} style={{...inp,fontSize:12,padding:"6px 4px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
-                  <input type="number" min="0" step="0.01" value={l.price} onChange={e=>setLine(i,"price",e.target.value)} placeholder="0.00" style={{...inp,fontSize:12,padding:"6px 4px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
-                  <span style={{fontSize:12,fontWeight:700,color:shop.accent,textAlign:"right"}}>{shop.symbol}{lineTotal.toLocaleString()}</span>
-                  <button type="button" onClick={()=>removeLine(i)} style={{width:22,height:22,borderRadius:5,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",padding:0}}>x</button>
-                </div>
-              );
-            })}
-            {editLines.length===0&&<p style={{margin:"4px 0 0",fontSize:11,color:"#94a3b8",fontStyle:"italic"}}>No items -- click "+ Add Item".</p>}
+      {/* Editable multi-item lines */}
+      {hasLines&&(
+        <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+            <p style={{margin:0,fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>Items</p>
+            <button type="button" onClick={addLine}
+              style={{fontSize:11,fontWeight:700,color:shop.accent,background:shop.accentBg,border:"1px solid "+shop.accent+"44",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontFamily:"inherit"}}>
+              + Add Item
+            </button>
           </div>
-        )}
-
-        {!hasLines&&(
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
-            <div style={{gridColumn:"1/-1"}}>
-              <label style={lbl}>Item / Product</label>
-              <input value={form.item} onChange={e=>set("item",e.target.value)} placeholder="Item name" style={inp} onFocus={fo} onBlur={bl}/>
-            </div>
-            <div>
-              <label style={lbl}>Quantity</label>
-              <input type="number" min="1" value={form.qty} onChange={e=>set("qty",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
-            </div>
-          </div>
-        )}
-
-        <div style={{background:form.taxRate===0?"#f1f5f9":(form.taxInclusive?"#f0fdf4":"#eff6ff"),borderRadius:9,padding:"10px 12px",border:"1px solid "+(form.taxRate===0?"#e2e8f0":(form.taxInclusive?"#bbf7d0":"#bfdbfe"))}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8,flexWrap:"wrap",gap:6}}>
-            <div>
-              <p style={{margin:0,fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>GST / Tax</p>
-              <p style={{margin:"2px 0 0",fontSize:11,fontWeight:600,color:form.taxRate===0?"#94a3b8":(form.taxInclusive?"#15803d":"#1d4ed8")}}>
-                {form.taxRate===0?"No tax applied":(form.taxInclusive?"Price includes tax":"Tax added on top")}
-              </p>
-            </div>
-            {form.taxRate>0&&(
-              <div style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}} onClick={()=>set("taxInclusive",!form.taxInclusive)}>
-                <span style={{fontSize:11,fontWeight:700,color:"#64748b"}}>{form.taxInclusive?"Inclusive":"Exclusive"}</span>
-                <div style={{width:40,height:22,borderRadius:999,background:form.taxInclusive?shop.accent:"#cbd5e1",position:"relative",transition:"background 0.2s"}}>
-                  <div style={{position:"absolute",top:3,left:form.taxInclusive?20:3,width:16,height:16,borderRadius:"50%",background:"white",transition:"left 0.2s",boxShadow:"0 1px 3px rgba(0,0,0,0.2)"}}/>
-                </div>
-              </div>
-            )}
-          </div>
-          <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginBottom:10}}>
-            <span style={{fontSize:11,fontWeight:700,color:"#64748b",marginRight:2}}>Rate:</span>
-            {[0,5,10,18,20].map(r=>(
-              <button key={r} type="button" onClick={()=>set("taxRate",Number(r))}
-                style={{padding:"3px 10px",borderRadius:999,border:"2px solid "+(Number(form.taxRate)===r?shop.accent:"#e2e8f0"),
-                  background:Number(form.taxRate)===r?shop.accent:"white",color:Number(form.taxRate)===r?"white":"#374151",
-                  fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>
-                {r}%
-              </button>
+          {/* Column headers */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 60px 90px 70px 28px",gap:4,marginBottom:4}}>
+            {["Item","Qty","Price","Total",""].map((h,i)=>(
+              <span key={i} style={{fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.04em",textAlign:i>0?"right":"left",paddingRight:i===3?4:0}}>{h}</span>
             ))}
           </div>
+          {editLines.map((l,i)=>{
+            const lineTotal=parseFloat(((parseFloat(l.qty)||1)*(parseFloat(l.price)||0)).toFixed(2));
+            return(
+              <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 60px 90px 70px 28px",gap:4,marginBottom:6,alignItems:"center"}}>
+                <input value={l.name} onChange={e=>setLine(i,"name",e.target.value)}
+                  placeholder="Item name"
+                  style={{...inp,fontSize:12,padding:"6px 9px"}} onFocus={fo} onBlur={bl}/>
+                <input type="number" onWheel={e=>e.target.blur()} min="1" value={l.qty} onChange={e=>setLine(i,"qty",e.target.value)}
+                  style={{...inp,fontSize:12,padding:"6px 6px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
+                <input type="number" onWheel={e=>e.target.blur()} min="0" step="0.01" value={l.price} onChange={e=>setLine(i,"price",e.target.value)}
+                  placeholder="0.00"
+                  style={{...inp,fontSize:12,padding:"6px 6px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
+                <span style={{fontSize:12,fontWeight:700,color:shop.accent,textAlign:"right",paddingRight:4}}>
+                  {shop.symbol}{lineTotal.toLocaleString()}
+                </span>
+                <button type="button" onClick={()=>removeLine(i)}
+                  title="Remove item"
+                  style={{width:24,height:24,borderRadius:6,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,padding:0,fontFamily:"inherit"}}>
+                  ×
+                </button>
+              </div>
+            );
+          })}
+          {editLines.length===0&&(
+            <p style={{margin:"4px 0 0",fontSize:11,color:"#94a3b8",fontStyle:"italic"}}>No items — click "+ Add Item" to add one.</p>
+          )}
+        </div>
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        {!hasLines&&(
+          <div style={{gridColumn:"1/-1"}}>
+            <label style={lbl}>Item / Product</label>
+            <input value={form.item} onChange={e=>set("item",e.target.value)} placeholder="Item name" style={inp} onFocus={fo} onBlur={bl}/>
+          </div>
+        )}
+        {!hasLines&&(
           <div>
-            <label style={lbl}>Grand Total ({shop.symbol})</label>
-            <input type="number" value={form.amount} onChange={e=>set("amount",e.target.value)} placeholder="0.00" style={{...inp,fontSize:15,fontWeight:800}} onFocus={fo} onBlur={bl}/>
+            <label style={lbl}>Quantity</label>
+            <input type="number" onWheel={e=>e.target.blur()} min="1" value={form.qty} onChange={e=>set("qty",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
+          </div>
+        )}
+        <div style={{gridColumn:"1/-1"}}>
+          {/* GST TOGGLE + RATE */}
+          <div style={{background:form.taxRate===0?"#f8fafc":(form.taxInclusive?"#f0fdf4":"#eff6ff"),border:"1px solid "+(form.taxRate===0?"#e2e8f0":(form.taxInclusive?"#bbf7d0":"#bfdbfe")),borderRadius:10,padding:"12px 14px",marginBottom:10}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
+              <div>
+                <p style={{margin:0,fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>GST / Tax</p>
+                <p style={{margin:"2px 0 0",fontSize:12,fontWeight:700,color:form.taxRate===0?"#94a3b8":(form.taxInclusive?"#15803d":"#1d4ed8")}}>
+                  {form.taxRate===0?"No tax applied":(form.taxInclusive?"Price includes tax — calculated backwards":"Tax added on top")}
+                </p>
+              </div>
+              {form.taxRate>0&&(
+                <div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}} onClick={()=>set("taxInclusive",!form.taxInclusive)}>
+                  <span style={{fontSize:12,fontWeight:700,color:"#64748b"}}>{form.taxInclusive?"Inclusive":"Exclusive"}</span>
+                  <div style={{width:44,height:24,borderRadius:999,background:form.taxInclusive?shop.accent:"#cbd5e1",position:"relative",transition:"background 0.2s",boxShadow:"inset 0 1px 3px rgba(0,0,0,0.15)"}}>
+                    <div style={{position:"absolute",top:3,left:form.taxInclusive?22:3,width:18,height:18,borderRadius:"50%",background:"white",transition:"left 0.2s",boxShadow:"0 1px 4px rgba(0,0,0,0.2)"}}/>
+                  </div>
+                </div>
+              )}
+            </div>
+            {/* Tax Rate Buttons */}
+            <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+              <span style={{fontSize:11,fontWeight:700,color:"#64748b",marginRight:4}}>Tax Rate:</span>
+              {[0,5,10,18,20].map(r=>(
+                <button key={r} type="button" onClick={()=>set("taxRate",Number(r))}
+                  style={{padding:"4px 12px",borderRadius:999,border:"2px solid "+(Number(form.taxRate)===r?shop.accent:"#e2e8f0"),
+                    background:Number(form.taxRate)===r?shop.accent:"white",color:Number(form.taxRate)===r?"white":"#374151",
+                    fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>
+                  {r}%
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Amount input */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <div>
+              <label style={lbl}>
+                Grand Total ({shop.symbol}) — {form.taxRate===0?"no tax":form.taxInclusive?"incl. tax":"excl. tax"}
+              </label>
+              <input type="number" onWheel={e=>e.target.blur()} value={form.amount} onChange={e=>set("amount",e.target.value)}
+                placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+            </div>
+            {/* Tax breakdown preview */}
+            {form.amount&&Number(form.amount)>0&&(()=>{
+              const a=Number(form.amount);
+              const rate=(form.taxRate||0)/100;
+              const subtotal=form.taxInclusive?parseFloat((a/(1+rate)).toFixed(2)):a;
+              const tax=form.taxInclusive?parseFloat((a-subtotal).toFixed(2)):parseFloat((a*rate).toFixed(2));
+              const grand=form.taxInclusive?a:parseFloat((a+tax).toFixed(2));
+              return(
+                <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",border:"1px solid #e2e8f0"}}>
+                  <p style={{margin:"0 0 6px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>Tax Breakdown</p>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                    <span style={{fontSize:11,color:"#64748b"}}>Subtotal</span>
+                    <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>{shop.symbol}{subtotal.toLocaleString()}</span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",marginBottom:3}}>
+                    <span style={{fontSize:11,color:"#64748b"}}>{(form.taxRate||0)===0?"No Tax":("Tax "+form.taxRate+"%")}</span>
+                    <span style={{fontSize:11,fontWeight:700,color:"#374151"}}>{shop.symbol}{tax.toLocaleString()}</span>
+                  </div>
+                  <div style={{display:"flex",justifyContent:"space-between",borderTop:"1px solid #e2e8f0",paddingTop:4,marginTop:4}}>
+                    <span style={{fontSize:12,fontWeight:800,color:"#0f172a"}}>Grand Total</span>
+                    <span style={{fontSize:12,fontWeight:900,color:shop.accent}}>{shop.symbol}{grand.toLocaleString()}</span>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
-        <div style={{background:"#f8fafc",borderRadius:12,padding:"12px 14px",border:"1px solid #f1f5f9"}}>
-          <p style={{margin:"0 0 10px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em"}}>Payment</p>
-          <div style={{marginBottom:8}}>
-            <label style={lbl}>Payment By</label>
-            <select value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
-              {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
-            </select>
-          </div>
-          {form.payBy==="SHOP"&&(
-            <div>
-              <label style={lbl}>Shop Invoice No.</label>
-              <input value={form.shopInvoiceNo||""} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 12345" style={inp} onFocus={fo} onBlur={bl}/>
-            </div>
-          )}
+      <Divider title="Payment"/>
+      <div style={{marginBottom:16}}>
+        <label style={lbl}>Payment By</label>
+        <select value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
+          {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
+        </select>
+      </div>
+
+      <Divider title="Delivery"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#f8fafc",borderRadius:12,padding:"14px",border:"1px solid #e2e8f0"}}>
+        <div>
+          <label style={lbl}>Delivery Status</label>
+          <select value={form.status} onChange={e=>set("status",e.target.value)}
+            style={{...inp,fontWeight:700,color:statusColor[form.status]||"#374151"}}>
+            {(shopId==="ros-india"
+              ? ["ORDER NOT PLACED","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]
+              : ["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]
+            ).map(o=>(
+              <option key={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>
+            ))}
+          </select>
         </div>
-        <div style={{background:"#f8fafc",borderRadius:12,padding:"12px 14px",border:"1px solid #f1f5f9"}}>
-          <p style={{margin:"0 0 10px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em"}}>Delivery</p>
-          <div style={{marginBottom:8}}>
-            <label style={lbl}>Delivery Status</label>
-            <select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontWeight:700,color:statusColor[form.status]||"#374151"}}>
-              {(shopId==="ros-india"
-                ?["ORDER NOT PLACED","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]
-                :["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]
-              ).map(o=>(<option key={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>))}
-            </select>
-          </div>
-          <div>
-            <label style={lbl}>Sent / Dispatch Date</label>
-            <input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
-          </div>
+        <div>
+          <label style={lbl}>Sent / Dispatch Date</label>
+          <input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
         </div>
       </div>
 
       {isReturnRequested&&(
-        <div style={{background:"#fff7ed",borderRadius:12,padding:"12px 14px",marginBottom:12,border:"1px solid #fed7aa"}}>
-          <p style={{margin:"0 0 10px",fontSize:10,fontWeight:800,color:"#c2410c",textTransform:"uppercase",letterSpacing:"0.08em"}}>Return Request</p>
-          <label style={lbl}>Return Request Date</label>
-          <input type="date" value={form.returnReqDate} onChange={e=>set("returnReqDate",e.target.value)} style={{...inp,border:"1px solid #fed7aa"}} onFocus={fo} onBlur={bl}/>
-          <p style={{margin:"6px 0 0",fontSize:11,color:"#92400e"}}>Record when the customer requested this return.</p>
-        </div>
+        <>
+          <Divider title="Return Request"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#fff7ed",borderRadius:12,padding:"14px",border:"1px solid #fed7aa"}}>
+            <div>
+              <label style={{...lbl,color:"#c2410c"}}>↩️ Return Request Date</label>
+              <input type="date" value={form.returnReqDate} onChange={e=>set("returnReqDate",e.target.value)} style={{...inp,border:"1px solid #fed7aa"}} onFocus={fo} onBlur={bl}/>
+              <p style={{margin:"6px 0 0",fontSize:11,color:"#92400e"}}>Record when the customer requested this return. Mark as <strong>Return Received</strong> once the item arrives back.</p>
+            </div>
+          </div>
+        </>
       )}
 
       {isReturnReceived&&(
-        <div style={{background:"#fff5f5",borderRadius:12,padding:"12px 14px",marginBottom:12,border:"1px solid #fecaca"}}>
-          <p style={{margin:"0 0 10px",fontSize:10,fontWeight:800,color:"#dc2626",textTransform:"uppercase",letterSpacing:"0.08em"}}>Return Received</p>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            <div><label style={{...lbl,color:"#dc2626"}}>Received Date</label><input type="date" value={form.returnRcvd} onChange={e=>set("returnRcvd",e.target.value)} style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/></div>
+        <>
+          <Divider title="Return Received"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#fff5f5",borderRadius:12,padding:"14px",border:"1px solid #fecaca"}}>
+            <div>
+              <label style={{...lbl,color:"#dc2626"}}>📬 Return Received Date</label>
+              <input type="date" value={form.returnRcvd} onChange={e=>set("returnRcvd",e.target.value)} style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
-      {form.status==="EXCHANGED"&&(
-        <div style={{background:"#eef2ff",borderRadius:12,padding:"12px 14px",marginBottom:12,border:"1px solid #c7d2fe"}}>
-          <p style={{margin:"0 0 10px",fontSize:10,fontWeight:800,color:"#4338ca",textTransform:"uppercase",letterSpacing:"0.08em"}}>Exchange</p>
-          <label style={{...lbl,color:"#4338ca"}}>Exchange Item Sent Date</label>
-          <input type="date" value={form.exchangeDate||""} onChange={e=>set("exchangeDate",e.target.value)} style={{...inp,border:"1px solid #c7d2fe"}} onFocus={fo} onBlur={bl}/>
-        </div>
-      )}
-
-      {form.status==="REFUNDED"&&(
-        <div style={{background:"#f5f3ff",borderRadius:12,padding:"12px 14px",marginBottom:12,border:"1px solid #ddd6fe"}}>
-          <p style={{margin:"0 0 10px",fontSize:10,fontWeight:800,color:"#6b21a8",textTransform:"uppercase",letterSpacing:"0.08em"}}>Refund</p>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            <div><label style={{...lbl,color:"#6b21a8"}}>Refund Date</label><input type="date" value={form.refundDate||""} onChange={e=>set("refundDate",e.target.value)} style={{...inp,border:"1px solid #ddd6fe"}} onFocus={fo} onBlur={bl}/></div>
-            <div><label style={{...lbl,color:"#6b21a8"}}>Refund Amount ({shop.symbol})</label><input type="number" value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #ddd6fe"}} onFocus={fo} onBlur={bl}/></div>
+      {isExchanged&&(
+        <>
+          <Divider title="Exchange"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#eef2ff",borderRadius:12,padding:"14px",border:"1px solid #c7d2fe"}}>
+            <div>
+              <label style={{...lbl,color:"#4338ca"}}>🔄 Exchange Item Sent Date</label>
+              <input type="date" value={form.exchangeDate} onChange={e=>set("exchangeDate",e.target.value)} style={{...inp,border:"1px solid #c7d2fe"}} onFocus={fo} onBlur={bl}/>
+            </div>
           </div>
-        </div>
+        </>
       )}
 
-      <div style={{background:"#fffbeb",borderRadius:12,padding:"12px 14px",marginBottom:12,border:"1px solid #fde68a"}}>
-        <p style={{margin:"0 0 10px",fontSize:10,fontWeight:800,color:"#92400e",textTransform:"uppercase",letterSpacing:"0.08em"}}>Post-Sale Adjustment</p>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+      {isRefunded&&(
+        <>
+          <Divider title="Refund"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#f5f3ff",borderRadius:12,padding:"14px",border:"1px solid #ddd6fe"}}>
+            <div>
+              <label style={{...lbl,color:"#6b21a8"}}>📅 Refund Date</label>
+              <input type="date" value={form.refundDate} onChange={e=>set("refundDate",e.target.value)} style={{...inp,border:"1px solid #ddd6fe"}} onFocus={fo} onBlur={bl}/>
+            </div>
+            <div>
+              <label style={{...lbl,color:"#6b21a8"}}>💸 Refunded Amount ({shop.symbol})</label>
+              <input type="number" onWheel={e=>e.target.blur()} value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #ddd6fe"}} onFocus={fo} onBlur={bl}/>
+            </div>
+          </div>
+        </>
+      )}
+
+      <Divider title="Post-Sale Adjustment"/>
+      <div style={{background:"#fffbeb",borderRadius:12,padding:"14px",border:"1px solid #fde68a",marginBottom:16}}>
+        <p style={{margin:"0 0 10px",fontSize:11,color:"#92400e",fontWeight:600}}>🔧 Use this section to record any discount or partial refund given after the sale (e.g. damaged item, defect).</p>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
           <div>
             <label style={{...lbl,color:"#92400e"}}>Adjustment Type</label>
-            <select value={form.adjType||""} onChange={e=>set("adjType",e.target.value)} style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}>
+            <select value={form.adjType} onChange={e=>set("adjType",e.target.value)} style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}>
               <option value="">-- None --</option>
               <option value="Discount">Discount</option>
               <option value="Partial Refund">Partial Refund</option>
@@ -3730,37 +4214,60 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
           </div>
           <div>
             <label style={{...lbl,color:"#92400e"}}>Adjustment Date</label>
-            <input type="date" value={form.adjDate||""} onChange={e=>set("adjDate",e.target.value)} style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
+            <input type="date" value={form.adjDate} onChange={e=>set("adjDate",e.target.value)} style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
           </div>
         </div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
           <div>
-            <label style={{...lbl,color:"#92400e"}}>Amount ({shop.symbol})</label>
-            <input type="number" value={form.adjAmt||""} onChange={e=>set("adjAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
+            <label style={{...lbl,color:"#92400e"}}>💰 Adjustment Amount ({shop.symbol})</label>
+            <input type="number" onWheel={e=>e.target.blur()} value={form.adjAmt} onChange={e=>set("adjAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
           </div>
           <div>
-            <label style={{...lbl,color:"#92400e"}}>Reason / Note</label>
-            <input type="text" value={form.adjNote||""} onChange={e=>set("adjNote",e.target.value)} placeholder="e.g. damaged zip..." style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
+            <label style={{...lbl,color:"#92400e"}}>📝 Reason / Note</label>
+            <input type="text" value={form.adjNote} onChange={e=>set("adjNote",e.target.value)} placeholder="e.g. damaged zip, colour mismatch…" style={{...inp,border:"1px solid #fde68a"}} onFocus={fo} onBlur={bl}/>
           </div>
         </div>
       </div>
 
-      <div style={{background:"#f8fafc",borderRadius:12,padding:"12px 14px",marginBottom:12,border:"1px solid #f1f5f9"}}>
-        <p style={{margin:"0 0 10px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em"}}>Tags & Notes</p>
-        <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
-        <div style={{marginTop:8}}>
-          <label style={lbl}>Remarks</label>
-          <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Any additional notes..." style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
-        </div>
+      <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
+      <div style={{marginBottom:16}}>
+        <label style={lbl}>Remarks</label>
+        <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Any additional notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
       </div>
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:12,paddingTop:10,marginTop:4,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={onClose} style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
-          Cancel
-        </button>
-        <button onClick={()=>onSave({...form,id:sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",address:form.address||""})}
+      {shopId==="ros-india"&&(
+        <>
+          <div style={{margin:"4px 0 10px",fontWeight:800,fontSize:11,color:"#166534",letterSpacing:"0.07em",textTransform:"uppercase",borderBottom:"1px solid #bbf7d0",paddingBottom:6}}>Purchase Details</div>
+          <div style={{marginBottom:16,background:"#f0fdf4",borderRadius:12,padding:"14px",border:"1px solid #bbf7d0"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+              <div>
+                <label style={{...lbl,color:"#166534"}}>🧾 Pur. Inv. No.</label>
+                <input value={form.purInvNo} onChange={e=>set("purInvNo",e.target.value)}
+                  placeholder="Supplier invoice no." style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/>
+              </div>
+              <div>
+                <label style={{...lbl,color:"#166534"}}>📅 Pur. Inv. Date</label>
+                <input type="date" value={form.purInvDate} onChange={e=>set("purInvDate",e.target.value)}
+                  style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/>
+              </div>
+            </div>
+            <div>
+              <label style={{...lbl,color:"#166534"}}>💰 Pur. Amount ({shop.symbol})</label>
+              <input type="number" onWheel={e=>e.target.blur()} value={form.purAmount} onChange={e=>set("purAmount",e.target.value)}
+                placeholder="0.00" style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/>
+            </div>
+          </div>
+        </>
+      )}
+
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
+        <button onClick={()=>onSave({...form,id:form.invoiceNo||sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
-          Save Changes
+          💾 Save Changes
+        </button>
+        <button onClick={onClose}
+          style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
+          Cancel
         </button>
       </div>
     </div>
@@ -3899,7 +4406,7 @@ const NewShipmentForm=({shopId,shop,purch,onSave,onClose})=>{
         </div>
         <div>
           <label style={lbl}>Shipping Cost ({shop.symbol})</label>
-          <input type="number" value={form.cost} onChange={e=>set("cost",e.target.value)}
+          <input type="number" onWheel={e=>e.target.blur()} value={form.cost} onChange={e=>set("cost",e.target.value)}
             placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
         </div>
       </div>
@@ -4132,11 +4639,11 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
         </div>
         <div>
           <label style={lbl}>Total Quantity</label>
-          <input type="number" min="1" value={form.qty} onChange={e=>set("qty",e.target.value)} placeholder="0" style={inp} onFocus={fo} onBlur={bl}/>
+          <input type="number" onWheel={e=>e.target.blur()} min="1" value={form.qty} onChange={e=>set("qty",e.target.value)} placeholder="0" style={inp} onFocus={fo} onBlur={bl}/>
         </div>
         <div>
           <label style={lbl}>Total Amount ({shop.symbol})</label>
-          <input type="number" value={form.total} onChange={e=>set("total",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+          <input type="number" onWheel={e=>e.target.blur()} value={form.total} onChange={e=>set("total",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
         </div>
         <div>
           <label style={{...lbl,color:"#94a3b8"}}>Unit Cost ({shop.symbol}) <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0}}>— auto</span></label>
@@ -4144,7 +4651,7 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
         </div>
         <div>
           <label style={lbl}>GST / VAT ({shop.currency==="INR"?"%":"£"})</label>
-          <input type="number" value={form.gst} onChange={e=>set("gst",e.target.value)} placeholder="0" style={inp} onFocus={fo} onBlur={bl}/>
+          <input type="number" onWheel={e=>e.target.blur()} value={form.gst} onChange={e=>set("gst",e.target.value)} placeholder="0" style={inp} onFocus={fo} onBlur={bl}/>
         </div>
       </div>
 
@@ -4443,6 +4950,10 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     refundAmt:   "",
     tag:         "",
     remarks:     "",
+    address:     "",
+    purInvNo:    "",
+    purInvDate:  "",
+    purAmount:   "",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -4479,161 +4990,114 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     const filledLines=lines.filter(l=>l.name.trim()||(parseFloat(l.price)>0));
     const combinedItem=filledLines.map(l=>`${l.name}(x${l.qty})`).join(", ")||"Sale";
     const combinedQty=filledLines.reduce((s,l)=>s+(parseFloat(l.qty)||0),0)||1;
-    onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel});
+    onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel,address:form.address||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0});
   };
 
   return(<>
     {showNewCust&&(<div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setShowNewCust(false)}><div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.50)",backdropFilter:"blur(4px)"}}/><div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.25)",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",zIndex:81}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 22px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"12",borderRadius:"20px 20px 0 0"}}><h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>➕ New Customer</h3><button onClick={()=>setShowNewCust(false)} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button></div><div style={{padding:22}}><NewCustomerForm shop={shop} onSave={handleAddCustomer} onClose={()=>setShowNewCust(false)} customers={customerList}/></div></div></div>)}
 
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"78vh",overflowY:"auto",paddingRight:4}}>
+    {/* ── Single column layout ── */}
+    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      <div style={{flex:1,overflowY:"auto",padding:"12px 16px",WebkitOverflowScrolling:"touch"}}>
 
-      <Divider title="Basic Info"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div><label style={lbl}>Date</label><input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
-        <div>
-          <label style={lbl}>Invoice Number</label>
-          <div style={{display:"flex",gap:6,alignItems:"center"}}>
-            <input value={form.invoiceNo} readOnly={!form.invEditing} onChange={e=>set("invoiceNo",e.target.value)} style={{...inp,flex:1,background:form.invEditing?"white":"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,border:"1px solid "+(form.invEditing?shop.accent:"#e2e8f0")}} onFocus={fo} onBlur={bl}/>
-            <button onClick={()=>set("invEditing",!form.invEditing)} style={{flexShrink:0,width:34,height:34,borderRadius:8,cursor:"pointer",border:"1px solid "+(form.invEditing?shop.accent:"#e2e8f0"),background:form.invEditing?shop.accent:"#f8fafc",color:form.invEditing?"white":"#64748b",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}}>{form.invEditing?"✓":"✏️"}</button>
-          </div>
-          <p style={{margin:"3px 0 0",fontSize:10,color:"#94a3b8"}}>Auto-generated · ✏️ to edit</p>
-        </div>
-      </div>
-
-      <Divider title="Customer"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div style={{position:"relative"}}>
-          <label style={lbl}>Customer Name</label>
-          <div style={{display:"flex",gap:6}}>
-            <input value={form.customer} onChange={e=>{set("customer",e.target.value);const q=e.target.value.trim().toLowerCase();if(q.length>=1){const m=customerList.filter(c=>c.name.toLowerCase().includes(q)).slice(0,8);setCustAcMatches(m);setCustAcOpen(m.length>0);}else{setCustAcOpen(false);setCustAcMatches([]);}}} onBlur={()=>setTimeout(()=>setCustAcOpen(false),180)} placeholder="Type customer name…" style={{...inp,flex:1}} onFocus={fo} autoComplete="off"/>
-            <button type="button" onClick={()=>setShowNewCust(true)} style={{flexShrink:0,width:34,height:34,borderRadius:8,cursor:"pointer",border:"1px solid "+shop.accent+"66",background:shop.accentBg,color:shop.accent,fontSize:18,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:700}}>+</button>
-          </div>
-          {custAcOpen&&custAcMatches.length>0&&(<div style={{position:"absolute",top:"100%",left:0,zIndex:200,minWidth:"100%",width:"max-content",maxWidth:420,background:"white",border:"1px solid "+shop.accent+"55",borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.16)",maxHeight:260,overflowY:"auto",marginTop:4}}>
-            <div style={{padding:"6px 14px",background:shop.accentBg,borderBottom:"1px solid "+shop.accent+"22",borderRadius:"12px 12px 0 0"}}><span style={{fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.06em"}}>{custAcMatches.length} match{custAcMatches.length!==1?"es":""} — click to select</span></div>
-            {custAcMatches.map((c,i)=>(<div key={c.id||i} onMouseDown={()=>{set("customer",c.name);set("contact",c.phone||"");setCustAcOpen(false);setCustAcMatches([]);}} style={{padding:"10px 14px",cursor:"pointer",borderBottom:i<custAcMatches.length-1?"1px solid #f1f5f9":"none"}} onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg} onMouseLeave={e=>e.currentTarget.style.background="white"}><div style={{display:"flex",alignItems:"center",gap:10}}><div style={{width:32,height:32,borderRadius:9,flexShrink:0,background:shop.sb,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:13}}>{c.name.charAt(0)}</div><div style={{flex:1}}><p style={{margin:0,fontWeight:700,fontSize:13,color:"#0f172a",whiteSpace:"nowrap"}}>{c.name}</p><p style={{margin:0,fontSize:11,color:"#94a3b8",whiteSpace:"nowrap"}}>{c.phone||"No phone"}{c.tag?" · "+c.tag:""}</p></div><span style={{fontSize:10,fontWeight:700,color:shop.accent,background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:999,padding:"2px 10px",flexShrink:0,marginLeft:8}}>Select</span></div></div>))}
-          </div>)}
-        </div>
-        <div><label style={lbl}>Contact Number</label><input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/></div>
-      </div>
-
-      <Divider title="Items"/>
-      <div style={{marginBottom:12}}>
-        {shopItems.length>0&&(<div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>{shopItems.map((itm,idx)=>{const label=typeof itm==="object"&&itm!==null?(itm.name||itm.label||"Item"):String(itm);const value=typeof itm==="object"&&itm!==null?(itm.name||itm.label||""):String(itm);return(<button key={idx} type="button" onClick={()=>{const emptyIdx=lines.findIndex(l=>!l.name.trim());if(emptyIdx>=0){updateLine(lines[emptyIdx].id,"name",value);}else{setLines(ls=>[...ls,{...blankLine(),name:value}]);}}} style={{padding:"4px 12px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",border:"1px solid "+shop.accent+"55",background:"white",color:shop.accentText,transition:"all 0.15s"}} onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.color="white";}} onMouseLeave={e=>{e.currentTarget.style.background="white";e.currentTarget.style.color=shop.accentText;}}>+ {label}</button>);})}</div>)}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 80px 110px 32px",gap:6,marginBottom:4}}>
-          <span style={{...lbl,marginBottom:0}}>Item Name</span>
-          <span style={{...lbl,marginBottom:0}}>Qty</span>
-          <span style={{...lbl,marginBottom:0}}>Price ({shop.symbol})</span>
-          <span/>
-        </div>
-        {lines.map((line,idx)=>(<div key={line.id} style={{display:"grid",gridTemplateColumns:"1fr 80px 110px 32px",gap:6,marginBottom:6,alignItems:"center"}}>
-          <input value={line.name} onChange={e=>updateLine(line.id,"name",e.target.value)} placeholder={"Item "+(idx+1)} style={inp} onFocus={fo} onBlur={bl}/>
-          <input type="number" min="1" value={line.qty} onChange={e=>updateLine(line.id,"qty",e.target.value)} style={{...inp,textAlign:"center"}} onFocus={fo} onBlur={bl}/>
-          <input type="number" min="0" value={line.price} onChange={e=>updateLine(line.id,"price",e.target.value)} placeholder="0.00" style={{...inp,textAlign:"right"}} onFocus={fo} onBlur={bl}/>
-          <button type="button" onClick={()=>removeLine(line.id)} style={{width:32,height:36,borderRadius:8,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:16,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,fontFamily:"inherit"}}>×</button>
-        </div>))}
-        <div style={{display:"flex",gap:8,alignItems:"center",marginTop:4}}>
-          <button type="button" onClick={addLine} style={{display:"flex",alignItems:"center",gap:5,padding:"7px 14px",borderRadius:8,border:"1px dashed "+shop.accent+"66",background:shop.accentBg,color:shop.accentText,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>＋ Add Item</button>
-          {lines.some(l=>l.name.trim())&&onAddShopItem&&(<button type="button" onClick={()=>{lines.filter(l=>l.name.trim()).forEach(l=>onAddShopItem(l.name.trim()));}} style={{padding:"7px 14px",borderRadius:8,border:"1px solid "+shop.accent+"44",background:"white",color:shop.accentText,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>💾 Save Items</button>)}
-        </div>
-      </div>
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-        <div><label style={lbl}>Discount ({shop.symbol})</label><input type="number" min="0" value={form.discount} onChange={e=>set("discount",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/></div>
-        <div>
-          <div style={{display:"flex",gap:6,alignItems:"flex-end",marginBottom:5}}>
-            <label style={{...lbl,marginBottom:0,flex:1}}>Other Charges ({shop.symbol})</label>
-            <input value={form.otherChargesLabel} onChange={e=>set("otherChargesLabel",e.target.value)} placeholder="Label" style={{fontSize:10,padding:"2px 6px",borderRadius:6,border:"1px solid #e2e8f0",outline:"none",fontFamily:"DM Sans,sans-serif",color:"#64748b",width:90}}/>
-          </div>
-          <input type="number" min="0" value={form.otherCharges} onChange={e=>set("otherCharges",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-      </div>
-
-      <div style={{marginBottom:16}}>
-        <div style={{background:form.taxRate===0?"#f8fafc":(form.taxInclusive?"#f0fdf4":"#eff6ff"),border:"1px solid "+(form.taxRate===0?"#e2e8f0":(form.taxInclusive?"#bbf7d0":"#bfdbfe")),borderRadius:10,padding:"12px 14px"}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
-            <div>
-              <p style={{margin:0,fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>GST / Tax</p>
-              <p style={{margin:"2px 0 0",fontSize:12,fontWeight:700,color:form.taxRate===0?"#94a3b8":(form.taxInclusive?"#15803d":"#1d4ed8")}}>{form.taxRate===0?"No tax applied":(form.taxInclusive?"Price includes tax — calculated backwards":"Tax added on top of price")}</p>
+            {/* Basic Info */}
+            <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
+              <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>📋 Basic Info</p>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
+                <div><label style={lbl}>Date</label><input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
+                <div><label style={lbl}>Invoice No.</label>
+                  <div style={{display:"flex",gap:4}}><input value={form.invoiceNo} readOnly={!form.invEditing} onChange={e=>set("invoiceNo",e.target.value)} style={{...inp,flex:1,background:form.invEditing?"white":"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:10,color:shop.accent}} onFocus={fo} onBlur={bl}/><button onClick={()=>set("invEditing",!form.invEditing)} style={{width:28,height:28,borderRadius:7,cursor:"pointer",border:"1px solid #e2e8f0",background:"#f8fafc",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center"}}>{form.invEditing?"✓":"✏️"}</button></div>
+                </div>
+              </div>
             </div>
-            {form.taxRate>0&&(<div style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}} onClick={()=>set("taxInclusive",!form.taxInclusive)}><span style={{fontSize:12,fontWeight:700,color:"#64748b"}}>{form.taxInclusive?"Inclusive":"Exclusive"}</span><div style={{width:44,height:24,borderRadius:999,background:form.taxInclusive?shop.accent:"#cbd5e1",position:"relative",transition:"background 0.2s",boxShadow:"inset 0 1px 3px rgba(0,0,0,0.15)"}}><div style={{position:"absolute",top:3,left:form.taxInclusive?22:3,width:18,height:18,borderRadius:"50%",background:"white",transition:"left 0.2s",boxShadow:"0 1px 4px rgba(0,0,0,0.2))"}}/></div></div>)}
+
+            {/* Customer */}
+            <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
+              <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>👤 Customer</p>
+              <div style={{marginBottom:7,position:"relative"}}>
+                <label style={lbl}>Name</label>
+                <div style={{display:"flex",gap:5}}>
+                  <input value={form.customer} onChange={e=>{set("customer",e.target.value);const q=e.target.value.trim().toLowerCase();if(q.length>=1){const m=customerList.filter(c=>c.name.toLowerCase().includes(q)).slice(0,6);setCustAcMatches(m);setCustAcOpen(m.length>0);}else{setCustAcOpen(false);setCustAcMatches([]);}}} onBlur={()=>setTimeout(()=>setCustAcOpen(false),180)} placeholder="Type name…" style={{...inp,flex:1}} onFocus={fo} autoComplete="off"/>
+                  <button type="button" onClick={()=>setShowNewCust(true)} style={{width:32,height:34,borderRadius:8,cursor:"pointer",border:"1px solid "+shop.accent+"55",background:shop.accentBg,color:shop.accent,fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                </div>
+                {custAcOpen&&custAcMatches.length>0&&(<div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:200,background:"white",border:"1px solid "+shop.accent+"44",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,0.15)",maxHeight:180,overflowY:"auto",marginTop:3}}>
+                  {custAcMatches.map((c,i)=>(<div key={i} onMouseDown={()=>{set("customer",c.name);set("contact",c.phone||"");setCustAcOpen(false);}} style={{padding:"9px 12px",borderBottom:i<custAcMatches.length-1?"1px solid #f1f5f9":"none",display:"flex",alignItems:"center",gap:8}} onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg} onMouseLeave={e=>e.currentTarget.style.background="white"}><div style={{width:26,height:26,borderRadius:7,background:shop.sb,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11,flexShrink:0}}>{c.name.charAt(0)}</div><div><p style={{margin:0,fontSize:12,fontWeight:700,color:"#0f172a"}}>{c.name}</p><p style={{margin:0,fontSize:10,color:"#94a3b8"}}>{c.phone||"—"}</p></div></div>))}
+                </div>)}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
+                <div><label style={lbl}>Contact</label><input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/></div>
+                <div><label style={lbl}>Address</label><input value={form.address||""} onChange={e=>set("address",e.target.value)} placeholder="Address" style={inp} onFocus={fo} onBlur={bl}/></div>
+              </div>
+            </div>
+
+            {/* Items */}
+            <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
+              <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🛍️ Items</p>
+              {shopItems.length>0&&(<div style={{display:"flex",flexWrap:"wrap",gap:4,marginBottom:8}}>{shopItems.map((itm,idx)=>{const label=typeof itm==="object"?(itm.name||itm.label||""):String(itm);const value=typeof itm==="object"?(itm.name||itm.label||""):String(itm);return(<button key={idx} type="button" onClick={()=>{const ei=lines.findIndex(l=>!l.name.trim());if(ei>=0)updateLine(lines[ei].id,"name",value);else setLines(ls=>[...ls,{...blankLine(),name:value}]);}} style={{padding:"3px 9px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",border:"1px solid "+shop.accent+"44",background:"white",color:shop.accentText}}>+{label}</button>);})}</div>)}
+              <div style={{display:"grid",gridTemplateColumns:"1fr 52px 76px 26px",gap:5,marginBottom:4}}>
+                <span style={{...lbl,marginBottom:0}}>Item</span><span style={{...lbl,marginBottom:0}}>Qty</span><span style={{...lbl,marginBottom:0}}>Price</span><span/>
+              </div>
+              {lines.map((line,idx)=>(<div key={line.id} style={{display:"grid",gridTemplateColumns:"1fr 52px 76px 26px",gap:5,marginBottom:5,alignItems:"center"}}>
+                <input value={line.name} onChange={e=>updateLine(line.id,"name",e.target.value)} placeholder={"Item "+(idx+1)} style={{...inp,padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
+                <input type="number" onWheel={e=>e.target.blur()} value={line.qty} onChange={e=>updateLine(line.id,"qty",e.target.value)} style={{...inp,textAlign:"center",padding:"7px 5px"}} onFocus={fo} onBlur={bl}/>
+                <input type="number" onWheel={e=>e.target.blur()} value={line.price} onChange={e=>updateLine(line.id,"price",e.target.value)} placeholder="0.00" style={{...inp,textAlign:"right",padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
+                <button type="button" onClick={()=>removeLine(line.id)} style={{width:26,height:32,borderRadius:7,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+              </div>))}
+              <button type="button" onClick={addLine} style={{padding:"5px 12px",borderRadius:7,border:"1px dashed "+shop.accent+"55",background:shop.accentBg,color:shop.accentText,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>＋ Add Item</button>
+            </div>
+
+            {/* Pricing */}
+            <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
+              <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>💰 Pricing</p>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:8}}>
+                <div><label style={lbl}>Discount ({shop.symbol})</label><input type="number" onWheel={e=>e.target.blur()} value={form.discount} onChange={e=>set("discount",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/></div>
+                <div><label style={lbl}>Other Charges ({shop.symbol})</label><input type="number" onWheel={e=>e.target.blur()} value={form.otherCharges} onChange={e=>set("otherCharges",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/></div>
+              </div>
+              <div style={{display:"flex",gap:5}}>{[0,5,10,18,20].map(r=>(<button key={r} type="button" onClick={()=>set("taxRate",r)} style={{flex:1,padding:"5px 0",borderRadius:8,border:"2px solid "+(form.taxRate===r?shop.accent:"#e2e8f0"),background:form.taxRate===r?shop.accent:"white",color:form.taxRate===r?"white":"#374151",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{r}%</button>))}</div>
+            </div>
+
+            {/* Payment & Delivery */}
+            <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
+              <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🚚 Payment & Delivery</p>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
+                <div><label style={lbl}>Payment By</label><select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"].map(o=><option key={o}>{o}</option>)}</select></div>
+                <div><label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["ORDER NOT PLACED","WORK IN PROGRESS","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select></div>
+              </div>
+              <div><label style={lbl}>Dispatch Date</label><input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
+            </div>
+
+            {/* Tags & Remarks */}
+            <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
+              <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🏷️ Tags & Notes</p>
+              <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
+              <div style={{marginTop:7}}><label style={lbl}>Remarks</label><input value={form.remarks} onChange={e=>set("remarks",e.target.value)} placeholder="Notes…" style={inp} onFocus={fo} onBlur={bl}/></div>
+            </div>
+
+            {/* Purchase Details — ROS INDIA only */}
+            {shopId==="ros-india"&&(<div style={{background:"#f0fdf4",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #bbf7d0"}}>
+              <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:"#166534",textTransform:"uppercase",letterSpacing:"0.07em"}}>📦 Purchase Details</p>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
+                <div><label style={{...lbl,color:"#166534"}}>Pur. Inv. No.</label><input value={form.purInvNo} onChange={e=>set("purInvNo",e.target.value)} placeholder="Invoice no." style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/></div>
+                <div><label style={{...lbl,color:"#166534"}}>Pur. Date</label><input type="date" value={form.purInvDate} onChange={e=>set("purInvDate",e.target.value)} style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/></div>
+              </div>
+              <div><label style={{...lbl,color:"#166534"}}>Pur. Amount ({shop.symbol})</label><input type="number" onWheel={e=>e.target.blur()} value={form.purAmount} onChange={e=>set("purAmount",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/></div>
+            </div>)}
+
+        <div style={{height:80}}/>{/* spacer for sticky bottom bar */}
+      </div>
+
+      {/* ── Sticky bottom bar ── */}
+      <div style={{flexShrink:0,borderTop:"1px solid #f1f5f9",background:"white",padding:"10px 16px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <p style={{margin:0,fontSize:10,color:"#94a3b8",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em"}}>Total</p>
+            <p style={{margin:0,fontSize:20,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace",letterSpacing:"-0.5px"}}>{shop.symbol}{grandTotal.toLocaleString()}</p>
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-            <span style={{fontSize:11,fontWeight:700,color:"#64748b",marginRight:2}}>Tax Rate:</span>
-            {[0,5,10,18,20].map(r=>(<button key={r} type="button" onClick={()=>set("taxRate",r)} style={{padding:"4px 12px",borderRadius:999,border:"2px solid "+(form.taxRate===r?shop.accent:"#e2e8f0"),background:form.taxRate===r?shop.accent:"white",color:form.taxRate===r?"white":"#374151",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>{r}%</button>))}
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={onClose} style={{padding:"10px 18px",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+            <button onClick={handleSave} style={{padding:"10px 24px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44",display:"flex",alignItems:"center",gap:6}}><span>🛒</span> Save Sale</button>
           </div>
         </div>
-      </div>
-
-      <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:12,padding:"14px 16px",marginBottom:16}}>
-        <p style={{margin:"0 0 10px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>Order Summary</p>
-        <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#64748b"}}>Items Subtotal</span><span style={{fontSize:13,fontWeight:600,color:"#374151"}}>{shop.symbol}{itemsSubtotal.toLocaleString()}</span></div>
-        {discountAmt>0&&(<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#dc2626"}}>Discount</span><span style={{fontSize:13,fontWeight:600,color:"#dc2626"}}>− {shop.symbol}{discountAmt.toLocaleString()}</span></div>)}
-        {otherChargesAmt>0&&(<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#64748b"}}>{form.otherChargesLabel||"Other Charges"}</span><span style={{fontSize:13,fontWeight:600,color:"#374151"}}>+ {shop.symbol}{otherChargesAmt.toLocaleString()}</span></div>)}
-        {form.taxRate>0&&(<div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}><span style={{fontSize:13,color:"#64748b"}}>GST / Tax ({form.taxRate}%)</span><span style={{fontSize:13,fontWeight:600,color:"#374151"}}>+ {shop.symbol}{gstAmt.toLocaleString()}</span></div>)}
-        <div style={{display:"flex",justifyContent:"space-between",borderTop:"2px solid #0f172a",paddingTop:10,marginTop:8}}><span style={{fontSize:15,fontWeight:900,color:"#0f172a"}}>Grand Total</span><span style={{fontSize:17,fontWeight:900,color:shop.accent}}>{shop.symbol}{grandTotal.toLocaleString()}</span></div>
-      </div>
-
-      <Divider title="Payment"/>
-      <div style={{display:"grid",gridTemplateColumns:form.payBy==="SHOP"?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
-        <div><label style={lbl}>Payment By</label><select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"].map(o=><option key={o}>{o}</option>)}</select></div>
-        {form.payBy==="SHOP"&&(<div><label style={lbl}>Shop Invoice No.</label><input value={form.shopInvoiceNo||""} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 12345" style={inp} onFocus={fo} onBlur={bl}/></div>)}
-      </div>
-
-      <Divider title="Delivery"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#f8fafc",borderRadius:12,padding:"14px",border:"1px solid #e2e8f0"}}>
-        <div><label style={lbl}>Delivery Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,color:statusColor[form.status]||"#374151",fontWeight:700}}>{(shopId==="ros-india"?["ORDER NOT PLACED","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o} value={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>))}</select></div>
-        <div><label style={lbl}>Sent / Dispatch Date</label><input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
-      </div>
-
-      {isReturnRequested&&(
-        <>
-          <Divider title="Return Request"/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#fff7ed",borderRadius:12,padding:"14px",border:"1px solid #fed7aa"}}>
-            <div>
-              <label style={{...lbl,color:"#c2410c"}}>↩️ Return Request Date</label>
-              <input type="date" value={form.returnReqDate} onChange={e=>set("returnReqDate",e.target.value)} style={{...inp,border:"1px solid #fed7aa"}} onFocus={fo} onBlur={bl}/>
-              <p style={{margin:"6px 0 0",fontSize:11,color:"#92400e"}}>Record when the customer requested this return. Mark as <strong>Return Received</strong> once the item arrives back.</p>
-            </div>
-          </div>
-        </>
-      )}
-
-      {isReturnReceived&&(
-        <>
-          <Divider title="Return Received"/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#fff5f5",borderRadius:12,padding:"14px",border:"1px solid #fecaca"}}>
-            <div>
-              <label style={{...lbl,color:"#dc2626"}}>📬 Return Received Date</label>
-              <input type="date" value={form.returnRcvd} onChange={e=>set("returnRcvd",e.target.value)} style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/>
-            </div>
-            <div>
-              <label style={{...lbl,color:"#dc2626"}}>💸 Refunded Amount ({shop.symbol})</label>
-              <input type="number" value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #fecaca"}} onFocus={fo} onBlur={bl}/>
-            </div>
-          </div>
-        </>
-      )}
-
-      {isRefundOnly&&(
-        <>
-          <Divider title="Refund"/>
-          <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:16,background:"#f5f3ff",borderRadius:12,padding:"14px",border:"1px solid #ddd6fe"}}>
-            <div>
-              <label style={{...lbl,color:"#6b21a8"}}>💸 Refunded Amount ({shop.symbol})</label>
-              <input type="number" value={form.refundAmt} onChange={e=>set("refundAmt",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #ddd6fe"}} onFocus={fo} onBlur={bl}/>
-            </div>
-          </div>
-        </>
-      )}
-
-      <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
-      <div style={{marginBottom:16}}><label style={lbl}>Remarks</label><textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Any additional notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/></div>
-
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={handleSave} style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
-          💾 Save Sale {grandTotal>0?"("+shop.symbol+grandTotal.toLocaleString()+")":""}
-        </button>
-        <button onClick={onClose} style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
       </div>
     </div>
   </>);
@@ -5192,6 +5656,7 @@ const SettingsPanel=({users,setUsers,currentUser,onClose})=>{
   const deleteUser=id=>{
     if(id===currentUser.id){alert("You cannot delete your own account.");return;}
     setUsers(prev=>prev.filter(u=>u.id!==id));
+    dbDeleteUser(id).catch(err=>console.error("Delete user failed:",err));
   };
 
   const addUser=()=>{
@@ -5793,20 +6258,18 @@ export default function App(){
   // Always start logged-out — login page shown on every fresh load
   const [user,setUser]=useState(null);
   const [shop,setShop]=useState(null);
-  const [users,setUsers]=useState(()=>{
-    try{
-      const s=localStorage.getItem("ros_users");
-      if(s){
-        const parsed=JSON.parse(s);
-        if(Array.isArray(parsed)&&parsed.length>0) return parsed;
-      }
-    }catch{}
-    return INITIAL_USERS;
-  });
+  const [users,setUsers]=useState(INITIAL_USERS);
+  // Load users from Supabase on mount
+  useEffect(()=>{
+    dbLoadUsers().then(data=>{
+      if(data&&data.length>0) setUsers(data);
+    }).catch(()=>{});
+  },[]);
   const setUsersPersist=(updater)=>{
     setUsers(prev=>{
       const next=typeof updater==="function"?updater(prev):updater;
-      try{localStorage.setItem("ros_users",JSON.stringify(next));}catch{}
+      // Persist each changed user to Supabase
+      next.forEach(u=>dbSaveUser(u).catch(err=>console.error("Save user failed:",err)));
       return next;
     });
   };
@@ -5882,7 +6345,7 @@ export default function App(){
 
   if(!user) return <LoginScreen users={users} onLogin={handleLogin}/>;
 
-  const allowedShops=(user.shops||SHOP_IDS);
+  const allowedShops=(user.shops&&user.shops.length>0)?user.shops:SHOP_IDS;
 
   // Auto-route staff directly to their assigned shop
   const activeShop = shop || (user.role==="staff" && allowedShops.length===1 ? allowedShops[0] : null);
