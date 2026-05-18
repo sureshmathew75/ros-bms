@@ -1058,14 +1058,14 @@ export default function SalesPanel({
                     {/* Pur. Amount — ROS INDIA only */}
                     {shopId==="ros-india"&&(
                       <td style={{ padding: "12px 16px", textAlign: "right" }}>
-                        {s.purAmount ? (
+                        {s.purInvNo ? (
                           <span style={{
                             fontFamily: "DM Mono, monospace", fontSize: 12, fontWeight: 700,
                             color: "#166534", background: "#f0fdf4",
                             border: "1px solid #bbf7d0", borderRadius: 7,
                             padding: "3px 9px", whiteSpace: "nowrap",
                           }}>
-                            {shop.symbol}{Number(s.purAmount).toLocaleString()}
+                            {shop.symbol}{Number(s.purAmount||0).toLocaleString()}
                           </span>
                         ) : <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>}
                       </td>
