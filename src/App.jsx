@@ -21,7 +21,7 @@ import {
   STAGE_THEME
 } from "./constants";
 import { formatCurrency, formatDate, formatNumber } from "./utils";
-import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic } from "./db";
+import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -5192,6 +5192,7 @@ const SettingsPanel=({users,setUsers,currentUser,onClose})=>{
   const deleteUser=id=>{
     if(id===currentUser.id){alert("You cannot delete your own account.");return;}
     setUsers(prev=>prev.filter(u=>u.id!==id));
+    dbDeleteUser(id).catch(err=>console.error("Delete user failed:",err));
   };
 
   const addUser=()=>{
@@ -5793,20 +5794,16 @@ export default function App(){
   // Always start logged-out — login page shown on every fresh load
   const [user,setUser]=useState(null);
   const [shop,setShop]=useState(null);
-  const [users,setUsers]=useState(()=>{
-    try{
-      const s=localStorage.getItem("ros_users");
-      if(s){
-        const parsed=JSON.parse(s);
-        if(Array.isArray(parsed)&&parsed.length>0) return parsed;
-      }
-    }catch{}
-    return INITIAL_USERS;
-  });
+  const [users,setUsers]=useState(INITIAL_USERS);
+  useEffect(()=>{
+    dbLoadUsers().then(data=>{
+      if(data&&data.length>0) setUsers(data);
+    }).catch(()=>{});
+  },[]);
   const setUsersPersist=(updater)=>{
     setUsers(prev=>{
       const next=typeof updater==="function"?updater(prev):updater;
-      try{localStorage.setItem("ros_users",JSON.stringify(next));}catch{}
+      next.forEach(u=>dbSaveUser(u).catch(err=>console.error("Save user failed:",err)));
       return next;
     });
   };
@@ -5882,7 +5879,7 @@ export default function App(){
 
   if(!user) return <LoginScreen users={users} onLogin={handleLogin}/>;
 
-  const allowedShops=(user.shops||SHOP_IDS);
+  const allowedShops=(user.shops&&user.shops.length>0)?user.shops:SHOP_IDS;
 
   // Auto-route staff directly to their assigned shop
   const activeShop = shop || (user.role==="staff" && allowedShops.length===1 ? allowedShops[0] : null);
