@@ -1643,7 +1643,7 @@ return(
                                 </div>
                               </div>
                               {monthTarget>0&&(
-                                <p style={{margin:0,fontSize:8,color:"rgba(255,255,255,0.45)",fontFamily:"DM Mono,monospace",textAlign:"center",lineHeight:1.3}}>
+                                <p style={{margin:0,fontSize:8,color:"white",fontFamily:"DM Mono,monospace",textAlign:"center",lineHeight:1.3}}>
                                   {monthSales>=monthTarget
                                     ? "🎯 Target achieved!"
                                     : fmt(shopId,monthTarget-monthSales)+" remaining"}
