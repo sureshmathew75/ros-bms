@@ -135,7 +135,7 @@ const fmt=(sid,n)=>{
   if(!s)return n;
   return s.currency === "INR"
   ? formatCurrency(n)
-  : "£" + Number(n).toLocaleString("en-GB");
+  : "£" + Math.round(Number(n)).toLocaleString("en-GB");
 };
 
 const BSTYLE={
