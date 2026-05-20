@@ -3943,10 +3943,11 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
   const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
+    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto"}}>
+      <div style={{padding:"0 20px"}}>
 
       {/* highlight banner */}
-      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
+      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,marginTop:4,display:"flex",alignItems:"center",gap:10}}>
         <span style={{fontSize:20}}>✏️</span>
         <div>
           <p style={{margin:0,fontWeight:800,fontSize:13,color:shop.accentText}}>Editing Sale {form.invoiceNo}</p>
@@ -3968,29 +3969,30 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       </div>
 
       <Divider title="Customer"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Customer Name</label>
-          <select value={form.customer} onChange={e=>set("customer",e.target.value)} style={inp}>
-            <option value="">Select customer…</option>
-            {/* If the sale's customer is not in the CRM (e.g. imported), show them as a selectable option */}
-            {form.customer && !customers.some(c=>c.name===form.customer) && (
-              <option value={form.customer}>{form.customer} (imported)</option>
-            )}
-            {customers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
-          </select>
+      <div style={{marginBottom:16}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}>
+          <div>
+            <label style={lbl}>Customer Name</label>
+            <select value={form.customer} onChange={e=>set("customer",e.target.value)} style={inp}>
+              <option value="">Select customer…</option>
+              {form.customer && !customers.some(c=>c.name===form.customer) && (
+                <option value={form.customer}>{form.customer} (imported)</option>
+              )}
+              {customers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={lbl}>Phone Number</label>
+            <input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
+          </div>
+          <div>
+            <label style={lbl}>Saved On</label>
+            <select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>
+              {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
+            </select>
+          </div>
         </div>
         <div>
-          <label style={lbl}>Contact Number</label>
-          <input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div style={{gridColumn:"1/-1"}}>
-          <label style={lbl}>Phone Number Saved On</label>
-          <select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>
-            {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
-          </select>
-        </div>
-        <div style={{gridColumn:"1/-1"}}>
           <label style={lbl}>Address</label>
           <textarea value={form.address} onChange={e=>set("address",e.target.value)}
             rows={2} placeholder="Customer address…"
@@ -4271,7 +4273,8 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
         </>
       )}
 
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
+      </div>{/* end padding wrapper */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
         <button onClick={()=>onSave({...form,id:form.invoiceNo||sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
