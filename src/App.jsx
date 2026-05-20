@@ -3102,12 +3102,6 @@ return(
                     <span style={{fontSize:12,color:"#64748b"}}>Method</span>
                     <span style={{fontSize:12,fontWeight:700,color:"#1e293b"}}>{selRow.pay||"—"}</span>
                   </div>
-                  {selRow.shopInvoiceNo&&(
-                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
-                      <span style={{fontSize:12,color:"#64748b"}}>Shop Inv. No.</span>
-                      <span style={{fontSize:12,fontWeight:700,color:"#1e293b",fontFamily:"DM Mono,monospace"}}>{selRow.shopInvoiceNo}</span>
-                    </div>
-                  )}
                   <div style={{display:"flex",justifyContent:"space-between"}}>
                     <span style={{fontSize:12,color:"#64748b"}}>Amount</span>
                     <span style={{fontSize:14,fontWeight:900,color:shop.accent}}>
@@ -4134,24 +4128,18 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
         </div>
       </div>
 
-      <Divider title="Payment"/>
-      <div style={{display:"grid",gridTemplateColumns:form.payBy==="SHOP"?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
+      <Divider title="Payment & Delivery"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#f8fafc",borderRadius:12,padding:"14px",border:"1px solid #e2e8f0"}}>
         <div>
           <label style={lbl}>Payment By</label>
           <select value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
             {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
           </select>
         </div>
-        {form.payBy==="SHOP"&&(
-          <div>
-            <label style={lbl}>Shop Invoice No.</label>
-            <input value={form.shopInvoiceNo||""} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/>
-          </div>
-        )}
-      </div>
-
-      <Divider title="Delivery"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#f8fafc",borderRadius:12,padding:"14px",border:"1px solid #e2e8f0"}}>
+        <div>
+          <label style={lbl}>Shop Invoice No.</label>
+          <input value={form.shopInvoiceNo||""} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace",opacity:form.payBy==="SHOP"?1:0.35,pointerEvents:form.payBy==="SHOP"?"auto":"none"}} onFocus={fo} onBlur={bl}/>
+        </div>
         <div>
           <label style={lbl}>Delivery Status</label>
           <select value={form.status} onChange={e=>set("status",e.target.value)}
@@ -5083,17 +5071,12 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             {/* Payment & Delivery */}
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🚚 Payment & Delivery</p>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
                 <div><label style={lbl}>Payment By</label><select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"].map(o=><option key={o}>{o}</option>)}</select></div>
+                <div><label style={lbl}>Shop Invoice No.</label><input value={form.shopInvoiceNo} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace",opacity:form.payBy==="SHOP"?1:0.35,pointerEvents:form.payBy==="SHOP"?"auto":"none"}} onFocus={fo} onBlur={bl}/></div>
                 <div><label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["ORDER NOT PLACED","WORK IN PROGRESS","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select></div>
+                <div><label style={lbl}>Dispatch Date</label><input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
               </div>
-              {form.payBy==="SHOP"&&(
-                <div style={{marginBottom:7}}>
-                  <label style={lbl}>Shop Invoice No.</label>
-                  <input value={form.shopInvoiceNo} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/>
-                </div>
-              )}
-              <div><label style={lbl}>Dispatch Date</label><input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
             </div>
 
             {/* Tags & Remarks */}
