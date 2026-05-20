@@ -130,12 +130,14 @@ const MONTHLY=[];
 const PIE_D=[];
 
 /* ─── helpers ───────────────────────────────────────── */
-const fmt=(sid,n)=>{
+const fmt=(sid,n,whole=false)=>{
   const s=SHOPS.find(x=>x.id===sid);
-  if(!s)return n;
-  return s.currency === "INR"
-  ? formatCurrency(n)
-  : "£" + Math.round(Number(n)).toLocaleString("en-GB");
+  if(!s)return String(n);
+  const v=Number(n)||0;
+  if(s.currency==="INR") return formatCurrency(v);
+  return whole
+    ? "£"+Math.round(v).toLocaleString("en-GB")
+    : "£"+v.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2});
 };
 
 const BSTYLE={
@@ -1422,7 +1424,7 @@ return(
             const kpis=[
               {
                 icon:"🛒", label:"Today's Sales", sub:"Live · "+todayStr,
-                value:fmt(shopId,todaySales),
+                value:fmt(shopId,todaySales,true),
                 accent:"#3b82f6", dark:"#1d4ed8",
                 grad:"linear-gradient(145deg,#1e3a8a 0%,#1d4ed8 45%,#3b82f6 100%)",
                 glow:"rgba(59,130,246,0.45)",
@@ -1432,7 +1434,7 @@ return(
               },
               {
                 icon:"📅", label:"Monthly Sales", sub:now.toLocaleString("default",{month:"long",year:"numeric"}),
-                value:fmt(shopId,monthSales),
+                value:fmt(shopId,monthSales,true),
                 accent:"#06b6d4", dark:"#0e7490",
                 grad:"linear-gradient(145deg,#164e63 0%,#0e7490 45%,#06b6d4 100%)",
                 glow:"rgba(6,182,212,0.45)",
@@ -1442,7 +1444,7 @@ return(
               },
               {
                 icon:"📈", label:"Financial Year", sub:"1 Apr "+fyStart.getFullYear()+" – 31 Mar "+(fyStart.getFullYear()+1),
-                value:fmt(shopId,fySales),
+                value:fmt(shopId,fySales,true),
                 accent:"#10b981", dark:"#065f46",
                 grad:"linear-gradient(145deg,#064e3b 0%,#065f46 45%,#059669 100%)",
                 glow:"rgba(5,150,105,0.45)",
@@ -1472,7 +1474,7 @@ return(
               },
               {
                 icon:"💸", label:"Refunds This Month", sub:"Total refunded value",
-                value:monthRefunds>0?fmt(shopId,monthRefunds):"—",
+                value:monthRefunds>0?fmt(shopId,monthRefunds,true):"—",
                 accent:"#a78bfa", dark:"#5b21b6",
                 grad:"linear-gradient(145deg,#2e1065 0%,#5b21b6 45%,#7c3aed 100%)",
                 glow:"rgba(124,58,237,0.45)",
@@ -1605,7 +1607,7 @@ return(
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
                             <div>
                               <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.07em"}}>Today's Revenue</p>
-                              <p style={{margin:0,fontSize:28,fontWeight:900,color:"white",letterSpacing:"-1px",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,todaySales)}</p>
+                              <p style={{margin:0,fontSize:28,fontWeight:900,color:"white",letterSpacing:"-1px",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,todaySales,true)}</p>
                             </div>
                             <span style={{fontSize:9,fontWeight:800,padding:"4px 10px",borderRadius:999,background:todaySales>0?"rgba(134,239,172,0.2)":"rgba(255,255,255,0.1)",color:todaySales>0?"#86efac":"rgba(255,255,255,0.5)",border:"1px solid "+(todaySales>0?"rgba(134,239,172,0.4)":"rgba(255,255,255,0.15)"),letterSpacing:"0.06em"}}>{todaySales>0?"● LIVE":"○ NO SALES"}</span>
                           </div>
@@ -1616,7 +1618,7 @@ return(
                             </div>
                             <div style={{textAlign:"right"}}>
                               <p style={{margin:"0 0 2px",fontSize:9,color:"rgba(255,255,255,0.4)",fontWeight:600}}>This Month</p>
-                              <p style={{margin:0,fontSize:16,fontWeight:800,color:"#60a5fa",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,monthSales)}</p>
+                              <p style={{margin:0,fontSize:16,fontWeight:800,color:"#60a5fa",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,monthSales,true)}</p>
                               <p style={{margin:0,fontSize:9,color:"rgba(255,255,255,0.4)"}}>{monthCount} orders</p>
                             </div>
                           </div>
@@ -1633,7 +1635,7 @@ return(
                               <p style={{margin:"0 0 4px",fontSize:9,color:"rgba(255,255,255,0.4)"}}>
                                 {now.toLocaleString("default",{month:"long",year:"numeric"})}
                               </p>
-                              <p style={{margin:0,fontSize:26,fontWeight:900,color:"white",letterSpacing:"-0.8px",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,monthSales)}</p>
+                              <p style={{margin:0,fontSize:26,fontWeight:900,color:"white",letterSpacing:"-0.8px",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,monthSales,true)}</p>
                             </div>
                             <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:4,flexShrink:0}}>
                               <div style={{position:"relative",width:64,height:64,display:"flex",alignItems:"center",justifyContent:"center"}}>
@@ -1646,7 +1648,7 @@ return(
                                 <p style={{margin:0,fontSize:8,color:"rgba(255,255,255,0.45)",fontFamily:"DM Mono,monospace",textAlign:"center",lineHeight:1.3}}>
                                   {monthSales>=monthTarget
                                     ? "🎯 Target achieved!"
-                                    : fmt(shopId,monthTarget-monthSales)+" remaining"}
+                                    : fmt(shopId,monthTarget-monthSales,true)+" remaining"}
                                 </p>
                               )}
                             </div>
@@ -1673,7 +1675,7 @@ return(
                               </div>
                             ):(
                               <button onClick={()=>{setTargetInput(String(monthTarget||""));setEditingTarget(true);}} style={{fontSize:9,fontWeight:700,background:"rgba(255,255,255,0.12)",border:"1px solid rgba(255,255,255,0.25)",borderRadius:6,color:"rgba(255,255,255,0.7)",padding:"3px 9px",cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:4}}>
-                                ✏️ Target: {monthTarget>0?fmt(shopId,monthTarget):"Set target"}
+                                ✏️ Target: {monthTarget>0?fmt(shopId,monthTarget,true):"Set target"}
                               </button>
                             )}
                           </div>
@@ -1690,7 +1692,7 @@ return(
                         <div style={{position:"relative",zIndex:1}}>
                           <p style={{margin:"0 0 1px",fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Financial Year</p>
                           <p style={{margin:"0 0 5px",fontSize:9,color:"rgba(255,255,255,0.35)"}}>Apr {fyStart.getFullYear()} – Mar {fyStart.getFullYear()+1}</p>
-                          <p style={{margin:"0 0 6px",fontSize:18,fontWeight:900,color:"white",fontFamily:"DM Mono,monospace",letterSpacing:"-0.5px"}}>{fmt(shopId,fySales)}</p>
+                          <p style={{margin:"0 0 6px",fontSize:18,fontWeight:900,color:"white",fontFamily:"DM Mono,monospace",letterSpacing:"-0.5px"}}>{fmt(shopId,fySales,true)}</p>
                           <div style={{height:3,background:"rgba(0,0,0,0.2)",borderRadius:999,overflow:"hidden"}}>
                             <div style={{height:"100%",width:Math.round(fyPct*100)+"%",background:"linear-gradient(90deg,#34d399,#6ee7b7)",borderRadius:999}}/>
                           </div>
@@ -1738,7 +1740,7 @@ return(
                         <div style={{position:"absolute",bottom:-15,right:-15,width:70,height:70,borderRadius:"50%",background:"rgba(255,255,255,0.07)",filter:"blur(12px)"}}/>
                         <div style={{position:"relative",zIndex:1}}>
                           <p style={{margin:"0 0 6px",fontSize:9,fontWeight:700,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:"0.06em"}}>Refunds This Month</p>
-                          <p style={{margin:"0 0 4px",fontSize:monthRefunds>0?22:28,fontWeight:900,color:"white",fontFamily:"DM Mono,monospace",letterSpacing:"-0.5px"}}>{monthRefunds>0?fmt(shopId,monthRefunds):"—"}</p>
+                          <p style={{margin:"0 0 4px",fontSize:monthRefunds>0?22:28,fontWeight:900,color:"white",fontFamily:"DM Mono,monospace",letterSpacing:"-0.5px"}}>{monthRefunds>0?fmt(shopId,monthRefunds,true):"—"}</p>
                           <div style={{display:"flex",alignItems:"center",gap:6,marginTop:6}}>
                             <span style={{fontSize:14}}>{monthRefunds===0?"✅":"💸"}</span>
                             <p style={{margin:0,fontSize:9,color:monthRefunds===0?"#86efac":"#fca5a5",fontWeight:700}}>{monthRefunds===0?"No refunds issued":"Total refunded value"}</p>
@@ -3941,11 +3943,10 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
   const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto"}}>
-      <div style={{padding:"0 20px"}}>
+    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
 
       {/* highlight banner */}
-      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,marginTop:4,display:"flex",alignItems:"center",gap:10}}>
+      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
         <span style={{fontSize:20}}>✏️</span>
         <div>
           <p style={{margin:0,fontWeight:800,fontSize:13,color:shop.accentText}}>Editing Sale {form.invoiceNo}</p>
@@ -3967,32 +3968,29 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       </div>
 
       <Divider title="Customer"/>
-      <div style={{marginBottom:16}}>
-        {/* Row 1: Customer Name | Contact Number | Saved On */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}>
-          <div>
-            <label style={lbl}>Customer Name</label>
-            <select value={form.customer} onChange={e=>set("customer",e.target.value)} style={inp}>
-              <option value="">Select customer…</option>
-              {form.customer && !customers.some(c=>c.name===form.customer) && (
-                <option value={form.customer}>{form.customer} (imported)</option>
-              )}
-              {customers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={lbl}>Phone Number</label>
-            <input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
-          </div>
-          <div>
-            <label style={lbl}>Saved On</label>
-            <select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>
-              {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
-            </select>
-          </div>
-        </div>
-        {/* Row 2: Address full width */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         <div>
+          <label style={lbl}>Customer Name</label>
+          <select value={form.customer} onChange={e=>set("customer",e.target.value)} style={inp}>
+            <option value="">Select customer…</option>
+            {/* If the sale's customer is not in the CRM (e.g. imported), show them as a selectable option */}
+            {form.customer && !customers.some(c=>c.name===form.customer) && (
+              <option value={form.customer}>{form.customer} (imported)</option>
+            )}
+            {customers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={lbl}>Contact Number</label>
+          <input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={lbl}>Phone Number Saved On</label>
+          <select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>
+            {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
+          </select>
+        </div>
+        <div style={{gridColumn:"1/-1"}}>
           <label style={lbl}>Address</label>
           <textarea value={form.address} onChange={e=>set("address",e.target.value)}
             rows={2} placeholder="Customer address…"
@@ -4273,8 +4271,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
         </>
       )}
 
-      </div>{/* end padding wrapper */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
         <button onClick={()=>onSave({...form,id:form.invoiceNo||sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
