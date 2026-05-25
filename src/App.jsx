@@ -3942,13 +3942,14 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
   const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","WORK IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
   const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
+  const [editCustOpen,setEditCustOpen]=React.useState(false);
+  const [editCustMatches,setEditCustMatches]=React.useState([]);
   const [editAddrOpen,setEditAddrOpen]=React.useState(false);
   const [editAddrMatches,setEditAddrMatches]=React.useState([]);
   return(
     <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto"}}>
       <div style={{padding:"0 20px"}}>
 
-      {/* highlight banner */}
       <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,marginTop:4,display:"flex",alignItems:"center",gap:10}}>
         <span style={{fontSize:20}}>✏️</span>
         <div>
@@ -3965,23 +3966,38 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
         </div>
         <div>
           <label style={lbl}>Invoice Number</label>
-          <input value={form.invoiceNo} readOnly
-            style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/>
+          <input value={form.invoiceNo} readOnly style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/>
         </div>
       </div>
 
       <Divider title="Customer"/>
       <div style={{marginBottom:16}}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}>
-          <div>
+          <div style={{position:"relative"}}>
             <label style={lbl}>Customer Name</label>
-            <select value={form.customer} onChange={e=>set("customer",e.target.value)} style={inp}>
-              <option value="">Select customer…</option>
-              {form.customer && !customers.some(c=>c.name===form.customer) && (
-                <option value={form.customer}>{form.customer} (imported)</option>
-              )}
-              {customers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
-            </select>
+            <input value={form.customer}
+              onChange={e=>{
+                set("customer",e.target.value);
+                const q=e.target.value.trim().toLowerCase();
+                if(q.length>=1){const m=customers.filter(c=>c.name.toLowerCase().includes(q)).slice(0,6);setEditCustMatches(m);setEditCustOpen(m.length>0);}
+                else{setEditCustOpen(false);setEditCustMatches([]);}
+              }}
+              onBlur={()=>setTimeout(()=>setEditCustOpen(false),180)}
+              placeholder="Type or search name…" style={inp} onFocus={fo} autoComplete="off"/>
+            {editCustOpen&&editCustMatches.length>0&&(
+              <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:200,background:"white",border:"1px solid "+shop.accent+"44",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,0.15)",maxHeight:180,overflowY:"auto",marginTop:3}}>
+                {editCustMatches.map((c,i)=>(
+                  <div key={i}
+                    onMouseDown={()=>{set("customer",c.name);set("contact",c.phone||"");set("address",c.address||c.addressee||"");setEditCustOpen(false);}}
+                    style={{padding:"9px 12px",borderBottom:i<editCustMatches.length-1?"1px solid #f1f5f9":"none",display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}
+                    onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg}
+                    onMouseLeave={e=>e.currentTarget.style.background="white"}>
+                    <div style={{width:26,height:26,borderRadius:7,background:shop.accent,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11,flexShrink:0}}>{c.name.charAt(0)}</div>
+                    <div><p style={{margin:0,fontSize:12,fontWeight:700,color:"#0f172a"}}>{c.name}</p><p style={{margin:0,fontSize:10,color:"#94a3b8"}}>{c.phone||"—"}</p></div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div>
             <label style={lbl}>Phone Number</label>
@@ -4000,10 +4016,8 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
             onChange={e=>{
               set("address",e.target.value);
               const q=e.target.value.trim().toLowerCase();
-              if(q.length>=1){
-                const m=customers.filter(c=>(c.address||c.addressee||"").toLowerCase().includes(q)).slice(0,6);
-                setEditAddrMatches(m); setEditAddrOpen(m.length>0);
-              } else { setEditAddrOpen(false); setEditAddrMatches([]); }
+              if(q.length>=1){const m=customers.filter(c=>(c.address||c.addressee||"").toLowerCase().includes(q)).slice(0,6);setEditAddrMatches(m);setEditAddrOpen(m.length>0);}
+              else{setEditAddrOpen(false);setEditAddrMatches([]);}
             }}
             onBlur={()=>setTimeout(()=>setEditAddrOpen(false),180)}
             placeholder="Type to search address from CRM…" style={inp} onFocus={fo} autoComplete="off"/>
@@ -4296,7 +4310,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
         </>
       )}
 
-      </div>{/* end padding wrapper */}
+      </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
         <button onClick={()=>onSave({...form,id:form.invoiceNo||sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
@@ -5058,34 +5072,12 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                   <button type="button" onClick={()=>setShowNewCust(true)} style={{width:32,height:34,borderRadius:8,cursor:"pointer",border:"1px solid "+shop.accent+"55",background:shop.accentBg,color:shop.accent,fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
                 </div>
                 {custAcOpen&&custAcMatches.length>0&&(<div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:200,background:"white",border:"1px solid "+shop.accent+"44",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,0.15)",maxHeight:180,overflowY:"auto",marginTop:3}}>
-                  {custAcMatches.map((c,i)=>(<div key={i} onMouseDown={()=>{set("customer",c.name);set("contact",c.phone||"");set("address",c.address||c.addressee||"");setCustAcOpen(false);}} style={{padding:"9px 12px",borderBottom:i<custAcMatches.length-1?"1px solid #f1f5f9":"none",display:"flex",alignItems:"center",gap:8}} onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg} onMouseLeave={e=>e.currentTarget.style.background="white"}><div style={{width:26,height:26,borderRadius:7,background:shop.sb,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11,flexShrink:0}}>{c.name.charAt(0)}</div><div><p style={{margin:0,fontSize:12,fontWeight:700,color:"#0f172a"}}>{c.name}</p><p style={{margin:0,fontSize:10,color:"#94a3b8"}}>{c.phone||"—"}</p></div></div>))}
+                  {custAcMatches.map((c,i)=>(<div key={i} onMouseDown={()=>{set("customer",c.name);set("contact",c.phone||"");setCustAcOpen(false);}} style={{padding:"9px 12px",borderBottom:i<custAcMatches.length-1?"1px solid #f1f5f9":"none",display:"flex",alignItems:"center",gap:8}} onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg} onMouseLeave={e=>e.currentTarget.style.background="white"}><div style={{width:26,height:26,borderRadius:7,background:shop.sb,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11,flexShrink:0}}>{c.name.charAt(0)}</div><div><p style={{margin:0,fontSize:12,fontWeight:700,color:"#0f172a"}}>{c.name}</p><p style={{margin:0,fontSize:10,color:"#94a3b8"}}>{c.phone||"—"}</p></div></div>))}
                 </div>)}
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
                 <div><label style={lbl}>Contact</label><input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/></div>
-                <div style={{position:"relative"}}><label style={lbl}>Address</label>
-                  <input value={form.address||""}
-                    onChange={e=>{
-                      set("address",e.target.value);
-                      const q=e.target.value.trim().toLowerCase();
-                      if(q.length>=1){const m=customerList.filter(c=>(c.address||c.addressee||"").toLowerCase().includes(q)).slice(0,6);setCustAcMatches(m);setCustAcOpen(m.length>0);}else{setCustAcOpen(false);setCustAcMatches([]);}
-                    }}
-                    onBlur={()=>setTimeout(()=>setCustAcOpen(false),180)}
-                    placeholder="Type to search address…" style={inp} onFocus={fo} autoComplete="off"/>
-                  {custAcOpen&&custAcMatches.length>0&&custAcMatches[0].address&&(
-                    <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:200,background:"white",border:"1px solid "+shop.accent+"44",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,0.15)",maxHeight:160,overflowY:"auto",marginTop:3}}>
-                      {custAcMatches.map((c,i)=>(
-                        <div key={i} onMouseDown={()=>{set("address",c.address||c.addressee||"");setCustAcOpen(false);}}
-                          style={{padding:"8px 12px",borderBottom:i<custAcMatches.length-1?"1px solid #f1f5f9":"none",cursor:"pointer"}}
-                          onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg}
-                          onMouseLeave={e=>e.currentTarget.style.background="white"}>
-                          <p style={{margin:0,fontSize:12,fontWeight:700,color:"#0f172a"}}>{c.name}</p>
-                          <p style={{margin:0,fontSize:11,color:"#64748b"}}>{c.address||c.addressee}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
+                <div><label style={lbl}>Address</label><input value={form.address||""} onChange={e=>set("address",e.target.value)} placeholder="Address" style={inp} onFocus={fo} onBlur={bl}/></div>
               </div>
             </div>
 
