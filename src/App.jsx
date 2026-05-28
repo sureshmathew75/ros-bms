@@ -815,6 +815,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [editRow,setEditRow]=useState(null);
   const [selCustomer,setSelCustomer]=useState(null);
   const [openMenu,setOpenMenu]=useState(null);
+  const [cfFY,setCfFY]=useState(()=>{const n=new Date();return n.getMonth()>=3?n.getFullYear():n.getFullYear()-1;});
   const [invoiceRow,setInvoiceRow]=useState(null);
   const [itemView,setItemView]=useState("month");
   const [selectedBar,setSelectedBar]=useState(null);
@@ -2251,34 +2252,21 @@ return(
 
           {/* ── CASH FLOW ── */}
           {tab==="cashflow"&&(()=>{
-            // FY helpers: Apr 1 — Mar 31
+            // DD/MM/YY formatter
+            const fmtD=d=>{if(!d)return"";const p=d.split("-");return p.length===3?p[2]+"/"+p[1]+"/"+p[0].slice(2):d;};
+            // Current FY start year (Apr-Mar)
             const now=new Date();
-            const curFYStart=now.getMonth()>=3?now.getFullYear():now.getFullYear()-1;
-            const [cfFY,setCfFY]=React.useState(curFYStart);
-            const fyStart=new Date(cfFY,3,1);   // Apr 1
-            const fyEnd  =new Date(cfFY+1,2,31,23,59,59); // Mar 31
-            // Build years list from earliest data
-            const allDates=[...sales,...exps,...purch].map(r=>r.date||).filter(Boolean);
-            const earliestFY=allDates.length
-              ? (d=>{return d.getMonth()>=3?d.getFullYear():d.getFullYear()-1;})(new Date(allDates.sort()[0]))
-              : curFYStart;
-            const fyYears=[];
-            for(let y=curFYStart;y>=earliestFY;y--) fyYears.push(y);
-
-            // Format YYYY-MM-DD -> DD/MM/YY
-            const fmtDate=d=>{
-              if(!d) return ;
-              const p=d.split(-);
-              if(p.length!==3) return d;
-              return p[2]+/+p[1]+/+p[0].slice(2);
-            };
-
-            const inFY=d=>{
-              if(!d) return false;
-              const dt=new Date(d);
-              return dt>=fyStart&&dt<=fyEnd;
-            };
-
+            // FY date bounds
+            const fyFrom=cfFY+"-04-01";
+            const fyTo  =(cfFY+1)+"-03-31";
+            const inFY=d=>d&&d>=fyFrom&&d<=fyTo;
+            // Build list of available FY years from data
+            const allDates=[...sales,...exps,...purch].map(r=>r.date||"").filter(Boolean).sort();
+            const toFYStart=d=>{const y=parseInt(d.slice(0,4));const m=parseInt(d.slice(5,7));return m>=4?y:y-1;};
+            const fyYears=allDates.length
+              ?[...new Set(allDates.map(toFYStart))].sort((a,b)=>b-a)
+              :[curFYStart];
+            // Build rows filtered to selected FY
             const cfRows=[
               ...sales.filter(s=>inFY(s.date)).map(s=>({
                 date:s.date||"",ref:s.id||"",type:"Sale",
@@ -2297,7 +2285,6 @@ return(
                 credit:0,debit:Math.abs(Number(p.amount)||0),pay:p.payBy||p.pay||"",
               })),
             ].filter(r=>r.date).sort((a,b)=>b.date.localeCompare(a.date));
-
             let bal=0;
             const withBal=[...cfRows].reverse().map(r=>{bal+=r.credit-r.debit;return{...r,balance:bal};}).reverse();
             const totalCredit=cfRows.reduce((a,r)=>a+r.credit,0);
@@ -2311,20 +2298,19 @@ return(
                 <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:12,marginBottom:20}}>
                   <div>
                     <h2 style={{margin:"0 0 4px",fontSize:20,fontWeight:900,color:"#0f172a"}}>🏦 Cash Flow Ledger</h2>
-                    <p style={{margin:0,fontSize:12,color:"#64748b"}}>1 Apr {cfFY} — 31 Mar {cfFY+1}  ·  mirrors your bank statement</p>
+                    <p style={{margin:0,fontSize:12,color:"#64748b"}}>01/04/{String(cfFY).slice(2)} — 31/03/{String(cfFY+1).slice(2)}  ·  {cfRows.length} transactions</p>
                   </div>
                   <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                     {fyYears.map(y=>(
                       <button key={y} onClick={()=>setCfFY(y)}
                         style={{padding:"5px 14px",borderRadius:8,border:"1px solid "+(cfFY===y?shop.accent:"#e2e8f0"),
                           background:cfFY===y?shop.accent:"white",color:cfFY===y?"white":"#374151",
-                          fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
-                        FY {y}-{String(y+1).slice(2)}
+                          fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>
+                        FY {y}/{String(y+1).slice(2)}
                       </button>
                     ))}
                   </div>
                 </div>
-
                 {/* Summary cards */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:24}}>
                   {[
@@ -2338,7 +2324,6 @@ return(
                     </div>
                   ))}
                 </div>
-
                 {/* Ledger table */}
                 <div style={{background:"white",borderRadius:14,border:"1px solid #e2e8f0",overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
                   <div style={{display:"grid",gridTemplateColumns:"90px 120px 80px 1fr 110px 110px 120px",background:"#f8fafc",borderBottom:"2px solid #e2e8f0",padding:"10px 16px"}}>
@@ -2347,13 +2332,11 @@ return(
                     ))}
                   </div>
                   {withBal.length===0&&(
-                    <div style={{padding:"48px",textAlign:"center",color:"#94a3b8",fontSize:13}}>
-                      No transactions for FY {cfFY}–{cfFY+1}. Sales, purchases and expenses will appear here automatically.
-                    </div>
+                    <div style={{padding:"48px",textAlign:"center",color:"#94a3b8",fontSize:13}}>No transactions for FY {cfFY}/{String(cfFY+1).slice(2)}.</div>
                   )}
                   {withBal.map((r,i)=>(
                     <div key={i} style={{display:"grid",gridTemplateColumns:"90px 120px 80px 1fr 110px 110px 120px",padding:"10px 16px",borderBottom:i<withBal.length-1?"1px solid #f1f5f9":"none",alignItems:"center",background:i%2===0?"white":"#fafafa"}}>
-                      <span style={{fontSize:11,color:"#374151",fontFamily:"DM Mono,monospace"}}>{fmtDate(r.date)}</span>
+                      <span style={{fontSize:11,color:"#374151",fontFamily:"DM Mono,monospace"}}>{fmtD(r.date)}</span>
                       <span style={{fontSize:11,color:shop.accent,fontWeight:700,fontFamily:"DM Mono,monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.ref||"—"}</span>
                       <span><span style={{background:typeBg[r.type],color:typeColor[r.type],fontSize:10,fontWeight:800,borderRadius:6,padding:"2px 8px"}}>{r.type}</span></span>
                       <span style={{fontSize:12,color:"#374151",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:8}}>{r.description}</span>
