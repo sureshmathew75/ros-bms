@@ -1177,7 +1177,7 @@ return(
           {[
             {label:"MAIN",    ids:["dashboard","sales","purchases"]},
             {label:"MANAGE",  ids:["logistics","customers","suppliers","agents","products"]},
-            {label:"FINANCE", ids:["invoices","expenses"]},
+            {label:"FINANCE", ids:["invoices","expenses","cashflow"]},
             {label:"INSIGHTS",ids:["documents","analytics","reports"]},
           ].map(group=>{
             const groupItems=NAV.filter(n=>group.ids.includes(n.id));
@@ -2254,37 +2254,32 @@ return(
           {tab==="cashflow"&&(()=>{
             // DD/MM/YY formatter
             const fmtD=d=>{if(!d)return"";const p=d.split("-");return p.length===3?p[2]+"/"+p[1]+"/"+p[0].slice(2):d;};
-            // Current FY start year (Apr-Mar)
-            const now=new Date();
-            // FY date bounds
+            // FY date bounds (Apr-Mar) using component-level cfFY state
             const fyFrom=cfFY+"-04-01";
             const fyTo  =(cfFY+1)+"-03-31";
-            const inFY=d=>d&&d>=fyFrom&&d<=fyTo;
-            // Build list of available FY years from data
+            const inFY=d=>d>=fyFrom&&d<=fyTo;
+            // Derive available FY years from data
             const allDates=[...sales,...exps,...purch].map(r=>r.date||"").filter(Boolean).sort();
             const toFYStart=d=>{const y=parseInt(d.slice(0,4));const m=parseInt(d.slice(5,7));return m>=4?y:y-1;};
-            const fyYears=allDates.length
-              ?[...new Set(allDates.map(toFYStart))].sort((a,b)=>b-a)
-              :[curFYStart];
-            // Build rows filtered to selected FY
+            const fyYears=allDates.length?[...new Set(allDates.map(toFYStart))].sort((a,b)=>b-a):[cfFY];
+            // Build rows for selected FY only
             const cfRows=[
-              ...sales.filter(s=>inFY(s.date)).map(s=>({
-                date:s.date||"",ref:s.id||"",type:"Sale",
+              ...sales.filter(s=>s.date&&inFY(s.date)).map(s=>({
+                date:s.date,ref:s.id||"",type:"Sale",
                 description:(s.customer||"Unknown")+(s.item?" — "+s.item:""),
-                credit:Math.max(0,(Number(s.amount)||0)-(Number(s.adjAmt)||0)),
-                debit:0,pay:s.pay||s.payBy||"",
+                credit:Math.max(0,(Number(s.amount)||0)-(Number(s.adjAmt)||0)),debit:0,
               })),
-              ...exps.filter(e=>inFY(e.date)).map(e=>({
-                date:e.date||"",ref:e.id||e.ref||"",type:"Expense",
+              ...exps.filter(e=>e.date&&inFY(e.date)).map(e=>({
+                date:e.date,ref:e.id||e.ref||"",type:"Expense",
                 description:e.supplier||e.description||e.desc||"Expense",
-                credit:0,debit:Math.abs(Number(e.amount)||0),pay:e.payBy||e.pay||"",
+                credit:0,debit:Math.abs(Number(e.amount)||0),
               })),
-              ...purch.filter(p=>inFY(p.date)).map(p=>({
-                date:p.date||"",ref:p.id||p.invoiceNo||"",type:"Purchase",
+              ...purch.filter(p=>p.date&&inFY(p.date)).map(p=>({
+                date:p.date,ref:p.id||p.invoiceNo||"",type:"Purchase",
                 description:p.supplier||p.description||"Purchase",
-                credit:0,debit:Math.abs(Number(p.amount)||0),pay:p.payBy||p.pay||"",
+                credit:0,debit:Math.abs(Number(p.amount)||0),
               })),
-            ].filter(r=>r.date).sort((a,b)=>b.date.localeCompare(a.date));
+            ].sort((a,b)=>b.date.localeCompare(a.date));
             let bal=0;
             const withBal=[...cfRows].reverse().map(r=>{bal+=r.credit-r.debit;return{...r,balance:bal};}).reverse();
             const totalCredit=cfRows.reduce((a,r)=>a+r.credit,0);
@@ -2294,7 +2289,6 @@ return(
             const typeBg={Sale:"#dcfce7",Expense:"#fee2e2",Purchase:"#fef3c7"};
             return(
               <div style={{padding:"20px 24px"}}>
-                {/* Header + FY picker */}
                 <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:12,marginBottom:20}}>
                   <div>
                     <h2 style={{margin:"0 0 4px",fontSize:20,fontWeight:900,color:"#0f172a"}}>🏦 Cash Flow Ledger</h2>
@@ -2311,7 +2305,6 @@ return(
                     ))}
                   </div>
                 </div>
-                {/* Summary cards */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:24}}>
                   {[
                     {l:"Total Income",v:totalCredit,c:"#15803d",bg:"#dcfce7",b:"#bbf7d0",ic:"↑"},
@@ -2324,7 +2317,6 @@ return(
                     </div>
                   ))}
                 </div>
-                {/* Ledger table */}
                 <div style={{background:"white",borderRadius:14,border:"1px solid #e2e8f0",overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
                   <div style={{display:"grid",gridTemplateColumns:"90px 120px 80px 1fr 110px 110px 120px",background:"#f8fafc",borderBottom:"2px solid #e2e8f0",padding:"10px 16px"}}>
                     {["Date","Reference","Type","Description","Credit ↑","Debit ↓","Balance"].map((h,i)=>(
@@ -2332,7 +2324,7 @@ return(
                     ))}
                   </div>
                   {withBal.length===0&&(
-                    <div style={{padding:"48px",textAlign:"center",color:"#94a3b8",fontSize:13}}>No transactions for FY {cfFY}/{String(cfFY+1).slice(2)}.</div>
+                    <div style={{padding:"48px",textAlign:"center",color:"#94a3b8",fontSize:13}}>No transactions for FY {cfFY}/{String(cfFY+1).slice(2)}. Sales, purchases and expenses appear here automatically.</div>
                   )}
                   {withBal.map((r,i)=>(
                     <div key={i} style={{display:"grid",gridTemplateColumns:"90px 120px 80px 1fr 110px 110px 120px",padding:"10px 16px",borderBottom:i<withBal.length-1?"1px solid #f1f5f9":"none",alignItems:"center",background:i%2===0?"white":"#fafafa"}}>
