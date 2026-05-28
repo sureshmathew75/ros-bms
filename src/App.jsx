@@ -331,6 +331,20 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
     window.addEventListener("resize",h);
     return()=>window.removeEventListener("resize",h);
   },[]);
+
+  // Keyboard shortcut: N = New Sale (when on sales tab, no modal open, no input focused)
+  useEffect(()=>{
+    const h=(e)=>{
+      if(e.key==="n"||e.key==="N"){
+        const tag=document.activeElement?.tagName?.toLowerCase();
+        if(tag==="input"||tag==="textarea"||tag==="select") return;
+        if(modal) return;
+        if(tab==="sales"){e.preventDefault();setModal("new-sale");}
+      }
+    };
+    window.addEventListener("keydown",h);
+    return()=>window.removeEventListener("keydown",h);
+  },[tab,modal]);
   useEffect(()=>{
     const h=e=>{if(e.key==="/"){e.preventDefault();setCmd(true);}if(e.key==="Escape")setCmd(false);};
     window.addEventListener("keydown",h);
@@ -805,8 +819,8 @@ const normaliseSale=(s)=>{
   };
 };
 
-const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems})=>{
-  const [tab,setTab]=useState(user?.role==="staff"?"sales":"dashboard");
+const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,initialTab="sales"})=>{
+  const [tab,setTab]=useState(user?.role==="staff"?"sales":(initialTab||"sales"));
   const [hov,setHov]=useState(null);
   const [search,setSearch]=useState("");
   const [modal,setModal]=useState(null);
@@ -896,6 +910,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"products", l:"Products", ic:"🏷️"},
     {id:"invoices", l:"Invoices", ic:"🧾"},
     {id:"expenses", l:"Expenses", ic:"💳"},
+    {id:"cashflow", l:"Cash Flow",ic:"🏦"},
     {id:"documents",l:"Documents",ic:"📎"},
     {id:"analytics",l:"Analytics",ic:"📊"},
     {id:"reports",  l:"Reports",  ic:"📋"},
@@ -2235,6 +2250,106 @@ return(
           {tab==="invoices"&&(
             <InvoicesPanel shop={shop}/>
           )}
+
+          {/* ── CASH FLOW ── */}
+          {tab==="cashflow"&&(()=>{
+            // Build ledger rows from sales + expenses + purchases
+            const cfRows=[
+              ...sales.map(s=>({
+                date:s.date||"",
+                ref:s.id||"",
+                type:"Sale",
+                description:(s.customer||"Unknown")+(s.item?" — "+s.item:""),
+                credit:Math.max(0,(Number(s.amount)||0)-(Number(s.adjAmt)||0)),
+                debit:0,
+                status:s.ful||s.status||"",
+                pay:s.pay||s.payBy||"",
+              })),
+              ...exps.map(e=>({
+                date:e.date||"",
+                ref:e.id||e.ref||"",
+                type:"Expense",
+                description:e.supplier||e.description||e.desc||"Expense",
+                credit:0,
+                debit:Math.abs(Number(e.amount)||0),
+                status:e.status||"",
+                pay:e.payBy||e.pay||"",
+              })),
+              ...purch.map(p=>({
+                date:p.date||"",
+                ref:p.id||p.invoiceNo||"",
+                type:"Purchase",
+                description:p.supplier||p.description||"Purchase",
+                credit:0,
+                debit:Math.abs(Number(p.amount)||0),
+                status:p.status||"",
+                pay:p.payBy||p.pay||"",
+              })),
+            ].filter(r=>r.date).sort((a,b)=>b.date.localeCompare(a.date));
+
+            // Running balance (newest first, so compute from oldest)
+            let bal=0;
+            const withBal=[...cfRows].reverse().map(r=>{
+              bal+=r.credit-r.debit;
+              return{...r,balance:bal};
+            }).reverse();
+
+            const totalCredit=cfRows.reduce((a,r)=>a+r.credit,0);
+            const totalDebit=cfRows.reduce((a,r)=>a+r.debit,0);
+            const netBalance=totalCredit-totalDebit;
+            const typeColor={Sale:"#15803d",Expense:"#dc2626",Purchase:"#b45309"};
+            const typeBg={Sale:"#dcfce7",Expense:"#fee2e2",Purchase:"#fef3c7"};
+
+            return(
+              <div style={{padding:"20px 24px"}}>
+                {/* Header */}
+                <div style={{marginBottom:20}}>
+                  <h2 style={{margin:"0 0 4px",fontSize:20,fontWeight:900,color:"#0f172a"}}>Cash Flow Ledger</h2>
+                  <p style={{margin:0,fontSize:12,color:"#64748b"}}>All transactions in date order — mirrors your bank statement</p>
+                </div>
+
+                {/* Summary cards */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:24}}>
+                  {[
+                    {l:"Total Income",v:totalCredit,c:"#15803d",bg:"#dcfce7",b:"#bbf7d0",ic:"↑"},
+                    {l:"Total Outgoings",v:totalDebit,c:"#dc2626",bg:"#fee2e2",b:"#fecaca",ic:"↓"},
+                    {l:"Net Position",v:netBalance,c:netBalance>=0?"#15803d":"#dc2626",bg:netBalance>=0?"#dcfce7":"#fee2e2",b:netBalance>=0?"#bbf7d0":"#fecaca",ic:netBalance>=0?"✓":"⚠"},
+                  ].map((c,i)=>(
+                    <div key={i} style={{background:c.bg,border:"1px solid "+c.b,borderRadius:14,padding:"16px 20px"}}>
+                      <p style={{margin:"0 0 4px",fontSize:11,fontWeight:700,color:c.c,textTransform:"uppercase",letterSpacing:"0.06em"}}>{c.ic} {c.l}</p>
+                      <p style={{margin:0,fontSize:22,fontWeight:900,color:c.c,fontFamily:"DM Mono,monospace"}}>{fmt(shopId,c.v)}</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Ledger table */}
+                <div style={{background:"white",borderRadius:14,border:"1px solid #e2e8f0",overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
+                  {/* Table header */}
+                  <div style={{display:"grid",gridTemplateColumns:"90px 110px 80px 1fr 110px 110px 120px",gap:0,background:"#f8fafc",borderBottom:"2px solid #e2e8f0",padding:"10px 16px"}}>
+                    {["Date","Reference","Type","Description","Credit ↑","Debit ↓","Balance"].map((h,i)=>(
+                      <span key={i} style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",textAlign:i>=4?"right":"left"}}>{h}</span>
+                    ))}
+                  </div>
+
+                  {/* Rows */}
+                  {withBal.length===0&&(
+                    <div style={{padding:"40px",textAlign:"center",color:"#94a3b8",fontSize:13}}>No transactions yet. Add sales or expenses to see your cash flow.</div>
+                  )}
+                  {withBal.map((r,i)=>(
+                    <div key={i} style={{display:"grid",gridTemplateColumns:"90px 110px 80px 1fr 110px 110px 120px",gap:0,padding:"10px 16px",borderBottom:i<withBal.length-1?"1px solid #f1f5f9":"none",alignItems:"center",background:i%2===0?"white":"#fafafa"}}>
+                      <span style={{fontSize:12,color:"#374151",fontFamily:"DM Mono,monospace"}}>{r.date}</span>
+                      <span style={{fontSize:11,color:shop.accent,fontWeight:700,fontFamily:"DM Mono,monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.ref||"—"}</span>
+                      <span style={{display:"inline-flex"}}><span style={{background:typeBg[r.type],color:typeColor[r.type],fontSize:10,fontWeight:800,borderRadius:6,padding:"2px 8px"}}>{r.type}</span></span>
+                      <span style={{fontSize:12,color:"#374151",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:8}}>{r.description}</span>
+                      <span style={{fontSize:12,fontWeight:700,color:"#15803d",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{r.credit>0?fmt(shopId,r.credit):"—"}</span>
+                      <span style={{fontSize:12,fontWeight:700,color:"#dc2626",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{r.debit>0?fmt(shopId,r.debit):"—"}</span>
+                      <span style={{fontSize:12,fontWeight:900,color:r.balance>=0?"#15803d":"#dc2626",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,r.balance)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
         </main>
       </div>
 
@@ -3895,7 +4010,6 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     purInvNo:    sale.purInvNo||"",
     purInvDate:  sale.purInvDate||"",
     purAmount:   sale.purAmount||"",
-    shopInvoiceNo: sale.shopInvoiceNo||sale.shop_invoice_no||"",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -3943,15 +4057,11 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
   const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","WORK IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
   const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
-  const [editCustOpen,setEditCustOpen]=React.useState(false);
-  const [editCustMatches,setEditCustMatches]=React.useState([]);
-  const [editAddrOpen,setEditAddrOpen]=React.useState(false);
-  const [editAddrMatches,setEditAddrMatches]=React.useState([]);
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto"}}>
-      <div style={{padding:"0 20px"}}>
+    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
 
-      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,marginTop:4,display:"flex",alignItems:"center",gap:10}}>
+      {/* highlight banner */}
+      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
         <span style={{fontSize:20}}>✏️</span>
         <div>
           <p style={{margin:0,fontWeight:800,fontSize:13,color:shop.accentText}}>Editing Sale {form.invoiceNo}</p>
@@ -3961,55 +4071,45 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
 
       <Divider title="Basic Info"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div><label style={lbl}>Date</label><input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
-        <div><label style={lbl}>Invoice Number</label><input value={form.invoiceNo} readOnly style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/></div>
+        <div>
+          <label style={lbl}>Date</label>
+          <input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+        <div>
+          <label style={lbl}>Invoice Number</label>
+          <input value={form.invoiceNo} readOnly
+            style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/>
+        </div>
       </div>
 
       <Divider title="Customer"/>
-      <div style={{marginBottom:16}}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}>
-          <div style={{position:"relative"}}>
-            <label style={lbl}>Customer Name</label>
-            <input value={form.customer}
-              onChange={e=>{set("customer",e.target.value);const q=e.target.value.trim().toLowerCase();if(q.length>=1){const m=customers.filter(c=>c.name.toLowerCase().includes(q)).slice(0,6);setEditCustMatches(m);setEditCustOpen(m.length>0);}else{setEditCustOpen(false);setEditCustMatches([]);}}}
-              onBlur={()=>setTimeout(()=>setEditCustOpen(false),180)}
-              placeholder="Type or search name…" style={inp} onFocus={fo} autoComplete="off"/>
-            {editCustOpen&&editCustMatches.length>0&&(
-              <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:200,background:"white",border:"1px solid "+shop.accent+"44",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,0.15)",maxHeight:180,overflowY:"auto",marginTop:3}}>
-                {editCustMatches.map((c,i)=>(
-                  <div key={i} onMouseDown={()=>{set("customer",c.name);set("contact",c.phone||"");set("address",c.address||c.addressee||"");setEditCustOpen(false);}}
-                    style={{padding:"9px 12px",borderBottom:i<editCustMatches.length-1?"1px solid #f1f5f9":"none",display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}
-                    onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg}
-                    onMouseLeave={e=>e.currentTarget.style.background="white"}>
-                    <div style={{width:26,height:26,borderRadius:7,background:shop.accent,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11,flexShrink:0}}>{c.name.charAt(0)}</div>
-                    <div><p style={{margin:0,fontSize:12,fontWeight:700,color:"#0f172a"}}>{c.name}</p><p style={{margin:0,fontSize:10,color:"#94a3b8"}}>{c.phone||"—"}</p></div>
-                  </div>
-                ))}
-              </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div>
+          <label style={lbl}>Customer Name</label>
+          <select value={form.customer} onChange={e=>set("customer",e.target.value)} style={inp}>
+            <option value="">Select customer…</option>
+            {/* If the sale's customer is not in the CRM (e.g. imported), show them as a selectable option */}
+            {form.customer && !customers.some(c=>c.name===form.customer) && (
+              <option value={form.customer}>{form.customer} (imported)</option>
             )}
-          </div>
-          <div><label style={lbl}>Phone Number</label><input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/></div>
-          <div><label style={lbl}>Saved On</label><select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>{["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}</select></div>
+            {customers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+          </select>
         </div>
-        <div style={{position:"relative"}}>
+        <div>
+          <label style={lbl}>Contact Number</label>
+          <input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={lbl}>Phone Number Saved On</label>
+          <select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>
+            {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
+          </select>
+        </div>
+        <div style={{gridColumn:"1/-1"}}>
           <label style={lbl}>Address</label>
-          <input value={form.address||""}
-            onChange={e=>{set("address",e.target.value);const q=e.target.value.trim().toLowerCase();if(q.length>=1){const m=customers.filter(c=>(c.address||c.addressee||"").toLowerCase().includes(q)).slice(0,6);setEditAddrMatches(m);setEditAddrOpen(m.length>0);}else{setEditAddrOpen(false);setEditAddrMatches([]);}}}
-            onBlur={()=>setTimeout(()=>setEditAddrOpen(false),180)}
-            placeholder="Type to search address from CRM…" style={inp} onFocus={fo} autoComplete="off"/>
-          {editAddrOpen&&editAddrMatches.length>0&&(
-            <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:200,background:"white",border:"1px solid "+shop.accent+"44",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,0.15)",maxHeight:160,overflowY:"auto",marginTop:3}}>
-              {editAddrMatches.map((c,i)=>(
-                <div key={i} onMouseDown={()=>{set("address",c.address||c.addressee||"");setEditAddrOpen(false);}}
-                  style={{padding:"8px 12px",borderBottom:i<editAddrMatches.length-1?"1px solid #f1f5f9":"none",cursor:"pointer"}}
-                  onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg}
-                  onMouseLeave={e=>e.currentTarget.style.background="white"}>
-                  <p style={{margin:0,fontSize:12,fontWeight:700,color:"#0f172a"}}>{c.name}</p>
-                  <p style={{margin:0,fontSize:11,color:"#64748b"}}>{c.address||c.addressee}</p>
-                </div>
-              ))}
-            </div>
-          )}
+          <textarea value={form.address} onChange={e=>set("address",e.target.value)}
+            rows={2} placeholder="Customer address…"
+            style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
         </div>
       </div>
 
@@ -4145,19 +4245,11 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       </div>
 
       <Divider title="Payment"/>
-      <div style={{display:"grid",gridTemplateColumns:form.payBy==="SHOP"?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Payment By</label>
-          <select value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
-            {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
-          </select>
-        </div>
-        {form.payBy==="SHOP"&&(
-          <div>
-            <label style={lbl}>Shop Invoice No.</label>
-            <input value={form.shopInvoiceNo||""} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/>
-          </div>
-        )}
+      <div style={{marginBottom:16}}>
+        <label style={lbl}>Payment By</label>
+        <select value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
+          {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
+        </select>
       </div>
 
       <Divider title="Delivery"/>
@@ -4294,8 +4386,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
         </>
       )}
 
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
         <button onClick={()=>onSave({...form,id:form.invoiceNo||sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
@@ -5098,9 +5189,6 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 <div><label style={lbl}>Payment By</label><select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"].map(o=><option key={o}>{o}</option>)}</select></div>
                 <div><label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["ORDER NOT PLACED","WORK IN PROGRESS","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select></div>
               </div>
-              {form.payBy==="SHOP"&&(
-                <div style={{marginBottom:7}}><label style={lbl}>Shop Invoice No.</label><input value={form.shopInvoiceNo} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/></div>
-              )}
               <div><label style={lbl}>Dispatch Date</label><input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
             </div>
 
@@ -6100,8 +6188,8 @@ const INITIAL_USERS=[
    avatar:"linear-gradient(135deg,#64748b,#334155)", shops:["ros-india"]},
 ];
 const ROLE_NAV={
-  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","documents","analytics","reports","settings"],
-  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","documents","analytics","reports"],
+  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports","settings"],
+  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports"],
   staff:["sales"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
@@ -6376,10 +6464,12 @@ export default function App(){
     setUser(null);setShop(null);
   };
 
-  const handleSetShop=(s)=>{
+  const handleSetShop=(s,goTab="sales")=>{
     setShop(s);
+    setInitialTab(goTab);
     try{localStorage.setItem("ros_shop",s);}catch{}
   };
+  const [initialTab,setInitialTab]=React.useState("sales");
 
   if(!user) return <LoginScreen users={users} onLogin={handleLogin}/>;
 
@@ -6389,7 +6479,7 @@ export default function App(){
   const activeShop = shop || (user.role==="staff" && allowedShops.length===1 ? allowedShops[0] : null);
 
   if(activeShop&&allowedShops.includes(activeShop))
-    return <ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={updateSalesData} customers={customers} setCustomers={setCustomers} shopItems={shopItems} saveShopItems={saveShopItems}/>;
+    return <ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);setInitialTab("sales");try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={updateSalesData} customers={customers} setCustomers={setCustomers} shopItems={shopItems} saveShopItems={saveShopItems} initialTab={initialTab}/>;
 
   return(
     <>
