@@ -863,7 +863,6 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     return()=>window.removeEventListener("resize",h);
   },[]);
 
-  // Shortcut: N = New Sale (sales tab, no modal, no input focused)
   useEffect(()=>{
     const h=(e)=>{
       if(e.key!=="n"&&e.key!=="N") return;
@@ -2250,7 +2249,7 @@ return(
             <InvoicesPanel shop={shop}/>
           )}
 
-          {/* CASH FLOW */}
+          {/* ── CASH FLOW ── */}
           {tab==="cashflow"&&(()=>{
             const cfRows=[
               ...sales.map(s=>({
@@ -2280,7 +2279,7 @@ return(
             return(
               <div style={{padding:"20px 24px"}}>
                 <div style={{marginBottom:20}}>
-                  <h2 style={{margin:"0 0 4px",fontSize:20,fontWeight:900,color:"#0f172a"}}>Cash Flow Ledger</h2>
+                  <h2 style={{margin:"0 0 4px",fontSize:20,fontWeight:900,color:"#0f172a"}}>🏦 Cash Flow Ledger</h2>
                   <p style={{margin:0,fontSize:12,color:"#64748b"}}>All transactions in date order — mirrors your bank statement</p>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:24}}>
@@ -2296,17 +2295,17 @@ return(
                   ))}
                 </div>
                 <div style={{background:"white",borderRadius:14,border:"1px solid #e2e8f0",overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
-                  <div style={{display:"grid",gridTemplateColumns:"90px 110px 80px 1fr 110px 110px 120px",gap:0,background:"#f8fafc",borderBottom:"2px solid #e2e8f0",padding:"10px 16px"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"100px 120px 80px 1fr 110px 110px 120px",background:"#f8fafc",borderBottom:"2px solid #e2e8f0",padding:"10px 16px"}}>
                     {["Date","Reference","Type","Description","Credit ↑","Debit ↓","Balance"].map((h,i)=>(
                       <span key={i} style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",textAlign:i>=4?"right":"left"}}>{h}</span>
                     ))}
                   </div>
                   {withBal.length===0&&(
-                    <div style={{padding:"40px",textAlign:"center",color:"#94a3b8",fontSize:13}}>No transactions yet.</div>
+                    <div style={{padding:"48px",textAlign:"center",color:"#94a3b8",fontSize:13}}>No transactions yet. Sales, purchases and expenses will appear here automatically.</div>
                   )}
                   {withBal.map((r,i)=>(
-                    <div key={i} style={{display:"grid",gridTemplateColumns:"90px 110px 80px 1fr 110px 110px 120px",gap:0,padding:"10px 16px",borderBottom:i<withBal.length-1?"1px solid #f1f5f9":"none",alignItems:"center",background:i%2===0?"white":"#fafafa"}}>
-                      <span style={{fontSize:12,color:"#374151",fontFamily:"DM Mono,monospace"}}>{r.date}</span>
+                    <div key={i} style={{display:"grid",gridTemplateColumns:"100px 120px 80px 1fr 110px 110px 120px",padding:"10px 16px",borderBottom:i<withBal.length-1?"1px solid #f1f5f9":"none",alignItems:"center",background:i%2===0?"white":"#fafafa"}}>
+                      <span style={{fontSize:11,color:"#374151",fontFamily:"DM Mono,monospace"}}>{r.date}</span>
                       <span style={{fontSize:11,color:shop.accent,fontWeight:700,fontFamily:"DM Mono,monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.ref||"—"}</span>
                       <span><span style={{background:typeBg[r.type],color:typeColor[r.type],fontSize:10,fontWeight:800,borderRadius:6,padding:"2px 8px"}}>{r.type}</span></span>
                       <span style={{fontSize:12,color:"#374151",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:8}}>{r.description}</span>
@@ -6433,12 +6432,12 @@ export default function App(){
     setUser(null);setShop(null);
   };
 
+  const [initialTab,setInitialTab]=React.useState("sales");
   const handleSetShop=(s,goTab="sales")=>{
     setShop(s);
     setInitialTab(goTab);
     try{localStorage.setItem("ros_shop",s);}catch{}
   };
-  const [initialTab,setInitialTab]=React.useState("sales");
 
   if(!user) return <LoginScreen users={users} onLogin={handleLogin}/>;
 
