@@ -1176,7 +1176,7 @@ return(
           {[
             {label:"MAIN",    ids:["dashboard","sales","purchases"]},
             {label:"MANAGE",  ids:["logistics","customers","suppliers","agents","products"]},
-            {label:"FINANCE", ids:["invoices","expenses"]},
+            {label:"FINANCE", ids:["invoices","expenses","cashflow"]},
             {label:"INSIGHTS",ids:["documents","analytics","reports"]},
           ].map(group=>{
             const groupItems=NAV.filter(n=>group.ids.includes(n.id));
