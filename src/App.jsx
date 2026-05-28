@@ -331,20 +331,6 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
     window.addEventListener("resize",h);
     return()=>window.removeEventListener("resize",h);
   },[]);
-
-  // Keyboard shortcut: N = New Sale (when on sales tab, no modal open, no input focused)
-  useEffect(()=>{
-    const h=(e)=>{
-      if(e.key==="n"||e.key==="N"){
-        const tag=document.activeElement?.tagName?.toLowerCase();
-        if(tag==="input"||tag==="textarea"||tag==="select") return;
-        if(modal) return;
-        if(tab==="sales"){e.preventDefault();setModal("new-sale");}
-      }
-    };
-    window.addEventListener("keydown",h);
-    return()=>window.removeEventListener("keydown",h);
-  },[tab,modal]);
   useEffect(()=>{
     const h=e=>{if(e.key==="/"){e.preventDefault();setCmd(true);}if(e.key==="Escape")setCmd(false);};
     window.addEventListener("keydown",h);
@@ -876,6 +862,19 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     window.addEventListener("resize",h);
     return()=>window.removeEventListener("resize",h);
   },[]);
+
+  // Shortcut: N = New Sale (sales tab, no modal, no input focused)
+  useEffect(()=>{
+    const h=(e)=>{
+      if(e.key!=="n"&&e.key!=="N") return;
+      const tag=document.activeElement?.tagName?.toLowerCase();
+      if(tag==="input"||tag==="textarea"||tag==="select") return;
+      if(modal) return;
+      if(tab==="sales"){e.preventDefault();setModal("new-sale");}
+    };
+    window.addEventListener("keydown",h);
+    return()=>window.removeEventListener("keydown",h);
+  },[tab,modal]);
 
   // Data loaded at App level and persisted in localStorage
 
@@ -2251,64 +2250,39 @@ return(
             <InvoicesPanel shop={shop}/>
           )}
 
-          {/* ── CASH FLOW ── */}
+          {/* CASH FLOW */}
           {tab==="cashflow"&&(()=>{
-            // Build ledger rows from sales + expenses + purchases
             const cfRows=[
               ...sales.map(s=>({
-                date:s.date||"",
-                ref:s.id||"",
-                type:"Sale",
+                date:s.date||"",ref:s.id||"",type:"Sale",
                 description:(s.customer||"Unknown")+(s.item?" — "+s.item:""),
                 credit:Math.max(0,(Number(s.amount)||0)-(Number(s.adjAmt)||0)),
-                debit:0,
-                status:s.ful||s.status||"",
-                pay:s.pay||s.payBy||"",
+                debit:0,pay:s.pay||s.payBy||"",
               })),
               ...exps.map(e=>({
-                date:e.date||"",
-                ref:e.id||e.ref||"",
-                type:"Expense",
+                date:e.date||"",ref:e.id||e.ref||"",type:"Expense",
                 description:e.supplier||e.description||e.desc||"Expense",
-                credit:0,
-                debit:Math.abs(Number(e.amount)||0),
-                status:e.status||"",
-                pay:e.payBy||e.pay||"",
+                credit:0,debit:Math.abs(Number(e.amount)||0),pay:e.payBy||e.pay||"",
               })),
               ...purch.map(p=>({
-                date:p.date||"",
-                ref:p.id||p.invoiceNo||"",
-                type:"Purchase",
+                date:p.date||"",ref:p.id||p.invoiceNo||"",type:"Purchase",
                 description:p.supplier||p.description||"Purchase",
-                credit:0,
-                debit:Math.abs(Number(p.amount)||0),
-                status:p.status||"",
-                pay:p.payBy||p.pay||"",
+                credit:0,debit:Math.abs(Number(p.amount)||0),pay:p.payBy||p.pay||"",
               })),
             ].filter(r=>r.date).sort((a,b)=>b.date.localeCompare(a.date));
-
-            // Running balance (newest first, so compute from oldest)
             let bal=0;
-            const withBal=[...cfRows].reverse().map(r=>{
-              bal+=r.credit-r.debit;
-              return{...r,balance:bal};
-            }).reverse();
-
+            const withBal=[...cfRows].reverse().map(r=>{bal+=r.credit-r.debit;return{...r,balance:bal};}).reverse();
             const totalCredit=cfRows.reduce((a,r)=>a+r.credit,0);
             const totalDebit=cfRows.reduce((a,r)=>a+r.debit,0);
             const netBalance=totalCredit-totalDebit;
             const typeColor={Sale:"#15803d",Expense:"#dc2626",Purchase:"#b45309"};
             const typeBg={Sale:"#dcfce7",Expense:"#fee2e2",Purchase:"#fef3c7"};
-
             return(
               <div style={{padding:"20px 24px"}}>
-                {/* Header */}
                 <div style={{marginBottom:20}}>
                   <h2 style={{margin:"0 0 4px",fontSize:20,fontWeight:900,color:"#0f172a"}}>Cash Flow Ledger</h2>
                   <p style={{margin:0,fontSize:12,color:"#64748b"}}>All transactions in date order — mirrors your bank statement</p>
                 </div>
-
-                {/* Summary cards */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:24}}>
                   {[
                     {l:"Total Income",v:totalCredit,c:"#15803d",bg:"#dcfce7",b:"#bbf7d0",ic:"↑"},
@@ -2321,25 +2295,20 @@ return(
                     </div>
                   ))}
                 </div>
-
-                {/* Ledger table */}
                 <div style={{background:"white",borderRadius:14,border:"1px solid #e2e8f0",overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
-                  {/* Table header */}
                   <div style={{display:"grid",gridTemplateColumns:"90px 110px 80px 1fr 110px 110px 120px",gap:0,background:"#f8fafc",borderBottom:"2px solid #e2e8f0",padding:"10px 16px"}}>
                     {["Date","Reference","Type","Description","Credit ↑","Debit ↓","Balance"].map((h,i)=>(
                       <span key={i} style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",textAlign:i>=4?"right":"left"}}>{h}</span>
                     ))}
                   </div>
-
-                  {/* Rows */}
                   {withBal.length===0&&(
-                    <div style={{padding:"40px",textAlign:"center",color:"#94a3b8",fontSize:13}}>No transactions yet. Add sales or expenses to see your cash flow.</div>
+                    <div style={{padding:"40px",textAlign:"center",color:"#94a3b8",fontSize:13}}>No transactions yet.</div>
                   )}
                   {withBal.map((r,i)=>(
                     <div key={i} style={{display:"grid",gridTemplateColumns:"90px 110px 80px 1fr 110px 110px 120px",gap:0,padding:"10px 16px",borderBottom:i<withBal.length-1?"1px solid #f1f5f9":"none",alignItems:"center",background:i%2===0?"white":"#fafafa"}}>
                       <span style={{fontSize:12,color:"#374151",fontFamily:"DM Mono,monospace"}}>{r.date}</span>
                       <span style={{fontSize:11,color:shop.accent,fontWeight:700,fontFamily:"DM Mono,monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.ref||"—"}</span>
-                      <span style={{display:"inline-flex"}}><span style={{background:typeBg[r.type],color:typeColor[r.type],fontSize:10,fontWeight:800,borderRadius:6,padding:"2px 8px"}}>{r.type}</span></span>
+                      <span><span style={{background:typeBg[r.type],color:typeColor[r.type],fontSize:10,fontWeight:800,borderRadius:6,padding:"2px 8px"}}>{r.type}</span></span>
                       <span style={{fontSize:12,color:"#374151",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:8}}>{r.description}</span>
                       <span style={{fontSize:12,fontWeight:700,color:"#15803d",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{r.credit>0?fmt(shopId,r.credit):"—"}</span>
                       <span style={{fontSize:12,fontWeight:700,color:"#dc2626",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{r.debit>0?fmt(shopId,r.debit):"—"}</span>
