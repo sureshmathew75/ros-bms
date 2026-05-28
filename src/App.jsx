@@ -815,10 +815,6 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [editRow,setEditRow]=useState(null);
   const [selCustomer,setSelCustomer]=useState(null);
   const [openMenu,setOpenMenu]=useState(null);
-  const [cfFY,setCfFY]=useState(()=>{const n=new Date();return n.getMonth()>=3?n.getFullYear():n.getFullYear()-1;});
-  const [cfOpenBal,setCfOpenBal]=useState(()=>{try{const s=localStorage.getItem("ros_cf_openbal");return s?JSON.parse(s):{};}catch{return{};}});
-  const [obEdit,setObEdit]=useState(false);
-  const [obInput,setObInput]=useState("");
   const [invoiceRow,setInvoiceRow]=useState(null);
   const [itemView,setItemView]=useState("month");
   const [selectedBar,setSelectedBar]=useState(null);
@@ -3982,7 +3978,6 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     purInvNo:    sale.purInvNo||"",
     purInvDate:  sale.purInvDate||"",
     purAmount:   sale.purAmount||"",
-    shopInvoiceNo: sale.shopInvoiceNo||sale.shop_invoice_no||"",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -4030,15 +4025,11 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
   const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","WORK IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
   const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
-  const [editCustOpen,setEditCustOpen]=useState(false);
-  const [editCustMatches,setEditCustMatches]=useState([]);
-  const [editAddrOpen,setEditAddrOpen]=useState(false);
-  const [editAddrMatches,setEditAddrMatches]=useState([]);
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto"}}>
-      <div style={{padding:"0 20px"}}>
+    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
 
-      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,marginTop:4,display:"flex",alignItems:"center",gap:10}}>
+      {/* highlight banner */}
+      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
         <span style={{fontSize:20}}>✏️</span>
         <div>
           <p style={{margin:0,fontWeight:800,fontSize:13,color:shop.accentText}}>Editing Sale {form.invoiceNo}</p>
@@ -4048,55 +4039,45 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
 
       <Divider title="Basic Info"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div><label style={lbl}>Date</label><input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
-        <div><label style={lbl}>Invoice Number</label><input value={form.invoiceNo} readOnly style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/></div>
+        <div>
+          <label style={lbl}>Date</label>
+          <input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+        <div>
+          <label style={lbl}>Invoice Number</label>
+          <input value={form.invoiceNo} readOnly
+            style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/>
+        </div>
       </div>
 
       <Divider title="Customer"/>
-      <div style={{marginBottom:16}}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}>
-          <div style={{position:"relative"}}>
-            <label style={lbl}>Customer Name</label>
-            <input value={form.customer}
-              onChange={e=>{set("customer",e.target.value);const q=e.target.value.trim().toLowerCase();if(q.length>=1){const m=customers.filter(c=>c.name.toLowerCase().includes(q)).slice(0,6);setEditCustMatches(m);setEditCustOpen(m.length>0);}else{setEditCustOpen(false);setEditCustMatches([]);}}}
-              onBlur={()=>setTimeout(()=>setEditCustOpen(false),180)}
-              placeholder="Type or search name…" style={inp} onFocus={fo} autoComplete="off"/>
-            {editCustOpen&&editCustMatches.length>0&&(
-              <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:200,background:"white",border:"1px solid "+shop.accent+"44",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,0.15)",maxHeight:180,overflowY:"auto",marginTop:3}}>
-                {editCustMatches.map((c,i)=>(
-                  <div key={i} onMouseDown={()=>{set("customer",c.name);set("contact",c.phone||"");set("address",c.address||c.addressee||"");setEditCustOpen(false);}}
-                    style={{padding:"9px 12px",borderBottom:i<editCustMatches.length-1?"1px solid #f1f5f9":"none",display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}
-                    onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg}
-                    onMouseLeave={e=>e.currentTarget.style.background="white"}>
-                    <div style={{width:26,height:26,borderRadius:7,background:shop.accent,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11,flexShrink:0}}>{c.name.charAt(0)}</div>
-                    <div><p style={{margin:0,fontSize:12,fontWeight:700,color:"#0f172a"}}>{c.name}</p><p style={{margin:0,fontSize:10,color:"#94a3b8"}}>{c.phone||"—"}</p></div>
-                  </div>
-                ))}
-              </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div>
+          <label style={lbl}>Customer Name</label>
+          <select value={form.customer} onChange={e=>set("customer",e.target.value)} style={inp}>
+            <option value="">Select customer…</option>
+            {/* If the sale's customer is not in the CRM (e.g. imported), show them as a selectable option */}
+            {form.customer && !customers.some(c=>c.name===form.customer) && (
+              <option value={form.customer}>{form.customer} (imported)</option>
             )}
-          </div>
-          <div><label style={lbl}>Phone Number</label><input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/></div>
-          <div><label style={lbl}>Saved On</label><select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>{["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}</select></div>
+            {customers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+          </select>
         </div>
-        <div style={{position:"relative"}}>
+        <div>
+          <label style={lbl}>Contact Number</label>
+          <input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={lbl}>Phone Number Saved On</label>
+          <select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>
+            {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
+          </select>
+        </div>
+        <div style={{gridColumn:"1/-1"}}>
           <label style={lbl}>Address</label>
-          <input value={form.address||""}
-            onChange={e=>{set("address",e.target.value);const q=e.target.value.trim().toLowerCase();if(q.length>=1){const m=customers.filter(c=>(c.address||c.addressee||"").toLowerCase().includes(q)).slice(0,6);setEditAddrMatches(m);setEditAddrOpen(m.length>0);}else{setEditAddrOpen(false);setEditAddrMatches([]);}}}
-            onBlur={()=>setTimeout(()=>setEditAddrOpen(false),180)}
-            placeholder="Type to search address…" style={inp} onFocus={fo} autoComplete="off"/>
-          {editAddrOpen&&editAddrMatches.length>0&&(
-            <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:200,background:"white",border:"1px solid "+shop.accent+"44",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,0.15)",maxHeight:160,overflowY:"auto",marginTop:3}}>
-              {editAddrMatches.map((c,i)=>(
-                <div key={i} onMouseDown={()=>{set("address",c.address||c.addressee||"");setEditAddrOpen(false);}}
-                  style={{padding:"8px 12px",borderBottom:i<editAddrMatches.length-1?"1px solid #f1f5f9":"none",cursor:"pointer"}}
-                  onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg}
-                  onMouseLeave={e=>e.currentTarget.style.background="white"}>
-                  <p style={{margin:0,fontSize:12,fontWeight:700,color:"#0f172a"}}>{c.name}</p>
-                  <p style={{margin:0,fontSize:11,color:"#64748b"}}>{c.address||c.addressee}</p>
-                </div>
-              ))}
-            </div>
-          )}
+          <textarea value={form.address} onChange={e=>set("address",e.target.value)}
+            rows={2} placeholder="Customer address…"
+            style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
         </div>
       </div>
 
@@ -4232,19 +4213,11 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       </div>
 
       <Divider title="Payment"/>
-      <div style={{display:"grid",gridTemplateColumns:form.payBy==="SHOP"?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Payment By</label>
-          <select value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
-            {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
-          </select>
-        </div>
-        {form.payBy==="SHOP"&&(
-          <div>
-            <label style={lbl}>Shop Invoice No.</label>
-            <input value={form.shopInvoiceNo||""} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/>
-          </div>
-        )}
+      <div style={{marginBottom:16}}>
+        <label style={lbl}>Payment By</label>
+        <select value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
+          {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
+        </select>
       </div>
 
       <Divider title="Delivery"/>
@@ -4381,8 +4354,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
         </>
       )}
 
-      </div>{/* end padding wrapper */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
         <button onClick={()=>onSave({...form,id:form.invoiceNo||sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
@@ -5185,9 +5157,6 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 <div><label style={lbl}>Payment By</label><select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"].map(o=><option key={o}>{o}</option>)}</select></div>
                 <div><label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["ORDER NOT PLACED","WORK IN PROGRESS","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select></div>
               </div>
-              {form.payBy==="SHOP"&&(
-                <div style={{marginBottom:7}}><label style={lbl}>Shop Invoice No.</label><input value={form.shopInvoiceNo} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/></div>
-              )}
               <div><label style={lbl}>Dispatch Date</label><input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
             </div>
 
@@ -5214,13 +5183,13 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
       {/* ── Sticky bottom bar ── */}
       <div style={{flexShrink:0,borderTop:"1px solid #f1f5f9",background:"white",padding:"10px 16px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div>
-            <p style={{margin:0,fontSize:10,color:"#94a3b8",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em"}}>Total</p>
-            <p style={{margin:0,fontSize:20,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace",letterSpacing:"-0.5px"}}>{shop.symbol}{grandTotal.toLocaleString()}</p>
-          </div>
           <div style={{display:"flex",gap:8}}>
             <button onClick={onClose} style={{padding:"10px 18px",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
             <button onClick={handleSave} style={{padding:"10px 24px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44",display:"flex",alignItems:"center",gap:6}}><span>🛒</span> Save Sale</button>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <p style={{margin:0,fontSize:10,color:"#94a3b8",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em"}}>Total</p>
+            <p style={{margin:0,fontSize:20,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace",letterSpacing:"-0.5px"}}>{shop.symbol}{grandTotal.toLocaleString()}</p>
           </div>
         </div>
       </div>
