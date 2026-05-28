@@ -2257,7 +2257,7 @@ return(
           {tab==="cashflow"&&(()=>{
             // DD/MM/YY formatter
             const fmtD=d=>{if(!d)return"";const p=d.split("-");return p.length===3?p[2]+"/"+p[1]+"/"+p[0].slice(2):d;};
-            // FY bounds (Apr 1 — Mar 31)
+            // FY bounds Apr-Mar
             const fyFrom=cfFY+"-04-01";
             const fyTo  =(cfFY+1)+"-03-31";
             const inFY=d=>d&&d>=fyFrom&&d<=fyTo;
@@ -2265,7 +2265,7 @@ return(
             const allDates=[...sales,...exps,...purch].map(r=>r.date||"").filter(Boolean).sort();
             const toFYStart=d=>{const y=parseInt(d.slice(0,4));const m=parseInt(d.slice(5,7));return m>=4?y:y-1;};
             const fyYears=allDates.length?[...new Set(allDates.map(toFYStart))].sort((a,b)=>b-a):[cfFY];
-            // Opening balance: stored per shop+FY in localStorage
+            // Opening balance per shop+FY
             const obKey=shopId+"_"+cfFY;
             const openBal=Number(cfOpenBal[obKey])||0;
             const saveOB=()=>{
@@ -2293,7 +2293,6 @@ return(
                 credit:0,debit:Math.abs(Number(p.amount)||0),
               })),
             ].sort((a,b)=>b.date.localeCompare(a.date));
-            // Running balance starting from opening balance
             let bal=openBal;
             const withBal=[...cfRows].reverse().map(r=>{bal+=r.credit-r.debit;return{...r,balance:bal};}).reverse();
             const totalCredit=cfRows.reduce((a,r)=>a+r.credit,0);
@@ -2301,15 +2300,45 @@ return(
             const closingBal=openBal+totalCredit-totalDebit;
             const typeColor={Sale:"#15803d",Expense:"#dc2626",Purchase:"#b45309"};
             const typeBg={Sale:"#dcfce7",Expense:"#fee2e2",Purchase:"#fef3c7"};
+            // Export to CSV (opens as Excel)
+            const exportXLS=()=>{
+              const sym=shop.symbol||"£";
+              const rows=[
+                ["Cash Flow Ledger","","","","","",""],
+                [shop.name+" FY "+cfFY+"/"+String(cfFY+1).slice(2),"","","","","",""],
+                [""],
+                ["Date","Reference","Type","Description","Credit ("+sym+")","Debit ("+sym+")","Balance ("+sym+")"],
+                ["01/04/"+String(cfFY).slice(2),"OB-"+cfFY,"Opening","Opening Balance",openBal>0?openBal.toFixed(2):"",openBal<0?Math.abs(openBal).toFixed(2):"",openBal.toFixed(2)],
+                ...withBal.map(r=>[
+                  fmtD(r.date),r.ref,r.type,r.description,
+                  r.credit>0?r.credit.toFixed(2):"",
+                  r.debit>0?r.debit.toFixed(2):"",
+                  r.balance.toFixed(2),
+                ]),
+                ["31/03/"+String(cfFY+1).slice(2),"CB-"+(cfFY+1),"Closing","Closing Balance","","",closingBal.toFixed(2)],
+                [""],
+                ["","","","Total Income",totalCredit.toFixed(2),"",""],
+                ["","","","Total Outgoings","",totalDebit.toFixed(2),""],
+                ["","","","Net Movement","","",( totalCredit-totalDebit).toFixed(2)],
+              ];
+              const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(",")).join("\r\n");
+              const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
+              const url=URL.createObjectURL(blob);
+              const a=document.createElement("a");
+              a.href=url;
+              a.download=shop.name.replace(/\s+/g,"-")+"-CashFlow-FY"+cfFY+"-"+String(cfFY+1).slice(2)+".csv";
+              a.click();
+              URL.revokeObjectURL(url);
+            };
             return(
               <div style={{padding:"20px 24px"}}>
-                {/* Header + FY picker */}
+                {/* Header + FY picker + Export */}
                 <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:12,marginBottom:20}}>
                   <div>
                     <h2 style={{margin:"0 0 4px",fontSize:20,fontWeight:900,color:"#0f172a"}}>🏦 Cash Flow Ledger</h2>
                     <p style={{margin:0,fontSize:12,color:"#64748b"}}>01/04/{String(cfFY).slice(2)} — 31/03/{String(cfFY+1).slice(2)}  ·  {cfRows.length} transactions</p>
                   </div>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
                     {fyYears.map(y=>(
                       <button key={y} onClick={()=>{setCfFY(y);setObEdit(false);}}
                         style={{padding:"5px 14px",borderRadius:8,border:"1px solid "+(cfFY===y?shop.accent:"#e2e8f0"),
@@ -2318,10 +2347,16 @@ return(
                         FY {y}/{String(y+1).slice(2)}
                       </button>
                     ))}
+                    <button onClick={exportXLS}
+                      style={{padding:"6px 16px",borderRadius:8,border:"none",background:"#16a34a",color:"white",
+                        fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6,
+                        boxShadow:"0 2px 8px rgba(22,163,74,0.3)"}}>
+                      📊 Export Excel
+                    </button>
                   </div>
                 </div>
 
-                {/* Opening Balance card */}
+                {/* Opening / Closing balance card */}
                 <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 18px",marginBottom:20,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
                   <div>
                     <p style={{margin:"0 0 2px",fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em"}}>🏦 Opening Balance — 01/04/{String(cfFY).slice(2)}</p>
@@ -2395,7 +2430,6 @@ return(
                       <span style={{fontSize:12,fontWeight:900,color:r.balance>=0?"#15803d":"#dc2626",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,r.balance)}</span>
                     </div>
                   ))}
-                  {/* Closing balance row */}
                   {cfRows.length>0&&(
                     <div style={{display:"grid",gridTemplateColumns:"90px 120px 80px 1fr 110px 110px 120px",padding:"10px 16px",alignItems:"center",background:"#eff6ff",borderTop:"2px solid #bfdbfe"}}>
                       <span style={{fontSize:11,color:"#374151",fontFamily:"DM Mono,monospace"}}>31/03/{String(cfFY+1).slice(2)}</span>
