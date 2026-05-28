@@ -5092,6 +5092,14 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
 
     {/* ── Single column layout ── */}
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      {/* Total in top bar */}
+      <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 16px",borderBottom:"1px solid #f1f5f9",background:shop.accentBg}}>
+        <span style={{fontSize:11,fontWeight:700,color:"#64748b"}}>FY {new Date(form.date||Date.now()).getMonth()>=3?new Date(form.date||Date.now()).getFullYear():new Date(form.date||Date.now()).getFullYear()-1}/{String((new Date(form.date||Date.now()).getMonth()>=3?new Date(form.date||Date.now()).getFullYear():new Date(form.date||Date.now()).getFullYear()-1)+1).slice(2)}</span>
+        <div style={{textAlign:"right"}}>
+          <p style={{margin:0,fontSize:9,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Total</p>
+          <p style={{margin:0,fontSize:18,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace",lineHeight:1}}>{shop.symbol}{grandTotal.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
+        </div>
+      </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 16px",WebkitOverflowScrolling:"touch"}}>
 
             {/* Basic Info */}
@@ -5181,17 +5189,9 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
       </div>
 
       {/* ── Sticky bottom bar ── */}
-      <div style={{flexShrink:0,borderTop:"1px solid #f1f5f9",background:"white",padding:"10px 16px"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-          <div style={{display:"flex",gap:8}}>
-            <button onClick={onClose} style={{padding:"10px 18px",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
-            <button onClick={handleSave} style={{padding:"10px 24px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44",display:"flex",alignItems:"center",gap:6}}><span>🛒</span> Save Sale</button>
-          </div>
-          <div style={{textAlign:"right"}}>
-            <p style={{margin:0,fontSize:10,color:"#94a3b8",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em"}}>Total</p>
-            <p style={{margin:0,fontSize:20,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace",letterSpacing:"-0.5px"}}>{shop.symbol}{grandTotal.toLocaleString()}</p>
-          </div>
-        </div>
+      <div style={{flexShrink:0,borderTop:"1px solid #f1f5f9",background:"white",padding:"10px 16px",display:"flex",justifyContent:"flex-end",gap:8}}>
+        <button onClick={onClose} style={{padding:"10px 18px",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+        <button onClick={handleSave} style={{padding:"10px 24px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44",display:"flex",alignItems:"center",gap:6}}><span>🛒</span> Save Sale</button>
       </div>
     </div>
   </>);
