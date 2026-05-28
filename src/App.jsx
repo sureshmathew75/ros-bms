@@ -816,6 +816,9 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [selCustomer,setSelCustomer]=useState(null);
   const [openMenu,setOpenMenu]=useState(null);
   const [cfFY,setCfFY]=useState(()=>{const n=new Date();return n.getMonth()>=3?n.getFullYear():n.getFullYear()-1;});
+  const [cfOpenBal,setCfOpenBal]=useState(()=>{try{const s=localStorage.getItem("ros_cf_openbal");return s?JSON.parse(s):{};}catch{return{};}});
+  const [obEdit,setObEdit]=useState(false);
+  const [obInput,setObInput]=useState("");
   const [invoiceRow,setInvoiceRow]=useState(null);
   const [itemView,setItemView]=useState("month");
   const [selectedBar,setSelectedBar]=useState(null);
@@ -2254,41 +2257,53 @@ return(
           {tab==="cashflow"&&(()=>{
             // DD/MM/YY formatter
             const fmtD=d=>{if(!d)return"";const p=d.split("-");return p.length===3?p[2]+"/"+p[1]+"/"+p[0].slice(2):d;};
-            // FY date bounds (Apr-Mar) using component-level cfFY state
+            // FY bounds (Apr 1 — Mar 31)
             const fyFrom=cfFY+"-04-01";
             const fyTo  =(cfFY+1)+"-03-31";
-            const inFY=d=>d>=fyFrom&&d<=fyTo;
-            // Derive available FY years from data
+            const inFY=d=>d&&d>=fyFrom&&d<=fyTo;
+            // Available FY years from data
             const allDates=[...sales,...exps,...purch].map(r=>r.date||"").filter(Boolean).sort();
             const toFYStart=d=>{const y=parseInt(d.slice(0,4));const m=parseInt(d.slice(5,7));return m>=4?y:y-1;};
             const fyYears=allDates.length?[...new Set(allDates.map(toFYStart))].sort((a,b)=>b-a):[cfFY];
-            // Build rows for selected FY only
+            // Opening balance: stored per shop+FY in localStorage
+            const obKey=shopId+"_"+cfFY;
+            const openBal=Number(cfOpenBal[obKey])||0;
+            const saveOB=()=>{
+              const v=parseFloat(obInput)||0;
+              const next={...cfOpenBal,[obKey]:v};
+              setCfOpenBal(next);
+              try{localStorage.setItem("ros_cf_openbal",JSON.stringify(next));}catch{}
+              setObEdit(false);
+            };
+            // Build rows
             const cfRows=[
-              ...sales.filter(s=>s.date&&inFY(s.date)).map(s=>({
+              ...sales.filter(s=>inFY(s.date)).map(s=>({
                 date:s.date,ref:s.id||"",type:"Sale",
                 description:(s.customer||"Unknown")+(s.item?" — "+s.item:""),
                 credit:Math.max(0,(Number(s.amount)||0)-(Number(s.adjAmt)||0)),debit:0,
               })),
-              ...exps.filter(e=>e.date&&inFY(e.date)).map(e=>({
+              ...exps.filter(e=>inFY(e.date)).map(e=>({
                 date:e.date,ref:e.id||e.ref||"",type:"Expense",
                 description:e.supplier||e.description||e.desc||"Expense",
                 credit:0,debit:Math.abs(Number(e.amount)||0),
               })),
-              ...purch.filter(p=>p.date&&inFY(p.date)).map(p=>({
+              ...purch.filter(p=>inFY(p.date)).map(p=>({
                 date:p.date,ref:p.id||p.invoiceNo||"",type:"Purchase",
                 description:p.supplier||p.description||"Purchase",
                 credit:0,debit:Math.abs(Number(p.amount)||0),
               })),
             ].sort((a,b)=>b.date.localeCompare(a.date));
-            let bal=0;
+            // Running balance starting from opening balance
+            let bal=openBal;
             const withBal=[...cfRows].reverse().map(r=>{bal+=r.credit-r.debit;return{...r,balance:bal};}).reverse();
             const totalCredit=cfRows.reduce((a,r)=>a+r.credit,0);
             const totalDebit=cfRows.reduce((a,r)=>a+r.debit,0);
-            const netBalance=totalCredit-totalDebit;
+            const closingBal=openBal+totalCredit-totalDebit;
             const typeColor={Sale:"#15803d",Expense:"#dc2626",Purchase:"#b45309"};
             const typeBg={Sale:"#dcfce7",Expense:"#fee2e2",Purchase:"#fef3c7"};
             return(
               <div style={{padding:"20px 24px"}}>
+                {/* Header + FY picker */}
                 <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:12,marginBottom:20}}>
                   <div>
                     <h2 style={{margin:"0 0 4px",fontSize:20,fontWeight:900,color:"#0f172a"}}>🏦 Cash Flow Ledger</h2>
@@ -2296,7 +2311,7 @@ return(
                   </div>
                   <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                     {fyYears.map(y=>(
-                      <button key={y} onClick={()=>setCfFY(y)}
+                      <button key={y} onClick={()=>{setCfFY(y);setObEdit(false);}}
                         style={{padding:"5px 14px",borderRadius:8,border:"1px solid "+(cfFY===y?shop.accent:"#e2e8f0"),
                           background:cfFY===y?shop.accent:"white",color:cfFY===y?"white":"#374151",
                           fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>
@@ -2305,11 +2320,42 @@ return(
                     ))}
                   </div>
                 </div>
+
+                {/* Opening Balance card */}
+                <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 18px",marginBottom:20,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+                  <div>
+                    <p style={{margin:"0 0 2px",fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em"}}>🏦 Opening Balance — 01/04/{String(cfFY).slice(2)}</p>
+                    {obEdit
+                      ?<div style={{display:"flex",gap:8,alignItems:"center",marginTop:4}}>
+                          <span style={{fontSize:16,fontWeight:700,color:"#374151"}}>{shop.symbol}</span>
+                          <input type="number" value={obInput} onChange={e=>setObInput(e.target.value)}
+                            onKeyDown={e=>{if(e.key==="Enter")saveOB();if(e.key==="Escape")setObEdit(false);}}
+                            autoFocus
+                            style={{width:140,padding:"6px 10px",borderRadius:8,border:"2px solid "+shop.accent,fontSize:15,fontWeight:700,fontFamily:"DM Mono,monospace",outline:"none"}}/>
+                          <button onClick={saveOB} style={{padding:"6px 16px",borderRadius:8,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Save</button>
+                          <button onClick={()=>setObEdit(false)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                        </div>
+                      :<div style={{display:"flex",alignItems:"center",gap:12,marginTop:2}}>
+                          <span style={{fontSize:22,fontWeight:900,color:openBal>=0?"#15803d":"#dc2626",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,openBal)}</span>
+                          <button onClick={()=>{setObInput(String(openBal||""));setObEdit(true);}}
+                            style={{padding:"4px 12px",borderRadius:8,border:"1px solid "+shop.accent+"44",background:shop.accentBg,color:shop.accent,fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
+                            ✏️ Edit
+                          </button>
+                        </div>
+                    }
+                  </div>
+                  <div style={{textAlign:"right"}}>
+                    <p style={{margin:"0 0 2px",fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em"}}>Closing Balance — 31/03/{String(cfFY+1).slice(2)}</p>
+                    <span style={{fontSize:22,fontWeight:900,color:closingBal>=0?"#15803d":"#dc2626",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,closingBal)}</span>
+                  </div>
+                </div>
+
+                {/* Summary cards */}
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:24}}>
                   {[
                     {l:"Total Income",v:totalCredit,c:"#15803d",bg:"#dcfce7",b:"#bbf7d0",ic:"↑"},
                     {l:"Total Outgoings",v:totalDebit,c:"#dc2626",bg:"#fee2e2",b:"#fecaca",ic:"↓"},
-                    {l:"Net Position",v:netBalance,c:netBalance>=0?"#15803d":"#dc2626",bg:netBalance>=0?"#dcfce7":"#fee2e2",b:netBalance>=0?"#bbf7d0":"#fecaca",ic:netBalance>=0?"✓":"⚠"},
+                    {l:"Net Movement",v:totalCredit-totalDebit,c:(totalCredit-totalDebit)>=0?"#15803d":"#dc2626",bg:(totalCredit-totalDebit)>=0?"#dcfce7":"#fee2e2",b:(totalCredit-totalDebit)>=0?"#bbf7d0":"#fecaca",ic:(totalCredit-totalDebit)>=0?"↑":"↓"},
                   ].map((c,i)=>(
                     <div key={i} style={{background:c.bg,border:"1px solid "+c.b,borderRadius:14,padding:"16px 20px"}}>
                       <p style={{margin:"0 0 4px",fontSize:11,fontWeight:700,color:c.c,textTransform:"uppercase",letterSpacing:"0.06em"}}>{c.ic} {c.l}</p>
@@ -2317,14 +2363,26 @@ return(
                     </div>
                   ))}
                 </div>
+
+                {/* Ledger table */}
                 <div style={{background:"white",borderRadius:14,border:"1px solid #e2e8f0",overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
                   <div style={{display:"grid",gridTemplateColumns:"90px 120px 80px 1fr 110px 110px 120px",background:"#f8fafc",borderBottom:"2px solid #e2e8f0",padding:"10px 16px"}}>
                     {["Date","Reference","Type","Description","Credit ↑","Debit ↓","Balance"].map((h,i)=>(
                       <span key={i} style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",textAlign:i>=4?"right":"left"}}>{h}</span>
                     ))}
                   </div>
-                  {withBal.length===0&&(
-                    <div style={{padding:"48px",textAlign:"center",color:"#94a3b8",fontSize:13}}>No transactions for FY {cfFY}/{String(cfFY+1).slice(2)}. Sales, purchases and expenses appear here automatically.</div>
+                  {/* Opening balance row */}
+                  <div style={{display:"grid",gridTemplateColumns:"90px 120px 80px 1fr 110px 110px 120px",padding:"10px 16px",borderBottom:"1px solid #e2e8f0",alignItems:"center",background:"#f0fdf4"}}>
+                    <span style={{fontSize:11,color:"#374151",fontFamily:"DM Mono,monospace"}}>01/04/{String(cfFY).slice(2)}</span>
+                    <span style={{fontSize:11,color:"#64748b",fontFamily:"DM Mono,monospace"}}>OB-{cfFY}</span>
+                    <span><span style={{background:"#dcfce7",color:"#15803d",fontSize:10,fontWeight:800,borderRadius:6,padding:"2px 8px"}}>Opening</span></span>
+                    <span style={{fontSize:12,fontWeight:700,color:"#15803d"}}>Opening Balance</span>
+                    <span style={{fontSize:12,fontWeight:700,color:"#15803d",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{openBal>0?fmt(shopId,openBal):"—"}</span>
+                    <span style={{fontSize:12,fontWeight:700,color:"#dc2626",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{openBal<0?fmt(shopId,Math.abs(openBal)):"—"}</span>
+                    <span style={{fontSize:12,fontWeight:900,color:openBal>=0?"#15803d":"#dc2626",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,openBal)}</span>
+                  </div>
+                  {cfRows.length===0&&(
+                    <div style={{padding:"40px",textAlign:"center",color:"#94a3b8",fontSize:13}}>No transactions for FY {cfFY}/{String(cfFY+1).slice(2)}. Sales, purchases and expenses appear here automatically.</div>
                   )}
                   {withBal.map((r,i)=>(
                     <div key={i} style={{display:"grid",gridTemplateColumns:"90px 120px 80px 1fr 110px 110px 120px",padding:"10px 16px",borderBottom:i<withBal.length-1?"1px solid #f1f5f9":"none",alignItems:"center",background:i%2===0?"white":"#fafafa"}}>
@@ -2337,6 +2395,18 @@ return(
                       <span style={{fontSize:12,fontWeight:900,color:r.balance>=0?"#15803d":"#dc2626",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,r.balance)}</span>
                     </div>
                   ))}
+                  {/* Closing balance row */}
+                  {cfRows.length>0&&(
+                    <div style={{display:"grid",gridTemplateColumns:"90px 120px 80px 1fr 110px 110px 120px",padding:"10px 16px",alignItems:"center",background:"#eff6ff",borderTop:"2px solid #bfdbfe"}}>
+                      <span style={{fontSize:11,color:"#374151",fontFamily:"DM Mono,monospace"}}>31/03/{String(cfFY+1).slice(2)}</span>
+                      <span style={{fontSize:11,color:"#64748b",fontFamily:"DM Mono,monospace"}}>CB-{cfFY+1}</span>
+                      <span><span style={{background:"#dbeafe",color:"#1d4ed8",fontSize:10,fontWeight:800,borderRadius:6,padding:"2px 8px"}}>Closing</span></span>
+                      <span style={{fontSize:12,fontWeight:700,color:"#1d4ed8"}}>Closing Balance</span>
+                      <span style={{textAlign:"right"}}>—</span>
+                      <span style={{textAlign:"right"}}>—</span>
+                      <span style={{fontSize:13,fontWeight:900,color:closingBal>=0?"#15803d":"#dc2626",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,closingBal)}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             );
