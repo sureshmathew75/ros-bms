@@ -815,6 +815,10 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [editRow,setEditRow]=useState(null);
   const [selCustomer,setSelCustomer]=useState(null);
   const [openMenu,setOpenMenu]=useState(null);
+  const [cfFY,setCfFY]=useState(()=>{const n=new Date();return n.getMonth()>=3?n.getFullYear():n.getFullYear()-1;});
+  const [cfOpenBal,setCfOpenBal]=useState(()=>{try{const s=localStorage.getItem("ros_cf_openbal");return s?JSON.parse(s):{};}catch{return{};}});
+  const [obEdit,setObEdit]=useState(false);
+  const [obInput,setObInput]=useState("");
   const [invoiceRow,setInvoiceRow]=useState(null);
   const [itemView,setItemView]=useState("month");
   const [selectedBar,setSelectedBar]=useState(null);
@@ -1176,7 +1180,7 @@ return(
           {[
             {label:"MAIN",    ids:["dashboard","sales","purchases"]},
             {label:"MANAGE",  ids:["logistics","customers","suppliers","agents","products"]},
-            {label:"FINANCE", ids:["invoices","expenses"]},
+            {label:"FINANCE", ids:["invoices","expenses","cashflow"]},
             {label:"INSIGHTS",ids:["documents","analytics","reports"]},
           ].map(group=>{
             const groupItems=NAV.filter(n=>group.ids.includes(n.id));
@@ -2251,69 +2255,117 @@ return(
 
           {/* ── CASH FLOW ── */}
           {tab==="cashflow"&&(()=>{
+            const fmtD=d=>{if(!d)return"";const p=d.split("-");return p.length===3?p[2]+"/"+p[1]+"/"+p[0].slice(2):d;};
+            const fyFrom=cfFY+"-04-01";
+            const fyTo=(cfFY+1)+"-03-31";
+            const inFY=d=>d&&d>=fyFrom&&d<=fyTo;
+            const allDates=[...sales,...exps,...purch].map(r=>r.date||"").filter(Boolean).sort();
+            const toFYStart=d=>{const y=parseInt(d.slice(0,4));const m=parseInt(d.slice(5,7));return m>=4?y:y-1;};
+            const fyYears=allDates.length?[...new Set(allDates.map(toFYStart))].sort((a,b)=>b-a):[cfFY];
+            const obKey=shopId+"_"+cfFY;
+            const openBal=Number(cfOpenBal[obKey])||0;
+            const saveOB=()=>{const v=parseFloat(obInput)||0;const next={...cfOpenBal,[obKey]:v};setCfOpenBal(next);try{localStorage.setItem("ros_cf_openbal",JSON.stringify(next));}catch{}setObEdit(false);};
             const cfRows=[
-              ...sales.map(s=>({
-                date:s.date||"",ref:s.id||"",type:"Sale",
-                description:(s.customer||"Unknown")+(s.item?" — "+s.item:""),
-                credit:Math.max(0,(Number(s.amount)||0)-(Number(s.adjAmt)||0)),
-                debit:0,pay:s.pay||s.payBy||"",
-              })),
-              ...exps.map(e=>({
-                date:e.date||"",ref:e.id||e.ref||"",type:"Expense",
-                description:e.supplier||e.description||e.desc||"Expense",
-                credit:0,debit:Math.abs(Number(e.amount)||0),pay:e.payBy||e.pay||"",
-              })),
-              ...purch.map(p=>({
-                date:p.date||"",ref:p.id||p.invoiceNo||"",type:"Purchase",
-                description:p.supplier||p.description||"Purchase",
-                credit:0,debit:Math.abs(Number(p.amount)||0),pay:p.payBy||p.pay||"",
-              })),
-            ].filter(r=>r.date).sort((a,b)=>b.date.localeCompare(a.date));
-            let bal=0;
-            const withBal=[...cfRows].reverse().map(r=>{bal+=r.credit-r.debit;return{...r,balance:bal};}).reverse();
+              ...sales.filter(s=>inFY(s.date)).map(s=>({date:s.date,ref:s.id||"",type:"Sale",description:(s.customer||"Unknown")+(s.item?" — "+s.item:""),credit:Math.max(0,(Number(s.amount)||0)-(Number(s.adjAmt)||0)),debit:0})),
+              ...exps.filter(e=>inFY(e.date)).map(e=>({date:e.date,ref:e.id||e.ref||"",type:"Expense",description:e.supplier||e.description||e.desc||"Expense",credit:0,debit:Math.abs(Number(e.amount)||0)})),
+              ...purch.filter(p=>inFY(p.date)).map(p=>({date:p.date,ref:p.id||p.invoiceNo||"",type:"Purchase",description:p.supplier||p.description||"Purchase",credit:0,debit:Math.abs(Number(p.amount)||0)})),
+            ].filter(r=>r.date).sort((a,b)=>a.date.localeCompare(b.date));
+            let bal=openBal;
+            const withBal=cfRows.map(r=>{bal+=r.credit-r.debit;return{...r,balance:bal};});
             const totalCredit=cfRows.reduce((a,r)=>a+r.credit,0);
             const totalDebit=cfRows.reduce((a,r)=>a+r.debit,0);
-            const netBalance=totalCredit-totalDebit;
+            const closingBal=openBal+totalCredit-totalDebit;
             const typeColor={Sale:"#15803d",Expense:"#dc2626",Purchase:"#b45309"};
             const typeBg={Sale:"#dcfce7",Expense:"#fee2e2",Purchase:"#fef3c7"};
+            const exportXLS=()=>{
+              const sym=shop.symbol||"£";
+              const rows=[["Cash Flow Ledger","","","","","",""],
+                [shop.name+" FY "+cfFY+"/"+String(cfFY+1).slice(2),"","","","","",""],[""],
+                ["Date","Reference","Type","Description","Credit ("+sym+")","Debit ("+sym+")","Balance ("+sym+")"],
+                ["01/04/"+String(cfFY).slice(2),"OB-"+cfFY,"Opening","Opening Balance",openBal>0?openBal.toFixed(2):"",openBal<0?Math.abs(openBal).toFixed(2):"",openBal.toFixed(2)],
+                ...withBal.map(r=>[fmtD(r.date),r.ref,r.type,r.description,r.credit>0?r.credit.toFixed(2):"",r.debit>0?r.debit.toFixed(2):"",r.balance.toFixed(2)]),
+                ["31/03/"+String(cfFY+1).slice(2),"CB-"+(cfFY+1),"Closing","Closing Balance","","",closingBal.toFixed(2)],[""],
+                ["","","","Total Income",totalCredit.toFixed(2),"",""],["","","","Total Outgoings","",totalDebit.toFixed(2),""],
+                ["","","","Net Movement","","",(totalCredit-totalDebit).toFixed(2)]];
+              const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(",")).join("\r\n");
+              const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
+              const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;
+              a.download=shop.name.replace(/\s+/g,"-")+"-CashFlow-FY"+cfFY+"-"+String(cfFY+1).slice(2)+".csv";
+              a.click();URL.revokeObjectURL(url);
+            };
             return(
               <div style={{padding:"20px 24px"}}>
-                <div style={{marginBottom:20}}>
-                  <h2 style={{margin:"0 0 4px",fontSize:20,fontWeight:900,color:"#0f172a"}}>🏦 Cash Flow Ledger</h2>
-                  <p style={{margin:0,fontSize:12,color:"#64748b"}}>All transactions in date order — mirrors your bank statement</p>
+                <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:12,marginBottom:20}}>
+                  <div><h2 style={{margin:"0 0 4px",fontSize:20,fontWeight:900,color:"#0f172a"}}>🏦 Cash Flow Ledger</h2>
+                    <p style={{margin:0,fontSize:12,color:"#64748b"}}>01/04/{String(cfFY).slice(2)} — 31/03/{String(cfFY+1).slice(2)}  ·  {cfRows.length} transactions</p></div>
+                  <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
+                    {fyYears.map(y=>(<button key={y} onClick={()=>{setCfFY(y);setObEdit(false);}}
+                      style={{padding:"5px 14px",borderRadius:8,border:"1px solid "+(cfFY===y?shop.accent:"#e2e8f0"),background:cfFY===y?shop.accent:"white",color:cfFY===y?"white":"#374151",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                      FY {y}/{String(y+1).slice(2)}</button>))}
+                    <button onClick={exportXLS} style={{padding:"6px 16px",borderRadius:8,border:"none",background:"#16a34a",color:"white",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(22,163,74,0.3)"}}>&#128202; Export Excel</button>
+                  </div>
+                </div>
+                <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 18px",marginBottom:20,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
+                  <div><p style={{margin:"0 0 2px",fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em"}}>🏦 Opening Balance — 01/04/{String(cfFY).slice(2)}</p>
+                    {obEdit
+                      ?<div style={{display:"flex",gap:8,alignItems:"center",marginTop:4}}>
+                          <span style={{fontSize:16,fontWeight:700,color:"#374151"}}>{shop.symbol}</span>
+                          <input type="number" value={obInput} onChange={e=>setObInput(e.target.value)}
+                            onKeyDown={e=>{if(e.key==="Enter")saveOB();if(e.key==="Escape")setObEdit(false);}} autoFocus
+                            style={{width:140,padding:"6px 10px",borderRadius:8,border:"2px solid "+shop.accent,fontSize:15,fontWeight:700,fontFamily:"DM Mono,monospace",outline:"none"}}/>
+                          <button onClick={saveOB} style={{padding:"6px 16px",borderRadius:8,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Save</button>
+                          <button onClick={()=>setObEdit(false)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+                        </div>
+                      :<div style={{display:"flex",alignItems:"center",gap:12,marginTop:2}}>
+                          <span style={{fontSize:22,fontWeight:900,color:openBal>=0?"#15803d":"#dc2626",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,openBal)}</span>
+                          <button onClick={()=>{setObInput(String(openBal||""));setObEdit(true);}} style={{padding:"4px 12px",borderRadius:8,border:"1px solid "+shop.accent+"44",background:shop.accentBg,color:shop.accent,fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✏️ Edit</button>
+                        </div>}
+                  </div>
+                  <div style={{textAlign:"right"}}><p style={{margin:"0 0 2px",fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em"}}>Closing Balance — 31/03/{String(cfFY+1).slice(2)}</p>
+                    <span style={{fontSize:22,fontWeight:900,color:closingBal>=0?"#15803d":"#dc2626",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,closingBal)}</span></div>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:24}}>
-                  {[
-                    {l:"Total Income",v:totalCredit,c:"#15803d",bg:"#dcfce7",b:"#bbf7d0",ic:"↑"},
+                  {[{l:"Total Income",v:totalCredit,c:"#15803d",bg:"#dcfce7",b:"#bbf7d0",ic:"↑"},
                     {l:"Total Outgoings",v:totalDebit,c:"#dc2626",bg:"#fee2e2",b:"#fecaca",ic:"↓"},
-                    {l:"Net Position",v:netBalance,c:netBalance>=0?"#15803d":"#dc2626",bg:netBalance>=0?"#dcfce7":"#fee2e2",b:netBalance>=0?"#bbf7d0":"#fecaca",ic:netBalance>=0?"✓":"⚠"},
-                  ].map((c,i)=>(
-                    <div key={i} style={{background:c.bg,border:"1px solid "+c.b,borderRadius:14,padding:"16px 20px"}}>
+                    {l:"Net Movement",v:totalCredit-totalDebit,c:(totalCredit-totalDebit)>=0?"#15803d":"#dc2626",bg:(totalCredit-totalDebit)>=0?"#dcfce7":"#fee2e2",b:(totalCredit-totalDebit)>=0?"#bbf7d0":"#fecaca",ic:(totalCredit-totalDebit)>=0?"↑":"↓"}]
+                    .map((c,i)=>(<div key={i} style={{background:c.bg,border:"1px solid "+c.b,borderRadius:14,padding:"16px 20px"}}>
                       <p style={{margin:"0 0 4px",fontSize:11,fontWeight:700,color:c.c,textTransform:"uppercase",letterSpacing:"0.06em"}}>{c.ic} {c.l}</p>
-                      <p style={{margin:0,fontSize:22,fontWeight:900,color:c.c,fontFamily:"DM Mono,monospace"}}>{fmt(shopId,c.v)}</p>
-                    </div>
-                  ))}
+                      <p style={{margin:0,fontSize:22,fontWeight:900,color:c.c,fontFamily:"DM Mono,monospace"}}>{fmt(shopId,c.v)}</p></div>))}
                 </div>
                 <div style={{background:"white",borderRadius:14,border:"1px solid #e2e8f0",overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
-                  <div style={{display:"grid",gridTemplateColumns:"100px 120px 80px 1fr 110px 110px 120px",background:"#f8fafc",borderBottom:"2px solid #e2e8f0",padding:"10px 16px"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"90px 120px 80px 1fr 110px 110px 120px",background:"#f8fafc",borderBottom:"2px solid #e2e8f0",padding:"10px 16px"}}>
                     {["Date","Reference","Type","Description","Credit ↑","Debit ↓","Balance"].map((h,i)=>(
-                      <span key={i} style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",textAlign:i>=4?"right":"left"}}>{h}</span>
-                    ))}
+                      <span key={i} style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",textAlign:i>=4?"right":"left"}}>{h}</span>))}
                   </div>
-                  {withBal.length===0&&(
-                    <div style={{padding:"48px",textAlign:"center",color:"#94a3b8",fontSize:13}}>No transactions yet. Sales, purchases and expenses will appear here automatically.</div>
-                  )}
+                  <div style={{display:"grid",gridTemplateColumns:"90px 120px 80px 1fr 110px 110px 120px",padding:"10px 16px",borderBottom:"1px solid #e2e8f0",alignItems:"center",background:"#f0fdf4"}}>
+                    <span style={{fontSize:11,color:"#374151",fontFamily:"DM Mono,monospace"}}>01/04/{String(cfFY).slice(2)}</span>
+                    <span style={{fontSize:11,color:"#64748b",fontFamily:"DM Mono,monospace"}}>OB-{cfFY}</span>
+                    <span><span style={{background:"#dcfce7",color:"#15803d",fontSize:10,fontWeight:800,borderRadius:6,padding:"2px 8px"}}>Opening</span></span>
+                    <span style={{fontSize:12,fontWeight:700,color:"#15803d"}}>Opening Balance</span>
+                    <span style={{fontSize:12,fontWeight:700,color:"#15803d",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{openBal>0?fmt(shopId,openBal):"—"}</span>
+                    <span style={{fontSize:12,fontWeight:700,color:"#dc2626",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{openBal<0?fmt(shopId,Math.abs(openBal)):"—"}</span>
+                    <span style={{fontSize:12,fontWeight:900,color:openBal>=0?"#15803d":"#dc2626",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,openBal)}</span>
+                  </div>
+                  {cfRows.length===0&&<div style={{padding:"40px",textAlign:"center",color:"#94a3b8",fontSize:13}}>No transactions for FY {cfFY}/{String(cfFY+1).slice(2)}.</div>}
                   {withBal.map((r,i)=>(
-                    <div key={i} style={{display:"grid",gridTemplateColumns:"100px 120px 80px 1fr 110px 110px 120px",padding:"10px 16px",borderBottom:i<withBal.length-1?"1px solid #f1f5f9":"none",alignItems:"center",background:i%2===0?"white":"#fafafa"}}>
-                      <span style={{fontSize:11,color:"#374151",fontFamily:"DM Mono,monospace"}}>{r.date}</span>
+                    <div key={i} style={{display:"grid",gridTemplateColumns:"90px 120px 80px 1fr 110px 110px 120px",padding:"10px 16px",borderBottom:i<withBal.length-1?"1px solid #f1f5f9":"none",alignItems:"center",background:i%2===0?"white":"#fafafa"}}>
+                      <span style={{fontSize:11,color:"#374151",fontFamily:"DM Mono,monospace"}}>{fmtD(r.date)}</span>
                       <span style={{fontSize:11,color:shop.accent,fontWeight:700,fontFamily:"DM Mono,monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.ref||"—"}</span>
                       <span><span style={{background:typeBg[r.type],color:typeColor[r.type],fontSize:10,fontWeight:800,borderRadius:6,padding:"2px 8px"}}>{r.type}</span></span>
                       <span style={{fontSize:12,color:"#374151",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:8}}>{r.description}</span>
                       <span style={{fontSize:12,fontWeight:700,color:"#15803d",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{r.credit>0?fmt(shopId,r.credit):"—"}</span>
                       <span style={{fontSize:12,fontWeight:700,color:"#dc2626",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{r.debit>0?fmt(shopId,r.debit):"—"}</span>
                       <span style={{fontSize:12,fontWeight:900,color:r.balance>=0?"#15803d":"#dc2626",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,r.balance)}</span>
-                    </div>
-                  ))}
+                    </div>))}
+                  {cfRows.length>0&&(
+                    <div style={{display:"grid",gridTemplateColumns:"90px 120px 80px 1fr 110px 110px 120px",padding:"10px 16px",alignItems:"center",background:"#eff6ff",borderTop:"2px solid #bfdbfe"}}>
+                      <span style={{fontSize:11,color:"#374151",fontFamily:"DM Mono,monospace"}}>31/03/{String(cfFY+1).slice(2)}</span>
+                      <span style={{fontSize:11,color:"#64748b",fontFamily:"DM Mono,monospace"}}>CB-{cfFY+1}</span>
+                      <span><span style={{background:"#dbeafe",color:"#1d4ed8",fontSize:10,fontWeight:800,borderRadius:6,padding:"2px 8px"}}>Closing</span></span>
+                      <span style={{fontSize:12,fontWeight:700,color:"#1d4ed8"}}>Closing Balance</span>
+                      <span style={{textAlign:"right"}}>—</span><span style={{textAlign:"right"}}>—</span>
+                      <span style={{fontSize:13,fontWeight:900,color:closingBal>=0?"#15803d":"#dc2626",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,closingBal)}</span>
+                    </div>)}
                 </div>
               </div>
             );
@@ -4670,8 +4722,7 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
     )}
 
     {/* ── MAIN FORM ── */}
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto"}}>
-      <div style={{padding:"0 20px"}}>
+    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
 
       {/* BASIC INFO */}
       <Divider title="Basic Info"/>
@@ -4798,9 +4849,8 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
         <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Notes about this purchase…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
       </div>
 
-      </div>{/* end padding wrapper */}
       {/* ACTIONS */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
         <button onClick={()=>onSave(form)}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Purchase
