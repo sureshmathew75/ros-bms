@@ -1,14 +1,4 @@
-imp
-
-  const addPurchase=(form)=>{
-    const pfx={["ros-selections"]:"PO",["ros-hairlines"]:"PH",["ros-india"]:"PI"}[shopId]||"PO";
-    const nid=form.purchaseId||(pfx+"-"+Date.now().toString().slice(-6));
-    const newPurch={id:nid,...form,amount:Number(form.total)||0,date:form.date||new Date().toISOString().slice(0,10)};
-    setPurchData(d=>[newPurch,...d]);
-    setModal(null);
-    dbSavePurchase(shopId,newPurch).catch(err=>console.error("Purchase save failed:",err));
-  };
-ort React, { useState, useEffect, useCallback, useRef } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import CommandPalette from "./components/CommandPalette";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import DocumentsPanel from "./components/DocumentsPanel";
@@ -998,6 +988,15 @@ const addSale = async (form) => {
     dbSaveCustomer(shopId, updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
   }
 };
+  const addPurchase=(form)=>{
+    const pfx={["ros-selections"]:"PO",["ros-hairlines"]:"PH",["ros-india"]:"PI"}[shopId]||"PO";
+    const nid=form.purchaseId||(pfx+"-"+Date.now().toString().slice(-6));
+    const newPurch={id:nid,...form,amount:Number(form.total)||0,date:form.date||new Date().toISOString().slice(0,10)};
+    setPurchData(d=>[newPurch,...d]);
+    setModal(null);
+    dbSavePurchase(shopId,newPurch).catch(err=>console.error("Purchase save failed:",err));
+  };
+
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
 
   const setSalesPeriod=(p)=>{
@@ -5160,10 +5159,8 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 16px",borderBottom:"1px solid #f1f5f9",background:shop.accentBg}}>
         <span style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>New Sale</span>
-        <div style={{textAlign:"right"}}>
-          <p style={{margin:0,fontSize:9,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Total</p>
-          <p style={{margin:0,fontSize:18,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace",lineHeight:1}}>{shop.symbol}{grandTotal.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</p>
-        </div>
+        <div style={{textAlign:"right"}}><p style={{margin:0,fontSize:9,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Total</p>
+          <p style={{margin:0,fontSize:18,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace",lineHeight:1}}>{shop.symbol}{grandTotal.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
       </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 16px",WebkitOverflowScrolling:"touch"}}>
 
