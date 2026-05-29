@@ -984,20 +984,6 @@ const addSale = async (form) => {
     dbSaveCustomer(shopId, updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
   }
 };
-
-  const addPurchase=(form)=>{
-    const pfx={["ros-selections"]:"PO",["ros-hairlines"]:"PH",["ros-india"]:"PI"}[shopId]||"PO";
-    const nid=form.purchaseId||(pfx+"-"+Date.now().toString().slice(-6));
-    const newPurch={
-      id:nid,...form,
-      amount:Number(form.total)||0,
-      date:form.date||new Date().toISOString().slice(0,10),
-    };
-    setPurchData(d=>[newPurch,...d]);
-    setModal(null);
-    dbSavePurchase(shopId,newPurch).catch(err=>console.error("Purchase save failed:",err));
-  };
-
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
 
   const setSalesPeriod=(p)=>{
@@ -2510,7 +2496,7 @@ return(
       {/* ── NEW PURCHASE MODAL ── */}
       {modal==="new-purchase"&&(
         <Modal title="📦 New Purchase" onClose={()=>setModal(null)} accent={shop.accent}>
-          <NewPurchaseForm shopId={shopId} shop={shop} lastPurchNum={purch.length>0?parseInt((purch[0].id||"0").replace(/[^0-9]/g,""))||700:700} onSave={addPurchase} onClose={()=>setModal(null)}/>
+          <NewPurchaseForm shopId={shopId} shop={shop} lastPurchNum={purch.length>0?parseInt((purch[0].id||"0").replace(/[^0-9]/g,""))||700:700} onSave={(form)=>{setModal(null);}} onClose={()=>setModal(null)}/>
         </Modal>
       )}
 
@@ -4684,7 +4670,8 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
     )}
 
     {/* ── MAIN FORM ── */}
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
+    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto"}}>
+      <div style={{padding:"0 20px"}}>
 
       {/* BASIC INFO */}
       <Divider title="Basic Info"/>
@@ -4811,8 +4798,9 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
         <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Notes about this purchase…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
       </div>
 
+      </div>{/* end padding wrapper */}
       {/* ACTIONS */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
         <button onClick={()=>onSave(form)}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Purchase
