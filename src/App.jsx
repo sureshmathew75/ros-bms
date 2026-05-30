@@ -815,10 +815,6 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [editRow,setEditRow]=useState(null);
   const [selCustomer,setSelCustomer]=useState(null);
   const [openMenu,setOpenMenu]=useState(null);
-  const [cfFY,setCfFY]=useState(()=>{const n=new Date();return n.getMonth()>=3?n.getFullYear():n.getFullYear()-1;});
-  const [cfOpenBal,setCfOpenBal]=useState(()=>{try{const s=localStorage.getItem("ros_cf_openbal");return s?JSON.parse(s):{};}catch{return{};}});
-  const [obEdit,setObEdit]=useState(false);
-  const [obInput,setObInput]=useState("");
   const [invoiceRow,setInvoiceRow]=useState(null);
   const [itemView,setItemView]=useState("month");
   const [selectedBar,setSelectedBar]=useState(null);
@@ -988,15 +984,6 @@ const addSale = async (form) => {
     dbSaveCustomer(shopId, updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
   }
 };
-  const addPurchase=(form)=>{
-    const pfx={["ros-selections"]:"PO",["ros-hairlines"]:"PH",["ros-india"]:"PI"}[shopId]||"PO";
-    const nid=form.purchaseId||(pfx+"-"+Date.now().toString().slice(-6));
-    const newPurch={id:nid,...form,amount:Number(form.total)||0,date:form.date||new Date().toISOString().slice(0,10)};
-    setPurchData(d=>[newPurch,...d]);
-    setModal(null);
-    dbSavePurchase(shopId,newPurch).catch(err=>console.error("Purchase save failed:",err));
-  };
-
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
 
   const setSalesPeriod=(p)=>{
@@ -1189,7 +1176,7 @@ return(
           {[
             {label:"MAIN",    ids:["dashboard","sales","purchases"]},
             {label:"MANAGE",  ids:["logistics","customers","suppliers","agents","products"]},
-            {label:"FINANCE", ids:["invoices","expenses","cashflow"]},
+            {label:"FINANCE", ids:["invoices","expenses"]},
             {label:"INSIGHTS",ids:["documents","analytics","reports"]},
           ].map(group=>{
             const groupItems=NAV.filter(n=>group.ids.includes(n.id));
@@ -2264,114 +2251,69 @@ return(
 
           {/* ── CASH FLOW ── */}
           {tab==="cashflow"&&(()=>{
-            const fmtD=d=>{if(!d)return"";const p=d.split("-");return p.length===3?p[2]+"/"+p[1]+"/"+p[0].slice(2):d;};
-            const fyFrom=cfFY+"-04-01"; const fyTo=(cfFY+1)+"-03-31";
-            const inFY=d=>d&&d>=fyFrom&&d<=fyTo;
-            const allDates=[...sales,...exps,...purch].map(r=>r.date||"").filter(Boolean).sort();
-            const toFYStart=d=>{const y=parseInt(d.slice(0,4));const m=parseInt(d.slice(5,7));return m>=4?y:y-1;};
-            const fyYears=allDates.length?[...new Set(allDates.map(toFYStart))].sort((a,b)=>b-a):[cfFY];
-            const obKey=shopId+"_"+cfFY;
-            const openBal=Number(cfOpenBal[obKey])||0;
-            const saveOB=()=>{const v=parseFloat(obInput)||0;const next={...cfOpenBal,[obKey]:v};setCfOpenBal(next);try{localStorage.setItem("ros_cf_openbal",JSON.stringify(next));}catch{}setObEdit(false);};
             const cfRows=[
-              ...sales.filter(s=>inFY(s.date)).map(s=>({date:s.date,ref:s.id||"",type:"Sale",description:(s.customer||"Unknown")+(s.item?" — "+s.item:""),credit:Math.max(0,(Number(s.amount)||0)-(Number(s.adjAmt)||0)),debit:0})),
-              ...exps.filter(e=>inFY(e.date)).map(e=>({date:e.date,ref:e.id||e.ref||"",type:"Expense",description:e.supplier||e.description||e.desc||"Expense",credit:0,debit:Math.abs(Number(e.amount)||0)})),
-              ...purch.filter(p=>inFY(p.date)).map(p=>({date:p.date,ref:p.id||p.invoiceNo||"",type:"Purchase",description:p.supplier||p.description||"Purchase",credit:0,debit:Math.abs(Number(p.amount)||0)})),
-            ].filter(r=>r.date).sort((a,b)=>a.date.localeCompare(b.date));
-            let bal=openBal;
-            const withBal=cfRows.map(r=>{bal+=r.credit-r.debit;return{...r,balance:bal};});
+              ...sales.map(s=>({
+                date:s.date||"",ref:s.id||"",type:"Sale",
+                description:(s.customer||"Unknown")+(s.item?" — "+s.item:""),
+                credit:Math.max(0,(Number(s.amount)||0)-(Number(s.adjAmt)||0)),
+                debit:0,pay:s.pay||s.payBy||"",
+              })),
+              ...exps.map(e=>({
+                date:e.date||"",ref:e.id||e.ref||"",type:"Expense",
+                description:e.supplier||e.description||e.desc||"Expense",
+                credit:0,debit:Math.abs(Number(e.amount)||0),pay:e.payBy||e.pay||"",
+              })),
+              ...purch.map(p=>({
+                date:p.date||"",ref:p.id||p.invoiceNo||"",type:"Purchase",
+                description:p.supplier||p.description||"Purchase",
+                credit:0,debit:Math.abs(Number(p.amount)||0),pay:p.payBy||p.pay||"",
+              })),
+            ].filter(r=>r.date).sort((a,b)=>b.date.localeCompare(a.date));
+            let bal=0;
+            const withBal=[...cfRows].reverse().map(r=>{bal+=r.credit-r.debit;return{...r,balance:bal};}).reverse();
             const totalCredit=cfRows.reduce((a,r)=>a+r.credit,0);
             const totalDebit=cfRows.reduce((a,r)=>a+r.debit,0);
-            const closingBal=openBal+totalCredit-totalDebit;
+            const netBalance=totalCredit-totalDebit;
             const typeColor={Sale:"#15803d",Expense:"#dc2626",Purchase:"#b45309"};
             const typeBg={Sale:"#dcfce7",Expense:"#fee2e2",Purchase:"#fef3c7"};
-            const exportXLS=()=>{
-              const sym=shop.symbol||"£";
-              const rows=[["Cash Flow Ledger","","","","","",""],
-                [shop.name+" FY "+cfFY+"/"+String(cfFY+1).slice(2),"","","","","",""],[""],
-                ["Date","Reference","Type","Description","Credit ("+sym+")","Debit ("+sym+")","Balance ("+sym+")"],
-                ["01/04/"+String(cfFY).slice(2),"OB-"+cfFY,"Opening","Opening Balance",openBal>0?openBal.toFixed(2):"",openBal<0?Math.abs(openBal).toFixed(2):"",openBal.toFixed(2)],
-                ...withBal.map(r=>[fmtD(r.date),r.ref,r.type,r.description,r.credit>0?r.credit.toFixed(2):"",r.debit>0?r.debit.toFixed(2):"",r.balance.toFixed(2)]),
-                ["31/03/"+String(cfFY+1).slice(2),"CB-"+(cfFY+1),"Closing","Closing Balance","","",closingBal.toFixed(2)],[""],
-                ["","","","Total Income",totalCredit.toFixed(2),"",""],["","","","Total Outgoings","",totalDebit.toFixed(2),""],
-                ["","","","Net Movement","","",(totalCredit-totalDebit).toFixed(2)]];
-              const csv=rows.map(r=>r.map(c=>'"'+String(c).replace(/"/g,'""')+'"').join(",")).join("\r\n");
-              const blob=new Blob(["\uFEFF"+csv],{type:"text/csv;charset=utf-8"});
-              const url=URL.createObjectURL(blob);const a=document.createElement("a");a.href=url;
-              a.download=shop.name.replace(/\s+/g,"-")+"-CashFlow-FY"+cfFY+"-"+String(cfFY+1).slice(2)+".csv";
-              a.click();URL.revokeObjectURL(url);
-            };
             return(
               <div style={{padding:"20px 24px"}}>
-                <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:12,marginBottom:20}}>
-                  <div><h2 style={{margin:"0 0 4px",fontSize:20,fontWeight:900,color:"#0f172a"}}>🏦 Cash Flow Ledger</h2>
-                    <p style={{margin:0,fontSize:12,color:"#64748b"}}>01/04/{String(cfFY).slice(2)} — 31/03/{String(cfFY+1).slice(2)}  ·  {cfRows.length} transactions</p></div>
-                  <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
-                    {fyYears.map(y=>(<button key={y} onClick={()=>{setCfFY(y);setObEdit(false);}}
-                      style={{padding:"5px 14px",borderRadius:8,border:"1px solid "+(cfFY===y?shop.accent:"#e2e8f0"),background:cfFY===y?shop.accent:"white",color:cfFY===y?"white":"#374151",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
-                      FY {y}/{String(y+1).slice(2)}</button>))}
-                    <button onClick={exportXLS} style={{padding:"6px 16px",borderRadius:8,border:"none",background:"#16a34a",color:"white",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px rgba(22,163,74,0.3)"}}>&#128202; Export Excel</button>
-                  </div>
-                </div>
-                <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 18px",marginBottom:20,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
-                  <div><p style={{margin:"0 0 2px",fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em"}}>🏦 Opening Balance — 01/04/{String(cfFY).slice(2)}</p>
-                    {obEdit?<div style={{display:"flex",gap:8,alignItems:"center",marginTop:4}}>
-                        <span style={{fontSize:16,fontWeight:700,color:"#374151"}}>{shop.symbol}</span>
-                        <input type="number" value={obInput} onChange={e=>setObInput(e.target.value)}
-                          onKeyDown={e=>{if(e.key==="Enter")saveOB();if(e.key==="Escape")setObEdit(false);}} autoFocus
-                          style={{width:140,padding:"6px 10px",borderRadius:8,border:"2px solid "+shop.accent,fontSize:15,fontWeight:700,fontFamily:"DM Mono,monospace",outline:"none"}}/>
-                        <button onClick={saveOB} style={{padding:"6px 16px",borderRadius:8,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Save</button>
-                        <button onClick={()=>setObEdit(false)} style={{padding:"6px 12px",borderRadius:8,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
-                      </div>
-                    :<div style={{display:"flex",alignItems:"center",gap:12,marginTop:2}}>
-                        <span style={{fontSize:22,fontWeight:900,color:openBal>=0?"#15803d":"#dc2626",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,openBal)}</span>
-                        <button onClick={()=>{setObInput(String(openBal||""));setObEdit(true);}} style={{padding:"4px 12px",borderRadius:8,border:"1px solid "+shop.accent+"44",background:shop.accentBg,color:shop.accent,fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✏️ Edit</button>
-                      </div>}
-                  </div>
-                  <div style={{textAlign:"right"}}><p style={{margin:"0 0 2px",fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em"}}>Closing Balance — 31/03/{String(cfFY+1).slice(2)}</p>
-                    <span style={{fontSize:22,fontWeight:900,color:closingBal>=0?"#15803d":"#dc2626",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,closingBal)}</span></div>
+                <div style={{marginBottom:20}}>
+                  <h2 style={{margin:"0 0 4px",fontSize:20,fontWeight:900,color:"#0f172a"}}>🏦 Cash Flow Ledger</h2>
+                  <p style={{margin:0,fontSize:12,color:"#64748b"}}>All transactions in date order — mirrors your bank statement</p>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:14,marginBottom:24}}>
-                  {[{l:"Total Income",v:totalCredit,c:"#15803d",bg:"#dcfce7",b:"#bbf7d0",ic:"↑"},{l:"Total Outgoings",v:totalDebit,c:"#dc2626",bg:"#fee2e2",b:"#fecaca",ic:"↓"},
-                    {l:"Net Movement",v:totalCredit-totalDebit,c:(totalCredit-totalDebit)>=0?"#15803d":"#dc2626",bg:(totalCredit-totalDebit)>=0?"#dcfce7":"#fee2e2",b:(totalCredit-totalDebit)>=0?"#bbf7d0":"#fecaca",ic:(totalCredit-totalDebit)>=0?"↑":"↓"}]
-                    .map((c,i)=>(<div key={i} style={{background:c.bg,border:"1px solid "+c.b,borderRadius:14,padding:"16px 20px"}}>
+                  {[
+                    {l:"Total Income",v:totalCredit,c:"#15803d",bg:"#dcfce7",b:"#bbf7d0",ic:"↑"},
+                    {l:"Total Outgoings",v:totalDebit,c:"#dc2626",bg:"#fee2e2",b:"#fecaca",ic:"↓"},
+                    {l:"Net Position",v:netBalance,c:netBalance>=0?"#15803d":"#dc2626",bg:netBalance>=0?"#dcfce7":"#fee2e2",b:netBalance>=0?"#bbf7d0":"#fecaca",ic:netBalance>=0?"✓":"⚠"},
+                  ].map((c,i)=>(
+                    <div key={i} style={{background:c.bg,border:"1px solid "+c.b,borderRadius:14,padding:"16px 20px"}}>
                       <p style={{margin:"0 0 4px",fontSize:11,fontWeight:700,color:c.c,textTransform:"uppercase",letterSpacing:"0.06em"}}>{c.ic} {c.l}</p>
-                      <p style={{margin:0,fontSize:22,fontWeight:900,color:c.c,fontFamily:"DM Mono,monospace"}}>{fmt(shopId,c.v)}</p></div>))}
+                      <p style={{margin:0,fontSize:22,fontWeight:900,color:c.c,fontFamily:"DM Mono,monospace"}}>{fmt(shopId,c.v)}</p>
+                    </div>
+                  ))}
                 </div>
                 <div style={{background:"white",borderRadius:14,border:"1px solid #e2e8f0",overflow:"hidden",boxShadow:"0 1px 4px rgba(0,0,0,0.06)"}}>
-                  <div style={{display:"grid",gridTemplateColumns:"90px 120px 80px 1fr 110px 110px 120px",background:"#f8fafc",borderBottom:"2px solid #e2e8f0",padding:"10px 16px"}}>
+                  <div style={{display:"grid",gridTemplateColumns:"100px 120px 80px 1fr 110px 110px 120px",background:"#f8fafc",borderBottom:"2px solid #e2e8f0",padding:"10px 16px"}}>
                     {["Date","Reference","Type","Description","Credit ↑","Debit ↓","Balance"].map((h,i)=>(
-                      <span key={i} style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",textAlign:i>=4?"right":"left"}}>{h}</span>))}
+                      <span key={i} style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",textAlign:i>=4?"right":"left"}}>{h}</span>
+                    ))}
                   </div>
-                  <div style={{display:"grid",gridTemplateColumns:"90px 120px 80px 1fr 110px 110px 120px",padding:"10px 16px",borderBottom:"1px solid #e2e8f0",alignItems:"center",background:"#f0fdf4"}}>
-                    <span style={{fontSize:11,color:"#374151",fontFamily:"DM Mono,monospace"}}>01/04/{String(cfFY).slice(2)}</span>
-                    <span style={{fontSize:11,color:"#64748b",fontFamily:"DM Mono,monospace"}}>OB-{cfFY}</span>
-                    <span><span style={{background:"#dcfce7",color:"#15803d",fontSize:10,fontWeight:800,borderRadius:6,padding:"2px 8px"}}>Opening</span></span>
-                    <span style={{fontSize:12,fontWeight:700,color:"#15803d"}}>Opening Balance</span>
-                    <span style={{fontSize:12,fontWeight:700,color:"#15803d",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{openBal>0?fmt(shopId,openBal):"—"}</span>
-                    <span style={{fontSize:12,fontWeight:700,color:"#dc2626",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{openBal<0?fmt(shopId,Math.abs(openBal)):"—"}</span>
-                    <span style={{fontSize:12,fontWeight:900,color:openBal>=0?"#15803d":"#dc2626",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,openBal)}</span>
-                  </div>
-                  {cfRows.length===0&&<div style={{padding:"40px",textAlign:"center",color:"#94a3b8",fontSize:13}}>No transactions for FY {cfFY}/{String(cfFY+1).slice(2)}.</div>}
+                  {withBal.length===0&&(
+                    <div style={{padding:"48px",textAlign:"center",color:"#94a3b8",fontSize:13}}>No transactions yet. Sales, purchases and expenses will appear here automatically.</div>
+                  )}
                   {withBal.map((r,i)=>(
-                    <div key={i} style={{display:"grid",gridTemplateColumns:"90px 120px 80px 1fr 110px 110px 120px",padding:"10px 16px",borderBottom:i<withBal.length-1?"1px solid #f1f5f9":"none",alignItems:"center",background:i%2===0?"white":"#fafafa"}}>
-                      <span style={{fontSize:11,color:"#374151",fontFamily:"DM Mono,monospace"}}>{fmtD(r.date)}</span>
+                    <div key={i} style={{display:"grid",gridTemplateColumns:"100px 120px 80px 1fr 110px 110px 120px",padding:"10px 16px",borderBottom:i<withBal.length-1?"1px solid #f1f5f9":"none",alignItems:"center",background:i%2===0?"white":"#fafafa"}}>
+                      <span style={{fontSize:11,color:"#374151",fontFamily:"DM Mono,monospace"}}>{r.date}</span>
                       <span style={{fontSize:11,color:shop.accent,fontWeight:700,fontFamily:"DM Mono,monospace",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.ref||"—"}</span>
                       <span><span style={{background:typeBg[r.type],color:typeColor[r.type],fontSize:10,fontWeight:800,borderRadius:6,padding:"2px 8px"}}>{r.type}</span></span>
                       <span style={{fontSize:12,color:"#374151",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",paddingRight:8}}>{r.description}</span>
                       <span style={{fontSize:12,fontWeight:700,color:"#15803d",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{r.credit>0?fmt(shopId,r.credit):"—"}</span>
                       <span style={{fontSize:12,fontWeight:700,color:"#dc2626",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{r.debit>0?fmt(shopId,r.debit):"—"}</span>
                       <span style={{fontSize:12,fontWeight:900,color:r.balance>=0?"#15803d":"#dc2626",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,r.balance)}</span>
-                    </div>))}
-                  {cfRows.length>0&&(
-                    <div style={{display:"grid",gridTemplateColumns:"90px 120px 80px 1fr 110px 110px 120px",padding:"10px 16px",alignItems:"center",background:"#eff6ff",borderTop:"2px solid #bfdbfe"}}>
-                      <span style={{fontSize:11,color:"#374151",fontFamily:"DM Mono,monospace"}}>31/03/{String(cfFY+1).slice(2)}</span>
-                      <span style={{fontSize:11,color:"#64748b",fontFamily:"DM Mono,monospace"}}>CB-{cfFY+1}</span>
-                      <span><span style={{background:"#dbeafe",color:"#1d4ed8",fontSize:10,fontWeight:800,borderRadius:6,padding:"2px 8px"}}>Closing</span></span>
-                      <span style={{fontSize:12,fontWeight:700,color:"#1d4ed8"}}>Closing Balance</span>
-                      <span style={{textAlign:"right"}}>—</span><span style={{textAlign:"right"}}>—</span>
-                      <span style={{fontSize:13,fontWeight:900,color:closingBal>=0?"#15803d":"#dc2626",textAlign:"right",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,closingBal)}</span>
-                    </div>)}
+                    </div>
+                  ))}
                 </div>
               </div>
             );
@@ -2554,7 +2496,9 @@ return(
       {/* ── NEW PURCHASE MODAL ── */}
       {modal==="new-purchase"&&(
         <Modal title="📦 New Purchase" onClose={()=>setModal(null)} accent={shop.accent}>
-          <NewPurchaseForm shopId={shopId} shop={shop} lastPurchNum={purch.length>0?parseInt((purch[0].id||"0").replace(/[^0-9]/g,""))||700:700} onSave={addPurchase} onClose={()=>setModal(null)}/>
+          <NewPurchaseForm shopId={shopId} shop={shop} lastPurchNum={purch.length>0?parseInt((purch[0].id||"0").replace(/[^0-9]/g,""))||700:700} onSave={addPurchase} onClose={()=>setModal(null)}
+            shopItems={(shopItems||{})[shopId]||[]}
+            onAddShopItem={(item)=>{const c=(shopItems||{})[shopId]||[];const u={...(shopItems||{}),[shopId]:[...new Set([...c,item])]};if(saveShopItems)saveShopItems(u);}}/>
         </Modal>
       )}
 
@@ -4036,7 +3980,6 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     purInvNo:    sale.purInvNo||"",
     purInvDate:  sale.purInvDate||"",
     purAmount:   sale.purAmount||"",
-    shopInvoiceNo: sale.shopInvoiceNo||sale.shop_invoice_no||"",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -4084,60 +4027,59 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
   const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","WORK IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
   const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
-  const [editCustOpen,setEditCustOpen]=useState(false);
-  const [editCustMatches,setEditCustMatches]=useState([]);
-  const [editAddrOpen,setEditAddrOpen]=useState(false);
-  const [editAddrMatches,setEditAddrMatches]=useState([]);
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto"}}>
-      <div style={{padding:"0 20px"}}>
-      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,marginTop:4,display:"flex",alignItems:"center",gap:10}}>
+    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
+
+      {/* highlight banner */}
+      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
         <span style={{fontSize:20}}>✏️</span>
-        <div><p style={{margin:0,fontWeight:800,fontSize:13,color:shop.accentText}}>Editing Sale {form.invoiceNo}</p>
-          <p style={{margin:0,fontSize:11,color:shop.accent}}>All changes will update the sales record immediately on save</p></div>
+        <div>
+          <p style={{margin:0,fontWeight:800,fontSize:13,color:shop.accentText}}>Editing Sale {form.invoiceNo}</p>
+          <p style={{margin:0,fontSize:11,color:shop.accent}}>All changes will update the sales record immediately on save</p>
+        </div>
       </div>
+
       <Divider title="Basic Info"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div><label style={lbl}>Date</label><input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
-        <div><label style={lbl}>Invoice Number</label><input value={form.invoiceNo} readOnly style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/></div>
-      </div>
-      <Divider title="Customer"/>
-      <div style={{marginBottom:16}}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}>
-          <div style={{position:"relative"}}>
-            <label style={lbl}>Customer Name</label>
-            <input value={form.customer} onChange={e=>{set("customer",e.target.value);const q=e.target.value.trim().toLowerCase();if(q.length>=1){const m=customers.filter(c=>c.name.toLowerCase().includes(q)).slice(0,6);setEditCustMatches(m);setEditCustOpen(m.length>0);}else{setEditCustOpen(false);setEditCustMatches([]);}}}
-              onBlur={()=>setTimeout(()=>setEditCustOpen(false),180)} placeholder="Type or search…" style={inp} onFocus={fo} autoComplete="off"/>
-            {editCustOpen&&editCustMatches.length>0&&(
-              <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:200,background:"white",border:"1px solid "+shop.accent+"44",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,0.15)",maxHeight:180,overflowY:"auto",marginTop:3}}>
-                {editCustMatches.map((c,i)=>(
-                  <div key={i} onMouseDown={()=>{set("customer",c.name);set("contact",c.phone||"");set("address",c.address||c.addressee||"");setEditCustOpen(false);}}
-                    style={{padding:"9px 12px",borderBottom:i<editCustMatches.length-1?"1px solid #f1f5f9":"none",display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}
-                    onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg}
-                    onMouseLeave={e=>e.currentTarget.style.background="white"}>
-                    <div style={{width:26,height:26,borderRadius:7,background:shop.accent,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11,flexShrink:0}}>{c.name.charAt(0)}</div>
-                    <div><p style={{margin:0,fontSize:12,fontWeight:700,color:"#0f172a"}}>{c.name}</p><p style={{margin:0,fontSize:10,color:"#94a3b8"}}>{c.phone||"—"}</p></div>
-                  </div>))}
-              </div>)}
-          </div>
-          <div><label style={lbl}>Phone Number</label><input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/></div>
-          <div><label style={lbl}>Saved On</label><select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>{["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}</select></div>
+        <div>
+          <label style={lbl}>Date</label>
+          <input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
         </div>
-        <div style={{position:"relative"}}>
+        <div>
+          <label style={lbl}>Invoice Number</label>
+          <input value={form.invoiceNo} readOnly
+            style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/>
+        </div>
+      </div>
+
+      <Divider title="Customer"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div>
+          <label style={lbl}>Customer Name</label>
+          <select value={form.customer} onChange={e=>set("customer",e.target.value)} style={inp}>
+            <option value="">Select customer…</option>
+            {/* If the sale's customer is not in the CRM (e.g. imported), show them as a selectable option */}
+            {form.customer && !customers.some(c=>c.name===form.customer) && (
+              <option value={form.customer}>{form.customer} (imported)</option>
+            )}
+            {customers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+          </select>
+        </div>
+        <div>
+          <label style={lbl}>Contact Number</label>
+          <input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+        <div style={{gridColumn:"1/-1"}}>
+          <label style={lbl}>Phone Number Saved On</label>
+          <select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>
+            {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
+          </select>
+        </div>
+        <div style={{gridColumn:"1/-1"}}>
           <label style={lbl}>Address</label>
-          <input value={form.address||""} onChange={e=>{set("address",e.target.value);const q=e.target.value.trim().toLowerCase();if(q.length>=1){const m=customers.filter(c=>(c.address||c.addressee||"").toLowerCase().includes(q)).slice(0,6);setEditAddrMatches(m);setEditAddrOpen(m.length>0);}else{setEditAddrOpen(false);setEditAddrMatches([]);}}}
-            onBlur={()=>setTimeout(()=>setEditAddrOpen(false),180)} placeholder="Search address…" style={inp} onFocus={fo} autoComplete="off"/>
-          {editAddrOpen&&editAddrMatches.length>0&&(
-            <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:200,background:"white",border:"1px solid "+shop.accent+"44",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,0.15)",maxHeight:160,overflowY:"auto",marginTop:3}}>
-              {editAddrMatches.map((c,i)=>(
-                <div key={i} onMouseDown={()=>{set("address",c.address||c.addressee||"");setEditAddrOpen(false);}}
-                  style={{padding:"8px 12px",borderBottom:i<editAddrMatches.length-1?"1px solid #f1f5f9":"none",cursor:"pointer"}}
-                  onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg}
-                  onMouseLeave={e=>e.currentTarget.style.background="white"}>
-                  <p style={{margin:0,fontSize:12,fontWeight:700,color:"#0f172a"}}>{c.name}</p>
-                  <p style={{margin:0,fontSize:11,color:"#64748b"}}>{c.address||c.addressee}</p>
-                </div>))}
-            </div>)}
+          <textarea value={form.address} onChange={e=>set("address",e.target.value)}
+            rows={2} placeholder="Customer address…"
+            style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
         </div>
       </div>
 
@@ -4273,13 +4215,11 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       </div>
 
       <Divider title="Payment"/>
-      <div style={{display:"grid",gridTemplateColumns:form.payBy==="SHOP"?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
-        <div><label style={lbl}>Payment By</label>
-          <select value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
-            {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
-          </select></div>
-        {form.payBy==="SHOP"&&(<div><label style={lbl}>Shop Invoice No.</label>
-          <input value={form.shopInvoiceNo||""} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/></div>)}
+      <div style={{marginBottom:16}}>
+        <label style={lbl}>Payment By</label>
+        <select value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
+          {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
+        </select>
       </div>
 
       <Divider title="Delivery"/>
@@ -4416,8 +4356,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
         </>
       )}
 
-      </div>{/* end padding wrapper */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
         <button onClick={()=>onSave({...form,id:form.invoiceNo||sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
@@ -4655,7 +4594,7 @@ const NewSupplierForm=({shop,onSave,onClose})=>{
   );
 };
 
-const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
+const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,shopItems=[],onAddShopItem})=>{
   const nextNum=(lastPurchNum||700)+1;
   const pfx={["ros-selections"]:"PO",["ros-hairlines"]:"PH",["ros-india"]:"PI"}[shopId]||"PO";
   const autoId=`${pfx}-${String(nextNum).padStart(4,"0")}`;
@@ -4680,6 +4619,16 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
     remarks:     "",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const blankLine=()=>({id:Date.now()+Math.random(),name:"",qty:"",amount:""});
+  const [purchLines,setPurchLines]=React.useState([blankLine()]);
+  const setLine=(i,k,v)=>setPurchLines(l=>{const n=[...l];n[i]={...n[i],[k]:v};return n;});
+  const addLine=()=>setPurchLines(l=>[...l,blankLine()]);
+  const removeLine=(i)=>setPurchLines(l=>l.filter((_,j)=>j!==i));
+  const totalQty=purchLines.reduce((a,l)=>a+(parseFloat(l.qty)||0),0);
+  const totalAmt=parseFloat(purchLines.reduce((a,l)=>a+(parseFloat(l.amount)||0),0).toFixed(2));
+  const gstPct=parseFloat(form.gst)||0;
+  const gstAmt=parseFloat((totalAmt*gstPct/100).toFixed(2));
+  const invoiceTotal=parseFloat((totalAmt+gstAmt).toFixed(2));
 
   /* unit cost = total / qty — read-only, auto-calc */
   const unitCost=(()=>{
@@ -4733,8 +4682,7 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
     )}
 
     {/* ── MAIN FORM ── */}
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto"}}>
-      <div style={{padding:"0 20px"}}>
+    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
 
       {/* BASIC INFO */}
       <Divider title="Basic Info"/>
@@ -4785,31 +4733,69 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
 
       {/* ITEM */}
       <Divider title="Item / Product"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div style={{gridColumn:"1/-1"}}>
-          <label style={lbl}>Item</label>
-          <select value={form.item} onChange={e=>set("item",e.target.value)} style={inp}>
-            <option value="">Select product…</option>
-            <option value="__custom__">✏️ Enter manually…</option>
-            {PRODUCTS.map(p=><option key={p.id} value={p.name}>{p.name}</option>)}
-          </select>
-          {useCustomItem&&<input value={form.itemCustom} onChange={e=>set("itemCustom",e.target.value)} placeholder="Type item name" style={{...inp,marginTop:8,border:"1px solid "+shop.accent}} autoFocus onFocus={fo} onBlur={bl}/>}
+      <div style={{marginBottom:16}}>
+        {shopItems.length>0&&(
+          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:10}}>
+            {shopItems.map((it,i)=>(
+              <button key={i} type="button"
+                onClick={()=>{const e=purchLines.findIndex(l=>!l.name.trim());if(e>=0)setLine(e,"name",it);else setPurchLines(l=>[...l,{...blankLine(),name:it}]);}}
+                style={{padding:"4px 12px",borderRadius:20,border:"1px solid "+shop.accent+"55",background:shop.accentBg,color:shop.accent,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                + {it}
+              </button>
+            ))}
+          </div>
+        )}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 80px 110px 28px",gap:6,marginBottom:4}}>
+          {["Item / Product","Qty","Amount ("+shop.symbol+")",""].map((h,i)=>(
+            <span key={i} style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em",textAlign:i===1||i===2?"right":"left"}}>{h}</span>
+          ))}
         </div>
-        <div>
-          <label style={lbl}>Total Quantity</label>
-          <input type="number" onWheel={e=>e.target.blur()} min="1" value={form.qty} onChange={e=>set("qty",e.target.value)} placeholder="0" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Total Amount ({shop.symbol})</label>
-          <input type="number" onWheel={e=>e.target.blur()} value={form.total} onChange={e=>set("total",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={{...lbl,color:"#94a3b8"}}>Unit Cost ({shop.symbol}) <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0}}>— auto</span></label>
-          <input readOnly value={unitCost} placeholder="Auto-calculated" style={inpGray}/>
-        </div>
-        <div>
-          <label style={lbl}>GST / VAT ({shop.currency==="INR"?"%":"£"})</label>
-          <input type="number" onWheel={e=>e.target.blur()} value={form.gst} onChange={e=>set("gst",e.target.value)} placeholder="0" style={inp} onFocus={fo} onBlur={bl}/>
+        {purchLines.map((l,i)=>(
+          <div key={l.id} style={{display:"grid",gridTemplateColumns:"1fr 80px 110px 28px",gap:6,marginBottom:6,alignItems:"center"}}>
+            <input value={l.name} onChange={e=>setLine(i,"name",e.target.value)}
+              placeholder="Item name" style={{...inp,fontSize:12,padding:"7px 10px"}}
+              onFocus={fo}
+              onBlur={e=>{e.target.style.borderColor="#e2e8f0";if(l.name.trim()&&onAddShopItem&&!shopItems.includes(l.name.trim()))onAddShopItem(l.name.trim());}}/>
+            <input type="number" onWheel={e=>e.target.blur()} value={l.qty} onChange={e=>setLine(i,"qty",e.target.value)}
+              placeholder="0" style={{...inp,fontSize:12,padding:"7px 8px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
+            <input type="number" onWheel={e=>e.target.blur()} value={l.amount} onChange={e=>setLine(i,"amount",e.target.value)}
+              placeholder="0.00" style={{...inp,fontSize:12,padding:"7px 8px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
+            <button type="button" onClick={()=>removeLine(i)}
+              style={{width:24,height:24,borderRadius:6,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",padding:0,fontFamily:"inherit"}}>
+              ×
+            </button>
+          </div>
+        ))}
+        <button type="button" onClick={addLine}
+          style={{fontSize:12,fontWeight:700,color:shop.accent,background:shop.accentBg,border:"1px solid "+shop.accent+"44",borderRadius:8,padding:"5px 14px",cursor:"pointer",fontFamily:"inherit",marginBottom:12}}>
+          + Add Item
+        </button>
+        <div style={{background:"#f8fafc",borderRadius:12,border:"1px solid #e2e8f0",padding:"12px 14px"}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:totalQty>0?10:0}}>
+            <div>
+              <label style={lbl}>GST / VAT (%)</label>
+              <input type="number" onWheel={e=>e.target.blur()} value={form.gst} onChange={e=>set("gst",e.target.value)}
+                placeholder="0" style={{...inp,fontSize:13}} onFocus={fo} onBlur={bl}/>
+            </div>
+            <div>
+              <label style={{...lbl,color:"#64748b"}}>Invoice Total ({shop.symbol}) — auto</label>
+              <input readOnly value={invoiceTotal>0?invoiceTotal.toFixed(2):""} placeholder="Auto"
+                style={{...inpGray,fontFamily:"DM Mono,monospace",fontWeight:800,color:shop.accent,fontSize:14}}/>
+            </div>
+          </div>
+          {totalQty>0&&(
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",borderTop:"1px solid #e2e8f0",paddingTop:10}}>
+              <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>
+                <span style={{marginRight:12}}>Qty: <strong style={{color:"#374151"}}>{totalQty}</strong></span>
+                <span>Sub-total: <strong style={{color:"#374151"}}>{shop.symbol}{totalAmt.toFixed(2)}</strong></span>
+                {gstAmt>0&&<span style={{marginLeft:12}}>GST: <strong style={{color:"#374151"}}>{shop.symbol}{gstAmt.toFixed(2)}</strong></span>}
+              </div>
+              <div style={{textAlign:"right"}}>
+                <p style={{margin:0,fontSize:9,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Unit Cost — auto</p>
+                <p style={{margin:0,fontSize:16,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace"}}>{shop.symbol}{(totalAmt/totalQty).toFixed(2)}</p>
+              </div>
+            </div>
+          )}
         </div>
       </div>
 
@@ -4861,10 +4847,9 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
         <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Notes about this purchase…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
       </div>
 
-      </div>{/* end padding wrapper */}
       {/* ACTIONS */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave(form)}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",paddingBottom:2,paddingTop:6,borderTop:"1px solid #f1f5f9"}}>
+        <button onClick={()=>onSave({...form,purchLines,qty:String(totalQty),total:String(totalAmt),invoiceTotal:String(invoiceTotal)})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Purchase
         </button>
@@ -5157,11 +5142,6 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
 
     {/* ── Single column layout ── */}
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
-      <div style={{flexShrink:0,display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 16px",borderBottom:"1px solid #f1f5f9",background:shop.accentBg}}>
-        <span style={{fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>New Sale</span>
-        <div style={{textAlign:"right"}}><p style={{margin:0,fontSize:9,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.06em"}}>Total</p>
-          <p style={{margin:0,fontSize:18,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace",lineHeight:1}}>{shop.symbol}{grandTotal.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2})}</p></div>
-      </div>
       <div style={{flex:1,overflowY:"auto",padding:"12px 16px",WebkitOverflowScrolling:"touch"}}>
 
             {/* Basic Info */}
@@ -5227,7 +5207,6 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 <div><label style={lbl}>Payment By</label><select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"].map(o=><option key={o}>{o}</option>)}</select></div>
                 <div><label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["ORDER NOT PLACED","WORK IN PROGRESS","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select></div>
               </div>
-              {form.payBy==="SHOP"&&(<div style={{marginBottom:7}}><label style={lbl}>Shop Invoice No.</label><input value={form.shopInvoiceNo} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/></div>)}
               <div><label style={lbl}>Dispatch Date</label><input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
             </div>
 
@@ -5252,9 +5231,17 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
       </div>
 
       {/* ── Sticky bottom bar ── */}
-      <div style={{flexShrink:0,borderTop:"1px solid #f1f5f9",background:"white",padding:"10px 16px",display:"flex",justifyContent:"flex-end",gap:8}}>
-        <button onClick={onClose} style={{padding:"10px 18px",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
-        <button onClick={handleSave} style={{padding:"10px 24px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44",display:"flex",alignItems:"center",gap:6}}><span>🛒</span> Save Sale</button>
+      <div style={{flexShrink:0,borderTop:"1px solid #f1f5f9",background:"white",padding:"10px 16px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <p style={{margin:0,fontSize:10,color:"#94a3b8",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em"}}>Total</p>
+            <p style={{margin:0,fontSize:20,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace",letterSpacing:"-0.5px"}}>{shop.symbol}{grandTotal.toLocaleString()}</p>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={onClose} style={{padding:"10px 18px",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+            <button onClick={handleSave} style={{padding:"10px 24px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44",display:"flex",alignItems:"center",gap:6}}><span>🛒</span> Save Sale</button>
+          </div>
+        </div>
       </div>
     </div>
   </>);
