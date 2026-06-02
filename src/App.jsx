@@ -815,10 +815,6 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [editRow,setEditRow]=useState(null);
   const [selCustomer,setSelCustomer]=useState(null);
   const [openMenu,setOpenMenu]=useState(null);
-  const [cfFY,setCfFY]=useState(()=>{const n=new Date();return n.getMonth()>=3?n.getFullYear():n.getFullYear()-1;});
-  const [cfOpenBal,setCfOpenBal]=useState(()=>{try{const s=localStorage.getItem("ros_cf_openbal");return s?JSON.parse(s):{};}catch{return{};}});
-  const [obEdit,setObEdit]=useState(false);
-  const [obInput,setObInput]=useState("");
   const [invoiceRow,setInvoiceRow]=useState(null);
   const [itemView,setItemView]=useState("month");
   const [selectedBar,setSelectedBar]=useState(null);
@@ -1180,7 +1176,7 @@ return(
           {[
             {label:"MAIN",    ids:["dashboard","sales","purchases"]},
             {label:"MANAGE",  ids:["logistics","customers","suppliers","agents","products"]},
-            {label:"FINANCE", ids:["invoices","expenses","cashflow"]},
+            {label:"FINANCE", ids:["invoices","expenses"]},
             {label:"INSIGHTS",ids:["documents","analytics","reports"]},
           ].map(group=>{
             const groupItems=NAV.filter(n=>group.ids.includes(n.id));
@@ -3220,6 +3216,12 @@ return(
                     marginBottom:8,letterSpacing:"0.02em"}}>
                     📱 {selRow.phoneSavedOn||"UK 888"}
                   </span>
+                  {shopId==="ros-india"&&selRow.paidBy&&(
+                    <div style={{marginTop:8,paddingTop:8,borderTop:"1px solid #f1f5f9"}}>
+                      <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>&#x1F4B8; Paid By</p>
+                      <p style={{margin:0,fontSize:13,fontWeight:700,color:"#374151"}}>{selRow.paidBy}</p>
+                    </div>
+                  )}
                   <div style={{marginTop:4,paddingTop:8,borderTop:"1px solid #f1f5f9"}}>
                     <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>📍 Address</p>
                     <p style={{margin:0,fontSize:12,color:selRow.address?"#374151":"#cbd5e1",lineHeight:1.5}}>{selRow.address||"—"}</p>
@@ -4028,6 +4030,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     purInvDate:  sale.purInvDate||"",
     purAmount:   sale.purAmount||"",
     shopInvoiceNo: sale.shopInvoiceNo||sale.shop_invoice_no||"",
+    paidBy:      sale.paidBy||"",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -4116,6 +4119,13 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
           <div><label style={lbl}>Phone Number</label><input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/></div>
           <div><label style={lbl}>Saved On</label><select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>{["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}</select></div>
         </div>
+        {shopId==="ros-india"&&(
+          <div style={{marginBottom:12}}>
+            <label style={lbl}>Paid By</label>
+            <input value={form.paidBy||""} onChange={e=>set("paidBy",e.target.value)}
+              placeholder="Who sent the money…" style={inp} onFocus={fo} onBlur={bl}/>
+          </div>
+        )}
         <div style={{position:"relative"}}>
           <label style={lbl}>Address</label>
           <input value={form.address||""}
@@ -4273,10 +4283,9 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
           <select value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
             {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
           </select></div>
-        {form.payBy==="SHOP"&&(
-          <div><label style={lbl}>Shop Invoice No.</label>
-            <input value={form.shopInvoiceNo||""} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/>
-          </div>)}
+        {form.payBy==="SHOP"&&(<div><label style={lbl}>Shop Invoice No.</label>
+          <input value={form.shopInvoiceNo||""} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/>
+        </div>)}
       </div>
 
       <Divider title="Delivery"/>
@@ -4415,7 +4424,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
 
       </div>{/* end padding wrapper */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...form,id:form.invoiceNo||sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0})}
+        <button onClick={()=>onSave({...form,id:form.invoiceNo||sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
@@ -5099,6 +5108,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     otherChargesLabel:"Other Charges",
     payBy:       "SHOP",
     shopInvoiceNo: "",
+    paidBy:      "",
     status:      shopId==="ros-india" ? "ORDER NOT PLACED" : "PENDING",
     sentDate:    "",
     returnReqDate: "",
@@ -5146,7 +5156,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     const filledLines=lines.filter(l=>l.name.trim()||(parseFloat(l.price)>0));
     const combinedItem=filledLines.map(l=>`${l.name}(x${l.qty})`).join(", ")||"Sale";
     const combinedQty=filledLines.reduce((s,l)=>s+(parseFloat(l.qty)||0),0)||1;
-    onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel,address:form.address||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0});
+    onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0});
   };
 
   return(<>
@@ -5319,6 +5329,11 @@ const CustomerEditModal=({customer,shop,onSave,onClose})=>{
             </select>
           </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <div>
+              <label style={elbl}>Paid By</label>
+              <input value={ef.paidBy||""} onChange={e=>se("paidBy",e.target.value)}
+                placeholder="Who sent the money…" style={einp} onFocus={fo} onBlur={bl}/>
+            </div>
             <div>
               <label style={elbl}>Addressee</label>
               <input value={ef.addressee||""} onChange={e=>se("addressee",e.target.value)}
