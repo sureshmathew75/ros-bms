@@ -167,6 +167,7 @@ export const dbLoadSales = async (shopId) => {
     purInvNo:      r.pur_inv_no || '',
     purInvDate:    r.pur_inv_date || '',
     purAmount:     Number(r.pur_amount) || 0,
+    paidBy:        r.paid_by || '',
   }));
   return mapped.sort((a, b) => parseDateMs(b.date) - parseDateMs(a.date));
 };
