@@ -2525,7 +2525,7 @@ return(
                     const ti=tr===0?true:(s.taxInclusive!==undefined?s.taxInclusive!==false:true);
                     let sl=decodedLines||s.saleLines||s.sale_lines||null;
                     if(typeof sl==="string"){try{sl=JSON.parse(sl);}catch{sl=null;}}
-                    return {...s,item:displayItem,taxRate:tr,taxInclusive:ti,saleLines:Array.isArray(sl)?sl:null,discount:Number(s.discount||s.discount_amt)||0,otherCharges:Number(s.otherCharges||s.other_charges)||0,adjAmt:Number(s.adjAmt||s.adj_amt)||0,adjType:s.adjType||s.adj_type||"",adjDate:s.adjDate||s.adj_date||"",adjNote:s.adjNote||s.adj_note||"",shopInvoiceNo:s.shopInvoiceNo||s.shop_invoice_no||"",refundDate:s.refundDate||s.refund_date||"",exchangeDate:s.exchangeDate||s.exchange_date||""};
+                    return {...s,item:displayItem,taxRate:tr,taxInclusive:ti,saleLines:Array.isArray(sl)?sl:null,discount:Number(s.discount||s.discount_amt)||0,otherCharges:Number(s.otherCharges||s.other_charges)||0,adjAmt:Number(s.adjAmt||s.adj_amt)||0,adjType:s.adjType||s.adj_type||"",adjDate:s.adjDate||s.adj_date||"",adjNote:s.adjNote||s.adj_note||"",shopInvoiceNo:s.shopInvoiceNo||s.shop_invoice_no||"",paidBy:s.paidBy||s.paid_by||"",refundDate:s.refundDate||s.refund_date||"",exchangeDate:s.exchangeDate||s.exchange_date||""};
                   })}));
                 }).catch(()=>{});
               }).catch(err=>console.error("❌ Edit save failed:",err));
@@ -4282,13 +4282,11 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         <div>
           <label style={lbl}>Discount ({shop.symbol})</label>
-          <input type="number" onWheel={e=>e.target.blur()} value={form.discount||""} onChange={e=>set("discount",e.target.value)}
-            placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+          <input type="number" onWheel={e=>e.target.blur()} value={form.discount||""} onChange={e=>set("discount",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
         </div>
         <div>
           <label style={lbl}>Other Charges ({shop.symbol})</label>
-          <input type="number" onWheel={e=>e.target.blur()} value={form.otherCharges||""} onChange={e=>set("otherCharges",e.target.value)}
-            placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+          <input type="number" onWheel={e=>e.target.blur()} value={form.otherCharges||""} onChange={e=>set("otherCharges",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
         </div>
       </div>
       <Divider title="Payment"/>
