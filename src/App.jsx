@@ -4027,6 +4027,9 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
     purInvNo:    sale.purInvNo||"",
     purInvDate:  sale.purInvDate||"",
     purAmount:   sale.purAmount||"",
+    discount:    sale.discount||"",
+    otherCharges: sale.otherCharges||"",
+    otherChargesLabel: sale.otherChargesLabel||"Other Charges",
     shopInvoiceNo: sale.shopInvoiceNo||sale.shop_invoice_no||"",
     paidBy:      sale.paidBy||"",
   });
@@ -4275,6 +4278,19 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
         </div>
       </div>
 
+      <Divider title="Pricing"/>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+        <div>
+          <label style={lbl}>Discount ({shop.symbol})</label>
+          <input type="number" onWheel={e=>e.target.blur()} value={form.discount||""} onChange={e=>set("discount",e.target.value)}
+            placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+        <div>
+          <label style={lbl}>Other Charges ({shop.symbol})</label>
+          <input type="number" onWheel={e=>e.target.blur()} value={form.otherCharges||""} onChange={e=>set("otherCharges",e.target.value)}
+            placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+        </div>
+      </div>
       <Divider title="Payment"/>
       <div style={{display:"grid",gridTemplateColumns:form.payBy==="SHOP"?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
         <div><label style={lbl}>Payment By</label>
@@ -4422,7 +4438,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[]})=>{
 
       </div>{/* end padding wrapper */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...form,id:form.invoiceNo||sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:sale.discount,otherCharges:sale.otherCharges,otherChargesLabel:sale.otherChargesLabel,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0})}
+        <button onClick={()=>onSave({...form,id:form.invoiceNo||sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:parseFloat(form.discount)||0,otherCharges:parseFloat(form.otherCharges)||0,otherChargesLabel:form.otherChargesLabel||"Other Charges",contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
