@@ -43,6 +43,7 @@ export const dbSaveSale = async (shopId, sale) => {
     tag:           String(sale.tag || ''),
     phone_saved_on:  String(sale.phoneSavedOn || 'UK 888'),
     shop_invoice_no: String(sale.shopInvoiceNo || ''),
+    paid_by:         String(sale.paidBy || ''),
     refund_date:     String(sale.refundDate || ''),
     exchange_date:   String(sale.exchangeDate || ''),
     adj_type:        String(sale.adjType || ''),
