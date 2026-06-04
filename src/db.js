@@ -542,7 +542,7 @@ export const dbLoadUsers = async () => {
     initials: r.initials || '',
     role:     r.role || 'staff',
     pin:      r.pin || '',
-    shops:    r.shops ? r.shops.split(',').filter(Boolean) : null,
+    shops:    r.shops ? r.shops.split(',').filter(Boolean) : [],
     avatar:   r.avatar || '',
   }));
 };
