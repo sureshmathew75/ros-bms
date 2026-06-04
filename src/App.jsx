@@ -445,7 +445,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
 
         {/* ── 3 shop cards ── */}
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:isMobile?14:24,marginBottom:isMobile?24:48}}>
-          {SHOPS.filter(sh=>user?.role==="superadmin"||user?.role==="admin"||(user?.shops||[]).includes(sh.id)).map(shop=>{
+          {SHOPS.map(shop=>{
             const h=hov===shop.id;
             const isStaff=user?.role==="staff";
             const staffLocked=isStaff&&!(user?.shops||[]).includes(shop.id);
@@ -6446,11 +6446,6 @@ export default function App(){
     setInitialTab(goTab);
     try{localStorage.setItem("ros_shop",s);}catch{}
   };
-
-  // Auto-select shop for staff with exactly one assigned shop
-  if(user?.role==="staff"&&(user?.shops||[]).length===1&&!shopId){
-    handleSetShop(user.shops[0]);
-  }
 
   if(!user) return <LoginScreen users={users} onLogin={handleLogin}/>;
 
