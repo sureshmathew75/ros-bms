@@ -5208,6 +5208,13 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 <div><label style={lbl}>Contact</label><input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/></div>
                 <div><label style={lbl}>Address</label><input value={form.address||""} onChange={e=>set("address",e.target.value)} placeholder="Address" style={inp} onFocus={fo} onBlur={bl}/></div>
               </div>
+              {shopId==="ros-india"&&(
+                <div style={{marginTop:7}}>
+                  <label style={lbl}>Paid By</label>
+                  <input value={form.paidBy||""} onChange={e=>set("paidBy",e.target.value)}
+                    placeholder="Who sent the money…" style={inp} onFocus={fo} onBlur={bl}/>
+                </div>
+              )}
             </div>
 
             {/* Items */}
