@@ -923,6 +923,8 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     const matchSearch=!q||
       (s.id||"").toLowerCase().includes(q)||
       (s.customer||"").toLowerCase().includes(q)||
+      (s.paidBy||"").toLowerCase().includes(q)||
+      (s.address||"").toLowerCase().includes(q)||
       (s.tag||"").toLowerCase().includes(q)||
       (s.rem||"").toLowerCase().includes(q)||
       (s.item||"").toLowerCase().includes(q);
