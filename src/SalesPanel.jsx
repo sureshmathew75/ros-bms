@@ -878,7 +878,7 @@ export default function SalesPanel({
               {/* Empty state */}
               {rowsWithSeparators.length === 0 && (
                 <tr>
-                  <td colSpan={shopId==="ros-india" ? 10 : 9} style={{ padding: "52px 16px", textAlign: "center" }}>
+                  <td colSpan={shopId==="ros-india"&&!isStaff ? 10 : 9} style={{ padding: "52px 16px", textAlign: "center" }}>
                     <div style={{ fontSize: 36, marginBottom: 10 }}>🛒</div>
                     <p style={{ margin: 0, fontWeight: 700, color: "#94a3b8", fontSize: 14 }}>
                       No {statusTab !== "ALL" ? activeTabCfg.label.toLowerCase() + " " : ""}sales found
@@ -898,7 +898,7 @@ export default function SalesPanel({
                 if (row._type === "fy") {
                   return (
                     <tr key={`fy-${row._fyStart}-${idx}`}>
-                      <td colSpan={shopId==="ros-india" ? 10 : 9} style={{ padding: 0 }}>
+                      <td colSpan={shopId==="ros-india"&&!isStaff ? 10 : 9} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", gap: 10,
                           padding: "9px 16px",
@@ -930,7 +930,7 @@ export default function SalesPanel({
                 if (row._type === "month") {
                   return (
                     <tr key={`month-${row._monthKey}-${idx}`}>
-                      <td colSpan={shopId==="ros-india" ? 10 : 9} style={{ padding: 0 }}>
+                      <td colSpan={shopId==="ros-india"&&!isStaff ? 10 : 9} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", gap: 10,
                           padding: "6px 16px",
