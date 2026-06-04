@@ -445,7 +445,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
 
         {/* ── 3 shop cards ── */}
         <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:isMobile?14:24,marginBottom:isMobile?24:48}}>
-          {SHOPS.map(shop=>{
+          {SHOPS.filter(sh=>user?.role==="superadmin"||user?.role==="admin"||(user?.shops||[]).includes(sh.id)).map(shop=>{
             const h=hov===shop.id;
             const isStaff=user?.role==="staff";
             const staffLocked=isStaff&&!(user?.shops||[]).includes(shop.id);
@@ -519,9 +519,13 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
                 {/* ── white lower section ── */}
                 <div style={{padding:"18px 20px 20px"}}>
                   {staffLocked?(
-                    <div style={{textAlign:"center",padding:"12px 0 8px"}}>
-                      <span style={{fontSize:18}}>🔒</span>
-                      <p style={{margin:"6px 0 0",fontSize:11,fontWeight:700,color:"#94a3b8"}}>No Access</p>
+                    <div style={{opacity:0.3,pointerEvents:"none"}}>
+                      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
+                        {["Orders","Revenue","Avg"].map(l=>(<div key={l} style={{background:"#f8fafc",borderRadius:10,padding:"10px 8px",textAlign:"center"}}>
+                          <p style={{margin:0,fontSize:16,fontWeight:900,color:"#374151"}}>—</p>
+                          <p style={{margin:"2px 0 0",fontSize:9,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>{l}</p>
+                        </div>))}
+                      </div>
                     </div>
                   ):(
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:16}}>
@@ -538,7 +542,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
                       ))}
                     </div>
                   )}
-                  <button disabled={staffLocked} style={{
+                  <button disabled={staffLocked} style={{display:staffLocked?"none":"block",
                     width:"100%",padding:"12px 0",borderRadius:12,border:"none",
                     cursor:staffLocked?"not-allowed":"pointer",
                     background:staffLocked?"#f1f5f9":h?shop.sb:shop.accentBg,
