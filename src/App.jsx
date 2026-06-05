@@ -2346,12 +2346,6 @@ return(
             })()}
             customers={customers}
             shopItems={(shopItems||{})[shopId]||[]}
-            onDeleteShopItem={(item)=>{
-              const current=(shopItems||{})[shopId]||[];
-              const updated={...(shopItems||{}),[shopId]:current.filter(i=>i!==item)};
-              setShopItems(updated);
-              dbDeleteShopItem(shopId,item);
-            }}
             onAddShopItem={(item)=>{
               const current=(shopItems||{})[shopId]||[];
               if(current.includes(item)) return;
