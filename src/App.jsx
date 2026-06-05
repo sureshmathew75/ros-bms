@@ -2401,16 +2401,16 @@ return(
             onAddShopItem={(item)=>{
               const current=(shopItems||{})[shopId]||[];
               if(current.includes(item)) return;
-              dbAddShopItem(shopId,item).then(()=>{
-                dbLoadShopItems().then(data=>{if(data)setShopItems({"ros-selections":data["ros-selections"]||[],"ros-hairlines":data["ros-hairlines"]||[],"ros-india":data["ros-india"]||[]});});
-              });
               const updated={...(shopItems||{}),[shopId]:[...current,item]};
-              setShopItems(updated);
+              saveShopItems(updated);
+              dbAddShopItem(shopId,item).then(()=>{
+                dbLoadShopItems().then(data=>{if(data)saveShopItems({"ros-selections":data["ros-selections"]||[],"ros-hairlines":data["ros-hairlines"]||[],"ros-india":data["ros-india"]||[]});});
+              });
             }}
             onDeleteShopItem={(item)=>{
               const current=(shopItems||{})[shopId]||[];
               const updated={...(shopItems||{}),[shopId]:current.filter(i=>i!==item)};
-              setShopItems(updated); dbDeleteShopItem(shopId,item);
+              saveShopItems(updated); dbDeleteShopItem(shopId,item);
             }}
           />
         </Modal>
