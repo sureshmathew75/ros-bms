@@ -4087,59 +4087,78 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false}
   const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","WORK IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
   const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
+  const [editCustOpen,setEditCustOpen]=useState(false);
+  const [editCustMatches,setEditCustMatches]=useState([]);
+  const [editAddrOpen,setEditAddrOpen]=useState(false);
+  const [editAddrMatches,setEditAddrMatches]=useState([]);
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",paddingRight:4}}>
-
-      {/* highlight banner */}
-      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,display:"flex",alignItems:"center",gap:10}}>
-        <span style={{fontSize:20}}>✏️</span>
-        <div>
-          <p style={{margin:0,fontWeight:800,fontSize:13,color:shop.accentText}}>Editing Sale {form.invoiceNo}</p>
-          <p style={{margin:0,fontSize:11,color:shop.accent}}>All changes will update the sales record immediately on save</p>
+    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto"}}>
+      <div style={{padding:"0 20px"}}>
+      {isStaff&&(
+        <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,padding:"10px 14px",marginBottom:12,marginTop:8,display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:16}}>🔒</span>
+          <div><p style={{margin:0,fontWeight:700,fontSize:12,color:"#1d4ed8"}}>Staff View — Read Only</p>
+            <p style={{margin:0,fontSize:11,color:"#3b82f6"}}>You can only update Delivery Status, Dispatch Date, Tags and Remarks.</p></div>
         </div>
+      )}
+      <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"10px 14px",marginBottom:16,marginTop:4,display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:20}}>✏️</span>
+        <div><p style={{margin:0,fontWeight:800,fontSize:13,color:shop.accentText}}>Editing Sale {form.invoiceNo}</p>
+          <p style={{margin:0,fontSize:11,color:shop.accent}}>All changes will update the sales record immediately on save</p></div>
       </div>
-
       <Divider title="Basic Info"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Date</label>
-          <input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div>
-          <label style={lbl}>Invoice Number</label>
-          <input value={form.invoiceNo} readOnly
-            style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/>
-        </div>
+        <div><label style={lbl}>Date</label><input type="date" value={form.date} readOnly={isStaff} onChange={isStaff?undefined:e=>set("date",e.target.value)} style={{...inp,background:isStaff?"#f8fafc":"white",cursor:isStaff?"default":"auto"}} onFocus={fo} onBlur={bl}/></div>
+        <div><label style={lbl}>Invoice Number</label><input value={form.invoiceNo} readOnly style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/></div>
       </div>
-
       <Divider title="Customer"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div>
-          <label style={lbl}>Customer Name</label>
-          <select value={form.customer} onChange={e=>set("customer",e.target.value)} style={inp}>
-            <option value="">Select customer…</option>
-            {/* If the sale's customer is not in the CRM (e.g. imported), show them as a selectable option */}
-            {form.customer && !customers.some(c=>c.name===form.customer) && (
-              <option value={form.customer}>{form.customer} (imported)</option>
-            )}
-            {customers.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
-          </select>
+      <div style={{marginBottom:16}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}>
+          <div style={{position:"relative"}}>
+            <label style={lbl}>Customer Name</label>
+            <input value={form.customer}
+              onChange={e=>{set("customer",e.target.value);const q=e.target.value.trim().toLowerCase();if(q.length>=1){const m=customers.filter(c=>c.name.toLowerCase().includes(q)).slice(0,6);setEditCustMatches(m);setEditCustOpen(m.length>0);}else{setEditCustOpen(false);setEditCustMatches([]);}}}
+              onBlur={()=>setTimeout(()=>setEditCustOpen(false),180)}
+              placeholder="Type or search…" style={inp} onFocus={fo} autoComplete="off"/>
+            {editCustOpen&&editCustMatches.length>0&&(
+              <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:200,background:"white",border:"1px solid "+shop.accent+"44",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,0.15)",maxHeight:180,overflowY:"auto",marginTop:3}}>
+                {editCustMatches.map((c,i)=>(
+                  <div key={i} onMouseDown={()=>{set("customer",c.name);set("contact",c.phone||"");set("address",c.address||c.addressee||"");setEditCustOpen(false);}}
+                    style={{padding:"9px 12px",borderBottom:i<editCustMatches.length-1?"1px solid #f1f5f9":"none",display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}
+                    onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg}
+                    onMouseLeave={e=>e.currentTarget.style.background="white"}>
+                    <div style={{width:26,height:26,borderRadius:7,background:shop.accent,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11,flexShrink:0}}>{c.name.charAt(0)}</div>
+                    <div><p style={{margin:0,fontSize:12,fontWeight:700,color:"#0f172a"}}>{c.name}</p><p style={{margin:0,fontSize:10,color:"#94a3b8"}}>{c.phone||"—"}</p></div>
+                  </div>))}
+              </div>)}
+          </div>
+          <div><label style={lbl}>Phone Number</label><input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/></div>
+          <div><label style={lbl}>Saved On</label><select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>{["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}</select></div>
         </div>
-        <div>
-          <label style={lbl}>Contact Number</label>
-          <input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
-        <div style={{gridColumn:"1/-1"}}>
-          <label style={lbl}>Phone Number Saved On</label>
-          <select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>
-            {["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}
-          </select>
-        </div>
-        <div style={{gridColumn:"1/-1"}}>
+        {shopId==="ros-india"&&(
+          <div style={{marginBottom:12}}>
+            <label style={lbl}>Paid By</label>
+            <input value={form.paidBy||""} onChange={e=>set("paidBy",e.target.value)}
+              placeholder="Who sent the money…" style={inp} onFocus={fo} onBlur={bl}/>
+          </div>
+        )}
+        <div style={{position:"relative"}}>
           <label style={lbl}>Address</label>
-          <textarea value={form.address} onChange={e=>set("address",e.target.value)}
-            rows={2} placeholder="Customer address…"
-            style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
+          <input value={form.address||""}
+            onChange={e=>{set("address",e.target.value);const q=e.target.value.trim().toLowerCase();if(q.length>=1){const m=customers.filter(c=>(c.address||c.addressee||"").toLowerCase().includes(q)).slice(0,6);setEditAddrMatches(m);setEditAddrOpen(m.length>0);}else{setEditAddrOpen(false);setEditAddrMatches([]);}}}
+            onBlur={()=>setTimeout(()=>setEditAddrOpen(false),180)}
+            placeholder="Search address…" style={inp} onFocus={fo} autoComplete="off"/>
+          {editAddrOpen&&editAddrMatches.length>0&&(
+            <div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:200,background:"white",border:"1px solid "+shop.accent+"44",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,0.15)",maxHeight:160,overflowY:"auto",marginTop:3}}>
+              {editAddrMatches.map((c,i)=>(
+                <div key={i} onMouseDown={()=>{set("address",c.address||c.addressee||"");setEditAddrOpen(false);}}
+                  style={{padding:"8px 12px",borderBottom:i<editAddrMatches.length-1?"1px solid #f1f5f9":"none",cursor:"pointer"}}
+                  onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg}
+                  onMouseLeave={e=>e.currentTarget.style.background="white"}>
+                  <p style={{margin:0,fontSize:12,fontWeight:700,color:"#0f172a"}}>{c.name}</p>
+                  <p style={{margin:0,fontSize:11,color:"#64748b"}}>{c.address||c.addressee}</p>
+                </div>))}
+            </div>)}
         </div>
       </div>
 
@@ -4749,13 +4768,6 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
     {/* ── MAIN FORM ── */}
     <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto"}}>
       <div style={{padding:"0 20px"}}>
-      {isStaff&&(
-        <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,padding:"10px 14px",marginBottom:12,marginTop:8,display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:16}}>🔒</span>
-          <div><p style={{margin:0,fontWeight:700,fontSize:12,color:"#1d4ed8"}}>Staff View — Read Only</p>
-            <p style={{margin:0,fontSize:11,color:"#3b82f6"}}>You can only update Delivery Status, Dispatch Date, Tags and Remarks.</p></div>
-        </div>
-      )}
 
       {/* BASIC INFO */}
       <Divider title="Basic Info"/>
