@@ -6520,7 +6520,7 @@ export default function App(){
   const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
   const [customers,setCustomers]=useState([]);
   const [shopItems,setShopItems]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
-  useEffect(()=>{dbLoadShopItems().then(data=>{if(data&&Object.keys(data).length>0)setShopItems(data);});},[]);
+  useEffect(()=>{dbLoadShopItems().then(data=>{if(data)setShopItems({"ros-selections":data["ros-selections"]||[],"ros-hairlines":data["ros-hairlines"]||[],"ros-india":data["ros-india"]||[]});});});
   const saveShopItems=(updated)=>setShopItems(updated);
 
   const updateSalesData=setSalesData;
