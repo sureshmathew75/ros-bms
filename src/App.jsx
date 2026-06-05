@@ -5257,32 +5257,39 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             {/* Items */}
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🛍️ Items</p>
-                            <div style={{marginBottom:8}}>
-                <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:6,alignItems:"center"}}>
-                  {shopItems.map((itm,idx)=>{
-                    const label=typeof itm==="object"?(itm.name||itm.label||""):String(itm);
-                    return(
-                      <span key={idx} style={{display:"inline-flex",alignItems:"center",borderRadius:999,border:"1px solid "+shop.accent+"44",background:"white",overflow:"hidden"}}>
-                        <button type="button"
-                          onClick={()=>{const ei=lines.findIndex(l=>!l.name.trim());if(ei>=0)updateLine(lines[ei].id,"name",label);else setLines(ls=>[...ls,{...blankLine(),name:label}]);}}
-                          style={{padding:"3px 9px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",background:"transparent",border:"none",color:shop.accentText}}>+{label}</button>
-                        <button type="button" onClick={()=>onDeleteShopItem&&onDeleteShopItem(label)}
-                          style={{padding:"2px 6px 2px 0",fontSize:12,cursor:"pointer",background:"transparent",border:"none",color:"#94a3b8",lineHeight:1}}>×</button>
-                      </span>
-                    );
-                  })}
-                </div>
-                <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                  <input id="nsf_newitem" placeholder="Add item name…"
-                    style={{padding:"4px 8px",borderRadius:8,border:"1px solid "+shop.accent+"66",fontSize:11,fontFamily:"inherit",outline:"none",width:130}}
-                    onKeyDown={e=>{if(e.key==="Enter"){const v=e.target.value.trim();if(v){onAddShopItem&&onAddShopItem(v);e.target.value="";}}}}
-                  />
-                  <button type="button"
-                    onClick={()=>{const el=document.getElementById("nsf_newitem");if(el&&el.value.trim()){onAddShopItem&&onAddShopItem(el.value.trim());el.value="";}}}
-                    style={{padding:"4px 12px",borderRadius:8,border:"none",background:shop.accent,color:"white",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
-                    + Save
-                  </button>
-                </div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:8,alignItems:"center"}}>
+                {shopItems.map((itm,idx)=>{
+                  const label=typeof itm==="object"?(itm.name||itm.label||""):String(itm);
+                  return(
+                    <div key={idx} style={{display:"flex",alignItems:"center",borderRadius:999,border:"1px solid "+shop.accent+"44",background:"white",overflow:"hidden"}}>
+                      <button type="button"
+                        onClick={()=>{const ei=lines.findIndex(l=>!l.name.trim());if(ei>=0)updateLine(lines[ei].id,"name",label);else setLines(ls=>[...ls,{...blankLine(),name:label}]);}}
+                        style={{padding:"3px 9px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",background:"transparent",border:"none",color:shop.accentText}}>+{label}</button>
+                      <button type="button" onClick={()=>onDeleteShopItem&&onDeleteShopItem(label)}
+                        style={{padding:"2px 6px 2px 0",fontSize:11,cursor:"pointer",background:"transparent",border:"none",color:"#94a3b8",lineHeight:1}}>×</button>
+                    </div>
+                  );
+                })}
+                <AddItemButton onAdd={(name)=>onAddShopItem&&onAddShopItem(name)} accent={shop.accent} accentBg={shop.accentBg}/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 52px 76px 26px",gap:5,marginBottom:4}}>
+                <span style={{...lbl,marginBottom:0}}>Item</span><span style={{...lbl,marginBottom:0}}>Qty</span><span style={{...lbl,marginBottom:0}}>Price</span><span/>
+              </div>
+              {lines.map((line,idx)=>(<div key={line.id} style={{display:"grid",gridTemplateColumns:"1fr 52px 76px 26px",gap:5,marginBottom:5,alignItems:"center"}}>
+                <input value={line.name} onChange={e=>updateLine(line.id,"name",e.target.value)} placeholder={"Item "+(idx+1)} style={{...inp,padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
+                <input type="number" onWheel={e=>e.target.blur()} value={line.qty} onChange={e=>updateLine(line.id,"qty",e.target.value)} style={{...inp,textAlign:"center",padding:"7px 5px"}} onFocus={fo} onBlur={bl}/>
+                <input type="number" onWheel={e=>e.target.blur()} value={line.price} onChange={e=>updateLine(line.id,"price",e.target.value)} placeholder="0.00" style={{...inp,textAlign:"right",padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
+                <button type="button" onClick={()=>removeLine(line.id)} style={{width:26,height:32,borderRadius:7,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+              </div>))}
+              <button type="button" onClick={addLine} style={{padding:"5px 12px",borderRadius:7,border:"1px dashed "+shop.accent+"55",background:shop.accentBg,color:shop.accentText,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>＋ Add Item</button>
+            </div>
+
+            {/* Pricing */}
+            <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
+              <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>💰 Pricing</p>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:8}}>
+                <div><label style={lbl}>Discount ({shop.symbol})</label><input type="number" onWheel={e=>e.target.blur()} value={form.discount} onChange={e=>set("discount",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/></div>
+                <div><label style={lbl}>Other Charges ({shop.symbol})</label><input type="number" onWheel={e=>e.target.blur()} value={form.otherCharges} onChange={e=>set("otherCharges",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/></div>
               </div>
               <div style={{display:"flex",gap:5}}>{[0,5,10,18,20].map(r=>(<button key={r} type="button" onClick={()=>set("taxRate",r)} style={{flex:1,padding:"5px 0",borderRadius:8,border:"2px solid "+(form.taxRate===r?shop.accent:"#e2e8f0"),background:form.taxRate===r?shop.accent:"white",color:form.taxRate===r?"white":"#374151",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{r}%</button>))}</div>
             </div>
@@ -6516,7 +6523,7 @@ export default function App(){
   const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
   const [customers,setCustomers]=useState([]);
   const [shopItems,setShopItems]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
-  useEffect(()=>{dbLoadShopItems().then(data=>{if(data)setShopItems({"ros-selections":data["ros-selections"]||[],"ros-hairlines":data["ros-hairlines"]||[],"ros-india":data["ros-india"]||[]});});},[]); 
+  useEffect(()=>{dbLoadShopItems().then(data=>{if(data)setShopItems({"ros-selections":data["ros-selections"]||[],"ros-hairlines":data["ros-hairlines"]||[],"ros-india":data["ros-india"]||[]});});});
   const saveShopItems=(updated)=>setShopItems(updated);
 
   const updateSalesData=setSalesData;
