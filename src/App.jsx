@@ -2396,6 +2396,7 @@ return(
               }).filter(n => n >= 1313 && n <= 9999);
             })()}
             customers={customers}
+            sales={sales}
             shopItems={(shopItems||{})[shopId]||[]}
             onAddShopItem={(item)=>{
               const current=(shopItems||{})[shopId]||[];
@@ -4777,6 +4778,13 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
     {/* ── MAIN FORM ── */}
     <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto"}}>
       <div style={{padding:"0 20px"}}>
+      {isStaff&&(
+        <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,padding:"10px 14px",marginBottom:12,marginTop:8,display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:16}}>🔒</span>
+          <div><p style={{margin:0,fontWeight:700,fontSize:12,color:"#1d4ed8"}}>Staff View — Read Only</p>
+            <p style={{margin:0,fontSize:11,color:"#3b82f6"}}>You can only update Delivery Status, Dispatch Date, Tags and Remarks.</p></div>
+        </div>
+      )}
 
       {/* BASIC INFO */}
       <Divider title="Basic Info"/>
@@ -5139,7 +5147,7 @@ const AddItemButton=({onAdd,accent,accentBg})=>{
   );
 };
 
-const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,onDeleteShopItem,customers=[]})=>{
+const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,onDeleteShopItem,customers=[],sales=[]})=>{
   const _now=new Date();
   const _yr=_now.getMonth()>=3?_now.getFullYear():_now.getFullYear()-1;
   const _fySuffix=String(_yr+1).slice(-1);
@@ -5258,20 +5266,44 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🛍️ Items</p>
               <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:8,alignItems:"center"}}>
+                {/* ── Saved tabs (from Supabase shopItems) ── */}
                 {shopItems.map((itm,idx)=>{
                   const label=typeof itm==="object"?(itm.name||itm.label||""):String(itm);
                   return(
-                    <div key={idx} style={{display:"flex",alignItems:"center",borderRadius:999,border:"1px solid "+shop.accent+"44",background:"white",overflow:"hidden"}}>
+                    <div key={idx} style={{display:"flex",alignItems:"center",borderRadius:999,border:"1px solid "+shop.accent+"44",background:shop.accentBg,overflow:"hidden"}}>
                       <button type="button"
                         onClick={()=>{const ei=lines.findIndex(l=>!l.name.trim());if(ei>=0)updateLine(lines[ei].id,"name",label);else setLines(ls=>[...ls,{...blankLine(),name:label}]);}}
                         style={{padding:"3px 9px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",background:"transparent",border:"none",color:shop.accentText}}>+{label}</button>
                       <button type="button" onClick={()=>onDeleteShopItem&&onDeleteShopItem(label)}
+                        title="Remove tab"
                         style={{padding:"2px 6px 2px 0",fontSize:11,cursor:"pointer",background:"transparent",border:"none",color:"#94a3b8",lineHeight:1}}>×</button>
                     </div>
                   );
                 })}
+                {/* ── History suggestions (from past sales, not yet saved) ── */}
+                {(()=>{
+                  const savedLabels=new Set(shopItems.map(i=>typeof i==="object"?(i.name||i.label||""):String(i)));
+                  const seen=new Set();
+                  const histNames=[];
+                  (sales||[]).forEach(s=>{(s.items||[]).forEach(it=>{const n=(it.name||"").trim();if(n&&!savedLabels.has(n)&&!seen.has(n)){seen.add(n);histNames.push(n);}});});
+                  histNames.sort((a,b)=>a.localeCompare(b));
+                  return histNames.map((name,i)=>(
+                    <div key={"h"+i} style={{display:"flex",alignItems:"center",borderRadius:999,border:"1px solid #cbd5e1",background:"#f8fafc",overflow:"hidden"}}>
+                      <button type="button"
+                        onClick={()=>{const ei=lines.findIndex(l=>!l.name.trim());if(ei>=0)updateLine(lines[ei].id,"name",name);else setLines(ls=>[...ls,{...blankLine(),name}]);}}
+                        style={{padding:"3px 9px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:"transparent",border:"none",color:"#475569"}}>+{name}</button>
+                      <button type="button"
+                        onClick={()=>onAddShopItem&&onAddShopItem(name)}
+                        title="Pin to saved tabs"
+                        style={{padding:"2px 6px 2px 0",fontSize:11,cursor:"pointer",background:"transparent",border:"none",color:"#94a3b8",lineHeight:1}}>★</button>
+                    </div>
+                  ));
+                })()}
                 <AddItemButton onAdd={(name)=>onAddShopItem&&onAddShopItem(name)} accent={shop.accent} accentBg={shop.accentBg}/>
               </div>
+              {shopItems.length===0&&(sales||[]).every(s=>!(s.items||[]).some(it=>(it.name||"").trim()))&&(
+                <p style={{margin:"-4px 0 6px",fontSize:10,color:"#94a3b8",fontStyle:"italic"}}>Click "+ Add" to create quick-pick item tabs.</p>
+              )}
               <div style={{display:"grid",gridTemplateColumns:"1fr 52px 76px 26px",gap:5,marginBottom:4}}>
                 <span style={{...lbl,marginBottom:0}}>Item</span><span style={{...lbl,marginBottom:0}}>Qty</span><span style={{...lbl,marginBottom:0}}>Price</span><span/>
               </div>
