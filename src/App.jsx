@@ -2400,8 +2400,11 @@ return(
             onAddShopItem={(item)=>{
               const current=(shopItems||{})[shopId]||[];
               if(current.includes(item)) return;
+              dbAddShopItem(shopId,item).then(()=>{
+                dbLoadShopItems().then(data=>{if(data)setShopItems({"ros-selections":data["ros-selections"]||[],"ros-hairlines":data["ros-hairlines"]||[],"ros-india":data["ros-india"]||[]});});
+              });
               const updated={...(shopItems||{}),[shopId]:[...current,item]};
-              setShopItems(updated); dbAddShopItem(shopId,item);
+              setShopItems(updated);
             }}
             onDeleteShopItem={(item)=>{
               const current=(shopItems||{})[shopId]||[];
