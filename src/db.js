@@ -542,7 +542,7 @@ export const dbLoadUsers = async () => {
     initials: r.initials || '',
     role:     r.role || 'staff',
     pin:      r.pin || '',
-    shops:    r.shops ? r.shops.split(',').filter(Boolean) : [],
+    shops:    r.shops ? r.shops.split(',').filter(Boolean) : null,
     avatar:   r.avatar || '',
   }));
 };
@@ -568,4 +568,28 @@ export const dbDeleteUser = async (id) => {
   const { error } = await sb.from('app_users').delete().eq('id', id);
   if (error) console.error('Delete user error:', error);
   else console.log('\u2705 User deleted:', id);
+};
+// ── Shop Items (quick-add capsules in New Sale form) ──────────────────────
+
+export const dbLoadShopItems = async () => {
+  if (!sb) return {};
+  const { data, error } = await sb.from('shop_items').select('shop_id,name').order('created_at');
+  if (error) { console.error('Load shop items error:', error); return {}; }
+  const result = { 'ros-selections': [], 'ros-hairlines': [], 'ros-india': [] };
+  (data || []).forEach(r => {
+    if (result[r.shop_id]) result[r.shop_id].push(r.name);
+  });
+  return result;
+};
+
+export const dbAddShopItem = async (shopId, name) => {
+  if (!sb) return;
+  const { error } = await sb.from('shop_items').insert({ shop_id: shopId, name: name.trim() });
+  if (error && !error.message.includes('duplicate')) console.error('Add shop item error:', error);
+};
+
+export const dbDeleteShopItem = async (shopId, name) => {
+  if (!sb) return;
+  const { error } = await sb.from('shop_items').delete().eq('shop_id', shopId).eq('name', name);
+  if (error) console.error('Delete shop item error:', error);
 };
