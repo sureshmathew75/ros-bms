@@ -5125,24 +5125,24 @@ const NewCustomerForm=({shop,onSave,onClose,customers=[]})=>{
 /* ══════════════════════════════════════════════════════
    NEW SALE FORM
 ══════════════════════════════════════════════════════ */
-const AddItemButton=({onAdd,accent,accentBg})=>{
-  const [open,setOpen]=React.useState(false);
+const AddTabInput=({onAdd,accent})=>{
   const [val,setVal]=React.useState("");
-  if(!open) return(
-    <button type="button" onClick={()=>setOpen(true)}
-      style={{padding:"3px 10px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",border:"1px dashed "+accent+"88",background:accentBg,color:accent}}>
-      + Add
-    </button>
-  );
+  const commit=()=>{const n=val.trim();if(n){onAdd(n);setVal("");}};
   return(
-    <div style={{display:"flex",gap:4,alignItems:"center"}}>
-      <input autoFocus value={val} onChange={e=>setVal(e.target.value)}
-        onKeyDown={e=>{if(e.key==="Enter"&&val.trim()){onAdd(val.trim());setVal("");setOpen(false);}if(e.key==="Escape"){setOpen(false);setVal("");}}}
-        placeholder="Item name…" style={{padding:"3px 8px",borderRadius:8,border:"1px solid "+accent+"66",fontSize:11,fontFamily:"inherit",outline:"none",width:110}}/>
-      <button type="button" onClick={()=>{if(val.trim()){onAdd(val.trim());setVal("");setOpen(false);}}}
-        style={{padding:"3px 10px",borderRadius:8,border:"none",background:accent,color:"white",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Save</button>
-      <button type="button" onClick={()=>{setOpen(false);setVal("");}}
-        style={{padding:"3px 8px",borderRadius:8,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+    <div style={{display:"flex",gap:4,alignItems:"center",marginTop:6,width:"100%"}}>
+      <input
+        value={val}
+        onChange={e=>setVal(e.target.value)}
+        onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commit();}}}
+        placeholder="Type item name and press Enter or click ＋"
+        style={{flex:1,padding:"6px 10px",borderRadius:8,border:"1px solid "+accent+"66",fontSize:12,fontFamily:"inherit",outline:"none",background:"white"}}
+      />
+      <button
+        type="button"
+        onClick={commit}
+        style={{padding:"6px 14px",borderRadius:8,border:"none",background:accent,color:"white",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
+        ＋
+      </button>
     </div>
   );
 };
@@ -5265,54 +5265,72 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             {/* Items */}
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🛍️ Items</p>
-              <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:8,alignItems:"center"}}>
-                {/* ── Saved tabs (from Supabase shopItems) ── */}
-                {shopItems.map((itm,idx)=>{
-                  const label=typeof itm==="object"?(itm.name||itm.label||""):String(itm);
-                  return(
-                    <div key={idx} style={{display:"flex",alignItems:"center",borderRadius:999,border:"1px solid "+shop.accent+"44",background:shop.accentBg,overflow:"hidden"}}>
-                      <button type="button"
-                        onClick={()=>{const ei=lines.findIndex(l=>!l.name.trim());if(ei>=0)updateLine(lines[ei].id,"name",label);else setLines(ls=>[...ls,{...blankLine(),name:label}]);}}
-                        style={{padding:"3px 9px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",background:"transparent",border:"none",color:shop.accentText}}>+{label}</button>
-                      <button type="button" onClick={()=>onDeleteShopItem&&onDeleteShopItem(label)}
-                        title="Remove tab"
-                        style={{padding:"2px 6px 2px 0",fontSize:11,cursor:"pointer",background:"transparent",border:"none",color:"#94a3b8",lineHeight:1}}>×</button>
-                    </div>
-                  );
-                })}
-                {/* ── History suggestions (from past sales, not yet saved) ── */}
-                {(()=>{
-                  const savedLabels=new Set(shopItems.map(i=>typeof i==="object"?(i.name||i.label||""):String(i)));
-                  const seen=new Set();
-                  const histNames=[];
-                  (sales||[]).forEach(s=>{(s.items||[]).forEach(it=>{const n=(it.name||"").trim();if(n&&!savedLabels.has(n)&&!seen.has(n)){seen.add(n);histNames.push(n);}});});
-                  histNames.sort((a,b)=>a.localeCompare(b));
-                  return histNames.map((name,i)=>(
-                    <div key={"h"+i} style={{display:"flex",alignItems:"center",borderRadius:999,border:"1px solid #cbd5e1",background:"#f8fafc",overflow:"hidden"}}>
-                      <button type="button"
-                        onClick={()=>{const ei=lines.findIndex(l=>!l.name.trim());if(ei>=0)updateLine(lines[ei].id,"name",name);else setLines(ls=>[...ls,{...blankLine(),name}]);}}
-                        style={{padding:"3px 9px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:"transparent",border:"none",color:"#475569"}}>+{name}</button>
-                      <button type="button"
-                        onClick={()=>onAddShopItem&&onAddShopItem(name)}
-                        title="Pin to saved tabs"
-                        style={{padding:"2px 6px 2px 0",fontSize:11,cursor:"pointer",background:"transparent",border:"none",color:"#94a3b8",lineHeight:1}}>★</button>
-                    </div>
-                  ));
-                })()}
-                <AddItemButton onAdd={(name)=>onAddShopItem&&onAddShopItem(name)} accent={shop.accent} accentBg={shop.accentBg}/>
-              </div>
-              {shopItems.length===0&&(sales||[]).every(s=>!(s.items||[]).some(it=>(it.name||"").trim()))&&(
-                <p style={{margin:"-4px 0 6px",fontSize:10,color:"#94a3b8",fontStyle:"italic"}}>Click "+ Add" to create quick-pick item tabs.</p>
-              )}
+
+              {/* ── Quick-pick tab bar ── */}
+              {(()=>{
+                const savedLabels=shopItems.map(i=>typeof i==="object"?(i.name||i.label||""):String(i));
+                const savedSet=new Set(savedLabels);
+                const seen=new Set();
+                const histNames=[];
+                (sales||[]).forEach(s=>{(s.items||[]).forEach(it=>{const n=(it.name||"").trim();if(n&&!savedSet.has(n)&&!seen.has(n)){seen.add(n);histNames.push(n);}});});
+                histNames.sort((a,b)=>a.localeCompare(b));
+                const fillName=(name)=>{
+                  const ei=lines.findIndex(l=>!l.name.trim());
+                  if(ei>=0) updateLine(lines[ei].id,"name",name);
+                  else setLines(ls=>[...ls,{...blankLine(),name}]);
+                };
+                return(
+                  <div style={{marginBottom:10}}>
+                    {/* Saved tabs */}
+                    {savedLabels.length>0&&(
+                      <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:5}}>
+                        {savedLabels.map((label,idx)=>(
+                          <div key={idx} style={{display:"inline-flex",alignItems:"center",borderRadius:999,border:"1px solid "+shop.accent+"55",background:shop.accentBg,overflow:"hidden"}}>
+                            <button type="button" onClick={()=>fillName(label)}
+                              style={{padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",background:"transparent",border:"none",color:shop.accentText}}>
+                              {label}
+                            </button>
+                            <button type="button" onClick={()=>onDeleteShopItem&&onDeleteShopItem(label)}
+                              title="Remove tab"
+                              style={{padding:"0 8px 0 0",fontSize:12,cursor:"pointer",background:"transparent",border:"none",color:"#94a3b8",lineHeight:1}}>×</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {/* History suggestions */}
+                    {histNames.length>0&&(
+                      <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:5}}>
+                        {histNames.map((name,i)=>(
+                          <div key={i} style={{display:"inline-flex",alignItems:"center",borderRadius:999,border:"1px solid #cbd5e1",background:"white",overflow:"hidden"}}>
+                            <button type="button" onClick={()=>fillName(name)}
+                              style={{padding:"4px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:"transparent",border:"none",color:"#475569"}}>
+                              {name}
+                            </button>
+                            <button type="button" onClick={()=>onAddShopItem&&onAddShopItem(name)}
+                              title="Save as tab"
+                              style={{padding:"0 8px 0 0",fontSize:11,cursor:"pointer",background:"transparent",border:"none",color:"#94a3b8",lineHeight:1}}>★</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {/* Add new tab input — always visible */}
+                    <AddTabInput onAdd={(name)=>onAddShopItem&&onAddShopItem(name)} accent={shop.accent}/>
+                  </div>
+                );
+              })()}
+
+              {/* ── Item rows ── */}
               <div style={{display:"grid",gridTemplateColumns:"1fr 52px 76px 26px",gap:5,marginBottom:4}}>
                 <span style={{...lbl,marginBottom:0}}>Item</span><span style={{...lbl,marginBottom:0}}>Qty</span><span style={{...lbl,marginBottom:0}}>Price</span><span/>
               </div>
-              {lines.map((line,idx)=>(<div key={line.id} style={{display:"grid",gridTemplateColumns:"1fr 52px 76px 26px",gap:5,marginBottom:5,alignItems:"center"}}>
-                <input value={line.name} onChange={e=>updateLine(line.id,"name",e.target.value)} placeholder={"Item "+(idx+1)} style={{...inp,padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
-                <input type="number" onWheel={e=>e.target.blur()} value={line.qty} onChange={e=>updateLine(line.id,"qty",e.target.value)} style={{...inp,textAlign:"center",padding:"7px 5px"}} onFocus={fo} onBlur={bl}/>
-                <input type="number" onWheel={e=>e.target.blur()} value={line.price} onChange={e=>updateLine(line.id,"price",e.target.value)} placeholder="0.00" style={{...inp,textAlign:"right",padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
-                <button type="button" onClick={()=>removeLine(line.id)} style={{width:26,height:32,borderRadius:7,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
-              </div>))}
+              {lines.map((line,idx)=>(
+                <div key={line.id} style={{display:"grid",gridTemplateColumns:"1fr 52px 76px 26px",gap:5,marginBottom:5,alignItems:"center"}}>
+                  <input value={line.name} onChange={e=>updateLine(line.id,"name",e.target.value)} placeholder={"Item "+(idx+1)} style={{...inp,padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
+                  <input type="number" onWheel={e=>e.target.blur()} value={line.qty} onChange={e=>updateLine(line.id,"qty",e.target.value)} style={{...inp,textAlign:"center",padding:"7px 5px"}} onFocus={fo} onBlur={bl}/>
+                  <input type="number" onWheel={e=>e.target.blur()} value={line.price} onChange={e=>updateLine(line.id,"price",e.target.value)} placeholder="0.00" style={{...inp,textAlign:"right",padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
+                  <button type="button" onClick={()=>removeLine(line.id)} style={{width:26,height:32,borderRadius:7,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+                </div>
+              ))}
               <button type="button" onClick={addLine} style={{padding:"5px 12px",borderRadius:7,border:"1px dashed "+shop.accent+"55",background:shop.accentBg,color:shop.accentText,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>＋ Add Item</button>
             </div>
 
