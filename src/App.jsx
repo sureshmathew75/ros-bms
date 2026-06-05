@@ -5134,12 +5134,10 @@ const AddTabInput=({onAdd,accent})=>{
         value={val}
         onChange={e=>setVal(e.target.value)}
         onKeyDown={e=>{if(e.key==="Enter"){e.preventDefault();commit();}}}
-        placeholder="Type item name and press Enter or click ＋"
+        placeholder="Type item name, press Enter or ＋"
         style={{flex:1,padding:"6px 10px",borderRadius:8,border:"1px solid "+accent+"66",fontSize:12,fontFamily:"inherit",outline:"none",background:"white"}}
       />
-      <button
-        type="button"
-        onClick={commit}
+      <button type="button" onClick={commit}
         style={{padding:"6px 14px",borderRadius:8,border:"none",background:accent,color:"white",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
         ＋
       </button>
@@ -5265,7 +5263,6 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             {/* Items */}
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🛍️ Items</p>
-
               {/* ── Quick-pick tab bar ── */}
               {(()=>{
                 const savedLabels=shopItems.map(i=>typeof i==="object"?(i.name||i.label||""):String(i));
@@ -5274,51 +5271,33 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 const histNames=[];
                 (sales||[]).forEach(s=>{(s.items||[]).forEach(it=>{const n=(it.name||"").trim();if(n&&!savedSet.has(n)&&!seen.has(n)){seen.add(n);histNames.push(n);}});});
                 histNames.sort((a,b)=>a.localeCompare(b));
-                const fillName=(name)=>{
-                  const ei=lines.findIndex(l=>!l.name.trim());
-                  if(ei>=0) updateLine(lines[ei].id,"name",name);
-                  else setLines(ls=>[...ls,{...blankLine(),name}]);
-                };
+                const fillName=(name)=>{const ei=lines.findIndex(l=>!l.name.trim());if(ei>=0)updateLine(lines[ei].id,"name",name);else setLines(ls=>[...ls,{...blankLine(),name}]);};
                 return(
                   <div style={{marginBottom:10}}>
-                    {/* Saved tabs */}
                     {savedLabels.length>0&&(
                       <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:5}}>
                         {savedLabels.map((label,idx)=>(
                           <div key={idx} style={{display:"inline-flex",alignItems:"center",borderRadius:999,border:"1px solid "+shop.accent+"55",background:shop.accentBg,overflow:"hidden"}}>
-                            <button type="button" onClick={()=>fillName(label)}
-                              style={{padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",background:"transparent",border:"none",color:shop.accentText}}>
-                              {label}
-                            </button>
-                            <button type="button" onClick={()=>onDeleteShopItem&&onDeleteShopItem(label)}
-                              title="Remove tab"
-                              style={{padding:"0 8px 0 0",fontSize:12,cursor:"pointer",background:"transparent",border:"none",color:"#94a3b8",lineHeight:1}}>×</button>
+                            <button type="button" onClick={()=>fillName(label)} style={{padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",background:"transparent",border:"none",color:shop.accentText}}>{label}</button>
+                            <button type="button" onClick={()=>onDeleteShopItem&&onDeleteShopItem(label)} title="Remove" style={{padding:"0 8px 0 0",fontSize:12,cursor:"pointer",background:"transparent",border:"none",color:"#94a3b8",lineHeight:1}}>×</button>
                           </div>
                         ))}
                       </div>
                     )}
-                    {/* History suggestions */}
                     {histNames.length>0&&(
                       <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:5}}>
                         {histNames.map((name,i)=>(
                           <div key={i} style={{display:"inline-flex",alignItems:"center",borderRadius:999,border:"1px solid #cbd5e1",background:"white",overflow:"hidden"}}>
-                            <button type="button" onClick={()=>fillName(name)}
-                              style={{padding:"4px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:"transparent",border:"none",color:"#475569"}}>
-                              {name}
-                            </button>
-                            <button type="button" onClick={()=>onAddShopItem&&onAddShopItem(name)}
-                              title="Save as tab"
-                              style={{padding:"0 8px 0 0",fontSize:11,cursor:"pointer",background:"transparent",border:"none",color:"#94a3b8",lineHeight:1}}>★</button>
+                            <button type="button" onClick={()=>fillName(name)} style={{padding:"4px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:"transparent",border:"none",color:"#475569"}}>{name}</button>
+                            <button type="button" onClick={()=>onAddShopItem&&onAddShopItem(name)} title="Pin tab" style={{padding:"0 8px 0 0",fontSize:11,cursor:"pointer",background:"transparent",border:"none",color:"#94a3b8",lineHeight:1}}>★</button>
                           </div>
                         ))}
                       </div>
                     )}
-                    {/* Add new tab input — always visible */}
                     <AddTabInput onAdd={(name)=>onAddShopItem&&onAddShopItem(name)} accent={shop.accent}/>
                   </div>
                 );
               })()}
-
               {/* ── Item rows ── */}
               <div style={{display:"grid",gridTemplateColumns:"1fr 52px 76px 26px",gap:5,marginBottom:4}}>
                 <span style={{...lbl,marginBottom:0}}>Item</span><span style={{...lbl,marginBottom:0}}>Qty</span><span style={{...lbl,marginBottom:0}}>Price</span><span/>
@@ -6573,7 +6552,7 @@ export default function App(){
   const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
   const [customers,setCustomers]=useState([]);
   const [shopItems,setShopItems]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
-  useEffect(()=>{dbLoadShopItems().then(data=>{if(data)setShopItems({"ros-selections":data["ros-selections"]||[],"ros-hairlines":data["ros-hairlines"]||[],"ros-india":data["ros-india"]||[]});});});
+  useEffect(()=>{dbLoadShopItems().then(data=>{if(data)setShopItems({"ros-selections":data["ros-selections"]||[],"ros-hairlines":data["ros-hairlines"]||[],"ros-india":data["ros-india"]||[]});});},[]);
   const saveShopItems=(updated)=>setShopItems(updated);
 
   const updateSalesData=setSalesData;
