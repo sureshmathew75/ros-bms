@@ -5270,7 +5270,26 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                     </div>
                   );
                 })}
-                <AddItemButton onAdd={(name)=>onAddShopItem&&onAddShopItem(name)} accent={shop.accent} accentBg={shop.accentBg}/>
+                {(()=>{
+                  const [addOpen,setAddOpen]=React.useState(false);
+                  const [addVal,setAddVal]=React.useState("");
+                  return addOpen?(
+                    <div style={{display:"flex",gap:4,alignItems:"center"}}>
+                      <input autoFocus value={addVal} onChange={e=>setAddVal(e.target.value)}
+                        onKeyDown={e=>{if(e.key==="Enter"&&addVal.trim()){onAddShopItem&&onAddShopItem(addVal.trim());setAddVal("");setAddOpen(false);}if(e.key==="Escape"){setAddOpen(false);setAddVal("");}}}
+                        placeholder="Item name…" style={{padding:"3px 8px",borderRadius:8,border:"1px solid "+shop.accent+"66",fontSize:11,fontFamily:"inherit",outline:"none",width:110}}/>
+                      <button type="button" onMouseDown={e=>{e.preventDefault();e.stopPropagation();if(addVal.trim()){onAddShopItem&&onAddShopItem(addVal.trim());setAddVal("");setAddOpen(false);}}}
+                        style={{padding:"3px 10px",borderRadius:8,border:"none",background:shop.accent,color:"white",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Save</button>
+                      <button type="button" onMouseDown={e=>{e.preventDefault();setAddOpen(false);setAddVal("");}}
+                        style={{padding:"3px 8px",borderRadius:8,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+                    </div>
+                  ):(
+                    <button type="button" onMouseDown={e=>{e.preventDefault();e.stopPropagation();setAddOpen(true);}}
+                      style={{padding:"3px 10px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",border:"1px dashed "+shop.accent+"88",background:shop.accentBg,color:shop.accent}}>
+                      + Add
+                    </button>
+                  );
+                })()}
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 52px 76px 26px",gap:5,marginBottom:4}}>
                 <span style={{...lbl,marginBottom:0}}>Item</span><span style={{...lbl,marginBottom:0}}>Qty</span><span style={{...lbl,marginBottom:0}}>Price</span><span/>
