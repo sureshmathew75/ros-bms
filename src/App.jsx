@@ -1506,10 +1506,95 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,user})=>{
   );
 };
 
-const ReturnsPanel=({shopId,shop,returns,setReturns,user})=>{
+const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages})=>{
   const [filter,setFilter]=React.useState("ALL");
   const [selectedReturn,setSelectedReturn]=React.useState(null);
   const [search,setSearch]=React.useState("");
+
+  // ── On-load scan: 7-day reminder + 14-day expiry ──
+  React.useEffect(()=>{
+    if(!returns||returns.length===0)return;
+    const scanReturns=async()=>{
+      const today=new Date();today.setHours(0,0,0,0);
+      let anyExpired=false;
+
+      for(const ret of returns){
+        if(["REFUNDED","EXCHANGED","RETURN_EXPIRED"].includes(ret.status))continue;
+        if(!ret.returnDeadline)continue;
+
+        const deadline=new Date(ret.returnDeadline);deadline.setHours(0,0,0,0);
+        const created=new Date(ret.createdAt);created.setHours(0,0,0,0);
+        const daysFromCreated=Math.floor((today-created)/(1000*60*60*24));
+        const daysToDeadline=Math.ceil((deadline-today)/(1000*60*60*24));
+        const hasTracking=!!(ret.trackingNo);
+        const isReceived=ret.status==="RETURN_RECEIVED";
+
+        // ── 7-day reminder: no tracking uploaded after 7 days ──
+        if(daysFromCreated>=7&&!hasTracking&&!isReceived){
+          const exists=await dbMessageExists(shopId,ret.saleId,"RETURN_REMINDER");
+          if(!exists){
+            await dbAddMessage({
+              shopId,
+              saleId:ret.saleId,
+              customer:ret.customer,
+              phone:ret.phone,
+              messageType:"RETURN_REMINDER",
+              messageBody:`Dear ${ret.customer},
+
+This is a reminder regarding your return request ${ret.id}.
+
+We have not yet received your returned item or tracking information. Please ensure your return is dispatched as soon as possible.
+
+If you have already sent the item, please contact us with your tracking number so we can update your case.
+
+Your return deadline is ${new Date(ret.returnDeadline).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}.
+
+Thank you for your cooperation.`,
+            });
+          }
+        }
+
+        // ── 14-day expiry: deadline passed, no tracking, not received ──
+        if(daysToDeadline<0&&!hasTracking&&!isReceived){
+          // Mark as expired in Supabase
+          await dbSaveReturn({...ret,status:"RETURN_EXPIRED",expiredAt:today.toISOString().split("T")[0]});
+          anyExpired=true;
+
+          // Queue expiry message if not already sent
+          const exists=await dbMessageExists(shopId,ret.saleId,"RETURN_EXPIRED");
+          if(!exists){
+            await dbAddMessage({
+              shopId,
+              saleId:ret.saleId,
+              customer:ret.customer,
+              phone:ret.phone,
+              messageType:"RETURN_EXPIRED",
+              messageBody:`Dear ${ret.customer},
+
+Unfortunately, your return request ${ret.id} has now expired as we did not receive your returned item within the required timeframe.
+
+If you believe this is an error or have any questions, please contact us directly and we will be happy to assist.
+
+Please note that this does not affect your statutory rights under UK consumer legislation.
+
+Thank you for shopping with ROS.`,
+            });
+          }
+        }
+      }
+
+      // If any returns were expired, reload the returns list
+      if(anyExpired){
+        const updated=await dbLoadReturns(shopId);
+        setReturns(updated||[]);
+      }
+
+      // Reload messages to surface any newly queued reminders/expiry notices
+      const updatedMsgs=await dbLoadMessages(shopId);
+      if(setMessages)setMessages(updatedMsgs||[]);
+    };
+    scanReturns().catch(console.error);
+  },[returns.length]);
 
   const ACTIVE_STATUSES=["RETURN_APPROVED","RETURN_IN_TRANSIT","RETURN_RECEIVED"];
   const filtered=returns.filter(r=>{
@@ -1724,12 +1809,12 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [returns,setReturns]=useState([]);
   const [returnsLoaded,setReturnsLoaded]=useState(false);
 
-  // Load messages when messages tab is opened
+  // Load messages + returns on tab open; also load returns on dashboard for Actions Today
   React.useEffect(()=>{
-    if(tab==="messages"&&!messagesLoaded){
+    if((tab==="messages"||tab==="dashboard")&&!messagesLoaded){
       dbLoadMessages(shopId).then(data=>{setMessages(data||[]);setMessagesLoaded(true);}).catch(()=>{});
     }
-    if(tab==="returns"&&!returnsLoaded){
+    if((tab==="returns"||tab==="dashboard")&&!returnsLoaded){
       dbLoadReturns(shopId).then(data=>{setReturns(data||[]);setReturnsLoaded(true);}).catch(()=>{});
     }
   },[tab]);
@@ -3247,6 +3332,8 @@ return(
               returns={returns}
               setReturns={setReturns}
               user={user}
+              messages={messages}
+              setMessages={setMessages}
             />
           )}
 
