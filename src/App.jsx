@@ -1314,18 +1314,263 @@ const ReturnsPortal=()=>{
 /* ── End ReturnsPortal ───────────────────────────────────────────────────── */
 
 /* ═══════════════════════════════════════════════════════════
-   RETURN TRACKING PORTAL — /return-tracking  (Phase 5)
+   RETURN TRACKING PORTAL — /return-tracking
+   Customer submits tracking number + proof of postage
    ═══════════════════════════════════════════════════════════ */
-const ReturnTrackingPortal=()=>(
-  <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#f8fafc,#f1f5f9)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"system-ui,sans-serif"}}>
-    <div style={{background:"white",borderRadius:20,boxShadow:"0 20px 60px rgba(0,0,0,0.08)",maxWidth:480,width:"100%",padding:40,textAlign:"center"}}>
-      <div style={{fontSize:48,marginBottom:16}}>📦</div>
-      <h1 style={{margin:"0 0 8px",fontSize:22,fontWeight:800,color:"#0f172a"}}>Return Tracking</h1>
-      <p style={{margin:0,fontSize:14,color:"#64748b"}}>Coming soon. Please contact us directly if you need to update your return.</p>
+const ReturnTrackingPortal=()=>{
+  const [step,setStep]=React.useState("form"); // form | success | error
+  const [loading,setLoading]=React.useState(false);
+  const [errorMsg,setErrorMsg]=React.useState("");
+  const [returnRecord,setReturnRecord]=React.useState(null);
+  const [form,setForm]=React.useState({
+    returnId:"",phone:"",trackingNo:"",courier:"",proofFile:null,proofName:"",
+  });
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const fileRef=React.useRef(null);
+
+  const COURIERS=["Royal Mail","Evri","DPD","Parcelforce","DHL","UPS","Other"];
+
+  const SB_URL="https://fssyvdxqtruacauwygjj.supabase.co";
+  const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzc3l2ZHhxdHJ1YWNhdXd5Z2pqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0MDYwODQsImV4cCI6MjA4ODk4MjA4NH0.O8Mp89s2AXCZyvykzLmpiUeC34Hl4LV3NtLgzffJRY4";
+
+  const getSb=async()=>{
+    const {createClient}=await import("https://esm.sh/@supabase/supabase-js@2");
+    return createClient(SB_URL,SB_KEY);
+  };
+
+  // Step 1 — look up return by ID + phone
+  const handleLookup=async()=>{
+    if(!form.returnId.trim()||!form.phone.trim()){
+      setErrorMsg("Please enter your Return ID and WhatsApp number.");return;
+    }
+    setErrorMsg("");setLoading(true);
+    try{
+      const sb=await getSb();
+      const retId=form.returnId.trim().toUpperCase();
+      const {data,error}=await sb.from("returns").select("*").eq("id",retId).maybeSingle();
+      if(error||!data){
+        setErrorMsg("Return ID not found. Please check and try again.");
+        setLoading(false);return;
+      }
+      // Validate phone
+      const clean=p=>String(p||"").replace(/\D/g,"").slice(-10);
+      if(clean(data.phone)!==clean(form.phone)){
+        setErrorMsg("Phone number does not match this Return ID. Please check and try again.");
+        setLoading(false);return;
+      }
+      if(data.status==="RETURN_EXPIRED"){
+        setErrorMsg("This return has expired. Please contact us directly for assistance.");
+        setLoading(false);return;
+      }
+      if(["REFUNDED","EXCHANGED"].includes(data.status)){
+        setErrorMsg("This return has already been completed. No further action is needed.");
+        setLoading(false);return;
+      }
+      setReturnRecord(data);
+      setStep("upload");
+    }catch(e){
+      setErrorMsg("An unexpected error occurred. Please try again.");
+    }
+    setLoading(false);
+  };
+
+  // Step 2 — upload proof + save tracking
+  const handleSubmit=async()=>{
+    if(!form.trackingNo.trim()||!form.courier){
+      setErrorMsg("Please enter your tracking number and select a courier.");return;
+    }
+    setErrorMsg("");setLoading(true);
+    try{
+      const sb=await getSb();
+      let proofUrl="";
+
+      // Upload proof of postage if provided
+      if(form.proofFile){
+        const ext=form.proofName.split(".").pop()||"jpg";
+        const path=`returns/${returnRecord.id}/${Date.now()}.${ext}`;
+        const {data:upData,error:upErr}=await sb.storage
+          .from("return-proofs")
+          .upload(path,form.proofFile,{contentType:form.proofFile.type,upsert:true});
+        if(upErr){
+          // Storage bucket may not exist — proceed without proof URL
+          console.warn("Proof upload failed:",upErr.message);
+        } else {
+          const {data:urlData}=sb.storage.from("return-proofs").getPublicUrl(path);
+          proofUrl=urlData?.publicUrl||"";
+        }
+      }
+
+      // Update return record
+      const{error:saveErr}=await sb.from("returns").update({
+        tracking_no:    form.trackingNo.trim().toUpperCase(),
+        courier:        form.courier,
+        proof_url:      proofUrl,
+        status:         "RETURN_IN_TRANSIT",
+      }).eq("id",returnRecord.id);
+
+      if(saveErr){
+        setErrorMsg("Failed to save your tracking details. Please try again.");
+        setLoading(false);return;
+      }
+      setStep("success");
+    }catch(e){
+      setErrorMsg("An unexpected error occurred. Please try again.");
+    }
+    setLoading(false);
+  };
+
+  const inputStyle={width:"100%",padding:"11px 14px",borderRadius:10,border:"1.5px solid #e2e8f0",
+    fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box",background:"white"};
+  const labelStyle={display:"block",fontSize:12,fontWeight:700,color:"#374151",
+    marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
+  const fmtDate=d=>{if(!d)return"";try{return new Date(d).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"});}catch{return d;}};
+
+  // ── Success screen ──
+  if(step==="success") return(
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#f0fdf4,#dcfce7)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"system-ui,sans-serif"}}>
+      <div style={{background:"white",borderRadius:20,boxShadow:"0 20px 60px rgba(0,0,0,0.10)",maxWidth:440,width:"100%",padding:40,textAlign:"center"}}>
+        <div style={{width:72,height:72,borderRadius:"50%",background:"#dcfce7",border:"3px solid #16a34a",display:"flex",alignItems:"center",justifyContent:"center",fontSize:32,margin:"0 auto 20px"}}>✅</div>
+        <h1 style={{margin:"0 0 8px",fontSize:22,fontWeight:800,color:"#0f172a"}}>Tracking Submitted</h1>
+        <p style={{margin:"0 0 20px",fontSize:14,color:"#64748b"}}>Thank you — your return is now in transit.</p>
+        <div style={{background:"#f0fdf4",borderRadius:12,padding:"14px 18px",border:"1px solid #86efac",marginBottom:20,textAlign:"left"}}>
+          <p style={{margin:"0 0 6px",fontSize:11,fontWeight:700,color:"#166534",textTransform:"uppercase"}}>Return Summary</p>
+          <p style={{margin:"0 0 3px",fontSize:13,color:"#374151"}}><strong>Return ID:</strong> {returnRecord?.id}</p>
+          <p style={{margin:"0 0 3px",fontSize:13,color:"#374151"}}><strong>Tracking:</strong> {form.trackingNo.toUpperCase()}</p>
+          <p style={{margin:0,fontSize:13,color:"#374151"}}><strong>Courier:</strong> {form.courier}</p>
+        </div>
+        <p style={{margin:0,fontSize:12,color:"#94a3b8",lineHeight:1.6}}>
+          We will notify you via WhatsApp once we receive your item and begin processing your {returnRecord?.resolution}.
+        </p>
+      </div>
     </div>
-  </div>
-);
-/* ── End ReturnTrackingPortal stub ──────────────────────────────────────── */
+  );
+
+  // ── Upload screen (after lookup) ──
+  if(step==="upload") return(
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#f8fafc,#f1f5f9)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"system-ui,sans-serif"}}>
+      <div style={{background:"white",borderRadius:20,boxShadow:"0 20px 60px rgba(0,0,0,0.08)",maxWidth:480,width:"100%",overflow:"hidden"}}>
+        <div style={{background:"linear-gradient(135deg,#166534,#15803d)",padding:"24px 28px 20px"}}>
+          <p style={{margin:"0 0 2px",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.08em"}}>Return Tracking</p>
+          <h1 style={{margin:"0 0 2px",fontSize:20,fontWeight:800,color:"white"}}>📦 Submit Tracking Info</h1>
+          <p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.8)"}}>Return ID: {returnRecord?.id} · Deadline: {fmtDate(returnRecord?.return_deadline)}</p>
+        </div>
+        <div style={{padding:"24px 28px"}}>
+          {/* Return info banner */}
+          <div style={{background:"#f0fdf4",borderRadius:10,padding:"10px 14px",border:"1px solid #86efac",marginBottom:18}}>
+            <p style={{margin:0,fontSize:13,color:"#166534"}}>
+              <strong>{returnRecord?.customer}</strong> · {returnRecord?.resolution==="exchange"?"🔄 Exchange":"💰 Refund"} · {returnRecord?.reason}
+            </p>
+          </div>
+
+          {/* Tracking number */}
+          <div style={{marginBottom:14}}>
+            <label style={labelStyle}>Tracking Number</label>
+            <input value={form.trackingNo} onChange={e=>set("trackingNo",e.target.value.toUpperCase())}
+              placeholder="e.g. AB123456789GB"
+              style={{...inputStyle,fontFamily:"DM Mono,monospace",fontWeight:700,letterSpacing:1}}/>
+          </div>
+
+          {/* Courier */}
+          <div style={{marginBottom:14}}>
+            <label style={labelStyle}>Courier / Postal Service</label>
+            <select value={form.courier} onChange={e=>set("courier",e.target.value)} style={inputStyle}>
+              <option value="">— Select courier —</option>
+              {COURIERS.map(c=><option key={c}>{c}</option>)}
+            </select>
+          </div>
+
+          {/* Proof of postage upload */}
+          <div style={{marginBottom:20}}>
+            <label style={labelStyle}>Proof of Postage <span style={{fontWeight:400,textTransform:"none",color:"#94a3b8"}}>(optional but recommended)</span></label>
+            <input ref={fileRef} type="file" accept="image/*,.pdf" style={{display:"none"}}
+              onChange={e=>{
+                const f=e.target.files[0];
+                if(f){set("proofFile",f);set("proofName",f.name);}
+              }}/>
+            {form.proofFile?(
+              <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 14px",borderRadius:10,border:"1.5px solid #86efac",background:"#f0fdf4"}}>
+                <span style={{fontSize:20}}>📎</span>
+                <span style={{flex:1,fontSize:13,color:"#166534",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{form.proofName}</span>
+                <button onClick={()=>{set("proofFile",null);set("proofName","");if(fileRef.current)fileRef.current.value="";}}
+                  style={{border:"none",background:"transparent",color:"#94a3b8",cursor:"pointer",fontSize:16,padding:0}}>×</button>
+              </div>
+            ):(
+              <button onClick={()=>fileRef.current&&fileRef.current.click()}
+                style={{width:"100%",padding:"14px",borderRadius:10,border:"2px dashed #cbd5e1",background:"#f8fafc",
+                  color:"#64748b",fontSize:13,fontWeight:600,cursor:"pointer",fontFamily:"inherit",
+                  display:"flex",alignItems:"center",justifyContent:"center",gap:8}}>
+                <span style={{fontSize:20}}>📷</span> Upload Photo or PDF
+              </button>
+            )}
+            <p style={{margin:"6px 0 0",fontSize:11,color:"#94a3b8"}}>Photo of your postage receipt or tracking confirmation</p>
+          </div>
+
+          {errorMsg&&(
+            <div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:13,color:"#dc2626",fontWeight:600}}>
+              ⚠️ {errorMsg}
+            </div>
+          )}
+
+          <button onClick={handleSubmit} disabled={loading}
+            style={{width:"100%",padding:"14px 0",borderRadius:12,border:"none",
+              background:loading?"#94a3b8":"linear-gradient(135deg,#166534,#15803d)",
+              color:"white",fontWeight:800,fontSize:15,cursor:loading?"default":"pointer",
+              fontFamily:"inherit",boxShadow:loading?"none":"0 4px 20px rgba(22,101,52,0.30)"}}>
+            {loading?"Submitting…":"Submit Tracking →"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── Lookup screen (default) ──
+  return(
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#f8fafc,#f1f5f9)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"system-ui,sans-serif"}}>
+      <div style={{background:"white",borderRadius:20,boxShadow:"0 20px 60px rgba(0,0,0,0.08)",maxWidth:440,width:"100%",overflow:"hidden"}}>
+        <div style={{background:"linear-gradient(135deg,#0f172a,#1e293b)",padding:"24px 28px 20px"}}>
+          <p style={{margin:"0 0 2px",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.6)",textTransform:"uppercase",letterSpacing:"0.08em"}}>ROS Returns</p>
+          <h1 style={{margin:"0 0 2px",fontSize:20,fontWeight:800,color:"white"}}>📦 Return Tracking</h1>
+          <p style={{margin:0,fontSize:12,color:"rgba(255,255,255,0.7)"}}>Submit your tracking number and proof of postage</p>
+        </div>
+        <div style={{padding:"24px 28px"}}>
+          <div style={{marginBottom:14}}>
+            <label style={labelStyle}>Return ID</label>
+            <input value={form.returnId} onChange={e=>set("returnId",e.target.value.toUpperCase())}
+              placeholder="e.g. RET-2026-0001"
+              style={{...inputStyle,fontFamily:"DM Mono,monospace",fontWeight:700,letterSpacing:1}}/>
+            <p style={{margin:"4px 0 0",fontSize:11,color:"#94a3b8"}}>Found in your return approval message</p>
+          </div>
+          <div style={{marginBottom:20}}>
+            <label style={labelStyle}>WhatsApp Number</label>
+            <input value={form.phone} onChange={e=>set("phone",e.target.value)}
+              placeholder="e.g. 07700 000000" type="tel"
+              style={inputStyle}/>
+            <p style={{margin:"4px 0 0",fontSize:11,color:"#94a3b8"}}>Must match the number used to submit your return</p>
+          </div>
+
+          {errorMsg&&(
+            <div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:10,padding:"10px 14px",marginBottom:14,fontSize:13,color:"#dc2626",fontWeight:600}}>
+              ⚠️ {errorMsg}
+            </div>
+          )}
+
+          <button onClick={handleLookup} disabled={loading}
+            style={{width:"100%",padding:"14px 0",borderRadius:12,border:"none",
+              background:loading?"#94a3b8":"linear-gradient(135deg,#0f172a,#334155)",
+              color:"white",fontWeight:800,fontSize:15,cursor:loading?"default":"pointer",
+              fontFamily:"inherit",boxShadow:loading?"none":"0 4px 20px rgba(15,23,42,0.25)"}}>
+            {loading?"Looking up…":"Find My Return →"}
+          </button>
+
+          <p style={{margin:"16px 0 0",fontSize:11,color:"#94a3b8",textAlign:"center"}}>
+            Need help? Contact us directly via WhatsApp.
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+/* ── End ReturnTrackingPortal ────────────────────────────────────────────── */
 
 
 
