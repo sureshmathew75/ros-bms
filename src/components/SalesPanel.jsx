@@ -212,19 +212,19 @@ function fyLabel(startYear) {
   return `FY ${startYear}–${String(startYear + 1).slice(-2)}`;
 }
 
-function buildRowsWithSeparators(sortedRows) {
+function buildRowsWithSeparators(sortedRows, showFY = true, showMonth = true) {
   const result = [];
   for (let i = 0; i < sortedRows.length; i++) {
     const curr = sortedRows[i];
     const prev = sortedRows[i - 1];
     if (prev) {
-      const prevFY = fyStartYear(prev);   // pass full sale object
+      const prevFY = fyStartYear(prev);
       const currFY = fyStartYear(curr);
       const prevMK = monthKey(prev.date);
       const currMK = monthKey(curr.date);
-      if (prevFY !== currFY)
+      if (showFY && prevFY !== currFY)
         result.push({ _type: "fy", _fyStart: currFY, _label: fyLabel(currFY) });
-      if (prevMK !== currMK)
+      if (showMonth && prevMK !== currMK)
         result.push({ _type: "month", _monthKey: currMK, _label: monthLabel(curr.date) });
     }
     result.push(curr);
@@ -294,15 +294,11 @@ export default function SalesPanel({
   setStatusFilter,
   statusTabs,
   statusRowBg: statusRowBgProp,
-  onSaveTracking,
-  onMarkDelivered,
 }) {
   const [hovR,    setHovR]    = useState(null);
   const [hovCard, setHovCard] = useState(null);
   const [hovTab,  setHovTab]  = useState(null);
   const [reloading, setReloading] = useState(false);
-  const [editTrackingId, setEditTrackingId] = useState(null);
-  const [trackingInput,  setTrackingInput]  = useState("");
   /* Month picker state */
   const [pickedMonth, setPickedMonth] = useState(null);   // "YYYY-MM" or null
   const [pickerOpen,  setPickerOpen]  = useState(false);
@@ -436,9 +432,13 @@ export default function SalesPanel({
   );
 
   /* ── Rows with month / FY separators ────────────────────────────────── */
+  // Only show FY separator when viewing year or lifetime
+  // Only show month separator when viewing year, lifetime, or FY (not day/week/single month)
+  const showFYSep   = effectivePeriod === "year" || effectivePeriod === "lifetime";
+  const showMonSep  = showFYSep; // month separators only useful alongside FY view
   const rowsWithSeparators = useMemo(
-    () => buildRowsWithSeparators(sortedSales),
-    [sortedSales]
+    () => buildRowsWithSeparators(sortedSales, showFYSep, showMonSep),
+    [sortedSales, showFYSep, showMonSep]
   );
 
   /* ── Period range label ─────────────────────────────────────────────── */
@@ -691,40 +691,75 @@ export default function SalesPanel({
                     boxShadow: isHov ? `0 0 0 3px ${card.glowColor}` : "none", transition:"box-shadow 0.22s",
                   }} />
                 </div>
-                {/* FY rows — newest first, current year bigger */}
+                {/* KPI value — single total for short periods, FY breakdown for year/lifetime */}
                 <div style={{ display:"flex", flexDirection:"column", gap:5 }}>
-                  {fyGroups.length === 0 && (
-                    <span style={{ fontSize:22, fontWeight:900, color:"#94a3b8" }}>—</span>
-                  )}
-                  {fyGroups.map((g, gi) => {
-                    const isCurrent = gi === 0;
-                    return (
-                      <div key={g.fyStart} style={{
-                        display:"flex", alignItems:"center", justifyContent:"space-between",
-                        padding: isCurrent ? "6px 10px" : "4px 10px",
-                        borderRadius:8,
-                        background: isCurrent ? `${card.topColor}12` : "#f8fafc",
-                        borderLeft: `3px solid ${isCurrent ? card.topColor : "#e2e8f0"}`,
+                  {showFYSep ? (
+                    <>
+                      {fyGroups.length === 0 && (
+                        <span style={{ fontSize:22, fontWeight:900, color:"#94a3b8" }}>—</span>
+                      )}
+                      {fyGroups.map((g, gi) => {
+                        const isCurrent = gi === 0;
+                        return (
+                          <div key={g.fyStart} style={{
+                            display:"flex", alignItems:"center", justifyContent:"space-between",
+                            padding: isCurrent ? "6px 10px" : "4px 10px",
+                            borderRadius:8,
+                            background: isCurrent ? `${card.topColor}12` : "#f8fafc",
+                            borderLeft: `3px solid ${isCurrent ? card.topColor : "#e2e8f0"}`,
+                          }}>
+                            <span style={{
+                              fontSize: isCurrent ? 10 : 9, fontWeight:700,
+                              color: isCurrent ? card.topColor : "#94a3b8",
+                              letterSpacing:"0.04em", minWidth:38,
+                            }}>
+                              FY {g.label}
+                            </span>
+                            <span style={{
+                              fontSize: isCurrent ? 22 : 14,
+                              fontWeight: isCurrent ? 900 : 700,
+                              color: isCurrent ? (isHov ? card.topColor : "#0f172a") : "#64748b",
+                              letterSpacing: isCurrent ? "-0.5px" : "0",
+                              transition:"color 0.2s",
+                            }}>
+                              {card.getValue(g)}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </>
+                  ) : (
+                    /* Single period — no FY breakdown, just show the total */
+                    <div style={{
+                      display:"flex", alignItems:"center", justifyContent:"space-between",
+                      padding:"6px 10px", borderRadius:8,
+                      background:`${card.topColor}12`,
+                      borderLeft:`3px solid ${card.topColor}`,
+                    }}>
+                      <span style={{ fontSize:10, fontWeight:700, color:card.topColor, letterSpacing:"0.04em" }}>
+                        {pickedMonth
+                          ? new Date(pickedMonth+"-01").toLocaleString("default",{month:"short",year:"numeric"})
+                          : effectivePeriod==="month" ? "This Month"
+                          : effectivePeriod==="week"  ? "This Week"
+                          : effectivePeriod==="day"   ? "Today"
+                          : "Period"}
+                      </span>
+                      <span style={{
+                        fontSize:22, fontWeight:900,
+                        color: isHov ? card.topColor : "#0f172a",
+                        letterSpacing:"-0.5px", transition:"color 0.2s",
                       }}>
-                        <span style={{
-                          fontSize: isCurrent ? 10 : 9, fontWeight:700,
-                          color: isCurrent ? card.topColor : "#94a3b8",
-                          letterSpacing:"0.04em", minWidth:38,
-                        }}>
-                          FY {g.label}
-                        </span>
-                        <span style={{
-                          fontSize: isCurrent ? 22 : 14,
-                          fontWeight: isCurrent ? 900 : 700,
-                          color: isCurrent ? (isHov ? card.topColor : "#0f172a") : "#64748b",
-                          letterSpacing: isCurrent ? "-0.5px" : "0",
-                          transition:"color 0.2s",
-                        }}>
-                          {card.getValue(g)}
-                        </span>
-                      </div>
-                    );
-                  })}
+                        {periodSales.length === 0 ? "—" : card.getValue({
+                          count: periodSales.length,
+                          rev:   periodSales.reduce((a,s)=>a+(Number(s.amount)||0)-(Number(s.adjAmt)||0),0),
+                          qty:   periodSales.reduce((a,s)=>a+(Number(s.qty)||1),0),
+                          avg:   periodSales.length>0
+                            ? Math.round(periodSales.reduce((a,s)=>a+(Number(s.amount)||0)-(Number(s.adjAmt)||0),0)/periodSales.length)
+                            : 0,
+                        })}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -864,11 +899,10 @@ export default function SalesPanel({
               <tr style={{ background: "#f8fafc" }}>
                 {["Invoice", "Date", "Customer", "Item", "Amount", "Payment", "Status", "Tags",
                   ...(shopId==="ros-india"&&!isStaff ? ["Pur. Amount"] : []),
-                  "Tracking", "Delivered", "Actions"]
+                  "Actions"]
                   .map((h, i) => (
                     <th key={h} style={{
-                      padding: "11px 16px",
-                      textAlign: (h === "Amount" || h === "Payment" || h === "Status" || h === "Pur. Amount") ? "right" : "left",
+                      padding: "11px 16px", textAlign: (i >= 4 && i !== 7) ? "right" : "left",
                       fontSize: 11, fontWeight: 800, color: "#94a3b8",
                       textTransform: "uppercase", letterSpacing: "0.06em",
                       borderBottom: "1px solid #f1f5f9", whiteSpace: "nowrap",
@@ -883,7 +917,7 @@ export default function SalesPanel({
               {/* Empty state */}
               {rowsWithSeparators.length === 0 && (
                 <tr>
-                  <td colSpan={shopId==="ros-india"&&!isStaff ? 12 : 11} style={{ padding: "52px 16px", textAlign: "center" }}>
+                  <td colSpan={shopId==="ros-india"&&!isStaff ? 10 : 9} style={{ padding: "52px 16px", textAlign: "center" }}>
                     <div style={{ fontSize: 36, marginBottom: 10 }}>🛒</div>
                     <p style={{ margin: 0, fontWeight: 700, color: "#94a3b8", fontSize: 14 }}>
                       No {statusTab !== "ALL" ? activeTabCfg.label.toLowerCase() + " " : ""}sales found
@@ -903,7 +937,7 @@ export default function SalesPanel({
                 if (row._type === "fy") {
                   return (
                     <tr key={`fy-${row._fyStart}-${idx}`}>
-                      <td colSpan={shopId==="ros-india"&&!isStaff ? 12 : 11} style={{ padding: 0 }}>
+                      <td colSpan={shopId==="ros-india"&&!isStaff ? 10 : 9} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", gap: 10,
                           padding: "9px 16px",
@@ -935,7 +969,7 @@ export default function SalesPanel({
                 if (row._type === "month") {
                   return (
                     <tr key={`month-${row._monthKey}-${idx}`}>
-                      <td colSpan={shopId==="ros-india"&&!isStaff ? 12 : 11} style={{ padding: 0 }}>
+                      <td colSpan={shopId==="ros-india"&&!isStaff ? 10 : 9} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", gap: 10,
                           padding: "6px 16px",
@@ -1075,110 +1109,6 @@ export default function SalesPanel({
                         ) : <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>}
                       </td>
                     )}
-                    {/* Tracking */}
-                    <td style={{ padding: "8px 10px", minWidth: 160 }} onClick={e => e.stopPropagation()}>
-                      {editTrackingId === s.id ? (
-                        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
-                          <input
-                            autoFocus
-                            value={trackingInput}
-                            onChange={e => setTrackingInput(e.target.value.toUpperCase())}
-                            onKeyDown={e => {
-                              if (e.key === "Enter") {
-                                if (onSaveTracking) onSaveTracking(s.id, trackingInput.trim());
-                                setEditTrackingId(null);
-                              }
-                              if (e.key === "Escape") setEditTrackingId(null);
-                            }}
-                            placeholder="Tracking no."
-                            style={{
-                              width: "100%", padding: "5px 8px", borderRadius: 7,
-                              border: "1.5px solid #7dd3fc", fontSize: 11,
-                              fontFamily: "DM Mono,monospace", outline: "none",
-                              textTransform: "uppercase",
-                            }}
-                          />
-                          <button
-                            onClick={() => {
-                              if (onSaveTracking) onSaveTracking(s.id, trackingInput.trim());
-                              setEditTrackingId(null);
-                            }}
-                            style={{
-                              padding: "5px 8px", borderRadius: 7, border: "none",
-                              background: "#0369a1", color: "white", fontSize: 11,
-                              fontWeight: 700, cursor: "pointer", flexShrink: 0,
-                            }}>✓</button>
-                          <button
-                            onClick={() => setEditTrackingId(null)}
-                            style={{
-                              padding: "5px 7px", borderRadius: 7,
-                              border: "1px solid #e2e8f0", background: "white",
-                              color: "#94a3b8", fontSize: 11, cursor: "pointer", flexShrink: 0,
-                            }}>✕</button>
-                        </div>
-                      ) : s.trackingNo ? (
-                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                          <a
-                            href={`https://www.royalmail.com/track-your-item#/tracking-results/${s.trackingNo}`}
-                            target="_blank" rel="noreferrer"
-                            onClick={e => e.stopPropagation()}
-                            style={{
-                              fontSize: 11, fontFamily: "DM Mono,monospace", fontWeight: 700,
-                              color: "#0369a1", textDecoration: "none",
-                              background: "#f0f9ff", border: "1px solid #bae6fd",
-                              borderRadius: 6, padding: "3px 8px", whiteSpace: "nowrap",
-                              maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis",
-                              display: "inline-block",
-                            }}
-                            title={s.trackingNo}
-                          >{s.trackingNo}</a>
-                          <button
-                            onClick={() => { setEditTrackingId(s.id); setTrackingInput(s.trackingNo || ""); }}
-                            style={{
-                              width: 20, height: 20, borderRadius: 5, border: "1px solid #e2e8f0",
-                              background: "white", color: "#94a3b8", fontSize: 10,
-                              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
-                            }}>✏️</button>
-                        </div>
-                      ) : (
-                        <button
-                          onClick={() => { setEditTrackingId(s.id); setTrackingInput(""); }}
-                          style={{
-                            padding: "4px 10px", borderRadius: 7,
-                            border: "1px dashed #bae6fd", background: "#f0f9ff",
-                            color: "#0369a1", fontSize: 11, fontWeight: 600,
-                            cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
-                          }}>+ Add Tracking</button>
-                      )}
-                    </td>
-
-                    {/* Delivered */}
-                    <td style={{ padding: "8px 10px", minWidth: 110 }} onClick={e => e.stopPropagation()}>
-                      {s.deliveryDate ? (
-                        <div style={{
-                          display: "inline-flex", alignItems: "center", gap: 4,
-                          background: "#f0fdf4", border: "1px solid #86efac",
-                          borderRadius: 7, padding: "4px 9px",
-                        }}>
-                          <span style={{ fontSize: 11 }}>✅</span>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: "#166534", whiteSpace: "nowrap" }}>
-                            {fmtDate(s.deliveryDate)}
-                          </span>
-                        </div>
-                      ) : (s.ful || s.status) === "FULFILLED" ? (
-                        <button
-                          onClick={() => { if (onMarkDelivered) onMarkDelivered(s); }}
-                          style={{
-                            padding: "4px 10px", borderRadius: 7,
-                            border: "1px dashed #86efac", background: "#f0fdf4",
-                            color: "#166534", fontSize: 11, fontWeight: 700,
-                            cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
-                          }}>✅ Mark Delivered</button>
-                      ) : (
-                        <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>
-                      )}
-                    </td>
-
                     {/* Actions */}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
