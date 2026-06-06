@@ -2135,7 +2135,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"suppliers",l:"Suppliers",ic:"🏭"},
     {id:"agents",   l:"Agents",   ic:"🤝"},
     {id:"products", l:"Products", ic:"🏷️"},
-    {id:"invoices", l:"Invoices", ic:"🧾"},
+    {id:"invoices", l:"Sales Invoices", ic:"🧾"},
     {id:"expenses", l:"Expenses", ic:"💳"},
     {id:"cashflow", l:"Cash Flow",ic:"🏦"},
     {id:"documents",l:"Documents",ic:"📎"},
@@ -2407,11 +2407,11 @@ return(
         <nav style={{flex:1,padding:"10px 8px 6px",overflowY:"auto",overflowX:"hidden",scrollbarWidth:"none"}}>
           {/* group labels */}
           {[
-            {label:"MAIN",    ids:["dashboard","sales","purchases"]},
-            {label:"MANAGE",  ids:["logistics","customers","suppliers","agents","products"]},
-            {label:"FINANCE", ids:["invoices","expenses","cashflow"]},
-            {label:"INSIGHTS",ids:["documents","analytics","reports"]},
-            {label:"FULFILMENT",ids:["messages","returns"]},
+            {label:"MAIN",      ids:["dashboard","sales","customers","messages","returns","invoices"]},
+            {label:"PURCHASES", ids:["purchases","suppliers","logistics","agents"]},
+            {label:"EXPENSES",  ids:["expenses"]},
+            {label:"FINANCE",   ids:["cashflow"]},
+            {label:"INSIGHTS",  ids:["documents","analytics","reports"]},
           ].map(group=>{
             const groupItems=NAV.filter(n=>group.ids.includes(n.id));
             if(groupItems.length===0)return null;
