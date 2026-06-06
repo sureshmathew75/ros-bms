@@ -3488,6 +3488,18 @@ return(
                 statusFilter={statusFilter}
                 setStatusFilter={setStatusFilter}
                 statusTabs={statusTabs}
+                onSaveTracking={async (saleId, trackingNo) => {
+                  // Save tracking number to Supabase and update local state
+                  const sale = sales.find(s => s.id === saleId);
+                  if (!sale) return;
+                  const updated = { ...sale, trackingNo };
+                  await dbSaveSale(shopId, updated);
+                  setSalesData(prev => ({
+                    ...prev,
+                    [shopId]: (prev[shopId] || []).map(s => s.id === saleId ? { ...s, trackingNo } : s),
+                  }));
+                }}
+                onMarkDelivered={(sale) => setMarkDeliveredSale(sale)}
               />
             );
           })()}
