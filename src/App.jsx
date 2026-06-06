@@ -1067,7 +1067,7 @@ const ReturnsPortal=()=>{
   const [generatedId,setGeneratedId]=React.useState("");
   const [errorMsg,setErrorMsg]=React.useState("");
   const [form,setForm]=React.useState({
-    orderNo:"",name:"",phone:"",reason:"",resolution:"refund",
+    name:"",phone:"",reason:"",resolution:"exchange",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -1082,7 +1082,7 @@ const ReturnsPortal=()=>{
 
   const handleSubmit=async()=>{
     // Basic validation
-    if(!form.orderNo.trim()||!form.name.trim()||!form.phone.trim()||!form.reason||!form.resolution){
+    if(!form.name.trim()||!form.phone.trim()||!form.reason||!form.resolution){
       setErrorMsg("Please fill in all fields.");return;
     }
     setErrorMsg("");setLoading(true);
@@ -1093,40 +1093,44 @@ const ReturnsPortal=()=>{
         "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzc3l2ZHhxdHJ1YWNhdXd5Z2pqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0MDYwODQsImV4cCI6MjA4ODk4MjA4NH0.O8Mp89s2AXCZyvykzLmpiUeC34Hl4LV3NtLgzffJRY4"
       );
 
-      // 1. Find the sale
-      const orderId=form.orderNo.trim().toUpperCase();
+      // 1. Find sale by phone number (most recent fulfilled/delivered sale)
+      const cleanPhone=p=>String(p||"").replace(/\D/g,"").slice(-10);
+      const phoneClean=cleanPhone(form.phone);
+
       const {data:saleRows,error:saleErr}=await sb
         .from("sales").select("*")
-        .or(`id.eq.${orderId},invoice_no.eq.${orderId}`)
-        .limit(1);
+        .or(`phone.eq.${form.phone.trim()},contact.eq.${form.phone.trim()}`)
+        .order("date",{ascending:false});
 
-      if(saleErr||!saleRows||saleRows.length===0){
-        setErrorMsg("Order not found. Please check your order number and try again.");
-        setLoading(false);return;
-      }
-      const sale=saleRows[0];
-
-      // 2. Validate phone matches
-      const clean=p=>String(p||"").replace(/\D/g,"").slice(-10);
-      if(clean(sale.phone||sale.contact)!==clean(form.phone)){
-        setErrorMsg("Phone number does not match the order. Please check and try again.");
-        setLoading(false);return;
+      // Also try cleaned phone
+      let allRows=saleRows||[];
+      if(allRows.length===0){
+        const {data:rows2}=await sb.from("sales").select("*").order("date",{ascending:false});
+        allRows=(rows2||[]).filter(r=>cleanPhone(r.phone||r.contact)===phoneClean);
+      } else {
+        allRows=allRows.filter(r=>cleanPhone(r.phone||r.contact)===phoneClean);
       }
 
-      // 3. Validate name (loose match)
+      if(saleErr||allRows.length===0){
+        setErrorMsg("We could not find an order with this WhatsApp number. Please check your number or contact us directly.");
+        setLoading(false);return;
+      }
+
+      // 2. Name match — find best matching sale
       const normName=s=>s.toLowerCase().replace(/\s+/g," ").trim();
-      if(!normName(sale.customer||"").includes(normName(form.name).split(" ")[0])){
-        setErrorMsg("Name does not match the order. Please check and try again.");
-        setLoading(false);return;
-      }
+      const firstName=normName(form.name).split(" ")[0];
+      let sale=allRows.find(r=>normName(r.customer||"").includes(firstName));
+      if(!sale) sale=allRows[0]; // fallback to most recent
 
-      // 4. Validate delivered
+      const orderId=sale.id;
+
+      // 3. Validate delivered
       if(!sale.delivery_date){
-        setErrorMsg("Your order has not been marked as delivered yet. Please contact us directly if you believe this is an error.");
+        setErrorMsg("Your most recent order has not been marked as delivered yet. Please contact us directly if you believe this is an error.");
         setLoading(false);return;
       }
 
-      // 5. Validate within 14-day return window
+      // 4. Validate within 14-day return window
       const delivered=new Date(sale.delivery_date);delivered.setHours(0,0,0,0);
       const today=new Date();today.setHours(0,0,0,0);
       const daysSince=Math.floor((today-delivered)/(1000*60*60*24));
@@ -1135,17 +1139,17 @@ const ReturnsPortal=()=>{
         setLoading(false);return;
       }
 
-      // 6. Check no existing open return for this order
+      // 5. Check no existing open return for this order
       const {data:existingRet}=await sb.from("returns")
         .select("id,status").eq("sale_id",orderId)
-        .not("status","in","(RETURN_EXPIRED)")
+        .neq("status","RETURN_EXPIRED")
         .limit(1);
       if(existingRet&&existingRet.length>0){
         setErrorMsg(`A return request already exists for this order (${existingRet[0].id}). If you need help, please contact us directly.`);
         setLoading(false);return;
       }
 
-      // 7. Generate Return ID
+      // 6. Generate Return ID
       const year=new Date().getFullYear();
       const {data:lastRet}=await sb.from("returns")
         .select("id").like("id",`RET-${year}-%`)
@@ -1153,11 +1157,11 @@ const ReturnsPortal=()=>{
       const lastNum=lastRet&&lastRet.length>0?parseInt(lastRet[0].id.split("-")[2]||"0",10):0;
       const retId=`RET-${year}-${String(lastNum+1).padStart(4,"0")}`;
 
-      // 8. Calculate return deadline (14 days from today)
+      // 7. Calculate return deadline (14 days from today)
       const deadline=new Date();deadline.setDate(deadline.getDate()+14);
       const deadlineStr=deadline.toISOString().split("T")[0];
 
-      // 9. Save return record
+      // 8. Save return record
       const {error:retErr}=await sb.from("returns").insert({
         id:retId,
         shop_id:sale.shop_id,
@@ -1176,7 +1180,7 @@ const ReturnsPortal=()=>{
         setLoading(false);return;
       }
 
-      // 10. Queue approval message
+      // 9. Queue approval message
       const msgBody=RETURN_APPROVAL_MESSAGE(retId,sale.customer||form.name,"v1");
       await sb.from("message_queue").insert({
         shop_id:sale.shop_id,
@@ -1230,30 +1234,21 @@ const ReturnsPortal=()=>{
         </div>
 
         <div style={{padding:"28px 32px"}}>
-          {/* Order No */}
-          <div style={{marginBottom:16}}>
-            <label style={labelStyle}>Order Number</label>
-            <input value={form.orderNo} onChange={e=>set("orderNo",e.target.value.toUpperCase())}
-              placeholder="e.g. ROS16727"
-              style={{...inputStyle,fontFamily:"DM Mono,monospace",fontWeight:700,letterSpacing:1}}/>
-            <p style={{margin:"4px 0 0",fontSize:11,color:"#94a3b8"}}>Found on your order confirmation or receipt</p>
-          </div>
-
           {/* Name */}
           <div style={{marginBottom:16}}>
             <label style={labelStyle}>Full Name</label>
             <input value={form.name} onChange={e=>set("name",e.target.value)}
-              placeholder="As on your order"
+              placeholder="Your full name"
               style={inputStyle}/>
           </div>
 
-          {/* Phone */}
+          {/* WhatsApp Number */}
           <div style={{marginBottom:16}}>
-            <label style={labelStyle}>Phone Number</label>
+            <label style={labelStyle}>WhatsApp Number</label>
             <input value={form.phone} onChange={e=>set("phone",e.target.value)}
               placeholder="e.g. 07700 000000"
               style={inputStyle} type="tel"/>
-            <p style={{margin:"4px 0 0",fontSize:11,color:"#94a3b8"}}>Must match the number on your order</p>
+            <p style={{margin:"4px 0 0",fontSize:11,color:"#94a3b8"}}>We will send your return instructions via WhatsApp</p>
           </div>
 
           {/* Reason */}
@@ -1267,15 +1262,15 @@ const ReturnsPortal=()=>{
 
           {/* Resolution */}
           <div style={{marginBottom:24}}>
-            <label style={labelStyle}>I would like a</label>
+            <label style={labelStyle}>I Would Like A</label>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              {["refund","exchange"].map(opt=>(
+              {["exchange","refund"].map(opt=>(
                 <button key={opt} type="button" onClick={()=>set("resolution",opt)}
                   style={{padding:"12px 0",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:700,
                     border:"2px solid "+(form.resolution===opt?"#166534":"#e2e8f0"),
                     background:form.resolution===opt?"#f0fdf4":"white",
                     color:form.resolution===opt?"#166534":"#64748b"}}>
-                  {opt==="refund"?"💰 Refund":"🔄 Exchange"}
+                  {opt==="exchange"?"🔄 Exchange":"💰 Refund"}
                 </button>
               ))}
             </div>
