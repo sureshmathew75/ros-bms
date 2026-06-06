@@ -21,7 +21,7 @@ import {
   STAGE_THEME
 } from "./constants";
 import { formatCurrency, formatDate, formatNumber } from "./utils";
-import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser, dbLoadShopItems, dbAddShopItem, dbDeleteShopItem } from "./db";
+import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser, dbLoadShopItems, dbAddShopItem, dbDeleteShopItem, dbSaveDelivery, dbLoadMessages, dbAddMessage, dbMarkMessageSent, dbCancelMessage, dbMessageExists, dbLoadReturns, dbSaveReturn, dbNextReturnId } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -783,6 +783,9 @@ const normaliseSale=(s)=>{
   const purInvNo   = s.purInvNo   || s.pur_inv_no   || "";
   const purInvDate = s.purInvDate || s.pur_inv_date || "";
   const purAmount  = Number(s.purAmount !== undefined ? s.purAmount : s.pur_amount || 0) || 0;
+  const trackingNo  = s.trackingNo  || s.tracking_no  || "";
+  const deliveryDate = s.deliveryDate || s.delivery_date || "";
+  const deliveryTime = s.deliveryTime || s.delivery_time || "";
   return {
     ...s,
     item:             displayItem,
@@ -802,8 +805,54 @@ const normaliseSale=(s)=>{
     purInvNo,
     purInvDate,
     purAmount,
+    trackingNo,
+    deliveryDate,
+    deliveryTime,
   };
 };
+
+
+/* ── MarkDeliveredModal ─────────────────────────────────────────────────── */
+const MarkDeliveredModal=({sale,shopId,shop,onConfirm,onClose})=>{
+  const [date,setDate]=React.useState(new Date().toISOString().slice(0,10));
+  const [saving,setSaving]=React.useState(false);
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)"}} onClick={onClose}/>
+      <div style={{position:"relative",background:"white",borderRadius:16,boxShadow:"0 24px 48px rgba(0,0,0,0.2)",width:"100%",maxWidth:380,padding:24}}>
+        <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#0f172a"}}>✅ Confirm Delivery</h3>
+        <p style={{margin:"0 0 16px",fontSize:12,color:"#64748b"}}>Order <strong>{sale.id}</strong> — {sale.customer}</p>
+        {sale.trackingNo&&(
+          <div style={{background:"#f0f9ff",borderRadius:8,padding:"8px 12px",marginBottom:14,border:"1px solid #bae6fd"}}>
+            <span style={{fontSize:11,color:"#0369a1",fontWeight:600}}>📦 Tracking: </span>
+            <a href={"https://www.royalmail.com/track-your-item#/tracking-results/"+sale.trackingNo} target="_blank" rel="noreferrer"
+              style={{fontSize:11,color:"#0369a1",fontFamily:"DM Mono,monospace"}}>{sale.trackingNo}</a>
+          </div>
+        )}
+        <div style={{marginBottom:16}}>
+          <label style={{display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Delivery Date</label>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)}
+            style={{width:"100%",padding:"10px 12px",borderRadius:8,border:"1.5px solid #7dd3fc",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <button onClick={onClose}
+            style={{padding:"11px 0",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            Cancel
+          </button>
+          <button disabled={saving} onClick={async()=>{
+            setSaving(true);
+            await onConfirm(date);
+            setSaving(false);
+          }}
+            style={{padding:"11px 0",borderRadius:10,border:"none",background:saving?"#94a3b8":"#16a34a",color:"white",fontWeight:800,fontSize:13,cursor:saving?"default":"pointer",fontFamily:"inherit",boxShadow:saving?"none":"0 4px 12px #16a34a44"}}>
+            {saving?"Saving…":"✅ Save"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+/* ── End MarkDeliveredModal ─────────────────────────────────────────────── */
 
 const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,initialTab="sales"})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":(initialTab||"sales"));
@@ -838,6 +887,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [purchData,setPurchData]=useState([]);
   const [expData,setExpData]=useState([]);
   const [logData,setLogData]=useState([]);
+  const [markDeliveredSale,setMarkDeliveredSale]=useState(null);
 
   // Load purchases, expenses, logistics from Supabase on mount
   useEffect(()=>{
@@ -2373,7 +2423,45 @@ return(
       </div>
 
       {/* MODALS */}
-      {modal==="new-sale"&&(
+
+      {/* ── Mark Delivered Modal ── */}
+      {markDeliveredSale&&(
+        <MarkDeliveredModal
+          sale={markDeliveredSale}
+          shopId={shopId}
+          shop={shop}
+          onClose={()=>setMarkDeliveredSale(null)}
+          onConfirm={async(deliveryDate)=>{
+            await dbSaveDelivery(shopId, markDeliveredSale.id, deliveryDate);
+            // Update local state immediately
+            setSalesData(prev=>{
+              const updated=(prev[shopId]||[]).map(s=>
+                s.id===markDeliveredSale.id ? {...s,deliveryDate,deliveryTime:""} : s
+              );
+              return {...prev,[shopId]:updated};
+            });
+            // Update selRow if it's the same sale
+            if(selRow&&selRow.id===markDeliveredSale.id){
+              setSelRow(r=>({...r,deliveryDate,deliveryTime:""}));
+            }
+            // Queue Day 0 delivery confirmation message
+            const alreadyQueued=await dbMessageExists(shopId,markDeliveredSale.id,"DELIVERY_CONFIRM");
+            if(!alreadyQueued){
+              await dbAddMessage({
+                shopId,
+                saleId: markDeliveredSale.id,
+                customer: markDeliveredSale.customer,
+                phone: markDeliveredSale.phone||markDeliveredSale.contact||"",
+                messageType: "DELIVERY_CONFIRM",
+                messageBody: `Hi ${markDeliveredSale.customer}, your order has been delivered.\n\nPlease inspect your item upon arrival. If there are any issues such as damage, defects, incorrect items or sizing concerns, please contact us as soon as possible and we will be happy to assist.`,
+              });
+            }
+            setMarkDeliveredSale(null);
+          }}
+        />
+      )}
+
+      {modal===="new-sale"&&(
         <Modal title="✨ New Sale" onClose={()=>setModal(null)} accent={shop.accent}>
           <NewSaleForm
             shopId={shopId} shop={shop}
@@ -2401,16 +2489,16 @@ return(
             onAddShopItem={(item)=>{
               const current=(shopItems||{})[shopId]||[];
               if(current.includes(item)) return;
-              const updated={...(shopItems||{}),[shopId]:[...current,item]};
-              saveShopItems(updated);
               dbAddShopItem(shopId,item).then(()=>{
-                dbLoadShopItems().then(data=>{if(data)saveShopItems({"ros-selections":data["ros-selections"]||[],"ros-hairlines":data["ros-hairlines"]||[],"ros-india":data["ros-india"]||[]});});
+                dbLoadShopItems().then(data=>{if(data)setShopItems({"ros-selections":data["ros-selections"]||[],"ros-hairlines":data["ros-hairlines"]||[],"ros-india":data["ros-india"]||[]});});
               });
+              const updated={...(shopItems||{}),[shopId]:[...current,item]};
+              setShopItems(updated);
             }}
             onDeleteShopItem={(item)=>{
               const current=(shopItems||{})[shopId]||[];
               const updated={...(shopItems||{}),[shopId]:current.filter(i=>i!==item)};
-              saveShopItems(updated); dbDeleteShopItem(shopId,item);
+              setShopItems(updated); dbDeleteShopItem(shopId,item);
             }}
           />
         </Modal>
@@ -3277,18 +3365,43 @@ return(
                   {/* Fulfillment Timeline */}
                   {(()=>{
                     const hasDispatch=!!selRow.sentDate;
+                    const hasDelivery=!!selRow.deliveryDate;
                     const hasReturnReq=!!selRow.returnReqDate;
                     const hasReturnRcvd=!!selRow.returnRcvd;
                     const hasRefund=!!selRow.refundAmt&&Number(selRow.refundAmt)>0;
+                    const isFulfilled=(selRow.ful||selRow.status)==="FULFILLED";
                     const timelineItems=[
                       hasDispatch&&{icon:"🚚",label:"Dispatched",date:formatDate(selRow.sentDate),color:"#15803d",bg:"#f0fdf4",border:"#bbf7d0"},
+                      hasDelivery&&{icon:"✅",label:"Delivered",date:formatDate(selRow.deliveryDate)+(selRow.deliveryTime?" · "+selRow.deliveryTime:""),color:"#0369a1",bg:"#f0f9ff",border:"#7dd3fc"},
                       hasReturnReq&&{icon:"↩️",label:"Return Requested",date:formatDate(selRow.returnReqDate),color:"#c2410c",bg:"#fff7ed",border:"#fed7aa"},
                       hasReturnRcvd&&{icon:"📬",label:"Return Received",date:formatDate(selRow.returnRcvd),color:"#991b1b",bg:"#fff5f5",border:"#fecaca"},
                       hasRefund&&{icon:"💸",label:"Refunded",date:fmt(shopId,Number(selRow.refundAmt)),color:"#6b21a8",bg:"#f5f3ff",border:"#ddd6fe"},
                     ].filter(Boolean);
-                    if(timelineItems.length===0)return null;
                     return(
                       <div style={{marginTop:10}}>
+                        {/* Tracking pill + Mark Delivered button */}
+                        {selRow.trackingNo&&(
+                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+                            <a href={"https://www.royalmail.com/track-your-item#/tracking-results/"+selRow.trackingNo.trim()}
+                              target="_blank" rel="noreferrer"
+                              style={{display:"inline-flex",alignItems:"center",gap:6,padding:"5px 12px",borderRadius:999,background:"#f0f9ff",border:"1px solid #bae6fd",color:"#0369a1",fontSize:11,fontWeight:700,textDecoration:"none"}}>
+                              📦 {selRow.trackingNo}
+                              <span style={{fontSize:10,opacity:0.7}}>↗</span>
+                            </a>
+                            {isFulfilled&&!hasDelivery&&(
+                              <button onClick={()=>setMarkDeliveredSale(selRow)}
+                                style={{padding:"5px 14px",borderRadius:999,border:"none",background:"#16a34a",color:"white",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px #16a34a33"}}>
+                                ✅ Mark Delivered
+                              </button>
+                            )}
+                          </div>
+                        )}
+                        {!selRow.trackingNo&&isFulfilled&&!hasDelivery&&(
+                          <button onClick={()=>setMarkDeliveredSale(selRow)}
+                            style={{display:"block",width:"100%",marginBottom:8,padding:"8px 0",borderRadius:10,border:"1.5px dashed #16a34a",background:"#f0fdf4",color:"#16a34a",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                            ✅ Mark Delivered
+                          </button>
+                        )}
                         {timelineItems.map((item,i)=>(
                           <div key={i} style={{display:"flex",alignItems:"center",gap:10,marginBottom:i<timelineItems.length-1?6:0}}>
                             {i<timelineItems.length-1&&(
@@ -4050,6 +4163,9 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false}
     otherChargesLabel: sale.otherChargesLabel||"Other Charges",
     shopInvoiceNo: sale.shopInvoiceNo||sale.shop_invoice_no||"",
     paidBy:      sale.paidBy||"",
+    trackingNo:  sale.trackingNo||"",
+    deliveryDate: sale.deliveryDate||"",
+    deliveryTime: sale.deliveryTime||"",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -4343,6 +4459,39 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false}
         </div>
       </div>
 
+      {/* ── Tracking & Delivery ── */}
+      <Divider title="Tracking & Delivery"/>
+      <div style={{background:"#f0f9ff",borderRadius:12,padding:"14px",border:"1px solid #bae6fd",marginBottom:16}}>
+        <div style={{marginBottom:10}}>
+          <label style={{...lbl,color:"#0369a1"}}>📦 Royal Mail Tracking No.</label>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <input value={form.trackingNo} onChange={e=>set("trackingNo",e.target.value)}
+              placeholder="e.g. AB123456789GB"
+              style={{...inp,flex:1,border:"1px solid #7dd3fc",fontFamily:"DM Mono,monospace",textTransform:"uppercase"}}
+              onFocus={fo} onBlur={bl}
+              onChange={e=>set("trackingNo",e.target.value.toUpperCase())}/>
+            {form.trackingNo&&(
+              <a href={"https://www.royalmail.com/track-your-item#/tracking-results/"+form.trackingNo.trim()}
+                target="_blank" rel="noreferrer"
+                style={{padding:"8px 12px",borderRadius:8,background:"#0369a1",color:"white",fontSize:11,fontWeight:700,textDecoration:"none",whiteSpace:"nowrap",flexShrink:0}}>
+                🔍 Track
+              </a>
+            )}
+          </div>
+        </div>
+        {form.deliveryDate?(
+          <div style={{background:"#dcfce7",borderRadius:8,padding:"8px 12px",border:"1px solid #86efac",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <span style={{fontSize:12,fontWeight:700,color:"#166534"}}>✅ Delivered: {form.deliveryDate}{form.deliveryTime?" at "+form.deliveryTime:""}</span>
+            <button type="button" onClick={()=>{set("deliveryDate","");set("deliveryTime","");}}
+              style={{fontSize:11,padding:"2px 8px",borderRadius:6,border:"1px solid #86efac",background:"white",color:"#dc2626",cursor:"pointer"}}>
+              Clear
+            </button>
+          </div>
+        ):(
+          <p style={{margin:0,fontSize:11,color:"#0369a1",fontStyle:"italic"}}>No delivery confirmed yet. Use the Mark Delivered button in the sale detail view.</p>
+        )}
+      </div>
+
       {isReturnRequested&&(
         <>
           <Divider title="Return Request"/>
@@ -4461,7 +4610,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false}
 
       </div>{/* end padding wrapper */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...form,id:form.invoiceNo||sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:parseFloat(form.discount)||0,otherCharges:parseFloat(form.otherCharges)||0,otherChargesLabel:form.otherChargesLabel||"Other Charges",contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0})}
+        <button onClick={()=>onSave({...form,id:form.invoiceNo||sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:parseFloat(form.discount)||0,otherCharges:parseFloat(form.otherCharges)||0,otherChargesLabel:form.otherChargesLabel||"Other Charges",contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
@@ -5173,6 +5322,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     payBy:       "SHOP",
     shopInvoiceNo: "",
     paidBy:      "",
+    trackingNo:  "",
     status:      shopId==="ros-india" ? "ORDER NOT PLACED" : "PENDING",
     sentDate:    "",
     returnReqDate: "",
@@ -5220,7 +5370,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     const filledLines=lines.filter(l=>l.name.trim()||(parseFloat(l.price)>0));
     const combinedItem=filledLines.map(l=>`${l.name}(x${l.qty})`).join(", ")||"Sale";
     const combinedQty=filledLines.reduce((s,l)=>s+(parseFloat(l.qty)||0),0)||1;
-    onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0});
+    onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""});
   };
 
   return(<>
@@ -5334,6 +5484,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 <div style={{marginBottom:7}}><label style={lbl}>Shop Invoice No.</label><input value={form.shopInvoiceNo} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/></div>
               )}
               <div><label style={lbl}>Dispatch Date</label><input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
+              <div style={{marginTop:7}}><label style={{...lbl,color:"#0369a1"}}>📦 Tracking No.</label><input value={form.trackingNo} onChange={e=>set("trackingNo",e.target.value.toUpperCase())} placeholder="e.g. AB123456789GB" style={{...inp,fontFamily:"DM Mono,monospace",border:"1px solid #7dd3fc"}} onFocus={fo} onBlur={bl}/></div>
             </div>
 
             {/* Tags & Remarks */}
