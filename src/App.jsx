@@ -2461,7 +2461,7 @@ return(
         />
       )}
 
-      {modal===="new-sale"&&(
+      {modal==="new-sale"&&(
         <Modal title="✨ New Sale" onClose={()=>setModal(null)} accent={shop.accent}>
           <NewSaleForm
             shopId={shopId} shop={shop}
