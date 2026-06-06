@@ -53,6 +53,9 @@ export const dbSaveSale = async (shopId, sale) => {
     pur_inv_no:      String(sale.purInvNo || ''),
     pur_inv_date:    String(sale.purInvDate || ''),
     pur_amount:      Number(sale.purAmount) || 0,
+    tracking_no:     String(sale.trackingNo || ''),
+    delivery_date:   String(sale.deliveryDate || ''),
+    delivery_time:   String(sale.deliveryTime || ''),
   };
 
   // Extended columns — added later; sent only if table supports them
@@ -168,6 +171,9 @@ export const dbLoadSales = async (shopId) => {
     purInvDate:    r.pur_inv_date || '',
     purAmount:     Number(r.pur_amount) || 0,
     paidBy:        r.paid_by || '',
+    trackingNo:    r.tracking_no || '',
+    deliveryDate:  r.delivery_date || '',
+    deliveryTime:  r.delivery_time || '',
   }));
   return mapped.sort((a, b) => parseDateMs(b.date) - parseDateMs(a.date));
 };
@@ -592,4 +598,185 @@ export const dbDeleteShopItem = async (shopId, name) => {
   if (!sb) return;
   const { error } = await sb.from('shop_items').delete().eq('shop_id', shopId).eq('name', name);
   if (error) console.error('Delete shop item error:', error);
+};
+
+/* ═══════════════════════════════════════════════════════════
+   RETURNS
+   ═══════════════════════════════════════════════════════════ */
+
+/* Generate next RET-YYYY-XXXX id */
+export const dbNextReturnId = async () => {
+  const year = new Date().getFullYear();
+  const { data, error } = await sb
+    .from('returns')
+    .select('id')
+    .like('id', `RET-${year}-%`)
+    .order('id', { ascending: false })
+    .limit(1);
+  if (error) { console.error('ReturnId seq error:', error); return `RET-${year}-0001`; }
+  if (!data || data.length === 0) return `RET-${year}-0001`;
+  const last = data[0].id; // RET-2026-0042
+  const num = parseInt(last.split('-')[2] || '0', 10);
+  return `RET-${year}-${String(num + 1).padStart(4, '0')}`;
+};
+
+export const dbSaveReturn = async (ret) => {
+  if (!sb) return;
+  const payload = {
+    id:                     ret.id,
+    shop_id:                ret.shopId,
+    sale_id:                ret.saleId,
+    customer:               ret.customer || '',
+    phone:                  ret.phone || '',
+    reason:                 ret.reason || '',
+    resolution:             ret.resolution || 'refund',
+    status:                 ret.status || 'RETURN_APPROVED',
+    return_deadline:        ret.returnDeadline || '',
+    tracking_no:            ret.trackingNo || '',
+    courier:                ret.courier || '',
+    proof_url:              ret.proofUrl || '',
+    received_date:          ret.receivedDate || '',
+    refund_date:            ret.refundDate || '',
+    exchange_date:          ret.exchangeDate || '',
+    staff_notes:            ret.staffNotes || '',
+    return_address_version: ret.returnAddressVersion || 'v1',
+    expired_at:             ret.expiredAt || '',
+  };
+  const { data: existing } = await sb.from('returns').select('id').eq('id', ret.id).maybeSingle();
+  const { error } = existing
+    ? await sb.from('returns').update(payload).eq('id', ret.id)
+    : await sb.from('returns').insert(payload);
+  if (error) console.error('Save return error:', error);
+  else console.log('✅ Return saved:', ret.id);
+};
+
+export const dbLoadReturns = async (shopId) => {
+  if (!sb) return [];
+  const q = shopId
+    ? sb.from('returns').select('*').eq('shop_id', shopId).order('created_at', { ascending: false })
+    : sb.from('returns').select('*').order('created_at', { ascending: false });
+  const { data, error } = await q;
+  if (error) { console.error('Load returns error:', error); return []; }
+  return (data || []).map(r => ({
+    id:                   r.id,
+    shopId:               r.shop_id,
+    saleId:               r.sale_id,
+    customer:             r.customer || '',
+    phone:                r.phone || '',
+    reason:               r.reason || '',
+    resolution:           r.resolution || 'refund',
+    status:               r.status || 'RETURN_APPROVED',
+    createdAt:            r.created_at || '',
+    returnDeadline:       r.return_deadline || '',
+    trackingNo:           r.tracking_no || '',
+    courier:              r.courier || '',
+    proofUrl:             r.proof_url || '',
+    receivedDate:         r.received_date || '',
+    refundDate:           r.refund_date || '',
+    exchangeDate:         r.exchange_date || '',
+    staffNotes:           r.staff_notes || '',
+    returnAddressVersion: r.return_address_version || 'v1',
+    expiredAt:            r.expired_at || '',
+  }));
+};
+
+export const dbDeleteReturn = async (id) => {
+  if (!sb) return;
+  const { error } = await sb.from('returns').delete().eq('id', id);
+  if (error) console.error('Delete return error:', error);
+  else console.log('✅ Return deleted:', id);
+};
+
+/* ═══════════════════════════════════════════════════════════
+   MESSAGE QUEUE
+   ═══════════════════════════════════════════════════════════ */
+
+export const dbAddMessage = async (msg) => {
+  if (!sb) return;
+  const payload = {
+    shop_id:      msg.shopId,
+    sale_id:      msg.saleId,
+    customer:     msg.customer || '',
+    phone:        msg.phone || '',
+    message_type: msg.messageType,
+    message_body: msg.messageBody,
+    status:       'READY',
+  };
+  const { error } = await sb.from('message_queue').insert(payload);
+  if (error) console.error('Add message error:', error);
+  else console.log('✅ Message queued:', msg.messageType, msg.saleId);
+};
+
+export const dbLoadMessages = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb
+    .from('message_queue')
+    .select('*')
+    .eq('shop_id', shopId)
+    .order('created_at', { ascending: false });
+  if (error) { console.error('Load messages error:', error); return []; }
+  return (data || []).map(r => ({
+    id:          r.id,
+    shopId:      r.shop_id,
+    saleId:      r.sale_id,
+    customer:    r.customer || '',
+    phone:       r.phone || '',
+    messageType: r.message_type || '',
+    messageBody: r.message_body || '',
+    status:      r.status || 'READY',
+    createdAt:   r.created_at || '',
+    sentAt:      r.sent_at || '',
+    cancelledBy: r.cancelled_by || '',
+  }));
+};
+
+export const dbMarkMessageSent = async (id) => {
+  if (!sb) return;
+  const { error } = await sb
+    .from('message_queue')
+    .update({ status: 'SENT', sent_at: new Date().toISOString() })
+    .eq('id', id);
+  if (error) console.error('Mark sent error:', error);
+};
+
+export const dbCancelMessage = async (id, cancelledBy = '') => {
+  if (!sb) return;
+  const { error } = await sb
+    .from('message_queue')
+    .update({ status: 'CANCELLED', cancelled_by: cancelledBy })
+    .eq('id', id);
+  if (error) console.error('Cancel message error:', error);
+};
+
+/* Check if a specific message type already exists for a sale (avoid duplicates) */
+export const dbMessageExists = async (shopId, saleId, messageType) => {
+  if (!sb) return false;
+  const { data, error } = await sb
+    .from('message_queue')
+    .select('id')
+    .eq('shop_id', shopId)
+    .eq('sale_id', saleId)
+    .eq('message_type', messageType)
+    .neq('status', 'CANCELLED')
+    .maybeSingle();
+  if (error) return false;
+  return !!data;
+};
+
+/* ═══════════════════════════════════════════════════════════
+   DELIVERY CONFIRMATION  (patch delivery_date onto a sale)
+   ═══════════════════════════════════════════════════════════ */
+
+export const dbSaveDelivery = async (shopId, saleId, deliveryDate, deliveryTime = '') => {
+  if (!sb) return;
+  const { error } = await sb
+    .from('sales')
+    .update({
+      delivery_date: deliveryDate,
+      delivery_time: deliveryTime,
+    })
+    .eq('id', saleId)
+    .eq('shop_id', shopId);
+  if (error) console.error('Save delivery error:', error);
+  else console.log('✅ Delivery confirmed:', saleId, deliveryDate);
 };
