@@ -165,9 +165,25 @@ function filterByPeriod(sales, period) {
 
   const { start, end } = getPeriodRange(period);
   if (!start || !end) return sales;
+
+  // For month/week/day: use date comparison BUT also cross-check with invoice
+  // suffix to reject sales whose date year is wrong (common with old imported data).
+  // A sale belongs to the current period only if BOTH conditions hold:
+  // 1. Its parsed date falls within start..end
+  // 2. Its FY suffix (if present) is consistent with the period's year
+  const periodYear = new Date(start).getFullYear();
+  const periodFYSuffix = String(periodYear + (new Date(start).getMonth() >= 3 ? 1 : 0)).slice(-1);
+
   return sales.filter(s => {
     const dt = toSortableDate(s.date);
-    return dt >= start && dt <= end;
+    if (dt < start || dt > end) return false;
+    // Extra check: if sale has ROS invoice suffix, ensure it matches the period's FY
+    if (period === "month" || period === "week" || period === "day") {
+      const id = String(s.id || "");
+      const rosMatch = id.match(/^[A-Z]{2,3}(\d{4})(\d)$/);
+      if (rosMatch && rosMatch[2] !== periodFYSuffix) return false;
+    }
+    return true;
   });
 }
 
@@ -331,10 +347,18 @@ export default function SalesPanel({
   const filterByPickedMonth = (arr, ym) => {
     if (!ym) return arr;
     const [py, pm] = ym.split("-").map(Number);
+    // FY suffix for the picked month's year
+    const pickedFYSuffix = String(py + (pm >= 4 ? 1 : 0)).slice(-1);
     return arr.filter(s => {
       const dt = safeParseDate(s.date);
       if (!dt || isNaN(dt.getTime())) return false;
-      return dt.getFullYear() === py && (dt.getMonth() + 1) === pm;
+      // Date must match year+month
+      if (dt.getFullYear() !== py || (dt.getMonth() + 1) !== pm) return false;
+      // Cross-check invoice suffix to reject wrong-year sales
+      const id = String(s.id || "");
+      const rosMatch = id.match(/^[A-Z]{2,3}(\d{4})(\d)$/);
+      if (rosMatch && rosMatch[2] !== pickedFYSuffix) return false;
+      return true;
     });
   };
 
