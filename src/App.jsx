@@ -1026,6 +1026,304 @@ const MessagesPanel=({shopId,shop,messages,setMessages,user,sales})=>{
 };
 /* ── End MessagesPanel ───────────────────────────────────────────────────── */
 
+
+/* ═══════════════════════════════════════════════════════════
+   RETURN ADDRESS VERSIONS
+   ═══════════════════════════════════════════════════════════ */
+const RETURN_ADDRESSES={
+  v1:`ROS
+20 Heol pen y cae
+Gorseinon
+SA4 4ZB`,
+};
+
+const RETURN_APPROVAL_MESSAGE=(returnId,customer,addressVersion="v1")=>{
+const addr=RETURN_ADDRESSES[addressVersion]||RETURN_ADDRESSES.v1;
+return `Hi ${customer},
+
+Your return request has been approved.
+
+Return ID: ${returnId}
+
+Please return the item to the below address:
+
+${addr}
+
+To qualify for an exchange or refund, your item must be returned in the same condition as received—unused, unworn, and in its original packaging. Items must be returned within 7 days of receiving return instructions. However, this does not affect your statutory rights.
+
+Please include your return address on the parcel cover so we can accurately document your return. Once we receive the item, we will notify you and proceed with your refund or exchange.
+
+In the meantime, you can review our full return policy here: https://rosselections.com/policies/refund-policy.
+
+If you have any questions, please don't hesitate to contact us.`;
+};
+
+/* ═══════════════════════════════════════════════════════════
+   RETURNS PORTAL — public page at /returns
+   ═══════════════════════════════════════════════════════════ */
+const ReturnsPortal=()=>{
+  const [step,setStep]=React.useState("form"); // form | success | error
+  const [loading,setLoading]=React.useState(false);
+  const [generatedId,setGeneratedId]=React.useState("");
+  const [errorMsg,setErrorMsg]=React.useState("");
+  const [form,setForm]=React.useState({
+    orderNo:"",name:"",phone:"",reason:"",resolution:"refund",
+  });
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+
+  const REASONS=[
+    "Item damaged or defective",
+    "Incorrect item received",
+    "Item does not match description",
+    "Sizing issue",
+    "Changed my mind",
+    "Other",
+  ];
+
+  const handleSubmit=async()=>{
+    // Basic validation
+    if(!form.orderNo.trim()||!form.name.trim()||!form.phone.trim()||!form.reason||!form.resolution){
+      setErrorMsg("Please fill in all fields.");return;
+    }
+    setErrorMsg("");setLoading(true);
+    try{
+      const {createClient}=await import("https://esm.sh/@supabase/supabase-js@2");
+      const sb=createClient(
+        "https://fssyvdxqtruacauwygjj.supabase.co",
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzc3l2ZHhxdHJ1YWNhdXd5Z2pqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0MDYwODQsImV4cCI6MjA4ODk4MjA4NH0.O8Mp89s2AXCZyvykzLmpiUeC34Hl4LV3NtLgzffJRY4"
+      );
+
+      // 1. Find the sale
+      const orderId=form.orderNo.trim().toUpperCase();
+      const {data:saleRows,error:saleErr}=await sb
+        .from("sales").select("*")
+        .or(`id.eq.${orderId},invoice_no.eq.${orderId}`)
+        .limit(1);
+
+      if(saleErr||!saleRows||saleRows.length===0){
+        setErrorMsg("Order not found. Please check your order number and try again.");
+        setLoading(false);return;
+      }
+      const sale=saleRows[0];
+
+      // 2. Validate phone matches
+      const clean=p=>String(p||"").replace(/\D/g,"").slice(-10);
+      if(clean(sale.phone||sale.contact)!==clean(form.phone)){
+        setErrorMsg("Phone number does not match the order. Please check and try again.");
+        setLoading(false);return;
+      }
+
+      // 3. Validate name (loose match)
+      const normName=s=>s.toLowerCase().replace(/\s+/g," ").trim();
+      if(!normName(sale.customer||"").includes(normName(form.name).split(" ")[0])){
+        setErrorMsg("Name does not match the order. Please check and try again.");
+        setLoading(false);return;
+      }
+
+      // 4. Validate delivered
+      if(!sale.delivery_date){
+        setErrorMsg("Your order has not been marked as delivered yet. Please contact us directly if you believe this is an error.");
+        setLoading(false);return;
+      }
+
+      // 5. Validate within 14-day return window
+      const delivered=new Date(sale.delivery_date);delivered.setHours(0,0,0,0);
+      const today=new Date();today.setHours(0,0,0,0);
+      const daysSince=Math.floor((today-delivered)/(1000*60*60*24));
+      if(daysSince>14){
+        setErrorMsg(`The 14-day return window for this order closed on ${new Date(delivered.getTime()+14*86400000).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}. Unfortunately we are unable to accept this return request.`);
+        setLoading(false);return;
+      }
+
+      // 6. Check no existing open return for this order
+      const {data:existingRet}=await sb.from("returns")
+        .select("id,status").eq("sale_id",orderId)
+        .not("status","in","(RETURN_EXPIRED)")
+        .limit(1);
+      if(existingRet&&existingRet.length>0){
+        setErrorMsg(`A return request already exists for this order (${existingRet[0].id}). If you need help, please contact us directly.`);
+        setLoading(false);return;
+      }
+
+      // 7. Generate Return ID
+      const year=new Date().getFullYear();
+      const {data:lastRet}=await sb.from("returns")
+        .select("id").like("id",`RET-${year}-%`)
+        .order("id",{ascending:false}).limit(1);
+      const lastNum=lastRet&&lastRet.length>0?parseInt(lastRet[0].id.split("-")[2]||"0",10):0;
+      const retId=`RET-${year}-${String(lastNum+1).padStart(4,"0")}`;
+
+      // 8. Calculate return deadline (14 days from today)
+      const deadline=new Date();deadline.setDate(deadline.getDate()+14);
+      const deadlineStr=deadline.toISOString().split("T")[0];
+
+      // 9. Save return record
+      const {error:retErr}=await sb.from("returns").insert({
+        id:retId,
+        shop_id:sale.shop_id,
+        sale_id:orderId,
+        customer:sale.customer||form.name,
+        phone:form.phone,
+        reason:form.reason,
+        resolution:form.resolution,
+        status:"RETURN_APPROVED",
+        return_deadline:deadlineStr,
+        return_address_version:"v1",
+        staff_notes:"",
+      });
+      if(retErr){
+        setErrorMsg("Something went wrong saving your return. Please try again or contact us.");
+        setLoading(false);return;
+      }
+
+      // 10. Queue approval message
+      const msgBody=RETURN_APPROVAL_MESSAGE(retId,sale.customer||form.name,"v1");
+      await sb.from("message_queue").insert({
+        shop_id:sale.shop_id,
+        sale_id:orderId,
+        customer:sale.customer||form.name,
+        phone:form.phone,
+        message_type:"RETURN_APPROVED",
+        message_body:msgBody,
+        status:"READY",
+      });
+
+      setGeneratedId(retId);
+      setStep("success");
+    }catch(e){
+      console.error(e);
+      setErrorMsg("An unexpected error occurred. Please try again or contact us directly.");
+    }
+    setLoading(false);
+  };
+
+  const inputStyle={width:"100%",padding:"11px 14px",borderRadius:10,border:"1.5px solid #e2e8f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box",background:"white",transition:"border 0.15s"};
+  const labelStyle={display:"block",fontSize:12,fontWeight:700,color:"#374151",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
+
+  if(step==="success") return(
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#f0fdf4,#dcfce7)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"system-ui,sans-serif"}}>
+      <div style={{background:"white",borderRadius:20,boxShadow:"0 20px 60px rgba(0,0,0,0.10)",maxWidth:480,width:"100%",padding:40,textAlign:"center"}}>
+        <div style={{width:72,height:72,borderRadius:"50%",background:"#dcfce7",border:"3px solid #16a34a",display:"flex",alignItems:"center",justifyContent:"center",fontSize:32,margin:"0 auto 20px"}}>✅</div>
+        <h1 style={{margin:"0 0 8px",fontSize:24,fontWeight:800,color:"#0f172a"}}>Return Approved</h1>
+        <p style={{margin:"0 0 20px",fontSize:14,color:"#64748b"}}>Your return request has been submitted successfully.</p>
+        <div style={{background:"#f0fdf4",borderRadius:12,padding:"16px 20px",border:"1px solid #86efac",marginBottom:20}}>
+          <p style={{margin:"0 0 4px",fontSize:11,fontWeight:700,color:"#166534",textTransform:"uppercase",letterSpacing:"0.05em"}}>Your Return ID</p>
+          <p style={{margin:0,fontSize:28,fontWeight:900,color:"#15803d",fontFamily:"DM Mono,monospace",letterSpacing:1}}>{generatedId}</p>
+        </div>
+        <p style={{margin:"0 0 24px",fontSize:13,color:"#374151",lineHeight:1.6}}>
+          We will send you the full return instructions via WhatsApp shortly.<br/>
+          Please <strong>write your Return ID on the outside of the parcel</strong>.
+        </p>
+        <p style={{margin:0,fontSize:12,color:"#94a3b8"}}>You can close this page.</p>
+      </div>
+    </div>
+  );
+
+  return(
+    <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#f8fafc,#f1f5f9)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"system-ui,sans-serif"}}>
+      <div style={{background:"white",borderRadius:20,boxShadow:"0 20px 60px rgba(0,0,0,0.08)",maxWidth:480,width:"100%",overflow:"hidden"}}>
+        {/* Header */}
+        <div style={{background:"linear-gradient(135deg,#166534,#15803d)",padding:"28px 32px 24px"}}>
+          <p style={{margin:"0 0 4px",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.08em"}}>ROS Selections</p>
+          <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:800,color:"white"}}>↩️ Return Request</h1>
+          <p style={{margin:0,fontSize:13,color:"rgba(255,255,255,0.8)"}}>14-day return window · Please complete all fields</p>
+        </div>
+
+        <div style={{padding:"28px 32px"}}>
+          {/* Order No */}
+          <div style={{marginBottom:16}}>
+            <label style={labelStyle}>Order Number</label>
+            <input value={form.orderNo} onChange={e=>set("orderNo",e.target.value.toUpperCase())}
+              placeholder="e.g. ROS16727"
+              style={{...inputStyle,fontFamily:"DM Mono,monospace",fontWeight:700,letterSpacing:1}}/>
+            <p style={{margin:"4px 0 0",fontSize:11,color:"#94a3b8"}}>Found on your order confirmation or receipt</p>
+          </div>
+
+          {/* Name */}
+          <div style={{marginBottom:16}}>
+            <label style={labelStyle}>Full Name</label>
+            <input value={form.name} onChange={e=>set("name",e.target.value)}
+              placeholder="As on your order"
+              style={inputStyle}/>
+          </div>
+
+          {/* Phone */}
+          <div style={{marginBottom:16}}>
+            <label style={labelStyle}>Phone Number</label>
+            <input value={form.phone} onChange={e=>set("phone",e.target.value)}
+              placeholder="e.g. 07700 000000"
+              style={inputStyle} type="tel"/>
+            <p style={{margin:"4px 0 0",fontSize:11,color:"#94a3b8"}}>Must match the number on your order</p>
+          </div>
+
+          {/* Reason */}
+          <div style={{marginBottom:16}}>
+            <label style={labelStyle}>Reason for Return</label>
+            <select value={form.reason} onChange={e=>set("reason",e.target.value)} style={inputStyle}>
+              <option value="">— Select a reason —</option>
+              {REASONS.map(r=><option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+
+          {/* Resolution */}
+          <div style={{marginBottom:24}}>
+            <label style={labelStyle}>I would like a</label>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              {["refund","exchange"].map(opt=>(
+                <button key={opt} type="button" onClick={()=>set("resolution",opt)}
+                  style={{padding:"12px 0",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:700,
+                    border:"2px solid "+(form.resolution===opt?"#166534":"#e2e8f0"),
+                    background:form.resolution===opt?"#f0fdf4":"white",
+                    color:form.resolution===opt?"#166534":"#64748b"}}>
+                  {opt==="refund"?"💰 Refund":"🔄 Exchange"}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Error */}
+          {errorMsg&&(
+            <div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:13,color:"#dc2626",fontWeight:600}}>
+              ⚠️ {errorMsg}
+            </div>
+          )}
+
+          {/* Submit */}
+          <button onClick={handleSubmit} disabled={loading}
+            style={{width:"100%",padding:"14px 0",borderRadius:12,border:"none",
+              background:loading?"#94a3b8":"linear-gradient(135deg,#166534,#15803d)",
+              color:"white",fontWeight:800,fontSize:15,cursor:loading?"default":"pointer",
+              fontFamily:"inherit",boxShadow:loading?"none":"0 4px 20px rgba(22,101,52,0.30)"}}>
+            {loading?"Submitting…":"Submit Return Request →"}
+          </button>
+
+          <p style={{margin:"16px 0 0",fontSize:11,color:"#94a3b8",textAlign:"center",lineHeight:1.5}}>
+            By submitting this form you confirm the item is unused, unworn and in its original packaging.<br/>
+            <a href="https://rosselections.com/policies/refund-policy" target="_blank" rel="noreferrer" style={{color:"#166534"}}>View our full returns policy</a>
+          </p>
+        </div>
+      </div>
+    </div>
+  );
+};
+/* ── End ReturnsPortal ───────────────────────────────────────────────────── */
+
+/* ═══════════════════════════════════════════════════════════
+   RETURN TRACKING PORTAL — /return-tracking  (Phase 5)
+   ═══════════════════════════════════════════════════════════ */
+const ReturnTrackingPortal=()=>(
+  <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#f8fafc,#f1f5f9)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"system-ui,sans-serif"}}>
+    <div style={{background:"white",borderRadius:20,boxShadow:"0 20px 60px rgba(0,0,0,0.08)",maxWidth:480,width:"100%",padding:40,textAlign:"center"}}>
+      <div style={{fontSize:48,marginBottom:16}}>📦</div>
+      <h1 style={{margin:"0 0 8px",fontSize:22,fontWeight:800,color:"#0f172a"}}>Return Tracking</h1>
+      <p style={{margin:0,fontSize:14,color:"#64748b"}}>Coming soon. Please contact us directly if you need to update your return.</p>
+    </div>
+  </div>
+);
+/* ── End ReturnTrackingPortal stub ──────────────────────────────────────── */
+
+
+
 /* ── MarkDeliveredModal ─────────────────────────────────────────────────── */
 const MarkDeliveredModal=({sale,shopId,shop,onConfirm,onClose})=>{
   const [date,setDate]=React.useState(new Date().toISOString().slice(0,10));
@@ -6927,6 +7225,11 @@ const LoginScreen=({onLogin,users})=>{
 };
 
 export default function App(){
+  // Public routes — render without login
+  const path=window.location.pathname;
+  if(path==="/returns") return <ReturnsPortal/>;
+  if(path==="/return-tracking") return <ReturnTrackingPortal/>;
+
   // Always start logged-out — login page shown on every fresh load
   const [user,setUser]=useState(null);
   const [shop,setShop]=useState(null);
