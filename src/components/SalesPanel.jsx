@@ -294,11 +294,15 @@ export default function SalesPanel({
   setStatusFilter,
   statusTabs,
   statusRowBg: statusRowBgProp,
+  onSaveTracking,
+  onMarkDelivered,
 }) {
   const [hovR,    setHovR]    = useState(null);
   const [hovCard, setHovCard] = useState(null);
   const [hovTab,  setHovTab]  = useState(null);
   const [reloading, setReloading] = useState(false);
+  const [editTrackingId, setEditTrackingId] = useState(null);
+  const [trackingInput,  setTrackingInput]  = useState("");
   /* Month picker state */
   const [pickedMonth, setPickedMonth] = useState(null);   // "YYYY-MM" or null
   const [pickerOpen,  setPickerOpen]  = useState(false);
@@ -859,11 +863,12 @@ export default function SalesPanel({
             <thead>
               <tr style={{ background: "#f8fafc" }}>
                 {["Invoice", "Date", "Customer", "Item", "Amount", "Payment", "Status", "Tags",
-                  ...(shopId==="ros-india" ? ["Pur. Amount"] : []),
-                  "Actions"]
+                  ...(shopId==="ros-india"&&!isStaff ? ["Pur. Amount"] : []),
+                  "Tracking", "Delivered", "Actions"]
                   .map((h, i) => (
                     <th key={h} style={{
-                      padding: "11px 16px", textAlign: (i >= 4 && i !== 7) ? "right" : "left",
+                      padding: "11px 16px",
+                      textAlign: (h === "Amount" || h === "Payment" || h === "Status" || h === "Pur. Amount") ? "right" : "left",
                       fontSize: 11, fontWeight: 800, color: "#94a3b8",
                       textTransform: "uppercase", letterSpacing: "0.06em",
                       borderBottom: "1px solid #f1f5f9", whiteSpace: "nowrap",
@@ -878,7 +883,7 @@ export default function SalesPanel({
               {/* Empty state */}
               {rowsWithSeparators.length === 0 && (
                 <tr>
-                  <td colSpan={shopId==="ros-india" ? 10 : 9} style={{ padding: "52px 16px", textAlign: "center" }}>
+                  <td colSpan={shopId==="ros-india"&&!isStaff ? 12 : 11} style={{ padding: "52px 16px", textAlign: "center" }}>
                     <div style={{ fontSize: 36, marginBottom: 10 }}>🛒</div>
                     <p style={{ margin: 0, fontWeight: 700, color: "#94a3b8", fontSize: 14 }}>
                       No {statusTab !== "ALL" ? activeTabCfg.label.toLowerCase() + " " : ""}sales found
@@ -898,7 +903,7 @@ export default function SalesPanel({
                 if (row._type === "fy") {
                   return (
                     <tr key={`fy-${row._fyStart}-${idx}`}>
-                      <td colSpan={shopId==="ros-india" ? 10 : 9} style={{ padding: 0 }}>
+                      <td colSpan={shopId==="ros-india"&&!isStaff ? 12 : 11} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", gap: 10,
                           padding: "9px 16px",
@@ -930,7 +935,7 @@ export default function SalesPanel({
                 if (row._type === "month") {
                   return (
                     <tr key={`month-${row._monthKey}-${idx}`}>
-                      <td colSpan={shopId==="ros-india" ? 10 : 9} style={{ padding: 0 }}>
+                      <td colSpan={shopId==="ros-india"&&!isStaff ? 12 : 11} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", gap: 10,
                           padding: "6px 16px",
@@ -1056,7 +1061,7 @@ export default function SalesPanel({
                       ) : <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>}
                     </td>
                     {/* Pur. Amount — ROS INDIA only */}
-                    {shopId==="ros-india"&&(
+                    {shopId==="ros-india"&&!isStaff&&(
                       <td style={{ padding: "12px 16px", textAlign: "right" }}>
                         {s.purInvNo ? (
                           <span style={{
@@ -1070,6 +1075,110 @@ export default function SalesPanel({
                         ) : <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>}
                       </td>
                     )}
+                    {/* Tracking */}
+                    <td style={{ padding: "8px 10px", minWidth: 160 }} onClick={e => e.stopPropagation()}>
+                      {editTrackingId === s.id ? (
+                        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                          <input
+                            autoFocus
+                            value={trackingInput}
+                            onChange={e => setTrackingInput(e.target.value.toUpperCase())}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") {
+                                if (onSaveTracking) onSaveTracking(s.id, trackingInput.trim());
+                                setEditTrackingId(null);
+                              }
+                              if (e.key === "Escape") setEditTrackingId(null);
+                            }}
+                            placeholder="Tracking no."
+                            style={{
+                              width: "100%", padding: "5px 8px", borderRadius: 7,
+                              border: "1.5px solid #7dd3fc", fontSize: 11,
+                              fontFamily: "DM Mono,monospace", outline: "none",
+                              textTransform: "uppercase",
+                            }}
+                          />
+                          <button
+                            onClick={() => {
+                              if (onSaveTracking) onSaveTracking(s.id, trackingInput.trim());
+                              setEditTrackingId(null);
+                            }}
+                            style={{
+                              padding: "5px 8px", borderRadius: 7, border: "none",
+                              background: "#0369a1", color: "white", fontSize: 11,
+                              fontWeight: 700, cursor: "pointer", flexShrink: 0,
+                            }}>✓</button>
+                          <button
+                            onClick={() => setEditTrackingId(null)}
+                            style={{
+                              padding: "5px 7px", borderRadius: 7,
+                              border: "1px solid #e2e8f0", background: "white",
+                              color: "#94a3b8", fontSize: 11, cursor: "pointer", flexShrink: 0,
+                            }}>✕</button>
+                        </div>
+                      ) : s.trackingNo ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
+                          <a
+                            href={`https://www.royalmail.com/track-your-item#/tracking-results/${s.trackingNo}`}
+                            target="_blank" rel="noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            style={{
+                              fontSize: 11, fontFamily: "DM Mono,monospace", fontWeight: 700,
+                              color: "#0369a1", textDecoration: "none",
+                              background: "#f0f9ff", border: "1px solid #bae6fd",
+                              borderRadius: 6, padding: "3px 8px", whiteSpace: "nowrap",
+                              maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis",
+                              display: "inline-block",
+                            }}
+                            title={s.trackingNo}
+                          >{s.trackingNo}</a>
+                          <button
+                            onClick={() => { setEditTrackingId(s.id); setTrackingInput(s.trackingNo || ""); }}
+                            style={{
+                              width: 20, height: 20, borderRadius: 5, border: "1px solid #e2e8f0",
+                              background: "white", color: "#94a3b8", fontSize: 10,
+                              cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center",
+                            }}>✏️</button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => { setEditTrackingId(s.id); setTrackingInput(""); }}
+                          style={{
+                            padding: "4px 10px", borderRadius: 7,
+                            border: "1px dashed #bae6fd", background: "#f0f9ff",
+                            color: "#0369a1", fontSize: 11, fontWeight: 600,
+                            cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                          }}>+ Add Tracking</button>
+                      )}
+                    </td>
+
+                    {/* Delivered */}
+                    <td style={{ padding: "8px 10px", minWidth: 110 }} onClick={e => e.stopPropagation()}>
+                      {s.deliveryDate ? (
+                        <div style={{
+                          display: "inline-flex", alignItems: "center", gap: 4,
+                          background: "#f0fdf4", border: "1px solid #86efac",
+                          borderRadius: 7, padding: "4px 9px",
+                        }}>
+                          <span style={{ fontSize: 11 }}>✅</span>
+                          <span style={{ fontSize: 11, fontWeight: 700, color: "#166534", whiteSpace: "nowrap" }}>
+                            {fmtDate(s.deliveryDate)}
+                          </span>
+                        </div>
+                      ) : (s.ful || s.status) === "FULFILLED" ? (
+                        <button
+                          onClick={() => { if (onMarkDelivered) onMarkDelivered(s); }}
+                          style={{
+                            padding: "4px 10px", borderRadius: 7,
+                            border: "1px dashed #86efac", background: "#f0fdf4",
+                            color: "#166534", fontSize: 11, fontWeight: 700,
+                            cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                          }}>✅ Mark Delivered</button>
+                      ) : (
+                        <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>
+                      )}
+                    </td>
+
                     {/* Actions */}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
