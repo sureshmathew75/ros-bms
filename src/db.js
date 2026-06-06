@@ -749,6 +749,20 @@ export const dbCancelMessage = async (id, cancelledBy = '') => {
 };
 
 /* Check if a specific message type already exists for a sale (avoid duplicates) */
+export const dbDeleteMessage = async (id) => {
+  if (!sb) return;
+  const { error } = await sb.from('message_queue').delete().eq('id', id);
+  if (error) console.error('Delete message error:', error);
+  else console.log('✅ Message deleted:', id);
+};
+
+export const dbDeleteMessages = async (ids = []) => {
+  if (!sb || ids.length === 0) return;
+  const { error } = await sb.from('message_queue').delete().in('id', ids);
+  if (error) console.error('Bulk delete messages error:', error);
+  else console.log('✅ Messages deleted:', ids.length);
+};
+
 export const dbMessageExists = async (shopId, saleId, messageType) => {
   if (!sb) return false;
   const { data, error } = await sb

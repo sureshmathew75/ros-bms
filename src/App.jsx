@@ -21,7 +21,7 @@ import {
   STAGE_THEME
 } from "./constants";
 import { formatCurrency, formatDate, formatNumber } from "./utils";
-import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser, dbLoadShopItems, dbAddShopItem, dbDeleteShopItem, dbSaveDelivery, dbLoadMessages, dbAddMessage, dbMarkMessageSent, dbCancelMessage, dbMessageExists, dbLoadReturns, dbSaveReturn, dbNextReturnId } from "./db";
+import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser, dbLoadShopItems, dbAddShopItem, dbDeleteShopItem, dbSaveDelivery, dbLoadMessages, dbAddMessage, dbMarkMessageSent, dbCancelMessage, dbMessageExists, dbLoadReturns, dbSaveReturn, dbNextReturnId, dbDeleteMessage, dbDeleteMessages } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -840,6 +840,7 @@ const MessagesPanel=({shopId,shop,messages,setMessages,user,sales})=>{
   const [expandedId,setExpandedId]=React.useState(null);
   const [typeFilter,setTypeFilter]=React.useState("ALL");
   const [search,setSearch]=React.useState("");
+  const [confirmDelete,setConfirmDelete]=React.useState(null); // {ids:[], label:""}
 
   // ── On-load scan: generate missing Day3 and Window-Closed messages ──
   // Only scan sales delivered within last 20 days to avoid mass generation
@@ -912,6 +913,24 @@ const MessagesPanel=({shopId,shop,messages,setMessages,user,sales})=>{
     await dbCancelMessage(id,user?.name||"Staff");
     setMessages(prev=>prev.map(m=>m.id===id?{...m,status:"CANCELLED",cancelledBy:user?.name||"Staff"}:m));
     setSelected(prev=>{const s=new Set(prev);s.delete(id);return s;});
+  };
+
+  // Delete handlers
+  const handleDelete=async(id)=>{
+    setConfirmDelete({ids:[id],label:"this message"});
+  };
+  const handleBulkDelete=()=>{
+    if(selected.size===0)return;
+    setConfirmDelete({ids:[...selected],label:`${selected.size} message${selected.size>1?"s":""}`});
+  };
+  const executeDelete=async()=>{
+    const {ids}=confirmDelete;
+    setConfirmDelete(null);
+    setBulkActioning(true);
+    await dbDeleteMessages(ids);
+    setMessages(prev=>prev.filter(m=>!ids.includes(m.id)));
+    setSelected(new Set());
+    setBulkActioning(false);
   };
 
   // Bulk actions
@@ -993,6 +1012,12 @@ const MessagesPanel=({shopId,shop,messages,setMessages,user,sales})=>{
                 {bulkActioning?"Working…":"✓ Mark Selected as Sent"}
               </button>
             )}
+            <button disabled={bulkActioning} onClick={handleBulkDelete}
+              style={{padding:"6px 16px",borderRadius:8,border:"1px solid rgba(239,68,68,0.4)",
+                background:"rgba(239,68,68,0.12)",color:"#fca5a5",fontSize:12,fontWeight:700,
+                cursor:"pointer",fontFamily:"inherit"}}>
+              🗑️ Delete Selected
+            </button>
             <button onClick={()=>setSelected(new Set())}
               style={{padding:"6px 10px",borderRadius:8,border:"none",background:"transparent",
                 color:"#64748b",fontSize:11,cursor:"pointer"}}>Clear</button>
@@ -1078,6 +1103,12 @@ const MessagesPanel=({shopId,shop,messages,setMessages,user,sales})=>{
                               ✕
                             </button>
                           </>)}
+                          <button onClick={()=>handleDelete(msg.id)}
+                            title="Delete this message"
+                            style={{padding:"4px 8px",borderRadius:6,border:"1px solid #fecaca",background:"#fff5f5",
+                              color:"#dc2626",fontSize:11,cursor:"pointer",whiteSpace:"nowrap"}}>
+                            🗑️
+                          </button>
                         </div>
                       </td>
                     </tr>
@@ -1107,6 +1138,39 @@ const MessagesPanel=({shopId,shop,messages,setMessages,user,sales})=>{
           display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <span>Showing {filtered.length} of {messages.length} messages</span>
           {someSelected&&<span style={{color:shop.accent,fontWeight:700}}>{selected.size} selected</span>}
+        </div>
+      )}
+
+      {/* ── Delete Confirmation Modal ── */}
+      {confirmDelete&&(
+        <div style={{position:"fixed",inset:0,zIndex:90,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(4px)"}}
+            onClick={()=>setConfirmDelete(null)}/>
+          <div style={{position:"relative",background:"white",borderRadius:16,boxShadow:"0 24px 64px rgba(0,0,0,0.20)",
+            width:"100%",maxWidth:380,padding:28,textAlign:"center"}}>
+            <div style={{width:56,height:56,borderRadius:"50%",background:"#fef2f2",border:"2px solid #fca5a5",
+              display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,margin:"0 auto 16px"}}>🗑️</div>
+            <h3 style={{margin:"0 0 8px",fontSize:17,fontWeight:800,color:"#0f172a"}}>Delete Messages</h3>
+            <p style={{margin:"0 0 6px",fontSize:13,color:"#374151"}}>
+              You are about to permanently delete <strong>{confirmDelete.label}</strong>.
+            </p>
+            <p style={{margin:"0 0 24px",fontSize:12,color:"#ef4444",fontWeight:600}}>
+              ⚠️ This cannot be undone.
+            </p>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <button onClick={()=>setConfirmDelete(null)}
+                style={{padding:"11px 0",borderRadius:10,border:"1px solid #e2e8f0",background:"white",
+                  color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                Cancel
+              </button>
+              <button onClick={executeDelete}
+                style={{padding:"11px 0",borderRadius:10,border:"none",background:"#dc2626",
+                  color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",
+                  boxShadow:"0 4px 12px rgba(220,38,38,0.35)"}}>
+                🗑️ Delete
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
