@@ -1461,6 +1461,7 @@ return(
             {label:"MANAGE",  ids:["logistics","customers","suppliers","agents","products"]},
             {label:"FINANCE", ids:["invoices","expenses","cashflow"]},
             {label:"INSIGHTS",ids:["documents","analytics","reports"]},
+            {label:"FULFILMENT",ids:["messages","returns"]},
           ].map(group=>{
             const groupItems=NAV.filter(n=>group.ids.includes(n.id));
             if(groupItems.length===0)return null;
