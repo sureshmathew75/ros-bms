@@ -1329,6 +1329,320 @@ const ReturnTrackingPortal=()=>(
 
 
 
+
+/* ═══════════════════════════════════════════════════════════
+   RETURNS PANEL — staff view of all returns
+   ═══════════════════════════════════════════════════════════ */
+const RETURN_STATUS_STYLE={
+  RETURN_APPROVED: {bg:"#f0fdf4",border:"#86efac",text:"#166534",label:"Approved"},
+  RETURN_IN_TRANSIT:{bg:"#eff6ff",border:"#93c5fd",text:"#1d4ed8",label:"In Transit"},
+  RETURN_RECEIVED: {bg:"#f0f9ff",border:"#7dd3fc",text:"#0369a1",label:"Received"},
+  RETURN_EXPIRED:  {bg:"#fef2f2",border:"#fca5a5",text:"#dc2626",label:"Expired"},
+  REFUNDED:        {bg:"#f5f3ff",border:"#c4b5fd",text:"#6d28d9",label:"Refunded"},
+  EXCHANGED:       {bg:"#fdf4ff",border:"#e879f9",text:"#a21caf",label:"Exchanged"},
+};
+
+const daysRemaining=(deadlineStr)=>{
+  if(!deadlineStr)return null;
+  const dl=new Date(deadlineStr);dl.setHours(0,0,0,0);
+  const today=new Date();today.setHours(0,0,0,0);
+  return Math.ceil((dl-today)/(1000*60*60*24));
+};
+
+const DaysChip=({days})=>{
+  if(days===null)return null;
+  if(days<0)return <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:999,background:"#fef2f2",color:"#dc2626",border:"1px solid #fca5a5"}}>Expired</span>;
+  if(days===0)return <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:999,background:"#fef2f2",color:"#dc2626",border:"1px solid #fca5a5"}}>Today</span>;
+  if(days<=2)return <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:999,background:"#fff7ed",color:"#c2410c",border:"1px solid #fdba74"}}>🔴 {days}d left</span>;
+  if(days<=4)return <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:999,background:"#fffbeb",color:"#b45309",border:"1px solid #fcd34d"}}>🟡 {days}d left</span>;
+  return <span style={{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:999,background:"#f0fdf4",color:"#166534",border:"1px solid #86efac"}}>🟢 {days}d left</span>;
+};
+
+const ReturnDetailModal=({ret,shop,onClose,onUpdate,user})=>{
+  const [form,setForm]=React.useState({
+    status:ret.status,
+    trackingNo:ret.trackingNo||"",
+    courier:ret.courier||"",
+    receivedDate:ret.receivedDate||"",
+    refundDate:ret.refundDate||"",
+    exchangeDate:ret.exchangeDate||"",
+    staffNotes:ret.staffNotes||"",
+  });
+  const [saving,setSaving]=React.useState(false);
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const days=daysRemaining(ret.returnDeadline);
+
+  const inp={width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box",background:"white"};
+  const lbl={display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
+
+  const handleSave=async()=>{
+    setSaving(true);
+    await dbSaveReturn({
+      ...ret,
+      status:form.status,
+      trackingNo:form.trackingNo,
+      courier:form.courier,
+      receivedDate:form.receivedDate,
+      refundDate:form.refundDate,
+      exchangeDate:form.exchangeDate,
+      staffNotes:form.staffNotes,
+    });
+    onUpdate({...ret,status:form.status,trackingNo:form.trackingNo,courier:form.courier,
+      receivedDate:form.receivedDate,refundDate:form.refundDate,exchangeDate:form.exchangeDate,
+      staffNotes:form.staffNotes});
+    setSaving(false);
+    onClose();
+  };
+
+  const fmtDate=d=>{if(!d)return"—";try{return new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});}catch{return d;}};
+  const statusStyle=RETURN_STATUS_STYLE[form.status]||{bg:"#f8fafc",border:"#e2e8f0",text:"#374151",label:form.status};
+
+  return(
+    <div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+      <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)"}} onClick={onClose}/>
+      <div style={{position:"relative",background:"white",borderRadius:18,boxShadow:"0 24px 64px rgba(0,0,0,0.18)",width:"100%",maxWidth:540,maxHeight:"90vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        {/* Header */}
+        <div style={{padding:"16px 20px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"10",flexShrink:0}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+            <div>
+              <p style={{margin:"0 0 2px",fontSize:11,fontWeight:700,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.06em"}}>Return Detail</p>
+              <h3 style={{margin:"0 0 2px",fontSize:17,fontWeight:900,color:"#0f172a",fontFamily:"DM Mono,monospace"}}>{ret.id}</h3>
+              <p style={{margin:0,fontSize:12,color:"#64748b"}}>{ret.customer} · {ret.phone} · Sale: {ret.saleId}</p>
+            </div>
+            <button onClick={onClose} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",flexShrink:0}}>×</button>
+          </div>
+        </div>
+
+        <div style={{flex:1,overflowY:"auto",padding:"16px 20px"}}>
+          {/* Key info row */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
+            <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",border:"1px solid #e2e8f0"}}>
+              <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>Resolution</p>
+              <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ret.resolution==="exchange"?"🔄 Exchange":"💰 Refund"}</p>
+            </div>
+            <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",border:"1px solid #e2e8f0"}}>
+              <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>Deadline</p>
+              <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{fmtDate(ret.returnDeadline)}</p>
+            </div>
+            <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",border:"1px solid #e2e8f0",display:"flex",alignItems:"center",justifyContent:"center"}}>
+              <DaysChip days={days}/>
+            </div>
+          </div>
+
+          {/* Reason */}
+          <div style={{background:"#fffbeb",borderRadius:10,padding:"10px 14px",border:"1px solid #fde68a",marginBottom:16}}>
+            <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#92400e",textTransform:"uppercase"}}>Reason</p>
+            <p style={{margin:0,fontSize:13,color:"#374151"}}>{ret.reason}</p>
+          </div>
+
+          {/* Status */}
+          <div style={{marginBottom:14}}>
+            <label style={lbl}>Status</label>
+            <select value={form.status} onChange={e=>set("status",e.target.value)}
+              style={{...inp,fontWeight:700,color:statusStyle.text,background:statusStyle.bg,border:"1.5px solid "+statusStyle.border}}>
+              {Object.entries(RETURN_STATUS_STYLE).map(([k,v])=>(
+                <option key={k} value={k}>{v.label}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Customer tracking */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+            <div>
+              <label style={lbl}>Customer Tracking No.</label>
+              <input value={form.trackingNo} onChange={e=>set("trackingNo",e.target.value)}
+                placeholder="Customer's return tracking" style={inp}/>
+            </div>
+            <div>
+              <label style={lbl}>Courier</label>
+              <select value={form.courier} onChange={e=>set("courier",e.target.value)} style={inp}>
+                <option value="">— Select —</option>
+                {["Royal Mail","Evri","DPD","Parcelforce","DHL","UPS","Other"].map(c=><option key={c}>{c}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Dates */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
+            <div>
+              <label style={lbl}>Received Date</label>
+              <input type="date" value={form.receivedDate} onChange={e=>set("receivedDate",e.target.value)} style={inp}/>
+            </div>
+            <div>
+              <label style={lbl}>Refund Date</label>
+              <input type="date" value={form.refundDate} onChange={e=>set("refundDate",e.target.value)} style={inp}/>
+            </div>
+            <div>
+              <label style={lbl}>Exchange Date</label>
+              <input type="date" value={form.exchangeDate} onChange={e=>set("exchangeDate",e.target.value)} style={inp}/>
+            </div>
+          </div>
+
+          {/* Staff notes */}
+          <div style={{marginBottom:8}}>
+            <label style={lbl}>Staff Notes</label>
+            <textarea value={form.staffNotes} onChange={e=>set("staffNotes",e.target.value)}
+              rows={3} placeholder="Internal notes — visible to staff only…"
+              style={{...inp,resize:"vertical"}}/>
+          </div>
+
+          {/* Return address version */}
+          <p style={{margin:"4px 0 0",fontSize:11,color:"#94a3b8"}}>Return address version sent: <strong>{ret.returnAddressVersion||"v1"}</strong> · Created: {fmtDate(ret.createdAt)}</p>
+        </div>
+
+        {/* Footer */}
+        <div style={{padding:"12px 20px",borderTop:"1px solid #f1f5f9",display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,flexShrink:0}}>
+          <button onClick={onClose}
+            style={{padding:"11px 0",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={saving}
+            style={{padding:"11px 0",borderRadius:10,border:"none",background:saving?"#94a3b8":shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:saving?"default":"pointer",fontFamily:"inherit",boxShadow:saving?"none":"0 4px 12px "+shop.accent+"44"}}>
+            {saving?"Saving…":"💾 Save Changes"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ReturnsPanel=({shopId,shop,returns,setReturns,user})=>{
+  const [filter,setFilter]=React.useState("ALL");
+  const [selectedReturn,setSelectedReturn]=React.useState(null);
+  const [search,setSearch]=React.useState("");
+
+  const ACTIVE_STATUSES=["RETURN_APPROVED","RETURN_IN_TRANSIT","RETURN_RECEIVED"];
+  const filtered=returns.filter(r=>{
+    const matchStatus=filter==="ALL"?true:filter==="ACTIVE"?ACTIVE_STATUSES.includes(r.status):r.status===filter;
+    const q=search.toLowerCase();
+    const matchSearch=!q||r.id.toLowerCase().includes(q)||r.customer.toLowerCase().includes(q)||r.saleId.toLowerCase().includes(q)||r.phone.includes(q);
+    return matchStatus&&matchSearch;
+  });
+
+  const counts={
+    ALL:returns.length,
+    ACTIVE:returns.filter(r=>ACTIVE_STATUSES.includes(r.status)).length,
+    RETURN_RECEIVED:returns.filter(r=>r.status==="RETURN_RECEIVED").length,
+    REFUNDED:returns.filter(r=>r.status==="REFUNDED").length,
+    RETURN_EXPIRED:returns.filter(r=>r.status==="RETURN_EXPIRED").length,
+  };
+
+  const fmtDate=d=>{if(!d)return"—";try{return new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short"});}catch{return d;}};
+
+  return(
+    <div style={{padding:"0 0 40px"}}>
+      {/* Header */}
+      <div style={{padding:"18px 20px 0",marginBottom:14}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:14}}>
+          <div>
+            <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>↩️ Returns</h2>
+            <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>{returns.length} total · {counts.ACTIVE} active</p>
+          </div>
+          {/* Search */}
+          <input value={search} onChange={e=>setSearch(e.target.value)}
+            placeholder="Search returns…"
+            style={{padding:"8px 14px",borderRadius:10,border:"1px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",width:200}}/>
+        </div>
+
+        {/* Filter tabs */}
+        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+          {[
+            {key:"ALL",label:"All"},
+            {key:"ACTIVE",label:"Active"},
+            {key:"RETURN_RECEIVED",label:"Received"},
+            {key:"REFUNDED",label:"Refunded"},
+            {key:"RETURN_EXPIRED",label:"Expired"},
+          ].map(f=>(
+            <button key={f.key} onClick={()=>setFilter(f.key)}
+              style={{padding:"5px 14px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                border:"1px solid "+(filter===f.key?shop.accent:"#e2e8f0"),
+                background:filter===f.key?shop.accent:"white",
+                color:filter===f.key?"white":"#64748b"}}>
+              {f.label}{counts[f.key]>0?` (${counts[f.key]})`:""}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div style={{padding:"0 12px"}}>
+        {filtered.length===0?(
+          <div style={{textAlign:"center",padding:"60px 20px",color:"#94a3b8"}}>
+            <div style={{fontSize:40,marginBottom:12}}>↩️</div>
+            <p style={{margin:0,fontSize:14,fontWeight:600}}>No returns found</p>
+            <p style={{margin:"6px 0 0",fontSize:12}}>Returns submitted via the customer portal will appear here.</p>
+          </div>
+        ):(
+          <div>
+            {/* Column headers */}
+            <div style={{display:"grid",gridTemplateColumns:"130px 1fr 110px 100px 90px 80px",gap:8,padding:"8px 14px",borderRadius:10,background:"#f8fafc",border:"1px solid #e2e8f0",marginBottom:8}}>
+              {["Return ID","Customer","Status","Deadline","Days Left",""].map(h=>(
+                <span key={h} style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</span>
+              ))}
+            </div>
+
+            {filtered.map(ret=>{
+              const days=daysRemaining(ret.returnDeadline);
+              const statusStyle=RETURN_STATUS_STYLE[ret.status]||{bg:"#f8fafc",border:"#e2e8f0",text:"#374151",label:ret.status};
+              const isClosed=["REFUNDED","EXCHANGED","RETURN_EXPIRED"].includes(ret.status);
+              return(
+                <div key={ret.id}
+                  onClick={()=>setSelectedReturn(ret)}
+                  style={{display:"grid",gridTemplateColumns:"130px 1fr 110px 100px 90px 80px",gap:8,padding:"11px 14px",
+                    borderRadius:12,border:"1px solid #e2e8f0",marginBottom:8,background:"white",
+                    cursor:"pointer",transition:"box-shadow 0.15s",
+                    boxShadow:"0 1px 3px rgba(0,0,0,0.04)",
+                    opacity:isClosed?0.65:1}}
+                  onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.10)"}
+                  onMouseLeave={e=>e.currentTarget.style.boxShadow="0 1px 3px rgba(0,0,0,0.04)"}>
+                  <div>
+                    <p style={{margin:0,fontSize:12,fontWeight:800,color:shop.accent,fontFamily:"DM Mono,monospace"}}>{ret.id}</p>
+                    <p style={{margin:"1px 0 0",fontSize:10,color:"#94a3b8"}}>{ret.resolution==="exchange"?"🔄":"💰"} {ret.resolution}</p>
+                  </div>
+                  <div>
+                    <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ret.customer}</p>
+                    <p style={{margin:"1px 0 0",fontSize:11,color:"#64748b"}}>{ret.saleId}</p>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center"}}>
+                    <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:999,
+                      background:statusStyle.bg,border:"1px solid "+statusStyle.border,color:statusStyle.text,whiteSpace:"nowrap"}}>
+                      {statusStyle.label}
+                    </span>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center"}}>
+                    <span style={{fontSize:12,color:"#374151"}}>{fmtDate(ret.returnDeadline)}</span>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center"}}>
+                    {isClosed?<span style={{fontSize:11,color:"#94a3b8"}}>—</span>:<DaysChip days={days}/>}
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end"}}>
+                    <span style={{fontSize:11,color:shop.accent,fontWeight:700}}>View →</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* Detail modal */}
+      {selectedReturn&&(
+        <ReturnDetailModal
+          ret={selectedReturn}
+          shop={shop}
+          user={user}
+          onClose={()=>setSelectedReturn(null)}
+          onUpdate={(updated)=>{
+            setReturns(prev=>prev.map(r=>r.id===updated.id?updated:r));
+            setSelectedReturn(null);
+          }}
+        />
+      )}
+    </div>
+  );
+};
+/* ── End ReturnsPanel ────────────────────────────────────────────────────── */
+
 /* ── MarkDeliveredModal ─────────────────────────────────────────────────── */
 const MarkDeliveredModal=({sale,shopId,shop,onConfirm,onClose})=>{
   const [date,setDate]=React.useState(new Date().toISOString().slice(0,10));
@@ -1414,6 +1728,9 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   React.useEffect(()=>{
     if(tab==="messages"&&!messagesLoaded){
       dbLoadMessages(shopId).then(data=>{setMessages(data||[]);setMessagesLoaded(true);}).catch(()=>{});
+    }
+    if(tab==="returns"&&!returnsLoaded){
+      dbLoadReturns(shopId).then(data=>{setReturns(data||[]);setReturnsLoaded(true);}).catch(()=>{});
     }
   },[tab]);
 
@@ -2847,6 +3164,17 @@ return(
               setMessages={setMessages}
               user={user}
               sales={sales}
+            />
+          )}
+
+          {/* ── RETURNS TAB ── */}
+          {tab==="returns"&&(
+            <ReturnsPanel
+              shopId={shopId}
+              shop={shop}
+              returns={returns}
+              setReturns={setReturns}
+              user={user}
             />
           )}
 
