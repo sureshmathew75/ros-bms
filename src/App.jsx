@@ -1039,23 +1039,33 @@ SA4 4ZB`,
 
 const RETURN_APPROVAL_MESSAGE=(returnId,customer,addressVersion="v1")=>{
 const addr=RETURN_ADDRESSES[addressVersion]||RETURN_ADDRESSES.v1;
-return `Hi ${customer},
+return `Dear ${customer},
 
-Your return request has been approved.
+Thank you for contacting us. Your return request has been approved and we are happy to assist you further.
 
-Return ID: ${returnId}
+*Return ID: ${returnId}*
 
-Please return the item to the below address:
+Please write your Return ID clearly on the outside of the parcel. This is essential to ensure your return is identified and processed promptly upon arrival.
+
+Please return your item to the following address:
 
 ${addr}
 
-To qualify for an exchange or refund, your item must be returned in the same condition as received—unused, unworn, and in its original packaging. Items must be returned within 7 days of receiving return instructions. However, this does not affect your statutory rights.
+*Important — Please read before returning:*
 
-Please include your return address on the parcel cover so we can accurately document your return. Once we receive the item, we will notify you and proceed with your refund or exchange.
+• Your item must be returned in the same condition as received — unused, unworn, and in its original packaging.
+• Returns must be dispatched within 7 days of receiving these instructions.
+• Please include your own return address on the parcel so we can contact you if needed.
+• Once we receive your item, we will notify you and proceed with your refund or exchange as requested.
 
-In the meantime, you can review our full return policy here: https://rosselections.com/policies/refund-policy.
+Please note that these conditions do not affect your statutory rights under UK consumer legislation.
 
-If you have any questions, please don't hesitate to contact us.`;
+You can review our full returns policy here:
+https://rosselections.com/policies/refund-policy
+
+If you have any questions or require further assistance, please do not hesitate to contact us.
+
+Thank you for shopping with ROS. We look forward to resolving this for you.`;
 };
 
 /* ═══════════════════════════════════════════════════════════
