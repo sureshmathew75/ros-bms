@@ -2417,8 +2417,80 @@ return(
               {l:"Gen. Report",   ic:"📋", desc:"View reports",        g:shop.quickCards[5].g, action:()=>setTab("reports")},
             ];
 
+            // ── Actions Today calculations ──
+            const today2=new Date();today2.setHours(0,0,0,0);
+            const messagesReady=messages.filter(m=>m.status==="READY").length;
+            const activeReturns=returns.filter(r=>["RETURN_APPROVED","RETURN_IN_TRANSIT"].includes(r.status));
+            const returnsNeedReview=activeReturns.length;
+            const returnsExpiringSoon=activeReturns.filter(r=>{
+              if(!r.returnDeadline)return false;
+              const dl=new Date(r.returnDeadline);dl.setHours(0,0,0,0);
+              const diff=Math.ceil((dl-today2)/(1000*60*60*24));
+              return diff>=0&&diff<=2;
+            }).length;
+            const refundsPending=returns.filter(r=>r.status==="RETURN_RECEIVED"&&r.resolution==="refund"&&!r.refundDate).length;
+            const awaitingDelivery=sales.filter(s=>(s.ful||s.status)==="FULFILLED"&&!s.deliveryDate).length;
+            const actionsToday=[
+              messagesReady>0&&{icon:"📨",label:"Messages Ready",count:messagesReady,color:"#1d4ed8",bg:"#eff6ff",border:"#93c5fd",tab:"messages"},
+              returnsNeedReview>0&&{icon:"↩️",label:"Returns Need Review",count:returnsNeedReview,color:"#c2410c",bg:"#fff7ed",border:"#fdba74",tab:"returns"},
+              returnsExpiringSoon>0&&{icon:"⚠️",label:"Returns Expiring Soon",count:returnsExpiringSoon,color:"#b45309",bg:"#fffbeb",border:"#fcd34d",tab:"returns"},
+              refundsPending>0&&{icon:"💰",label:"Refunds Pending",count:refundsPending,color:"#6d28d9",bg:"#f5f3ff",border:"#c4b5fd",tab:"returns"},
+              awaitingDelivery>0&&{icon:"📦",label:"Awaiting Delivery",count:awaitingDelivery,color:"#0369a1",bg:"#f0f9ff",border:"#7dd3fc",tab:"sales"},
+            ].filter(Boolean);
+
             return(
               <div>
+                {/* ── ACTIONS TODAY CARD ── */}
+                <div style={{marginBottom:24,borderRadius:18,border:"1px solid #e2e8f0",overflow:"hidden",boxShadow:"0 2px 12px rgba(0,0,0,0.06)"}}>
+                  <div style={{padding:"14px 18px 12px",background:"linear-gradient(135deg,#0f172a,#1e293b)",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{width:32,height:32,borderRadius:10,background:"rgba(255,255,255,0.12)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}}>⚡</div>
+                      <div>
+                        <p style={{margin:0,fontSize:13,fontWeight:800,color:"white",letterSpacing:"-0.2px"}}>Actions Today</p>
+                        <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.5)"}}>Items that need your attention right now</p>
+                      </div>
+                    </div>
+                    {actionsToday.length>0&&(
+                      <div style={{background:"#ef4444",color:"white",borderRadius:999,minWidth:24,height:24,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,padding:"0 8px"}}>
+                        {actionsToday.length}
+                      </div>
+                    )}
+                  </div>
+                  <div style={{background:"white",padding:actionsToday.length===0?"18px":"10px 14px"}}>
+                    {actionsToday.length===0?(
+                      <div style={{display:"flex",alignItems:"center",gap:12,justifyContent:"center",padding:"8px 0"}}>
+                        <span style={{fontSize:24}}>✅</span>
+                        <div>
+                          <p style={{margin:0,fontSize:13,fontWeight:700,color:"#166534"}}>All clear — nothing needs attention today</p>
+                          <p style={{margin:"1px 0 0",fontSize:11,color:"#94a3b8"}}>Check back after new orders or deliveries</p>
+                        </div>
+                      </div>
+                    ):(
+                      <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                        {actionsToday.map((a,i)=>(
+                          <div key={i}
+                            onClick={()=>setTab(a.tab)}
+                            style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                              padding:"10px 14px",borderRadius:12,cursor:"pointer",
+                              background:a.bg,border:"1px solid "+a.border,
+                              transition:"transform 0.15s"}}
+                            onMouseEnter={e=>e.currentTarget.style.transform="translateX(3px)"}
+                            onMouseLeave={e=>e.currentTarget.style.transform="translateX(0)"}>
+                            <div style={{display:"flex",alignItems:"center",gap:10}}>
+                              <span style={{fontSize:18}}>{a.icon}</span>
+                              <span style={{fontSize:13,fontWeight:700,color:a.color}}>{a.label}</span>
+                            </div>
+                            <div style={{display:"flex",alignItems:"center",gap:10}}>
+                              <span style={{fontSize:16,fontWeight:900,color:a.color,fontFamily:"DM Mono,monospace"}}>{a.count}</span>
+                              <span style={{fontSize:11,fontWeight:700,color:a.color,opacity:0.7}}>View →</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
                 {/* ── QUICK ACTION CARDS ── */}
                 <div className="mob-quick-grid" style={{display:"grid",gridTemplateColumns:isMobile?"repeat(3,1fr)":"repeat(6,1fr)",gap:isMobile?8:12,marginBottom:24}}>
                   {quickActions.map((q,i)=>{
