@@ -4465,11 +4465,10 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false}
         <div style={{marginBottom:10}}>
           <label style={{...lbl,color:"#0369a1"}}>📦 Royal Mail Tracking No.</label>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <input value={form.trackingNo} onChange={e=>set("trackingNo",e.target.value)}
+            <input value={form.trackingNo} onChange={e=>set("trackingNo",e.target.value.toUpperCase())}
               placeholder="e.g. AB123456789GB"
               style={{...inp,flex:1,border:"1px solid #7dd3fc",fontFamily:"DM Mono,monospace",textTransform:"uppercase"}}
-              onFocus={fo} onBlur={bl}
-              onChange={e=>set("trackingNo",e.target.value.toUpperCase())}/>
+              onFocus={fo} onBlur={bl}/>
             {form.trackingNo&&(
               <a href={"https://www.royalmail.com/track-your-item#/tracking-results/"+form.trackingNo.trim()}
                 target="_blank" rel="noreferrer"
