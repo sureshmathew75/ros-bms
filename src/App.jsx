@@ -21,7 +21,7 @@ import {
   STAGE_THEME
 } from "./constants";
 import { formatCurrency, formatDate, formatNumber } from "./utils";
-import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser, dbLoadShopItems, dbAddShopItem, dbDeleteShopItem, dbSaveDelivery, dbLoadMessages, dbAddMessage, dbMarkMessageSent, dbCancelMessage, dbMessageExists, dbLoadReturns, dbSaveReturn, dbNextReturnId, dbDeleteMessage, dbDeleteMessages } from "./db";
+import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser, dbLoadShopItems, dbAddShopItem, dbDeleteShopItem, dbSaveDelivery, dbLoadMessages, dbAddMessage, dbMarkMessageSent, dbCancelMessage, dbMessageExists, dbLoadReturns, dbSaveReturn, dbNextReturnId, dbDeleteReturn, dbDeleteMessage, dbDeleteMessages } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -1907,6 +1907,7 @@ const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages})=
   const [filter,setFilter]=React.useState("ALL");
   const [selectedReturn,setSelectedReturn]=React.useState(null);
   const [search,setSearch]=React.useState("");
+  const [confirmDelete,setConfirmDelete]=React.useState(null); // {id, customer}
 
   // ── On-load scan: 7-day reminder + 14-day expiry ──
   React.useEffect(()=>{
@@ -2097,8 +2098,16 @@ Thank you for shopping with ROS.`,
                   <div style={{display:"flex",alignItems:"center"}}>
                     {isClosed?<span style={{fontSize:11,color:"#94a3b8"}}>—</span>:<DaysChip days={days}/>}
                   </div>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end"}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:8}}>
                     <span style={{fontSize:11,color:shop.accent,fontWeight:700}}>View →</span>
+                    <button
+                      onClick={e=>{e.stopPropagation();setConfirmDelete({id:ret.id,customer:ret.customer});}}
+                      title="Delete return"
+                      style={{width:26,height:26,borderRadius:7,border:"1px solid #fecaca",background:"#fff5f5",
+                        color:"#dc2626",fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",
+                        justifyContent:"center",flexShrink:0}}>
+                      🗑️
+                    </button>
                   </div>
                 </div>
               );
@@ -2119,6 +2128,44 @@ Thank you for shopping with ROS.`,
             setSelectedReturn(null);
           }}
         />
+      )}
+
+      {/* Delete confirmation modal */}
+      {confirmDelete&&(
+        <div style={{position:"fixed",inset:0,zIndex:90,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(4px)"}}
+            onClick={()=>setConfirmDelete(null)}/>
+          <div style={{position:"relative",background:"white",borderRadius:16,
+            boxShadow:"0 24px 64px rgba(0,0,0,0.20)",width:"100%",maxWidth:380,padding:28,textAlign:"center"}}>
+            <div style={{width:56,height:56,borderRadius:"50%",background:"#fef2f2",border:"2px solid #fca5a5",
+              display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,margin:"0 auto 16px"}}>🗑️</div>
+            <h3 style={{margin:"0 0 8px",fontSize:17,fontWeight:800,color:"#0f172a"}}>Delete Return</h3>
+            <p style={{margin:"0 0 6px",fontSize:13,color:"#374151"}}>
+              You are about to permanently delete return <strong>{confirmDelete.id}</strong> for <strong>{confirmDelete.customer}</strong>.
+            </p>
+            <p style={{margin:"0 0 24px",fontSize:12,color:"#ef4444",fontWeight:600}}>
+              ⚠️ This cannot be undone.
+            </p>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <button onClick={()=>setConfirmDelete(null)}
+                style={{padding:"11px 0",borderRadius:10,border:"1px solid #e2e8f0",background:"white",
+                  color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                Cancel
+              </button>
+              <button onClick={async()=>{
+                const id=confirmDelete.id;
+                setConfirmDelete(null);
+                await dbDeleteReturn(id);
+                setReturns(prev=>prev.filter(r=>r.id!==id));
+              }}
+                style={{padding:"11px 0",borderRadius:10,border:"none",background:"#dc2626",
+                  color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",
+                  boxShadow:"0 4px 12px rgba(220,38,38,0.35)"}}>
+                🗑️ Delete
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
