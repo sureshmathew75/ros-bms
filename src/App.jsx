@@ -21,7 +21,7 @@ import {
   STAGE_THEME
 } from "./constants";
 import { formatCurrency, formatDate, formatNumber } from "./utils";
-import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser, dbLoadShopItems, dbAddShopItem, dbDeleteShopItem, dbSaveDelivery, dbLoadMessages, dbAddMessage, dbMarkMessageSent, dbCancelMessage, dbMessageExists, dbLoadReturns, dbSaveReturn, dbNextReturnId, dbDeleteReturn, dbDeleteMessage, dbDeleteMessages, dbSaveSupplier } from "./db";
+import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser, dbLoadShopItems, dbAddShopItem, dbDeleteShopItem, dbSaveDelivery, dbLoadMessages, dbAddMessage, dbMarkMessageSent, dbCancelMessage, dbMessageExists, dbLoadReturns, dbSaveReturn, dbNextReturnId, dbDeleteReturn, dbDeleteMessage, dbDeleteMessages, dbSaveSupplier, dbLoadSuppliers, dbDeleteSupplier } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -2214,6 +2214,166 @@ const MarkDeliveredModal=({sale,shopId,shop,onConfirm,onClose})=>{
 };
 /* ── End MarkDeliveredModal ─────────────────────────────────────────────── */
 
+
+/* ═══════════════════════════════════════════════════════════
+   SUPPLIERS TAB PANEL
+   ═══════════════════════════════════════════════════════════ */
+const SuppliersTabPanel=({shop,shopId,suppliers=[],setSuppData})=>{
+  const [showAdd,setShowAdd]=React.useState(false);
+  const [editSupp,setEditSupp]=React.useState(null);
+  const [search,setSearch]=React.useState("");
+  const [saving,setSaving]=React.useState(false);
+
+  const filtered=suppliers.filter(s=>{
+    const q=search.toLowerCase();
+    return !q||(s.name||"").toLowerCase().includes(q)||(s.place||"").toLowerCase().includes(q)||(s.phone||"").includes(q);
+  });
+
+  const handleSave=async(form)=>{
+    setSaving(true);
+    const payload={
+      id: form.id||Date.now().toString(),
+      name: form.name,
+      contact: form.contact||form.contactPerson||"",
+      phone: form.phone||form.whatsapp||"",
+      email: form.email||"",
+      category: form.category||form.tag||"General",
+      terms: form.terms||"",
+      place: form.place||"",
+      address: form.address||"",
+      remarks: form.remarks||"",
+    };
+    await dbSaveSupplier(shopId, payload).catch(e=>console.error("Save supplier error:",e));
+    const fresh=await dbLoadSuppliers(shopId).catch(()=>null);
+    if(fresh) setSuppData(fresh);
+    setSaving(false);
+    setShowAdd(false);
+    setEditSupp(null);
+  };
+
+  const handleDelete=async(id)=>{
+    if(!window.confirm("Delete this supplier? This cannot be undone."))return;
+    await dbDeleteSupplier(id,shopId).catch(e=>console.error("Delete supplier error:",e));
+    setSuppData(prev=>prev.filter(s=>s.id!==id));
+  };
+
+  const inp={width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box",background:"white"};
+  const lbl={display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
+
+  const SupplierForm=({initial={},onSave,onClose})=>{
+    const [f,setF]=React.useState({name:"",place:"",address:"",contact:"",phone:"",email:"",category:"General",terms:"",remarks:"",...initial});
+    const s=(k,v)=>setF(p=>({...p,[k]:v}));
+    return(
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div><label style={lbl}>Supplier Name *</label><input value={f.name} onChange={e=>s("name",e.target.value)} placeholder="Company / Supplier name" style={inp}/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div><label style={lbl}>Place / City</label><input value={f.place} onChange={e=>s("place",e.target.value)} placeholder="London, Mumbai…" style={inp}/></div>
+          <div><label style={lbl}>Contact Person</label><input value={f.contact} onChange={e=>s("contact",e.target.value)} placeholder="Full name" style={inp}/></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div><label style={lbl}>Phone / WhatsApp</label><input value={f.phone} onChange={e=>s("phone",e.target.value)} placeholder="+44 7700 000000" style={inp}/></div>
+          <div><label style={lbl}>Email</label><input value={f.email} onChange={e=>s("email",e.target.value)} placeholder="email@example.com" style={inp}/></div>
+        </div>
+        <div><label style={lbl}>Address</label><textarea value={f.address} onChange={e=>s("address",e.target.value)} rows={2} placeholder="Full address" style={{...inp,resize:"vertical"}}/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div><label style={lbl}>Category</label>
+            <select value={f.category} onChange={e=>s("category",e.target.value)} style={inp}>
+              {["General","Active","Preferred","Occasional","Inactive"].map(o=><option key={o}>{o}</option>)}
+            </select>
+          </div>
+          <div><label style={lbl}>Payment Terms</label><input value={f.terms} onChange={e=>s("terms",e.target.value)} placeholder="e.g. Net 30" style={inp}/></div>
+        </div>
+        <div><label style={lbl}>Remarks</label><textarea value={f.remarks} onChange={e=>s("remarks",e.target.value)} rows={2} placeholder="Notes…" style={{...inp,resize:"vertical"}}/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingTop:4}}>
+          <button disabled={saving} onClick={()=>{if(!f.name.trim()){alert("Supplier name is required.");return;}onSave({...initial,...f});}}
+            style={{padding:"11px 0",borderRadius:10,border:"none",background:saving?"#94a3b8":shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            {saving?"Saving…":"✅ Save Supplier"}
+          </button>
+          <button onClick={onClose} style={{padding:"11px 0",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+        </div>
+      </div>
+    );
+  };
+
+  return(
+    <div>
+      {/* Header */}
+      <div style={{padding:"18px 20px 14px",borderBottom:"1px solid #f1f5f9",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+        <div>
+          <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>🏭 Suppliers</h2>
+          <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>{suppliers.length} supplier{suppliers.length!==1?"s":""}</p>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search suppliers…"
+            style={{padding:"7px 14px",borderRadius:9,border:"1px solid #e2e8f0",fontSize:12,fontFamily:"inherit",outline:"none",width:200}}/>
+          <button onClick={()=>setShowAdd(true)}
+            style={{padding:"8px 18px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 2px 8px "+shop.accent+"44",whiteSpace:"nowrap"}}>
+            + Add Supplier
+          </button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead>
+            <tr>
+              {["Supplier","Place","Contact","Phone","Category","Remarks","Actions"].map(h=>(
+                <th key={h} style={{padding:"10px 16px",fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em",background:"#f8fafc",borderBottom:"1px solid #e2e8f0",textAlign:"left",whiteSpace:"nowrap"}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length===0?(
+              <tr><td colSpan={7} style={{padding:"60px 20px",textAlign:"center",color:"#94a3b8"}}>
+                <div style={{fontSize:36,marginBottom:10}}>🏭</div>
+                <p style={{margin:0,fontSize:14,fontWeight:600}}>{search?"No suppliers match your search":"No suppliers yet"}</p>
+                <p style={{margin:"6px 0 0",fontSize:12}}>Click "+ Add Supplier" to add your first one</p>
+              </td></tr>
+            ):filtered.map((s,i)=>(
+              <tr key={s.id} style={{background:i%2===0?"white":"#fafafa",borderBottom:"1px solid #f1f5f9"}}>
+                <td style={{padding:"12px 16px",fontWeight:700,color:"#0f172a"}}>{s.name}</td>
+                <td style={{padding:"12px 16px",color:"#64748b"}}>{s.place||"—"}</td>
+                <td style={{padding:"12px 16px",color:"#374151"}}>{s.contact||"—"}</td>
+                <td style={{padding:"12px 16px",color:"#64748b",fontFamily:"DM Mono,monospace",fontSize:12}}>{s.phone||"—"}</td>
+                <td style={{padding:"12px 16px"}}>
+                  <span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:999,background:shop.accentBg,color:shop.accentText,border:"1px solid "+shop.accent+"33"}}>{s.category||"General"}</span>
+                </td>
+                <td style={{padding:"12px 16px",color:"#94a3b8",fontSize:12,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.remarks||"—"}</td>
+                <td style={{padding:"12px 16px"}}>
+                  <div style={{display:"flex",gap:6"}}>
+                    <button onClick={()=>setEditSupp(s)}
+                      style={{padding:"5px 12px",borderRadius:7,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontSize:12,fontWeight:600,cursor:"pointer"}}>✏️ Edit</button>
+                    <button onClick={()=>handleDelete(s.id)}
+                      style={{padding:"5px 10px",borderRadius:7,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",fontSize:12,cursor:"pointer"}}>🗑️</button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Add Modal */}
+      {(showAdd||editSupp)&&(
+        <div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)"}} onClick={()=>{setShowAdd(false);setEditSupp(null);}}/>
+          <div style={{position:"relative",background:"white",borderRadius:18,boxShadow:"0 24px 64px rgba(0,0,0,0.2)",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",zIndex:81}}>
+            <div style={{padding:"16px 20px",borderBottom:"1px solid #f1f5f9",display:"flex",justifyContent:"space-between",alignItems:"center",background:shop.accent+"10",borderRadius:"18px 18px 0 0"}}>
+              <h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>{editSupp?"✏️ Edit Supplier":"➕ New Supplier"}</h3>
+              <button onClick={()=>{setShowAdd(false);setEditSupp(null);}} style={{width:28,height:28,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:16,color:"#64748b"}}>×</button>
+            </div>
+            <div style={{padding:20}}>
+              <SupplierForm initial={editSupp||{}} onSave={handleSave} onClose={()=>{setShowAdd(false);setEditSupp(null);}}/>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+/* ── End SuppliersTabPanel ───────────────────────────────────────────────── */
+
 const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,initialTab="sales"})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":(initialTab||"sales"));
   const [hov,setHov]=useState(null);
@@ -2245,6 +2405,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [statusFilter,setStatusFilter]=useState("ALL");
   const invoicePrintRef=useRef(null);
   const [purchData,setPurchData]=useState([]);
+  const [suppData,setSuppData]=useState([]);
   const [expData,setExpData]=useState([]);
   const [logData,setLogData]=useState([]);
   const [markDeliveredSale,setMarkDeliveredSale]=useState(null);
@@ -2266,6 +2427,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   // Load purchases, expenses, logistics from Supabase on mount
   useEffect(()=>{
     dbLoadPurchases(shopId).then(d=>{if(d)setPurchData(d);}).catch(()=>{});
+    dbLoadSuppliers(shopId).then(d=>{if(d)setSuppData(d);}).catch(()=>{});
     dbLoadExpenses(shopId).then(d=>{if(d)setExpData(d);}).catch(()=>{});
     dbLoadLogistics(shopId).then(d=>{if(d)setLogData(d);}).catch(()=>{});
   },[shopId]);
@@ -3724,7 +3886,12 @@ return(
 
           {/* ─── SUPPLIERS ─── */}
           {tab==="suppliers"&&(
-            <SuppliersPanel shop={shop} suppliers={SUPPLIERS}/>
+            <SuppliersTabPanel
+              shop={shop}
+              shopId={shopId}
+              suppliers={suppData}
+              setSuppData={setSuppData}
+            />
           )}
 
           {/* ─── PRODUCTS ─── */}
