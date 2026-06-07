@@ -22,7 +22,8 @@ import {
 } from "./constants";
 import { formatCurrency, formatDate, formatNumber } from "./utils";
 import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser, dbLoadShopItems, dbAddShopItem, dbDeleteShopItem, dbSaveDelivery, dbLoadMessages, dbAddMessage, dbMarkMessageSent, dbCancelMessage, dbMessageExists, dbLoadReturns, dbSaveReturn, dbNextReturnId, dbDeleteReturn, dbDeleteMessage, dbDeleteMessages, dbSaveSupplier, dbLoadSuppliers, dbDeleteSupplier,
-  dbUploadDoc, dbDeleteDoc, dbSavePurchaseDocs, dbSaveLogisticDocs } from "./db";
+  dbUploadDoc, dbDeleteDoc, dbSavePurchaseDocs, dbSaveLogisticDocs,
+  dbSaveAgent, dbLoadAgents, dbDeleteAgent } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -2482,6 +2483,187 @@ const SuppliersTabPanel=({shop,shopId,suppliers=[],setSuppData})=>{
 };
 /* ── End SuppliersTabPanel ───────────────────────────────────────────────── */
 
+
+/* ═══════════════════════════════════════════════════════════
+   AGENTS TAB PANEL
+   ═══════════════════════════════════════════════════════════ */
+const AgentsTabPanel=({shop,shopId,agents=[],setAgentData})=>{
+  const [showAdd,setShowAdd]=React.useState(false);
+  const [editAgent,setEditAgent]=React.useState(null);
+  const [search,setSearch]=React.useState("");
+  const [saving,setSaving]=React.useState(false);
+
+  const TYPES=["Courier","Postal","Freight","Other"];
+  const typeColor={
+    "Courier":{bg:"#dbeafe",color:"#1e40af",border:"#bfdbfe"},
+    "Postal": {bg:"#dcfce7",color:"#166534",border:"#bbf7d0"},
+    "Freight":{bg:"#fef3c7",color:"#92400e",border:"#fde68a"},
+    "Other":  {bg:"#f1f5f9",color:"#475569",border:"#e2e8f0"},
+  };
+
+  const filtered=agents.filter(a=>{
+    const q=search.toLowerCase();
+    return !q||(a.name||"").toLowerCase().includes(q)||(a.place||"").toLowerCase().includes(q)||(a.phone||"").includes(q);
+  });
+
+  const handleSave=async(form)=>{
+    setSaving(true);
+    const result=await dbSaveAgent(shopId,form);
+    if(result&&result.error){alert("Failed to save: "+result.error);setSaving(false);return;}
+    const fresh=await dbLoadAgents(shopId).catch(()=>null);
+    if(fresh) setAgentData(fresh);
+    setSaving(false);setShowAdd(false);setEditAgent(null);
+  };
+
+  const handleDelete=async(id)=>{
+    if(!window.confirm("Delete this agent? This cannot be undone."))return;
+    await dbDeleteAgent(id).catch(console.error);
+    setAgentData(prev=>prev.filter(a=>a.id!==id));
+  };
+
+  const inp={width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",
+    fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box",background:"white"};
+  const lbl={display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,
+    textTransform:"uppercase",letterSpacing:"0.05em"};
+
+  const AgentForm=({initial={},onSave,onClose})=>{
+    const [f,setF]=React.useState({name:"",type:"Courier",contact:"",phone:"",email:"",website:"",place:"",remarks:"",...initial});
+    const s=(k,v)=>setF(p=>({...p,[k]:v}));
+    return(
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div><label style={lbl}>Agent / Company Name *</label>
+          <input value={f.name} onChange={e=>s("name",e.target.value)} placeholder="e.g. DHL Express, AICS" style={inp}/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div><label style={lbl}>Type</label>
+            <select value={f.type} onChange={e=>s("type",e.target.value)} style={inp}>
+              {TYPES.map(t=><option key={t}>{t}</option>)}
+            </select>
+          </div>
+          <div><label style={lbl}>Place / City</label>
+            <input value={f.place} onChange={e=>s("place",e.target.value)} placeholder="Mumbai, London…" style={inp}/></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div><label style={lbl}>Contact Person</label>
+            <input value={f.contact} onChange={e=>s("contact",e.target.value)} placeholder="Full name" style={inp}/></div>
+          <div><label style={lbl}>Phone / WhatsApp</label>
+            <input value={f.phone} onChange={e=>s("phone",e.target.value)} placeholder="+91 00000 00000" style={inp}/></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div><label style={lbl}>Email</label>
+            <input value={f.email} onChange={e=>s("email",e.target.value)} placeholder="email@example.com" style={inp}/></div>
+          <div><label style={lbl}>Website</label>
+            <input value={f.website} onChange={e=>s("website",e.target.value)} placeholder="https://…" style={inp}/></div>
+        </div>
+        <div><label style={lbl}>Remarks</label>
+          <textarea value={f.remarks} onChange={e=>s("remarks",e.target.value)} rows={2}
+            placeholder="Notes about this agent…" style={{...inp,resize:"vertical"}}/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingTop:4}}>
+          <button disabled={saving} onClick={()=>{if(!f.name.trim()){alert("Agent name is required.");return;}onSave({...initial,...f});}}
+            style={{padding:"11px 0",borderRadius:10,border:"none",background:saving?"#94a3b8":shop.accent,
+              color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            {saving?"Saving…":"✅ Save Agent"}
+          </button>
+          <button onClick={onClose} style={{padding:"11px 0",borderRadius:10,border:"1px solid #e2e8f0",
+            background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  };
+
+  return(
+    <div>
+      {/* Header */}
+      <div style={{padding:"18px 20px 14px",borderBottom:"1px solid #f1f5f9",display:"flex",
+        alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+        <div>
+          <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>🤝 Logistics Agents</h2>
+          <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>{agents.length} agent{agents.length!==1?"s":""} configured</p>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Search agents…"
+            style={{padding:"7px 14px",borderRadius:9,border:"1px solid #e2e8f0",fontSize:12,fontFamily:"inherit",outline:"none",width:200}}/>
+          <button onClick={()=>setShowAdd(true)}
+            style={{padding:"8px 18px",borderRadius:10,border:"none",background:shop.accent,
+              color:"white",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+              boxShadow:"0 2px 8px "+shop.accent+"44",whiteSpace:"nowrap"}}>
+            + Add Agent
+          </button>
+        </div>
+      </div>
+
+      {/* Table */}
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead>
+            <tr>
+              {["Agent","Type","Place","Contact","Phone","Remarks","Actions"].map(h=>(
+                <th key={h} style={{padding:"10px 16px",fontSize:11,fontWeight:800,color:"#64748b",
+                  textTransform:"uppercase",letterSpacing:"0.05em",background:"#f8fafc",
+                  borderBottom:"1px solid #e2e8f0",textAlign:"left",whiteSpace:"nowrap"}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length===0?(
+              <tr><td colSpan={7} style={{padding:"60px 20px",textAlign:"center",color:"#94a3b8"}}>
+                <div style={{fontSize:36,marginBottom:10}}>🤝</div>
+                <p style={{margin:0,fontSize:14,fontWeight:600}}>{search?"No agents match":"No agents yet"}</p>
+                <p style={{margin:"6px 0 0",fontSize:12}}>Click "+ Add Agent" to add your first logistics agent</p>
+              </td></tr>
+            ):filtered.map((a,i)=>{
+              const tc=typeColor[a.type]||typeColor["Other"];
+              return(
+                <tr key={a.id} style={{background:i%2===0?"white":"#fafafa",borderBottom:"1px solid #f1f5f9"}}>
+                  <td style={{padding:"12px 16px",fontWeight:700,color:"#0f172a"}}>{a.name}</td>
+                  <td style={{padding:"12px 16px"}}>
+                    <span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:999,
+                      background:tc.bg,color:tc.color,border:"1px solid "+tc.border}}>{a.type}</span>
+                  </td>
+                  <td style={{padding:"12px 16px",color:"#64748b"}}>{a.place||"—"}</td>
+                  <td style={{padding:"12px 16px",color:"#374151"}}>{a.contact||"—"}</td>
+                  <td style={{padding:"12px 16px",color:"#64748b",fontFamily:"DM Mono,monospace",fontSize:12}}>{a.phone||"—"}</td>
+                  <td style={{padding:"12px 16px",color:"#94a3b8",fontSize:12,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.remarks||"—"}</td>
+                  <td style={{padding:"12px 16px"}}>
+                    <div style={{display:"flex",gap:6}}>
+                      <button onClick={()=>setEditAgent(a)}
+                        style={{padding:"5px 12px",borderRadius:7,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontSize:12,fontWeight:600,cursor:"pointer"}}>✏️ Edit</button>
+                      <button onClick={()=>handleDelete(a.id)}
+                        style={{padding:"5px 10px",borderRadius:7,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",fontSize:12,cursor:"pointer"}}>🗑️</button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Modal */}
+      {(showAdd||editAgent)&&(
+        <div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)"}}
+            onClick={()=>{setShowAdd(false);setEditAgent(null);}}/>
+          <div style={{position:"relative",background:"white",borderRadius:18,boxShadow:"0 24px 64px rgba(0,0,0,0.2)",
+            width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",zIndex:81}}>
+            <div style={{padding:"16px 20px",borderBottom:"1px solid #f1f5f9",display:"flex",
+              justifyContent:"space-between",alignItems:"center",background:shop.accent+"10",borderRadius:"18px 18px 0 0"}}>
+              <h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>{editAgent?"✏️ Edit Agent":"➕ New Agent"}</h3>
+              <button onClick={()=>{setShowAdd(false);setEditAgent(null);}}
+                style={{width:28,height:28,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:16,color:"#64748b"}}>×</button>
+            </div>
+            <div style={{padding:20}}>
+              <AgentForm initial={editAgent||{}} onSave={handleSave} onClose={()=>{setShowAdd(false);setEditAgent(null);}}/>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+/* ── End AgentsTabPanel ──────────────────────────────────────────────────── */
+
 const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,initialTab="sales"})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":(initialTab||"sales"));
   const [hov,setHov]=useState(null);
@@ -2514,6 +2696,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const invoicePrintRef=useRef(null);
   const [purchData,setPurchData]=useState([]);
   const [suppData,setSuppData]=useState([]);
+  const [agentData,setAgentData]=useState([]);
   const [expData,setExpData]=useState([]);
   const [logData,setLogData]=useState([]);
   const [markDeliveredSale,setMarkDeliveredSale]=useState(null);
@@ -2540,6 +2723,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   useEffect(()=>{
     dbLoadPurchases(shopId).then(d=>{if(d)setPurchData(d);}).catch(()=>{});
     dbLoadSuppliers(shopId).then(d=>{if(d)setSuppData(d);}).catch(()=>{});
+    dbLoadAgents(shopId).then(d=>{if(d)setAgentData(d);}).catch(()=>{});
     dbLoadExpenses(shopId).then(d=>{if(d)setExpData(d);}).catch(()=>{});
     dbLoadLogistics(shopId).then(d=>{if(d)setLogData(d);}).catch(()=>{});
   },[shopId]);
@@ -4038,7 +4222,12 @@ return(
 
           {/* ─── AGENTS ─── */}
           {tab==="agents"&&(
-            <AgentsPanel agents={AGENTS} shop={shop}/>
+            <AgentsTabPanel
+              shop={shop}
+              shopId={shopId}
+              agents={agentData}
+              setAgentData={setAgentData}
+            />
           )}
 
           {/* ─── EXPENSES ─── */}
@@ -6690,7 +6879,13 @@ const NewShipmentForm=({shopId,shop,purch,onSave,onClose,initialValues=null})=>{
   );
 
   const COURIERS=["DHL","FedEx","Royal Mail","Evri","UPS","DPD","India Post","DTDC","Blue Dart","Other"];
-  const AGENTS_LIST=["Other"];
+  const [liveAgents,setLiveAgents]=React.useState(["Other"]);
+  React.useEffect(()=>{
+    dbLoadAgents(shopId).then(data=>{
+      if(data&&data.length>0) setLiveAgents([...data.map(a=>a.name),"Other"]);
+    }).catch(()=>{});
+  },[]);
+  const AGENTS_LIST=liveAgents;
   const STATUS_OPTS=["PENDING","DISPATCHED","IN TRANSIT","OUT FOR DELIVERY","DELIVERED","RETURNED","ON HOLD"];
   const statusColor={"PENDING":"#a16207","DISPATCHED":"#1d4ed8","IN TRANSIT":"#0369a1","OUT FOR DELIVERY":"#7c3aed","DELIVERED":"#15803d","RETURNED":"#c2410c","ON HOLD":"#6b7280"};
 

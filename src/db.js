@@ -867,3 +867,55 @@ export const dbSaveLogisticDocs = async (uuid, docs) => {
   const { error } = await sb.from('logistics').update({ documents: docs }).eq('id', uuid);
   if (error) console.error('Save logistic docs error:', error);
 };
+
+/* ═══════════════════════════════════════════════════════════
+   AGENTS
+   ═══════════════════════════════════════════════════════════ */
+export const dbSaveAgent = async (shopId, a) => {
+  if (!sb) return { error: 'No client' };
+  const payload = {
+    shop_id:  shopId,
+    name:     a.name || '',
+    type:     a.type || 'Courier',
+    contact:  a.contact || '',
+    phone:    a.phone || '',
+    email:    a.email || '',
+    website:  a.website || '',
+    place:    a.place || '',
+    remarks:  a.remarks || '',
+  };
+  if (a.id) {
+    const { data: ex } = await sb.from('agents').select('id').eq('id', a.id).maybeSingle();
+    if (ex) {
+      const { error } = await sb.from('agents').update(payload).eq('id', a.id);
+      if (error) { console.error('Update agent error:', error); return { error: error.message }; }
+      return { error: null };
+    }
+  }
+  const { data, error } = await sb.from('agents').insert(payload).select('id').single();
+  if (error) { console.error('Insert agent error:', error); return { error: error.message }; }
+  return { error: null, id: data?.id };
+};
+
+export const dbLoadAgents = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('agents').select('*').eq('shop_id', shopId).order('name');
+  if (error) { console.error('Load agents error:', error); return []; }
+  return (data || []).map(r => ({
+    id:      r.id,
+    name:    r.name || '',
+    type:    r.type || 'Courier',
+    contact: r.contact || '',
+    phone:   r.phone || '',
+    email:   r.email || '',
+    website: r.website || '',
+    place:   r.place || '',
+    remarks: r.remarks || '',
+  }));
+};
+
+export const dbDeleteAgent = async (id) => {
+  if (!sb) return;
+  const { error } = await sb.from('agents').delete().eq('id', id);
+  if (error) console.error('Delete agent error:', error);
+};
