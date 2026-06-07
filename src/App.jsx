@@ -4408,7 +4408,15 @@ return(
       {/* ── NEW PURCHASE MODAL ── */}
       {modal==="new-purchase"&&(
         <Modal title="📦 New Purchase" onClose={()=>setModal(null)} accent={shop.accent}>
-          <NewPurchaseForm shopId={shopId} shop={shop} lastPurchNum={purch.length>0?parseInt((purch[0].id||"0").replace(/[^0-9]/g,""))||700:700}
+          <NewPurchaseForm shopId={shopId} shop={shop} lastPurchNum={(()=>{
+                  // Find highest number from purchase_ref fields (e.g. PI-0701 → 701)
+                  const nums=purch.map(p=>{
+                    const ref=p.purchase_ref||p.id||"";
+                    const m=ref.match(/(\d+)$/);
+                    return m?parseInt(m[1],10):0;
+                  });
+                  return nums.length>0?Math.max(...nums):700;
+                })()}
             onSave={async(form)=>{
               const {id, purchaseId, idEditing, ...rest} = form;
               const payload = {...rest, purchase_ref: id || purchaseId || ""};

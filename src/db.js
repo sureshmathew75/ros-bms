@@ -240,7 +240,7 @@ export const dbLoadPurchases = async (shopId) => {
     .order('date', { ascending: false });
   if (error) { console.error('Load purchases error:', error); return null; }
   return data.map(r => ({
-    id:           r.purchase_ref || r.id,
+    id:           r.purchase_ref || (r.id ? r.id.slice(0,8).toUpperCase() : ""),
     uuid:         r.id,
     date:         r.date || '',
     sup:          r.supplier || '',
