@@ -21,7 +21,7 @@ import {
   STAGE_THEME
 } from "./constants";
 import { formatCurrency, formatDate, formatNumber } from "./utils";
-import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser, dbLoadShopItems, dbAddShopItem, dbDeleteShopItem, dbSaveDelivery, dbLoadMessages, dbAddMessage, dbMarkMessageSent, dbCancelMessage, dbMessageExists, dbLoadReturns, dbSaveReturn, dbNextReturnId, dbDeleteReturn, dbDeleteMessage, dbDeleteMessages } from "./db";
+import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser, dbLoadShopItems, dbAddShopItem, dbDeleteShopItem, dbSaveDelivery, dbLoadMessages, dbAddMessage, dbMarkMessageSent, dbCancelMessage, dbMessageExists, dbLoadReturns, dbSaveReturn, dbNextReturnId, dbDeleteReturn, dbDeleteMessage, dbDeleteMessages, dbSaveSupplier } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -6407,7 +6407,9 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false})=
 
   const useCustomItem=form.item==="__custom__";
 
-  const handleAddSupplier=(newSup)=>{
+  const handleAddSupplier=async(newSup)=>{
+    // Save to Supabase
+    await dbSaveSupplier(shopId, newSup).catch(e=>console.error("Supplier save error:",e));
     setSupplierList(l=>[newSup,...l]);
     set("supplier",newSup.name);
     setShowNewSup(false);
@@ -6417,8 +6419,8 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false})=
     <>
     {/* ── NEW SUPPLIER OVERLAY ── */}
     {showNewSup&&(
-      <div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setShowNewSup(false)}>
-        <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.50)",backdropFilter:"blur(4px)"}}/>
+      <div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+        <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.50)",backdropFilter:"blur(4px)"}} onClick={()=>setShowNewSup(false)}/>
         <div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.25)",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",zIndex:81}} onClick={e=>e.stopPropagation()}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 22px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"12",borderRadius:"20px 20px 0 0"}}>
             <h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>➕ New Supplier</h3>
