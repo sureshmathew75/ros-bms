@@ -138,7 +138,7 @@ export default function PurchasesPanel({
   const rows = useMemo(() => buildRowsWithSeparators(sorted), [sorted]);
 
   /* ── Summary KPIs ────────────────────────────────────────────────────── */
-  const totalSpend = filtered.reduce((a, p) => a + (Number(p.total) || Number(p.amount) || 0), 0);
+  const totalSpend = filtered.reduce((a, p) => a + (Number(p.total) || Number(p.amount) || 0) + (Number(p.gst) || 0), 0);
 
   /* ── Status badge colours for purchase status ────────────────────────── */
   const purchStatusBg = {
@@ -359,7 +359,7 @@ export default function PurchasesPanel({
                 const isH    = hovR === p.id;
                 const rowBg  = isH ? `${accent}08` : (purchStatusBg[status] || "white");
                 const sup    = p.supplier || p.sup || "—";
-                const amount = Number(p.total) || Number(p.amount) || 0;
+                const amount = (Number(p.total) || Number(p.amount) || 0) + (Number(p.gst) || 0);
 
                 return (
                   <tr

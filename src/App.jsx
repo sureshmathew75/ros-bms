@@ -2416,6 +2416,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [logData,setLogData]=useState([]);
   const [markDeliveredSale,setMarkDeliveredSale]=useState(null);
   const [editPurchRow,setEditPurchRow]=useState(null);
+  const [viewPurchRow,setViewPurchRow]=useState(null);
   const [editLogRow,setEditLogRow]=useState(null);
   const [viewLogRow,setViewLogRow]=useState(null);
   const [messages,setMessages]=useState([]);
@@ -3882,6 +3883,7 @@ return(
               onExport={()=>setModal("export-purchases")}
               onImport={()=>setModal("import-purchases")}
               onNewPurchase={()=>setModal("new-purchase")}
+              onViewPurchase={(p)=>setViewPurchRow(p)}
               onEditPurchase={(p)=>setEditPurchRow(p)}
               onDeletePurchase={async(p)=>{
                 if(!window.confirm("Delete purchase "+(p.id||p.purchase_ref||"")+"? This cannot be undone."))return;
@@ -4421,6 +4423,67 @@ return(
             }}
             onClose={()=>setModal(null)}/>
         </Modal>
+      )}
+
+      {/* ── VIEW PURCHASE MODAL ── */}
+      {viewPurchRow&&(
+        <div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)"}} onClick={()=>setViewPurchRow(null)}/>
+          <div style={{position:"relative",background:"white",borderRadius:18,boxShadow:"0 24px 64px rgba(0,0,0,0.18)",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",zIndex:81}}>
+            <div style={{padding:"16px 20px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"10",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,background:"white",zIndex:2}}>
+              <div>
+                <p style={{margin:0,fontSize:10,fontWeight:700,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.06em"}}>Purchase Detail</p>
+                <h3 style={{margin:0,fontSize:16,fontWeight:900,color:"#0f172a",fontFamily:"DM Mono,monospace"}}>{viewPurchRow.id}</h3>
+              </div>
+              <button onClick={()=>setViewPurchRow(null)} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b"}}>×</button>
+            </div>
+            <div style={{padding:"18px 20px"}}>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:16}}>
+                {[
+                  {l:"Date",v:viewPurchRow.date||"—"},
+                  {l:"Supplier",v:viewPurchRow.supplier||"—"},
+                  {l:"Invoice No.",v:viewPurchRow.invoiceNo||viewPurchRow.invoice_no||"—"},
+                  {l:"Batch / Ref",v:viewPurchRow.batch||"—"},
+                  {l:"Item",v:viewPurchRow.item||"—"},
+                  {l:"Quantity",v:viewPurchRow.qty||"—"},
+                  {l:"Amount",v:fmt(shopId,Number(viewPurchRow.total)||0)},
+                  {l:"GST / VAT",v:fmt(shopId,Number(viewPurchRow.gst)||0)},
+                  {l:"Net Total",v:fmt(shopId,(Number(viewPurchRow.total)||0)+(Number(viewPurchRow.gst)||0))},
+                  {l:"Unit Cost",v:viewPurchRow.qty&&viewPurchRow.total?fmt(shopId,((Number(viewPurchRow.total)||0)+(Number(viewPurchRow.gst)||0))/Number(viewPurchRow.qty)):"—"},
+                  {l:"Payment By",v:viewPurchRow.payBy||viewPurchRow.pay_by||"—"},
+                  {l:"Payment Date",v:viewPurchRow.payDate||viewPurchRow.pay_date||"—"},
+                  {l:"Logistic By",v:viewPurchRow.logisticBy||viewPurchRow.logistic_by||"—"},
+                  {l:"Logistic Ref",v:viewPurchRow.logisticRef||viewPurchRow.logistic_ref||"—"},
+                  {l:"Received Date",v:viewPurchRow.receivedDate||viewPurchRow.received_date||"—"},
+                  {l:"Status",v:viewPurchRow.status||"PENDING"},
+                  {l:"Remarks",v:viewPurchRow.remarks||"—",full:true},
+                ].map(({l,v,full})=>(
+                  <div key={l} style={full?{gridColumn:"1/-1"}:{}}>
+                    <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>{l}</p>
+                    <p style={{margin:0,fontSize:13,color:"#0f172a",fontWeight:600}}>{v}</p>
+                  </div>
+                ))}
+              </div>
+              {/* Net Total highlight */}
+              <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"44",borderRadius:12,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:13,fontWeight:700,color:shop.accentText}}>Net Total (incl. GST)</span>
+                <span style={{fontSize:20,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace"}}>
+                  {fmt(shopId,(Number(viewPurchRow.total)||0)+(Number(viewPurchRow.gst)||0))}
+                </span>
+              </div>
+            </div>
+            <div style={{padding:"12px 20px",borderTop:"1px solid #f1f5f9",display:"flex",gap:10}}>
+              <button onClick={()=>{setEditPurchRow(viewPurchRow);setViewPurchRow(null);}}
+                style={{flex:1,padding:"10px 0",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                ✏️ Edit
+              </button>
+              <button onClick={()=>setViewPurchRow(null)}
+                style={{flex:1,padding:"10px 0",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── EDIT PURCHASE MODAL ── */}
