@@ -4138,7 +4138,20 @@ return(
       {/* ── NEW PURCHASE MODAL ── */}
       {modal==="new-purchase"&&(
         <Modal title="📦 New Purchase" onClose={()=>setModal(null)} accent={shop.accent}>
-          <NewPurchaseForm shopId={shopId} shop={shop} lastPurchNum={purch.length>0?parseInt((purch[0].id||"0").replace(/[^0-9]/g,""))||700:700} onSave={(form)=>{setModal(null);}} onClose={()=>setModal(null)}/>
+          <NewPurchaseForm shopId={shopId} shop={shop} lastPurchNum={purch.length>0?parseInt((purch[0].id||"0").replace(/[^0-9]/g,""))||700:700}
+            onSave={async(form)=>{
+              try{
+                // Normalise: form uses purchaseId, dbSavePurchase expects id
+                const payload={...form, id: form.id||form.purchaseId};
+                await dbSavePurchase(shopId, payload);
+                const fresh = await dbLoadPurchases(shopId);
+                if(fresh) setPurchData(fresh);
+              } catch(e){
+                console.error("Purchase save error:", e);
+              }
+              setModal(null);
+            }}
+            onClose={()=>setModal(null)}/>
         </Modal>
       )}
 
