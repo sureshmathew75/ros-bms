@@ -21,7 +21,8 @@ import {
   STAGE_THEME
 } from "./constants";
 import { formatCurrency, formatDate, formatNumber } from "./utils";
-import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser, dbLoadShopItems, dbAddShopItem, dbDeleteShopItem, dbSaveDelivery, dbLoadMessages, dbAddMessage, dbMarkMessageSent, dbCancelMessage, dbMessageExists, dbLoadReturns, dbSaveReturn, dbNextReturnId, dbDeleteReturn, dbDeleteMessage, dbDeleteMessages, dbSaveSupplier, dbLoadSuppliers, dbDeleteSupplier } from "./db";
+import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser, dbLoadShopItems, dbAddShopItem, dbDeleteShopItem, dbSaveDelivery, dbLoadMessages, dbAddMessage, dbMarkMessageSent, dbCancelMessage, dbMessageExists, dbLoadReturns, dbSaveReturn, dbNextReturnId, dbDeleteReturn, dbDeleteMessage, dbDeleteMessages, dbSaveSupplier, dbLoadSuppliers, dbDeleteSupplier,
+  dbUploadDoc, dbDeleteDoc, dbSavePurchaseDocs, dbSaveLogisticDocs } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -2171,6 +2172,107 @@ Thank you for shopping with ROS.`,
   );
 };
 /* ── End ReturnsPanel ────────────────────────────────────────────────────── */
+
+
+/* ═══════════════════════════════════════════════════════════
+   DocUploadSection — reusable document upload panel
+   props: bucket, recordUuid, docs, onDocsChange, accent
+   ═══════════════════════════════════════════════════════════ */
+const DocUploadSection=({bucket,recordUuid,docs=[],onDocsChange,accent="#059669",onSave})=>{
+  const [uploading,setUploading]=React.useState(false);
+  const [dragOver,setDragOver]=React.useState(false);
+  const fileRef=React.useRef(null);
+
+  const getIcon=(name="")=>{
+    const ext=(name.split(".").pop()||"").toLowerCase();
+    if(["pdf"].includes(ext))return"📄";
+    if(["jpg","jpeg","png","webp","heic","gif"].includes(ext))return"🖼️";
+    if(["xls","xlsx","csv"].includes(ext))return"📊";
+    if(["doc","docx"].includes(ext))return"📝";
+    return"📎";
+  };
+
+  const handleFiles=async(files)=>{
+    if(!files||files.length===0)return;
+    if(!recordUuid){alert("Save the record first before uploading documents.");return;}
+    setUploading(true);
+    const newDocs=[...docs];
+    for(const file of Array.from(files)){
+      const result=await dbUploadDoc(bucket,recordUuid,file);
+      if(result.error){alert("Upload failed: "+result.error);continue;}
+      newDocs.push({name:file.name,url:result.url,path:result.path,size:file.size,uploadedAt:new Date().toISOString()});
+    }
+    onDocsChange(newDocs);
+    if(onSave)await onSave(newDocs);
+    setUploading(false);
+  };
+
+  const handleDelete=async(doc,idx)=>{
+    if(!window.confirm("Remove "+doc.name+"?"))return;
+    await dbDeleteDoc(bucket,doc.path);
+    const newDocs=docs.filter((_,i)=>i!==idx);
+    onDocsChange(newDocs);
+    if(onSave)await onSave(newDocs);
+  };
+
+  const fmtSize=b=>{if(!b)return"";if(b<1024)return b+"B";if(b<1048576)return(b/1024).toFixed(1)+"KB";return(b/1048576).toFixed(1)+"MB";};
+
+  return(
+    <div style={{marginTop:16}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+        <span style={{fontSize:12,fontWeight:800,color:"#374151",textTransform:"uppercase",letterSpacing:"0.05em"}}>📎 Documents</span>
+        <span style={{fontSize:11,color:"#94a3b8"}}>({docs.length} file{docs.length!==1?"s":""})</span>
+      </div>
+
+      {/* File list */}
+      {docs.length>0&&(
+        <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:10}}>
+          {docs.map((doc,i)=>(
+            <div key={i} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 12px",background:"#f8fafc",borderRadius:9,border:"1px solid #e2e8f0"}}>
+              <span style={{fontSize:18,flexShrink:0}}>{getIcon(doc.name)}</span>
+              <div style={{flex:1,minWidth:0}}>
+                <a href={doc.url} target="_blank" rel="noreferrer"
+                  style={{fontSize:12,fontWeight:700,color:accent,textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
+                  title={doc.name}>{doc.name}</a>
+                {doc.size&&<span style={{fontSize:10,color:"#94a3b8"}}>{fmtSize(doc.size)}</span>}
+              </div>
+              <a href={doc.url} download={doc.name} target="_blank" rel="noreferrer"
+                style={{fontSize:11,padding:"3px 8px",borderRadius:6,border:"1px solid #e2e8f0",background:"white",color:"#374151",textDecoration:"none",flexShrink:0}}>
+                ⬇
+              </a>
+              <button onClick={()=>handleDelete(doc,i)}
+                style={{width:26,height:26,borderRadius:6,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Drop zone */}
+      <div
+        onDragOver={e=>{e.preventDefault();setDragOver(true);}}
+        onDragLeave={()=>setDragOver(false)}
+        onDrop={e=>{e.preventDefault();setDragOver(false);handleFiles(e.dataTransfer.files);}}
+        onClick={()=>fileRef.current&&fileRef.current.click()}
+        style={{border:"2px dashed "+(dragOver?accent:"#cbd5e1"),borderRadius:10,padding:"16px",
+          textAlign:"center",cursor:"pointer",background:dragOver?accent+"08":"#f8fafc",transition:"all 0.15s"}}>
+        <input ref={fileRef} type="file" multiple accept="image/*,.pdf,.doc,.docx,.xls,.xlsx"
+          style={{display:"none"}} onChange={e=>handleFiles(e.target.files)}/>
+        {uploading?(
+          <p style={{margin:0,fontSize:13,color:accent,fontWeight:700}}>⏳ Uploading…</p>
+        ):(
+          <>
+            <p style={{margin:"0 0 2px",fontSize:22}}>📁</p>
+            <p style={{margin:0,fontSize:12,fontWeight:700,color:"#374151"}}>Drop files here or click to browse</p>
+            <p style={{margin:"2px 0 0",fontSize:11,color:"#94a3b8"}}>PDF, images, Word, Excel — max 20MB each</p>
+          </>
+        )}
+      </div>
+    </div>
+  );
+};
+/* ── End DocUploadSection ────────────────────────────────────────────────── */
 
 /* ── MarkDeliveredModal ─────────────────────────────────────────────────── */
 const MarkDeliveredModal=({sale,shopId,shop,onConfirm,onClose})=>{
@@ -4357,6 +4459,23 @@ return(
                 </div>
               ))}
             </div>
+            {/* Documents */}
+            <div style={{padding:"0 20px 16px"}}>
+              <DocUploadSection
+                bucket="shipment-docs"
+                recordUuid={viewLogRow.uuid}
+                docs={viewLogRow.documents||[]}
+                accent={shop.accent}
+                onDocsChange={(newDocs)=>{
+                  setViewLogRow(r=>({...r,documents:newDocs}));
+                  setLogData(prev=>prev.map(l=>(l.uuid||l.id)===viewLogRow.uuid?{...l,documents:newDocs}:l));
+                }}
+                onSave={async(newDocs)=>{
+                  if(viewLogRow.uuid) await dbSaveLogisticDocs(viewLogRow.uuid,newDocs);
+                }}
+              />
+            </div>
+
             <div style={{padding:"12px 20px",borderTop:"1px solid #f1f5f9",display:"flex",gap:10}}>
               <button onClick={()=>{setEditLogRow(viewLogRow);setViewLogRow(null);}}
                 style={{flex:1,padding:"10px 0",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
@@ -4473,12 +4592,27 @@ return(
                 ))}
               </div>
               {/* Net Total highlight */}
-              <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"44",borderRadius:12,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"44",borderRadius:12,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
                 <span style={{fontSize:13,fontWeight:700,color:shop.accentText}}>Net Total (incl. GST)</span>
                 <span style={{fontSize:20,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace"}}>
                   {fmt(shopId,(Number(viewPurchRow.total)||0)+(Number(viewPurchRow.gst)||0))}
                 </span>
               </div>
+
+              {/* Documents */}
+              <DocUploadSection
+                bucket="purchase-docs"
+                recordUuid={viewPurchRow.uuid}
+                docs={viewPurchRow.documents||[]}
+                accent={shop.accent}
+                onDocsChange={(newDocs)=>{
+                  setViewPurchRow(r=>({...r,documents:newDocs}));
+                  setPurchData(prev=>prev.map(p=>(p.uuid||p.id)===viewPurchRow.uuid?{...p,documents:newDocs}:p));
+                }}
+                onSave={async(newDocs)=>{
+                  if(viewPurchRow.uuid) await dbSavePurchaseDocs(viewPurchRow.uuid,newDocs);
+                }}
+              />
             </div>
             <div style={{padding:"12px 20px",borderTop:"1px solid #f1f5f9",display:"flex",gap:10}}>
               <button onClick={()=>{setEditPurchRow(viewPurchRow);setViewPurchRow(null);}}

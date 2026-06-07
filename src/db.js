@@ -258,6 +258,7 @@ export const dbLoadPurchases = async (shopId) => {
     receivedDate: r.received_date || '',
     remarks:      r.remarks || '',
     status:       r.status || 'PENDING',
+    documents:    Array.isArray(r.documents) ? r.documents : [],
   }));
 };
 
@@ -381,6 +382,7 @@ export const dbLoadLogistics = async (shopId) => {
     disp:         r.dispatched || '',
     eta:          r.eta || '',
     notes:        r.notes || '',
+    documents:    Array.isArray(r.documents) ? r.documents : [],
   }));
 };
 
@@ -832,4 +834,36 @@ export const dbSaveDelivery = async (shopId, saleId, deliveryDate, deliveryTime 
     .eq('shop_id', shopId);
   if (error) console.error('Save delivery error:', error);
   else console.log('✅ Delivery confirmed:', saleId, deliveryDate);
+};
+
+/* ═══════════════════════════════════════════════════════════
+   DOCUMENT UPLOADS  (purchases + logistics)
+   ═══════════════════════════════════════════════════════════ */
+
+export const dbUploadDoc = async (bucket, recordUuid, file) => {
+  if (!sb) return { error: 'No client' };
+  const ext = file.name.split('.').pop() || 'bin';
+  const path = `${recordUuid}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g,'_')}`;
+  const { error } = await sb.storage.from(bucket).upload(path, file, { upsert: true });
+  if (error) { console.error('Upload error:', error); return { error: error.message }; }
+  const { data } = sb.storage.from(bucket).getPublicUrl(path);
+  return { error: null, url: data.publicUrl, name: file.name, path };
+};
+
+export const dbDeleteDoc = async (bucket, path) => {
+  if (!sb) return;
+  const { error } = await sb.storage.from(bucket).remove([path]);
+  if (error) console.error('Delete doc error:', error);
+};
+
+export const dbSavePurchaseDocs = async (uuid, docs) => {
+  if (!sb) return;
+  const { error } = await sb.from('purchases').update({ documents: docs }).eq('id', uuid);
+  if (error) console.error('Save purchase docs error:', error);
+};
+
+export const dbSaveLogisticDocs = async (uuid, docs) => {
+  if (!sb) return;
+  const { error } = await sb.from('logistics').update({ documents: docs }).eq('id', uuid);
+  if (error) console.error('Save logistic docs error:', error);
 };
