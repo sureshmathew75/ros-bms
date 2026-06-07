@@ -6339,7 +6339,7 @@ const NewSupplierForm=({shop,onSave,onClose})=>{
   );
 };
 
-const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum})=>{
+const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false})=>{
   const nextNum=(lastPurchNum||700)+1;
   const pfx={["ros-selections"]:"PO",["ros-hairlines"]:"PH",["ros-india"]:"PI"}[shopId]||"PO";
   const autoId=`${pfx}-${String(nextNum).padStart(4,"0")}`;
