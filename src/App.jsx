@@ -6358,9 +6358,10 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false})=
   const autoId=`${pfx}-${String(nextNum).padStart(4,"0")}`;
 
   const [form,setForm]=useState({
-    date:        new Date().toISOString().slice(0,10),
+    id:          autoId,
     purchaseId:  autoId,
     idEditing:   false,
+    date:        new Date().toISOString().slice(0,10),
     supplier:    "",
     invoiceNo:   "",
     batch:       "",
@@ -6375,7 +6376,10 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false})=
     logisticRef: "",
     receivedDate:"",
     remarks:     "",
+    status:      "PENDING",
   });
+  const [saveErr,setSaveErr]=useState("");
+  const [saving,setSaving]=useState(false);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
   /* unit cost = total / qty — read-only, auto-calc */
@@ -6450,7 +6454,7 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false})=
         <div>
           <label style={lbl}>Purchase ID</label>
           <div style={{display:"flex",gap:6}}>
-            <input value={form.purchaseId} readOnly={!form.idEditing} onChange={e=>set("purchaseId",e.target.value)}
+            <input value={form.purchaseId} readOnly={!form.idEditing} onChange={e=>{set("purchaseId",e.target.value);set("id",e.target.value);}}
               style={{...inp,flex:1,background:form.idEditing?"white":"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,border:"1px solid "+(form.idEditing?shop.accent:"#e2e8f0")}}
               onFocus={fo} onBlur={bl}/>
             <button onClick={()=>set("idEditing",!form.idEditing)}
@@ -6489,32 +6493,42 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false})=
 
       {/* ITEM */}
       <Divider title="Item / Product"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div style={{gridColumn:"1/-1"}}>
-          <label style={lbl}>Item</label>
-          <select value={form.item} onChange={e=>set("item",e.target.value)} style={inp}>
-            <option value="">Select product…</option>
-            <option value="__custom__">✏️ Enter manually…</option>
-            {PRODUCTS.map(p=><option key={p.id} value={p.name}>{p.name}</option>)}
-          </select>
-          {useCustomItem&&<input value={form.itemCustom} onChange={e=>set("itemCustom",e.target.value)} placeholder="Type item name" style={{...inp,marginTop:8,border:"1px solid "+shop.accent}} autoFocus onFocus={fo} onBlur={bl}/>}
+      {/* Item name — full width */}
+      <div style={{marginBottom:12}}>
+        <label style={lbl}>Item</label>
+        <select value={form.item} onChange={e=>set("item",e.target.value)} style={inp}>
+          <option value="">Select product…</option>
+          <option value="__custom__">✏️ Enter manually…</option>
+          {PRODUCTS.map(p=><option key={p.id} value={p.name}>{p.name}</option>)}
+        </select>
+        {useCustomItem&&<input value={form.itemCustom} onChange={e=>set("itemCustom",e.target.value)} placeholder="Type item name" style={{...inp,marginTop:8,border:"1px solid "+shop.accent}} autoFocus onFocus={fo} onBlur={bl}/>}
+      </div>
+      {/* Row 1: Qty · Amount · GST · Total (auto) */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",gap:12,marginBottom:16}}>
+        <div>
+          <label style={lbl}>Total Qty</label>
+          <input type="number" onWheel={e=>e.target.blur()} min="1" value={form.qty}
+            onChange={e=>set("qty",e.target.value)} placeholder="0" style={inp} onFocus={fo} onBlur={bl}/>
         </div>
         <div>
-          <label style={lbl}>Total Quantity</label>
-          <input type="number" onWheel={e=>e.target.blur()} min="1" value={form.qty} onChange={e=>set("qty",e.target.value)} placeholder="0" style={inp} onFocus={fo} onBlur={bl}/>
+          <label style={lbl}>Amount ({shop.symbol})</label>
+          <input type="number" onWheel={e=>e.target.blur()} value={form.total}
+            onChange={e=>set("total",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
         </div>
         <div>
-          <label style={lbl}>Total Amount ({shop.symbol})</label>
-          <input type="number" onWheel={e=>e.target.blur()} value={form.total} onChange={e=>set("total",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+          <label style={lbl}>GST / VAT</label>
+          <input type="number" onWheel={e=>e.target.blur()} value={form.gst}
+            onChange={e=>set("gst",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
         </div>
         <div>
-          <label style={{...lbl,color:"#94a3b8"}}>Unit Cost ({shop.symbol}) <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0}}>— auto</span></label>
-          <input readOnly value={unitCost} placeholder="Auto-calculated" style={inpGray}/>
+          <label style={lbl}>Total ({shop.symbol}) <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0,color:"#94a3b8"}}>incl. GST</span></label>
+          <input readOnly value={(parseFloat(form.total)||0)+(parseFloat(form.gst)||0)>0?((parseFloat(form.total)||0)+(parseFloat(form.gst)||0)).toFixed(2):""} placeholder="Auto" style={inpGray}/>
         </div>
-        <div>
-          <label style={lbl}>GST / VAT ({shop.currency==="INR"?"%":"£"})</label>
-          <input type="number" onWheel={e=>e.target.blur()} value={form.gst} onChange={e=>set("gst",e.target.value)} placeholder="0" style={inp} onFocus={fo} onBlur={bl}/>
-        </div>
+      </div>
+      {/* Row 2: Unit Cost auto */}
+      <div style={{marginBottom:16}}>
+        <label style={{...lbl,color:"#94a3b8"}}>Unit Cost ({shop.symbol}) <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0}}>— auto calculated</span></label>
+        <input readOnly value={unitCost} placeholder="Enter quantity and amount above" style={inpGray}/>
       </div>
 
       {/* PAYMENT */}
@@ -6567,10 +6581,42 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false})=
 
       </div>{/* end padding wrapper */}
       {/* ACTIONS */}
+      {saveErr&&(
+        <div style={{margin:"0 20px 8px",padding:"8px 14px",background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:9,fontSize:12,color:"#dc2626",fontWeight:600}}>
+          ⚠️ {saveErr}
+        </div>
+      )}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave(form)}
-          style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
-          💾 Save Purchase
+        <button disabled={saving} onClick={()=>{
+          setSaveErr("");
+          if(!form.supplier){setSaveErr("Please select a supplier.");return;}
+          if(!(form.item||form.itemCustom)){setSaveErr("Please select or enter an item.");return;}
+          if(!form.total){setSaveErr("Please enter the amount.");return;}
+          setSaving(true);
+          const payload={
+            id: form.purchaseId||form.id,
+            purchaseId: form.purchaseId,
+            date: form.date,
+            supplier: form.supplier,
+            invoiceNo: form.invoiceNo,
+            batch: form.batch,
+            item: form.item==="__custom__"?form.itemCustom:form.item,
+            itemCustom: form.itemCustom,
+            qty: form.qty,
+            total: form.total,
+            gst: form.gst,
+            payBy: form.payBy,
+            payDate: form.payDate,
+            logisticBy: form.logisticBy,
+            logisticRef: form.logisticRef,
+            receivedDate: form.receivedDate,
+            remarks: form.remarks,
+            status: "PENDING",
+          };
+          onSave(payload);
+        }}
+          style={{padding:"12px 0",borderRadius:11,border:"none",background:saving?"#94a3b8":shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:saving?"default":"pointer",fontFamily:"inherit",boxShadow:saving?"none":"0 4px 14px "+shop.accent+"44"}}>
+          {saving?"Saving…":"💾 Save Purchase"}
         </button>
         <button onClick={onClose}
           style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>
