@@ -325,28 +325,38 @@ export const dbDeleteExpense = async (id, shopId) => {
    LOGISTICS
    ═══════════════════════════════════════════════════════════ */
 export const dbSaveLogistic = async (shopId, l) => {
-  if (!sb) return;
-  const { data: existing } = await sb.from('logistics').select('id')
-    .eq('id', l.id).eq('shop_id', shopId).maybeSingle();
+  if (!sb) return { error: 'No Supabase client' };
 
   const payload = {
-    id:         l.id,
-    shop_id:    shopId,
-    order_ref:  l.order || l.order_ref || '',
-    agent:      l.agent || '',
-    tracking:   l.track || l.tracking || '',
-    status:     l.status || 'PENDING',
-    dispatched: l.disp || l.dispatched || '',
-    eta:        l.eta || '',
-    notes:      l.notes || '',
+    shop_id:      shopId,
+    shipment_ref: l.id || l.shipmentId || '',
+    order_ref:    l.order || l.order_ref || l.purchaseId || '',
+    supplier:     l.supplier || '',
+    delivery_addr:l.deliveryAddr || '',
+    service:      l.service === '__custom__' ? l.serviceCustom : (l.service || ''),
+    agent:        l.agent === '__custom__' ? l.agentCustom : (l.agent || ''),
+    tracking:     l.track || l.tracking || l.trackingNo || '',
+    cost:         Number(l.cost) || 0,
+    weight:       l.weight || '',
+    status:       l.status || 'PENDING',
+    dispatched:   l.disp || l.dispatched || '',
+    eta:          l.eta || '',
+    notes:        l.notes || l.remarks || '',
   };
 
-  const { error } = existing
-    ? await sb.from('logistics').update(payload).eq('id', l.id).eq('shop_id', shopId)
-    : await sb.from('logistics').insert(payload);
+  // If _uuid provided, update existing row
+  if (l._uuid) {
+    const { error } = await sb.from('logistics').update(payload).eq('id', l._uuid).eq('shop_id', shopId);
+    if (error) { console.error('❌ Update logistic error:', error); return { error: error.message }; }
+    console.log('✅ Logistic updated:', l._uuid);
+    return { error: null };
+  }
 
-  if (error) console.error('❌ Save logistic error:', error);
-  else console.log('✅ Logistic saved:', l.id);
+  // Insert new — let Supabase generate UUID
+  const { data, error } = await sb.from('logistics').insert(payload).select('id').single();
+  if (error) { console.error('❌ Insert logistic error:', error); return { error: error.message }; }
+  console.log('✅ Logistic saved, uuid:', data?.id);
+  return { error: null, uuid: data?.id };
 };
 
 export const dbLoadLogistics = async (shopId) => {
@@ -356,14 +366,21 @@ export const dbLoadLogistics = async (shopId) => {
     .order('created_at', { ascending: false });
   if (error) { console.error('Load logistics error:', error); return null; }
   return data.map(r => ({
-    id:     r.id,
-    order:  r.order_ref || '',
-    agent:  r.agent || '',
-    track:  r.tracking || '',
-    status: r.status || '',
-    disp:   r.dispatched || '',
-    eta:    r.eta || '',
-    notes:  r.notes || '',
+    id:           r.shipment_ref || r.id,
+    uuid:         r.id,
+    order:        r.order_ref || '',
+    supplier:     r.supplier || '',
+    deliveryAddr: r.delivery_addr || '',
+    service:      r.service || '',
+    agent:        r.agent || '',
+    track:        r.tracking || '',
+    trackingNo:   r.tracking || '',
+    cost:         Number(r.cost) || 0,
+    weight:       r.weight || '',
+    status:       r.status || '',
+    disp:         r.dispatched || '',
+    eta:          r.eta || '',
+    notes:        r.notes || '',
   }));
 };
 

@@ -4312,7 +4312,18 @@ return(
       {/* ── NEW SHIPMENT MODAL ── */}
       {modal==="new-shipment"&&(
         <Modal title="🚚 New Shipment" onClose={()=>setModal(null)} accent={shop.accent}>
-          <NewShipmentForm shopId={shopId} shop={shop} purch={purch} onSave={()=>setModal(null)} onClose={()=>setModal(null)}/>
+          <NewShipmentForm shopId={shopId} shop={shop} purch={purch}
+            onSave={async(form)=>{
+              const result = await dbSaveLogistic(shopId, form);
+              if(result && result.error){
+                alert("Save failed: " + result.error);
+                return;
+              }
+              const fresh = await dbLoadLogistics(shopId);
+              if(fresh) setLogData(fresh);
+              setModal(null);
+            }}
+            onClose={()=>setModal(null)}/>
         </Modal>
       )}
 
