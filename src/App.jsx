@@ -2861,6 +2861,266 @@ const LogisticsTabPanel=({logs=[],shopId,shop,onNewShipment,onView,onEdit,onDele
 };
 /* ── End LogisticsTabPanel ───────────────────────────────────────────────── */
 
+
+/* ═══════════════════════════════════════════════════════════
+   PURCHASES TAB PANEL
+   ═══════════════════════════════════════════════════════════ */
+const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExport,onImport,onView,onEdit,onDelete,setTab,setViewLogRow})=>{
+  const [search,setSearch]=React.useState("");
+  const [statusFilter,setStatusFilter]=React.useState("ALL");
+  const [shipPopover,setShipPopover]=React.useState(null); // {purchId, rect}
+
+  // Build lookup: purchase_ref → linked shipments
+  const shipmentsByPurch=React.useMemo(()=>{
+    const map={};
+    (logs||[]).forEach(l=>{
+      const ref=l.order||l.purchaseId||"";
+      if(!ref)return;
+      if(!map[ref])map[ref]=[];
+      map[ref].push(l);
+    });
+    return map;
+  },[logs]);
+
+  const filtered=purch.filter(p=>{
+    const q=search.toLowerCase();
+    const matchQ=!q||(p.id||"").toLowerCase().includes(q)||
+      (p.supplier||"").toLowerCase().includes(q)||
+      (p.item||"").toLowerCase().includes(q)||
+      (p.invoiceNo||"").toLowerCase().includes(q);
+    const matchS=statusFilter==="ALL"||(p.status||"")=== statusFilter;
+    return matchQ&&matchS;
+  });
+
+  const totalSpend=filtered.reduce((a,p)=>{
+    return a+(Number(p.total)||0)+(Number(p.gst)||0);
+  },0);
+
+  const fmtD=d=>{if(!d)return"—";try{const p=d.split("-");return p.length===3?`${p[2]}/${p[1]}/${p[0].slice(2)}`:d;}catch{return d;}};
+
+  // Close popover on outside click
+  React.useEffect(()=>{
+    const handler=()=>setShipPopover(null);
+    if(shipPopover) window.addEventListener("click",handler);
+    return()=>window.removeEventListener("click",handler);
+  },[shipPopover]);
+
+  return(
+    <div>
+      {/* Header */}
+      <div style={{padding:"18px 20px 14px",borderBottom:"1px solid #f1f5f9"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:12}}>
+          <div>
+            <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>📦 Purchases</h2>
+            <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>
+              {purch.length} record{purch.length!==1?"s":""} · Total: {fmt(shopId,totalSpend)}
+            </p>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <input value={search} onChange={e=>setSearch(e.target.value)}
+              placeholder="Search PO ID, supplier, item…"
+              style={{padding:"7px 14px",borderRadius:9,border:"1px solid #e2e8f0",fontSize:12,fontFamily:"inherit",outline:"none",width:220}}/>
+            <button onClick={onImport}
+              style={{padding:"7px 14px",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+              ↑ Import
+            </button>
+            <button onClick={onExport}
+              style={{padding:"7px 14px",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+              ↓ Export
+            </button>
+            <button onClick={onNewPurchase}
+              style={{padding:"8px 18px",borderRadius:10,border:"none",background:shop.accent,
+                color:"white",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                boxShadow:"0 2px 8px "+shop.accent+"44",whiteSpace:"nowrap"}}>
+              + New Purchase
+            </button>
+          </div>
+        </div>
+        {/* Status filter */}
+        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+          {["ALL","PENDING","RECEIVED","CANCELLED"].map(s=>(
+            <button key={s} onClick={()=>setStatusFilter(s)}
+              style={{padding:"4px 12px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                border:"1px solid "+(statusFilter===s?shop.accent:"#e2e8f0"),
+                background:statusFilter===s?shop.accent:"white",
+                color:statusFilter===s?"white":"#64748b"}}>
+              {s==="ALL"?`All (${purch.length})`:s}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div style={{overflowX:"auto",position:"relative"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead>
+            <tr>
+              {["PO ID","Date","Supplier","Item","Qty","Total","Pay By","Docs","Shipments","Actions"].map(h=>(
+                <th key={h} style={{padding:"10px 16px",fontSize:11,fontWeight:800,color:"#64748b",
+                  textTransform:"uppercase",letterSpacing:"0.05em",background:"#f8fafc",
+                  borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap",
+                  textAlign:(h==="Total"||h==="Qty")?"right":"left"}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length===0?(
+              <tr><td colSpan={10} style={{padding:"60px 20px",textAlign:"center",color:"#94a3b8"}}>
+                <div style={{fontSize:36,marginBottom:10}}>📦</div>
+                <p style={{margin:0,fontSize:14,fontWeight:600}}>No purchases found</p>
+              </td></tr>
+            ):filtered.map((p,i)=>{
+              const hasDocs=(p.documents||[]).length>0;
+              const linkedShipments=shipmentsByPurch[p.id]||shipmentsByPurch[p.purchase_ref]||[];
+              const netTotal=(Number(p.total)||0)+(Number(p.gst)||0);
+
+              return(
+                <tr key={p.uuid||p.id}
+                  style={{background:i%2===0?"white":"#fafafa",borderBottom:"1px solid #f1f5f9",
+                    transition:"background 0.1s",cursor:"pointer"}}
+                  onMouseEnter={e=>e.currentTarget.style.background=shop.accent+"0d"}
+                  onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"white":"#fafafa"}
+                  onClick={()=>onView(p)}>
+
+                  {/* PO ID */}
+                  <td style={{padding:"12px 16px"}}>
+                    <span style={{fontFamily:"DM Mono,monospace",fontWeight:800,fontSize:12,color:shop.accent}}>
+                      {p.id}
+                    </span>
+                  </td>
+                  {/* Date */}
+                  <td style={{padding:"12px 16px",color:"#64748b",whiteSpace:"nowrap",fontSize:12}}>{fmtD(p.date)}</td>
+                  {/* Supplier */}
+                  <td style={{padding:"12px 16px",fontWeight:600,color:"#1e293b",maxWidth:130,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    {p.supplier||"—"}
+                  </td>
+                  {/* Item */}
+                  <td style={{padding:"12px 16px",color:"#374151",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    {p.item||"—"}
+                  </td>
+                  {/* Qty */}
+                  <td style={{padding:"12px 16px",textAlign:"right",color:"#374151",fontWeight:600}}>
+                    {p.qty||"—"}
+                  </td>
+                  {/* Total */}
+                  <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,color:"#0f172a",whiteSpace:"nowrap"}}>
+                    {netTotal>0?fmt(shopId,netTotal):"—"}
+                  </td>
+                  {/* Pay By */}
+                  <td style={{padding:"12px 16px",color:"#64748b",fontSize:12,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    {p.payBy||p.pay_by||"—"}
+                  </td>
+                  {/* Docs */}
+                  <td style={{padding:"12px 16px",textAlign:"center"}} onClick={e=>{e.stopPropagation();onView(p);}}>
+                    {hasDocs?(
+                      <span title={`${(p.documents||[]).length} document(s) — click to view`}
+                        style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:11,fontWeight:700,
+                          color:"#166534",background:"#dcfce7",border:"1px solid #86efac",
+                          borderRadius:999,padding:"2px 8px",cursor:"pointer"}}>
+                        ✓ {(p.documents||[]).length}
+                      </span>
+                    ):(
+                      <span style={{fontSize:16,color:"#cbd5e1"}}>✕</span>
+                    )}
+                  </td>
+                  {/* Shipments */}
+                  <td style={{padding:"12px 16px",textAlign:"center"}} onClick={e=>e.stopPropagation()}>
+                    {linkedShipments.length===0?(
+                      <span style={{fontSize:12,color:"#cbd5e1"}}>—</span>
+                    ):(
+                      <div style={{position:"relative",display:"inline-block"}}>
+                        <button
+                          onClick={e=>{
+                            e.stopPropagation();
+                            const rect=e.currentTarget.getBoundingClientRect();
+                            setShipPopover(prev=>prev&&prev.purchId===p.id?null:{purchId:p.id,rect});
+                          }}
+                          style={{display:"inline-flex",alignItems:"center",gap:4,padding:"3px 10px",
+                            borderRadius:999,border:"1px solid #bae6fd",background:"#f0f9ff",
+                            color:"#0369a1",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                          📦 {linkedShipments.length}
+                        </button>
+                        {/* Popover */}
+                        {shipPopover&&shipPopover.purchId===p.id&&(
+                          <div onClick={e=>e.stopPropagation()}
+                            style={{position:"fixed",
+                              top:shipPopover.rect.bottom+6,
+                              left:Math.min(shipPopover.rect.left,window.innerWidth-220),
+                              zIndex:200,background:"white",borderRadius:12,
+                              boxShadow:"0 8px 32px rgba(0,0,0,0.18)",
+                              border:"1px solid #e2e8f0",minWidth:200,padding:8}}>
+                            <p style={{margin:"0 0 6px",padding:"0 8px",fontSize:10,fontWeight:800,
+                              color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>
+                              Linked Shipments
+                            </p>
+                            {linkedShipments.map(l=>(
+                              <button key={l.uuid||l.id}
+                                onClick={()=>{
+                                  setShipPopover(null);
+                                  setTab("logistics");
+                                  setTimeout(()=>setViewLogRow(l),100);
+                                }}
+                                style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                                  width:"100%",padding:"7px 8px",borderRadius:8,border:"none",
+                                  background:"transparent",cursor:"pointer",fontFamily:"inherit",
+                                  textAlign:"left"}}
+                                onMouseEnter={e=>e.currentTarget.style.background="#f0f9ff"}
+                                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                                <span style={{fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent}}>
+                                  {l.id}
+                                </span>
+                                <span style={{fontSize:10,color:"#94a3b8",marginLeft:8}}>→</span>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                  {/* Actions */}
+                  <td style={{padding:"12px 16px"}} onClick={e=>e.stopPropagation()}>
+                    <div style={{display:"flex",gap:5}}>
+                      <button onClick={()=>onView(p)}
+                        style={{padding:"5px 10px",borderRadius:7,border:"1px solid #e2e8f0",
+                          background:"white",color:"#374151",fontSize:11,fontWeight:700,
+                          cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                        👁 View
+                      </button>
+                      <button onClick={()=>onEdit(p)}
+                        style={{padding:"5px 10px",borderRadius:7,border:"1px solid "+shop.accent,
+                          background:shop.accent+"12",color:shop.accent,fontSize:11,fontWeight:700,
+                          cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                        ✏️
+                      </button>
+                      <button onClick={()=>onDelete(p)}
+                        style={{padding:"5px 9px",borderRadius:7,border:"1px solid #fca5a5",
+                          background:"#fff5f5",color:"#dc2626",fontSize:11,cursor:"pointer"}}>
+                        🗑️
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Footer */}
+      {filtered.length>0&&(
+        <div style={{padding:"10px 20px",borderTop:"1px solid #f1f5f9",display:"flex",
+          justifyContent:"space-between",fontSize:12,color:"#64748b",background:"#f8fafc"}}>
+          <span>{filtered.length} purchase{filtered.length!==1?"s":""}</span>
+          <span style={{fontWeight:800,color:"#0f172a"}}>
+            Total Spend: {fmt(shopId,totalSpend)}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+};
+/* ── End PurchasesTabPanel ───────────────────────────────────────────────── */
+
 const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,initialTab="sales"})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":(initialTab||"sales"));
   const [hov,setHov]=useState(null);
@@ -4360,23 +4620,25 @@ return(
 
           {/* ─── PURCHASES ─── */}
           {tab==="purchases"&&(
-            <PurchasesPanel
-              Badge={Badge}
+            <PurchasesTabPanel
               fmt={fmt}
               onExport={()=>setModal("export-purchases")}
               onImport={()=>setModal("import-purchases")}
               onNewPurchase={()=>setModal("new-purchase")}
-              onViewPurchase={(p)=>setViewPurchRow(p)}
-              onEditPurchase={(p)=>setEditPurchRow(p)}
-              onDeletePurchase={async(p)=>{
+              onView={(p)=>setViewPurchRow(p)}
+              onEdit={(p)=>setEditPurchRow(p)}
+              onDelete={async(p)=>{
                 if(!window.confirm("Delete purchase "+(p.id||p.purchase_ref||"")+"? This cannot be undone."))return;
                 const uuid=p.uuid||p.id;
                 await dbDeletePurchase(uuid,shopId);
                 setPurchData(prev=>prev.filter(x=>(x.uuid||x.id)!==uuid));
               }}
               purch={purch}
+              logs={logs}
               shop={shop}
               shopId={shopId}
+              setTab={setTab}
+              setViewLogRow={setViewLogRow}
             />
           )}
 
