@@ -3,7 +3,6 @@ import CommandPalette from "./components/CommandPalette";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import DocumentsPanel from "./components/DocumentsPanel";
 import ExpensesPanel from "./components/ExpensesPanel";
-import InvoicesPanel from "./components/InvoicesPanel";
 import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
 import PurchasesPanel from "./components/PurchasesPanel";
@@ -2214,167 +2213,6 @@ const MarkDeliveredModal=({sale,shopId,shop,onConfirm,onClose})=>{
 };
 /* ── End MarkDeliveredModal ─────────────────────────────────────────────── */
 
-
-/* ═══════════════════════════════════════════════════════════
-   INVOICES TAB — proper component (hooks must be at top level)
-   ═══════════════════════════════════════════════════════════ */
-const InvoicesTab=({sales,shopId,shop,fmt,setInvoiceRow})=>{
-  const [invSearch,setInvSearch]=React.useState("");
-  const [invStatus,setInvStatus]=React.useState("ALL");
-  const [invSort,setInvSort]=React.useState("newest");
-
-  const allStatuses=shopId==="ros-india"
-    ?["ORDER NOT PLACED","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED","EXCHANGED","REFUNDED"]
-    :["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"];
-
-  const invSales=[...sales].filter(s=>{
-    const q=invSearch.toLowerCase();
-    const matchQ=!q||(s.id||"").toLowerCase().includes(q)||
-      (s.customer||"").toLowerCase().includes(q)||
-      (s.phone||s.contact||"").includes(q);
-    const matchS=invStatus==="ALL"||(s.ful||s.status||"")===invStatus;
-    return matchQ&&matchS;
-  }).sort((a,b)=>{
-    if(invSort==="newest")return (b.date||"").localeCompare(a.date||"");
-    if(invSort==="oldest")return (a.date||"").localeCompare(b.date||"");
-    if(invSort==="amount")return (Number(b.amount)||0)-(Number(a.amount)||0);
-    return 0;
-  });
-
-  const totalAmt=invSales.reduce((a,s)=>a+(Number(s.amount)||0),0);
-  const fmtD=d=>{if(!d)return"—";try{const p=d.split("-");return p.length===3?`${p[2]}/${p[1]}/${p[0].slice(2)}`:d;}catch{return d;}};
-
-  const statusColor={
-    PENDING:"#f59e0b",FULFILLED:"#10b981","GOOD FEEDBACK":"#3b82f6",
-    "RTRN REQSTD":"#f97316","RETRN RCVD":"#8b5cf6","RETURN REQUESTED":"#f97316",
-    "RETURN RECEIVED":"#8b5cf6","GOOD FEEDBACK RECEIVED":"#3b82f6",
-    "NEGATIVE FEEDBACK RECEIVED":"#ef4444","EXCHANGED":"#a855f7","REFUNDED":"#6366f1",
-    "WORK IN PROGRESS":"#0ea5e9","PHOTO GIVEN TO CUSTOMER":"#14b8a6",
-    "AWAITING TRACKING INFO.":"#f59e0b","ORDER NOT PLACED":"#94a3b8",
-  };
-
-  return(
-    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
-      {/* Header */}
-      <div style={{padding:"18px 20px 14px",borderBottom:"1px solid #f1f5f9",flexShrink:0}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,flexWrap:"wrap",marginBottom:14}}>
-          <div>
-            <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>🧾 Sales Invoices</h2>
-            <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>
-              {invSales.length} invoice{invSales.length!==1?"s":""} · click any row to preview, print or download PDF
-            </p>
-          </div>
-          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
-            <select value={invSort} onChange={e=>setInvSort(e.target.value)}
-              style={{padding:"7px 12px",borderRadius:9,border:"1px solid #e2e8f0",fontSize:12,fontFamily:"inherit",outline:"none",background:"white",color:"#374151",cursor:"pointer"}}>
-              <option value="newest">Newest First</option>
-              <option value="oldest">Oldest First</option>
-              <option value="amount">Highest Amount</option>
-            </select>
-            <input value={invSearch} onChange={e=>setInvSearch(e.target.value)}
-              placeholder="Search invoice, customer, phone…"
-              style={{padding:"7px 14px",borderRadius:9,border:"1px solid #e2e8f0",fontSize:12,fontFamily:"inherit",outline:"none",width:240}}/>
-          </div>
-        </div>
-        {/* Status filter pills */}
-        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-          <button onClick={()=>setInvStatus("ALL")}
-            style={{padding:"4px 14px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
-              border:"1px solid "+(invStatus==="ALL"?shop.accent:"#e2e8f0"),
-              background:invStatus==="ALL"?shop.accent:"white",color:invStatus==="ALL"?"white":"#64748b"}}>
-            All ({sales.length})
-          </button>
-          {allStatuses.map(st=>{
-            const c=sales.filter(s=>(s.ful||s.status||"")===st).length;
-            if(c===0)return null;
-            const col=statusColor[st]||"#94a3b8";
-            return(
-              <button key={st} onClick={()=>setInvStatus(st)}
-                style={{padding:"4px 14px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
-                  border:"1px solid "+(invStatus===st?col:"#e2e8f0"),
-                  background:invStatus===st?col+"22":"white",
-                  color:invStatus===st?col:"#64748b"}}>
-                {st} ({c})
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Table */}
-      <div style={{flex:1,overflowY:"auto"}}>
-        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
-          <thead style={{position:"sticky",top:0,zIndex:2}}>
-            <tr>
-              {["Invoice #","Date","Customer","Phone","Items","Amount","Status",""].map(h=>(
-                <th key={h} style={{
-                  padding:"10px 16px",fontSize:11,fontWeight:800,color:"#64748b",
-                  textTransform:"uppercase",letterSpacing:"0.05em",
-                  background:"#f8fafc",borderBottom:"1px solid #e2e8f0",
-                  whiteSpace:"nowrap",textAlign:h==="Amount"?"right":"left",
-                }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {invSales.length===0?(
-              <tr><td colSpan={8} style={{padding:"80px 20px",textAlign:"center",color:"#94a3b8"}}>
-                <div style={{fontSize:40,marginBottom:12}}>🧾</div>
-                <p style={{margin:0,fontSize:14,fontWeight:600}}>No invoices found</p>
-                <p style={{margin:"6px 0 0",fontSize:12}}>Try adjusting your search or filter</p>
-              </td></tr>
-            ):invSales.map((s,i)=>{
-              const status=s.ful||s.status||"PENDING";
-              const col=statusColor[status]||"#94a3b8";
-              const lines=Array.isArray(s.saleLines)&&s.saleLines.length>0
-                ?s.saleLines.filter(l=>l.name).map(l=>l.name+(Number(l.qty)>1?` ×${l.qty}`:``)).join(", ")
-                :s.item||"—";
-              return(
-                <tr key={s.id}
-                  onClick={()=>setInvoiceRow(s)}
-                  style={{cursor:"pointer",background:i%2===0?"white":"#fafafa",borderBottom:"1px solid #f1f5f9",transition:"background 0.1s"}}
-                  onMouseEnter={e=>e.currentTarget.style.background=shop.accent+"0d"}
-                  onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"white":"#fafafa"}>
-                  <td style={{padding:"11px 16px",fontFamily:"DM Mono,monospace",fontWeight:800,color:shop.accent,whiteSpace:"nowrap",fontSize:12}}>{s.id}</td>
-                  <td style={{padding:"11px 16px",color:"#374151",whiteSpace:"nowrap",fontSize:12}}>{fmtD(s.date)}</td>
-                  <td style={{padding:"11px 16px",fontWeight:700,color:"#0f172a",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.customer||"—"}</td>
-                  <td style={{padding:"11px 16px",color:"#64748b",fontFamily:"DM Mono,monospace",fontSize:11,whiteSpace:"nowrap"}}>{s.phone||s.contact||"—"}</td>
-                  <td style={{padding:"11px 16px",color:"#374151",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",fontSize:12}} title={lines}>{lines}</td>
-                  <td style={{padding:"11px 16px",fontWeight:800,color:"#0f172a",textAlign:"right",whiteSpace:"nowrap"}}>{fmt(shopId,Number(s.amount)||0)}</td>
-                  <td style={{padding:"11px 16px"}}>
-                    <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:999,
-                      background:col+"18",color:col,border:"1px solid "+col+"33",whiteSpace:"nowrap"}}>
-                      {status}
-                    </span>
-                  </td>
-                  <td style={{padding:"11px 16px",textAlign:"right"}} onClick={e=>e.stopPropagation()}>
-                    <button onClick={()=>setInvoiceRow(s)}
-                      style={{padding:"5px 14px",borderRadius:8,border:"none",background:shop.accent,
-                        color:"white",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
-                        boxShadow:"0 2px 8px "+shop.accent+"33",whiteSpace:"nowrap"}}>
-                      🧾 Invoice
-                    </button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      {/* Footer totals */}
-      {invSales.length>0&&(
-        <div style={{padding:"12px 20px",borderTop:"1px solid #f1f5f9",display:"flex",
-          justifyContent:"space-between",alignItems:"center",fontSize:12,
-          color:"#64748b",background:"#f8fafc",flexShrink:0}}>
-          <span>{invSales.length} invoice{invSales.length!==1?"s":""} · {invStatus!=="ALL"?invStatus:"All statuses"}</span>
-          <span style={{fontWeight:800,color:"#0f172a",fontSize:14}}>Total: {fmt(shopId,totalAmt)}</span>
-        </div>
-      )}
-    </div>
-  );
-};
-/* ── End InvoicesTab ─────────────────────────────────────────────────────── */
 const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,initialTab="sales"})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":(initialTab||"sales"));
   const [hov,setHov]=useState(null);
@@ -2495,7 +2333,6 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"suppliers",l:"Suppliers",ic:"🏭"},
     {id:"agents",   l:"Agents",   ic:"🤝"},
     {id:"products", l:"Products", ic:"🏷️"},
-    {id:"invoices", l:"Sales Invoices", ic:"🧾"},
     {id:"expenses", l:"Expenses", ic:"💳"},
     {id:"cashflow", l:"Cash Flow",ic:"🏦"},
     {id:"documents",l:"Documents",ic:"📎"},
@@ -2767,7 +2604,7 @@ return(
         <nav style={{flex:1,padding:"10px 8px 6px",overflowY:"auto",overflowX:"hidden",scrollbarWidth:"none"}}>
           {/* group labels */}
           {[
-            {label:"MAIN",      ids:["dashboard","sales","customers","messages","returns","invoices"]},
+            {label:"MAIN",      ids:["dashboard","sales","customers","messages","returns"]},
             {label:"PURCHASES", ids:["purchases","suppliers","logistics","agents"]},
             {label:"EXPENSES",  ids:["expenses"]},
             {label:"FINANCE",   ids:["cashflow"]},
@@ -3955,15 +3792,7 @@ return(
           )}
 
           {/* ── SALES INVOICES TAB ── */}
-          {tab==="invoices"&&(
-            <InvoicesTab
-              sales={sales}
-              shopId={shopId}
-              shop={shop}
-              fmt={fmt}
-              setInvoiceRow={setInvoiceRow}
-            />
-          )}
+
 
           {/* ── CASH FLOW ── */}
           {tab==="cashflow"&&(()=>{
@@ -8147,8 +7976,8 @@ const INITIAL_USERS=[
    avatar:"linear-gradient(135deg,#64748b,#334155)", shops:["ros-india"]},
 ];
 const ROLE_NAV={
-  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports","messages","returns","settings"],
-  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports","messages","returns"],
+  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","cashflow","documents","analytics","reports","messages","returns","settings"],
+  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","cashflow","documents","analytics","reports","messages","returns"],
   staff:["sales","messages"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
