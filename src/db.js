@@ -194,12 +194,11 @@ export const dbDeleteSale = async (id, shopId) => {
 export const dbSavePurchase = async (shopId, p) => {
   if (!sb) return { error: 'No Supabase client' };
 
-  const id = p.id || p.purchaseId;
-  if (!id) return { error: 'No purchase ID provided' };
-
+  // purchases.id is UUID — never send our own text ID
+  // Store PI-0701 style reference in purchase_ref column
   const payload = {
-    id,
     shop_id:       shopId,
+    purchase_ref:  p.id || p.purchaseId || '',
     date:          p.date || today(),
     supplier:      p.supplier || p.sup || '',
     invoice_no:    p.invoiceNo || p.invoice_no || '',
@@ -217,27 +216,13 @@ export const dbSavePurchase = async (shopId, p) => {
     status:        p.status || 'PENDING',
   };
 
-  // Always try insert first; if duplicate key, fall back to update
-  const { error: insertErr } = await sb.from('purchases').insert(payload);
-  if (!insertErr) {
-    console.log('✅ Purchase saved (insert):', id);
-    return { error: null };
+  const { data, error } = await sb.from('purchases').insert(payload).select('id').single();
+  if (error) {
+    console.error('❌ Purchase insert error:', error);
+    return { error: error.message };
   }
-
-  // If duplicate (code 23505), update instead
-  if (insertErr.code === '23505') {
-    const { error: updateErr } = await sb.from('purchases')
-      .update(payload).eq('id', id).eq('shop_id', shopId);
-    if (updateErr) {
-      console.error('❌ Purchase update error:', updateErr);
-      return { error: updateErr.message };
-    }
-    console.log('✅ Purchase saved (update):', id);
-    return { error: null };
-  }
-
-  console.error('❌ Purchase insert error:', insertErr);
-  return { error: insertErr.message };
+  console.log('✅ Purchase saved, uuid:', data?.id);
+  return { error: null, uuid: data?.id };
 };
 
 export const dbLoadPurchases = async (shopId) => {
@@ -247,7 +232,8 @@ export const dbLoadPurchases = async (shopId) => {
     .order('date', { ascending: false });
   if (error) { console.error('Load purchases error:', error); return null; }
   return data.map(r => ({
-    id:           r.id,
+    id:           r.purchase_ref || r.id,
+    uuid:         r.id,
     date:         r.date || '',
     sup:          r.supplier || '',
     supplier:     r.supplier || '',
