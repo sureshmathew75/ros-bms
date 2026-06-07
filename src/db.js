@@ -216,6 +216,14 @@ export const dbSavePurchase = async (shopId, p) => {
     status:        p.status || 'PENDING',
   };
 
+  // If _uuid provided, this is an update of an existing row
+  if (p._uuid) {
+    const { error: updErr } = await sb.from('purchases').update(payload).eq('id', p._uuid).eq('shop_id', shopId);
+    if (updErr) { console.error('❌ Purchase update error:', updErr); return { error: updErr.message }; }
+    console.log('✅ Purchase updated:', p._uuid);
+    return { error: null };
+  }
+
   const { data, error } = await sb.from('purchases').insert(payload).select('id').single();
   if (error) {
     console.error('❌ Purchase insert error:', error);
