@@ -2416,6 +2416,8 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [logData,setLogData]=useState([]);
   const [markDeliveredSale,setMarkDeliveredSale]=useState(null);
   const [editPurchRow,setEditPurchRow]=useState(null);
+  const [editLogRow,setEditLogRow]=useState(null);
+  const [viewLogRow,setViewLogRow]=useState(null);
   const [messages,setMessages]=useState([]);
   const [messagesLoaded,setMessagesLoaded]=useState(false);
   const [returns,setReturns]=useState([]);
@@ -3915,7 +3917,19 @@ return(
 
           {/* ─── LOGISTICS ─── */}
           {tab==="logistics"&&(
-            <LogisticsPanel logs={logs} onNewShipment={()=>setModal("new-shipment")} shop={shop}/>
+            <LogisticsPanel
+              logs={logs}
+              onNewShipment={()=>setModal("new-shipment")}
+              shop={shop}
+              onViewShipment={(l)=>setViewLogRow(l)}
+              onEditShipment={(l)=>setEditLogRow(l)}
+              onDeleteShipment={async(l)=>{
+                if(!window.confirm("Delete shipment "+(l.id||"")+"? This cannot be undone."))return;
+                const uuid=l.uuid||l.id;
+                await dbDeleteLogistic(uuid,shopId);
+                setLogData(prev=>prev.filter(x=>(x.uuid||x.id)!==uuid));
+              }}
+            />
           )}
 
           {/* ─── AGENTS ─── */}
@@ -4310,6 +4324,68 @@ return(
       )}
 
       {/* ── NEW SHIPMENT MODAL ── */}
+      {/* ── VIEW SHIPMENT MODAL ── */}
+      {viewLogRow&&(
+        <div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)"}} onClick={()=>setViewLogRow(null)}/>
+          <div style={{position:"relative",background:"white",borderRadius:18,boxShadow:"0 24px 64px rgba(0,0,0,0.18)",width:"100%",maxWidth:480,zIndex:81,overflow:"hidden"}}>
+            <div style={{padding:"16px 20px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"10",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+              <div>
+                <p style={{margin:0,fontSize:10,fontWeight:700,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.06em"}}>Shipment Detail</p>
+                <h3 style={{margin:0,fontSize:16,fontWeight:900,color:"#0f172a",fontFamily:"DM Mono,monospace"}}>{viewLogRow.id}</h3>
+              </div>
+              <button onClick={()=>setViewLogRow(null)} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b"}}>×</button>
+            </div>
+            <div style={{padding:"18px 20px",display:"grid",gridTemplateColumns:"1fr 1fr",gap:14}}>
+              {[
+                {l:"Supplier",v:viewLogRow.supplier||"—"},
+                {l:"Courier",v:viewLogRow.service||viewLogRow.serviceCustom||"—"},
+                {l:"Logistic Agent",v:viewLogRow.agent||viewLogRow.agentCustom||"—"},
+                {l:"Tracking No.",v:viewLogRow.track||viewLogRow.trackingNo||"—"},
+                {l:"Shipping Cost",v:viewLogRow.cost?(fmt(shopId,Number(viewLogRow.cost))):"—"},
+                {l:"Status",v:viewLogRow.status||"—"},
+                {l:"Purchase Ref",v:viewLogRow.order||viewLogRow.purchaseId||"—"},
+                {l:"Received Date",v:viewLogRow.receivedDate||viewLogRow.disp||"—"},
+                {l:"Delivery Address",v:viewLogRow.deliveryAddr||"—",full:true},
+                {l:"Notes",v:viewLogRow.notes||"—",full:true},
+              ].map(({l,v,full})=>(
+                <div key={l} style={full?{gridColumn:"1/-1"}:{}}>
+                  <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>{l}</p>
+                  <p style={{margin:0,fontSize:13,color:"#0f172a",fontWeight:600,wordBreak:"break-word"}}>{v}</p>
+                </div>
+              ))}
+            </div>
+            <div style={{padding:"12px 20px",borderTop:"1px solid #f1f5f9",display:"flex",gap:10}}>
+              <button onClick={()=>{setEditLogRow(viewLogRow);setViewLogRow(null);}}
+                style={{flex:1,padding:"10px 0",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                ✏️ Edit
+              </button>
+              <button onClick={()=>setViewLogRow(null)}
+                style={{flex:1,padding:"10px 0",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT SHIPMENT MODAL ── */}
+      {editLogRow&&(
+        <Modal title="✏️ Edit Shipment" onClose={()=>setEditLogRow(null)} accent={shop.accent}>
+          <NewShipmentForm shopId={shopId} shop={shop} purch={purch}
+            initialValues={editLogRow}
+            onSave={async(form)=>{
+              const uuid=editLogRow.uuid||editLogRow.id;
+              const result=await dbSaveLogistic(shopId,{...form,_uuid:uuid});
+              if(result&&result.error){alert("Update failed: "+result.error);return;}
+              const fresh=await dbLoadLogistics(shopId);
+              if(fresh) setLogData(fresh);
+              setEditLogRow(null);
+            }}
+            onClose={()=>setEditLogRow(null)}/>
+        </Modal>
+      )}
+
       {modal==="new-shipment"&&(
         <Modal title="🚚 New Shipment" onClose={()=>setModal(null)} accent={shop.accent}>
           <NewShipmentForm shopId={shopId} shop={shop} purch={purch}
@@ -6351,8 +6427,30 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false}
   );
 };
 
-const NewShipmentForm=({shopId,shop,purch,onSave,onClose})=>{
-  const [form,setForm]=useState({
+const NewShipmentForm=({shopId,shop,purch,onSave,onClose,initialValues=null})=>{
+  const defaultForm={
+    date:         new Date().toISOString().slice(0,10),
+    shipmentId:   "SHP-"+String(Math.floor(Math.random()*9000)+1000),
+  };
+  const [form,setForm]=useState(initialValues?{
+    date:         initialValues.date||new Date().toISOString().slice(0,10),
+    shipmentId:   initialValues.id||("SHP-"+String(Math.floor(Math.random()*9000)+1000)),
+    purchaseId:   initialValues.order||initialValues.purchaseId||"",
+    supplier:     initialValues.supplier||"",
+    deliveryAddr: initialValues.deliveryAddr||"",
+    service:      initialValues.service||"",
+    serviceCustom:initialValues.serviceCustom||"",
+    agent:        initialValues.agent||"",
+    agentCustom:  initialValues.agentCustom||"",
+    trackingNo:   initialValues.track||initialValues.trackingNo||"",
+    cost:         initialValues.cost||"",
+    weight:       initialValues.weight||"",
+    status:       initialValues.status||"PENDING",
+    dispatchDate: initialValues.disp||initialValues.dispatchDate||"",
+    eta:          initialValues.eta||"",
+    receivedDate: initialValues.receivedDate||"",
+    remarks:      initialValues.notes||initialValues.remarks||"",
+  }:{
     date:         new Date().toISOString().slice(0,10),
     shipmentId:   "SHP-"+String(Math.floor(Math.random()*9000)+1000),
     purchaseId:   "",
