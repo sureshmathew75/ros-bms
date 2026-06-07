@@ -3121,6 +3121,275 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
 };
 /* ── End PurchasesTabPanel ───────────────────────────────────────────────── */
 
+
+/* ═══════════════════════════════════════════════════════════
+   EXPENSES TAB PANEL
+   ═══════════════════════════════════════════════════════════ */
+const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData})=>{
+  const [showForm,setShowForm]=React.useState(false);
+  const [editExp,setEditExp]=React.useState(null);
+  const [search,setSearch]=React.useState("");
+  const [catFilter,setCatFilter]=React.useState("ALL");
+  const [saving,setSaving]=React.useState(false);
+  const [confirmDelete,setConfirmDelete]=React.useState(null);
+
+  const CATEGORIES=["Rent","Utilities","Salaries","Packaging","Shipping","Marketing","Software","Equipment","Travel","Other"];
+  const METHODS=["Cash","Bank Transfer","Credit Card","Debit Card","PayPal","Other"];
+
+  const cats=["ALL",...new Set(exps.map(e=>e.cat).filter(Boolean))];
+  const filtered=exps.filter(e=>{
+    const q=search.toLowerCase();
+    const matchQ=!q||(e.desc||"").toLowerCase().includes(q)||(e.cat||"").toLowerCase().includes(q);
+    const matchC=catFilter==="ALL"||(e.cat||"")===catFilter;
+    return matchQ&&matchC;
+  });
+
+  const total=filtered.reduce((a,e)=>a+(Number(e.amount)||0),0);
+  const thisMonth=exps.filter(e=>{
+    if(!e.date)return false;
+    const d=new Date(e.date);
+    const n=new Date();
+    return d.getMonth()===n.getMonth()&&d.getFullYear()===n.getFullYear();
+  }).reduce((a,e)=>a+(Number(e.amount)||0),0);
+
+  const fmtD=d=>{if(!d)return"—";try{const p=d.split("-");return p.length===3?`${p[2]}/${p[1]}/${p[0].slice(2)}`:d;}catch{return d;}};
+
+  const handleSave=async(form)=>{
+    setSaving(true);
+    const payload={...form};
+    if(editExp) payload._uuid=editExp.uuid||editExp.id;
+    const result=await dbSaveExpense(shopId,payload);
+    if(result&&result.error){alert("Save failed: "+result.error);setSaving(false);return;}
+    const fresh=await dbLoadExpenses(shopId).catch(()=>null);
+    if(fresh) setExpData(fresh);
+    setSaving(false);setShowForm(false);setEditExp(null);
+  };
+
+  const handleDelete=async(e)=>{
+    await dbDeleteExpense(e.uuid||e.id,shopId);
+    setExpData(prev=>prev.filter(x=>(x.uuid||x.id)!==(e.uuid||e.id)));
+    setConfirmDelete(null);
+  };
+
+  const inp={width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",
+    fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box",background:"white"};
+  const lbl={display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,
+    textTransform:"uppercase",letterSpacing:"0.05em"};
+
+  const ExpenseForm=({initial={},onSave,onClose})=>{
+    const [f,setF]=React.useState({
+      date:new Date().toISOString().slice(0,10),
+      cat:"",desc:"",amount:"",method:"Bank Transfer",notes:"",...initial
+    });
+    const s=(k,v)=>setF(p=>({...p,[k]:v}));
+    return(
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div><label style={lbl}>Date</label>
+            <input type="date" value={f.date} onChange={e=>s("date",e.target.value)} style={inp}/></div>
+          <div><label style={lbl}>Category</label>
+            <select value={f.cat} onChange={e=>s("cat",e.target.value)} style={inp}>
+              <option value="">— Select —</option>
+              {CATEGORIES.map(c=><option key={c}>{c}</option>)}
+            </select>
+          </div>
+        </div>
+        <div><label style={lbl}>Description *</label>
+          <input value={f.desc} onChange={e=>s("desc",e.target.value)} placeholder="What was this expense for?" style={inp}/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div><label style={lbl}>Amount ({shop.symbol})</label>
+            <input type="number" value={f.amount} onChange={e=>s("amount",e.target.value)} placeholder="0.00" style={inp}/></div>
+          <div><label style={lbl}>Payment Method</label>
+            <select value={f.method} onChange={e=>s("method",e.target.value)} style={inp}>
+              {METHODS.map(m=><option key={m}>{m}</option>)}
+            </select>
+          </div>
+        </div>
+        <div><label style={lbl}>Notes</label>
+          <textarea value={f.notes} onChange={e=>s("notes",e.target.value)} rows={2}
+            placeholder="Optional notes…" style={{...inp,resize:"vertical"}}/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingTop:4}}>
+          <button disabled={saving} onClick={()=>{
+            if(!f.desc.trim()||!f.amount){alert("Description and amount are required.");return;}
+            onSave(f);
+          }} style={{padding:"11px 0",borderRadius:10,border:"none",
+            background:saving?"#94a3b8":shop.accent,color:"white",fontWeight:800,
+            fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            {saving?"Saving…":"💾 Save Expense"}
+          </button>
+          <button onClick={onClose} style={{padding:"11px 0",borderRadius:10,
+            border:"1px solid #e2e8f0",background:"white",color:"#374151",
+            fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+        </div>
+      </div>
+    );
+  };
+
+  return(
+    <div>
+      {/* Header */}
+      <div style={{padding:"18px 20px 14px",borderBottom:"1px solid #f1f5f9"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:14}}>
+          <div>
+            <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>💳 Expenses</h2>
+            <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>{exps.length} record{exps.length!==1?"s":""}</p>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <input value={search} onChange={e=>setSearch(e.target.value)}
+              placeholder="Search expenses…"
+              style={{padding:"7px 14px",borderRadius:9,border:"1px solid #e2e8f0",fontSize:12,fontFamily:"inherit",outline:"none",width:200}}/>
+            <button onClick={()=>{setEditExp(null);setShowForm(true);}}
+              style={{padding:"8px 18px",borderRadius:10,border:"none",background:shop.accent,
+                color:"white",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                boxShadow:"0 2px 8px "+shop.accent+"44",whiteSpace:"nowrap"}}>
+              + Add Expense
+            </button>
+          </div>
+        </div>
+
+        {/* KPI row */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:14}}>
+          {[
+            {l:"Total",v:fmt(shopId,total),ic:"💳",c:"#ef4444"},
+            {l:"This Month",v:fmt(shopId,thisMonth),ic:"📅",c:"#f59e0b"},
+            {l:"Categories",v:[...new Set(exps.map(e=>e.cat).filter(Boolean))].length,ic:"🏷️",c:shop.accent},
+          ].map(k=>(
+            <div key={k.l} style={{background:"white",borderRadius:12,padding:"12px 16px",
+              border:"1px solid #f1f5f9",boxShadow:"0 1px 4px rgba(0,0,0,0.04)"}}>
+              <p style={{margin:"0 0 2px",fontSize:11,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em"}}>{k.ic} {k.l}</p>
+              <p style={{margin:0,fontSize:18,fontWeight:900,color:k.c}}>{k.v}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Category filter */}
+        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+          {cats.map(c=>(
+            <button key={c} onClick={()=>setCatFilter(c)}
+              style={{padding:"4px 12px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                border:"1px solid "+(catFilter===c?shop.accent:"#e2e8f0"),
+                background:catFilter===c?shop.accent:"white",
+                color:catFilter===c?"white":"#64748b"}}>
+              {c}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead>
+            <tr>
+              {["Date","Category","Description","Amount","Method","Notes","Actions"].map(h=>(
+                <th key={h} style={{padding:"10px 16px",fontSize:11,fontWeight:800,color:"#64748b",
+                  textTransform:"uppercase",letterSpacing:"0.05em",background:"#f8fafc",
+                  borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap",
+                  textAlign:h==="Amount"?"right":"left"}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length===0?(
+              <tr><td colSpan={7} style={{padding:"60px 20px",textAlign:"center",color:"#94a3b8"}}>
+                <div style={{fontSize:36,marginBottom:10}}>💳</div>
+                <p style={{margin:0,fontSize:14,fontWeight:600}}>No expenses found</p>
+              </td></tr>
+            ):filtered.map((e,i)=>(
+              <tr key={e.uuid||e.id}
+                style={{background:i%2===0?"white":"#fafafa",borderBottom:"1px solid #f1f5f9"}}>
+                <td style={{padding:"12px 16px",color:"#64748b",whiteSpace:"nowrap",fontSize:12}}>{fmtD(e.date)}</td>
+                <td style={{padding:"12px 16px"}}>
+                  <span style={{background:"#fff7ed",color:"#c2410c",border:"1px solid #fed7aa",
+                    borderRadius:999,padding:"2px 10px",fontSize:11,fontWeight:700}}>
+                    {e.cat||"—"}
+                  </span>
+                </td>
+                <td style={{padding:"12px 16px",color:"#374151",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.desc||"—"}</td>
+                <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,color:"#dc2626",whiteSpace:"nowrap"}}>{fmt(shopId,Number(e.amount)||0)}</td>
+                <td style={{padding:"12px 16px",color:"#64748b",fontSize:12}}>{e.method||"—"}</td>
+                <td style={{padding:"12px 16px",color:"#94a3b8",fontSize:12,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.notes||"—"}</td>
+                <td style={{padding:"12px 16px"}}>
+                  <div style={{display:"flex",gap:6}}>
+                    <button onClick={()=>{setEditExp(e);setShowForm(true);}}
+                      style={{padding:"5px 10px",borderRadius:7,border:"1px solid "+shop.accent,
+                        background:shop.accent+"12",color:shop.accent,fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                      ✏️
+                    </button>
+                    <button onClick={()=>setConfirmDelete(e)}
+                      style={{padding:"5px 9px",borderRadius:7,border:"1px solid #fca5a5",
+                        background:"#fff5f5",color:"#dc2626",fontSize:11,cursor:"pointer"}}>
+                      🗑️
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Footer */}
+      {filtered.length>0&&(
+        <div style={{padding:"10px 20px",borderTop:"1px solid #f1f5f9",display:"flex",
+          justifyContent:"space-between",fontSize:12,color:"#64748b",background:"#f8fafc"}}>
+          <span>{filtered.length} expense{filtered.length!==1?"s":""}</span>
+          <span style={{fontWeight:800,color:"#dc2626"}}>Total: {fmt(shopId,total)}</span>
+        </div>
+      )}
+
+      {/* Add/Edit Modal */}
+      {(showForm||editExp)&&(
+        <div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)"}}
+            onClick={()=>{setShowForm(false);setEditExp(null);}}/>
+          <div style={{position:"relative",background:"white",borderRadius:18,
+            boxShadow:"0 24px 64px rgba(0,0,0,0.2)",width:"100%",maxWidth:480,
+            maxHeight:"90vh",overflowY:"auto",zIndex:81}}>
+            <div style={{padding:"16px 20px",borderBottom:"1px solid #f1f5f9",display:"flex",
+              justifyContent:"space-between",alignItems:"center",background:shop.accent+"10",borderRadius:"18px 18px 0 0"}}>
+              <h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>
+                {editExp?"✏️ Edit Expense":"➕ New Expense"}
+              </h3>
+              <button onClick={()=>{setShowForm(false);setEditExp(null);}}
+                style={{width:28,height:28,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:16,color:"#64748b"}}>×</button>
+            </div>
+            <div style={{padding:20}}>
+              <ExpenseForm initial={editExp||{}} onSave={handleSave} onClose={()=>{setShowForm(false);setEditExp(null);}}/>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete confirmation */}
+      {confirmDelete&&(
+        <div style={{position:"fixed",inset:0,zIndex:90,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(4px)"}}
+            onClick={()=>setConfirmDelete(null)}/>
+          <div style={{position:"relative",background:"white",borderRadius:16,
+            boxShadow:"0 24px 64px rgba(0,0,0,0.20)",width:"100%",maxWidth:360,padding:28,textAlign:"center"}}>
+            <div style={{fontSize:36,marginBottom:12}}>🗑️</div>
+            <h3 style={{margin:"0 0 8px",fontSize:16,fontWeight:800,color:"#0f172a"}}>Delete Expense</h3>
+            <p style={{margin:"0 0 6px",fontSize:13,color:"#374151"}}>
+              <strong>{confirmDelete.desc}</strong> — {fmt(shopId,Number(confirmDelete.amount)||0)}
+            </p>
+            <p style={{margin:"0 0 24px",fontSize:12,color:"#ef4444",fontWeight:600}}>⚠️ This cannot be undone.</p>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <button onClick={()=>setConfirmDelete(null)}
+                style={{padding:"11px 0",borderRadius:10,border:"1px solid #e2e8f0",background:"white",
+                  color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+              <button onClick={()=>handleDelete(confirmDelete)}
+                style={{padding:"11px 0",borderRadius:10,border:"none",background:"#dc2626",
+                  color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>🗑️ Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+/* ── End ExpensesTabPanel ────────────────────────────────────────────────── */
+
 const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,initialTab="sales"})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":(initialTab||"sales"));
   const [hov,setHov]=useState(null);
@@ -4692,7 +4961,13 @@ return(
 
           {/* ─── EXPENSES ─── */}
           {tab==="expenses"&&(
-            <ExpensesPanel exps={exps} fmt={fmt} shop={shop} shopId={shopId} totExp={totExp}/>
+            <ExpensesTabPanel
+              exps={exps}
+              fmt={fmt}
+              shop={shop}
+              shopId={shopId}
+              setExpData={setExpData}
+            />
           )}
 
           {/* ─── DOCUMENTS ─── */}

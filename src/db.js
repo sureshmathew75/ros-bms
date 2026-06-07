@@ -274,12 +274,9 @@ export const dbDeletePurchase = async (id, shopId) => {
    EXPENSES
    ═══════════════════════════════════════════════════════════ */
 export const dbSaveExpense = async (shopId, e) => {
-  if (!sb) return;
-  const { data: existing } = await sb.from('expenses').select('id')
-    .eq('id', e.id).eq('shop_id', shopId).maybeSingle();
+  if (!sb) return { error: 'No client' };
 
   const payload = {
-    id:      e.id,
     shop_id: shopId,
     date:    e.date || today(),
     cat:     e.cat || '',
@@ -289,12 +286,18 @@ export const dbSaveExpense = async (shopId, e) => {
     notes:   e.notes || '',
   };
 
-  const { error } = existing
-    ? await sb.from('expenses').update(payload).eq('id', e.id).eq('shop_id', shopId)
-    : await sb.from('expenses').insert(payload);
+  // Update existing row by UUID
+  if (e._uuid) {
+    const { error } = await sb.from('expenses').update(payload).eq('id', e._uuid).eq('shop_id', shopId);
+    if (error) { console.error('Update expense error:', error); return { error: error.message }; }
+    return { error: null };
+  }
 
-  if (error) console.error('❌ Save expense error:', error);
-  else console.log('✅ Expense saved:', e.id);
+  // Insert new — let Supabase generate UUID
+  const { data, error } = await sb.from('expenses').insert(payload).select('id').single();
+  if (error) { console.error('Insert expense error:', error); return { error: error.message }; }
+  console.log('✅ Expense saved:', data?.id);
+  return { error: null, uuid: data?.id };
 };
 
 export const dbLoadExpenses = async (shopId) => {
@@ -305,6 +308,7 @@ export const dbLoadExpenses = async (shopId) => {
   if (error) { console.error('Load expenses error:', error); return null; }
   return data.map(r => ({
     id:     r.id,
+    uuid:   r.id,
     date:   r.date || '',
     cat:    r.cat || '',
     desc:   r.desc || '',
