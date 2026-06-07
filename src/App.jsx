@@ -3,6 +3,7 @@ import CommandPalette from "./components/CommandPalette";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import DocumentsPanel from "./components/DocumentsPanel";
 import ExpensesPanel from "./components/ExpensesPanel";
+import InvoicesPanel from "./components/InvoicesPanel";
 import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
 import PurchasesPanel from "./components/PurchasesPanel";
@@ -2333,6 +2334,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"suppliers",l:"Suppliers",ic:"🏭"},
     {id:"agents",   l:"Agents",   ic:"🤝"},
     {id:"products", l:"Products", ic:"🏷️"},
+    {id:"invoices", l:"Sales Invoices", ic:"🧾"},
     {id:"expenses", l:"Expenses", ic:"💳"},
     {id:"cashflow", l:"Cash Flow",ic:"🏦"},
     {id:"documents",l:"Documents",ic:"📎"},
@@ -2604,7 +2606,7 @@ return(
         <nav style={{flex:1,padding:"10px 8px 6px",overflowY:"auto",overflowX:"hidden",scrollbarWidth:"none"}}>
           {/* group labels */}
           {[
-            {label:"MAIN",      ids:["dashboard","sales","customers","messages","returns"]},
+            {label:"MAIN",      ids:["dashboard","sales","customers","messages","returns","invoices"]},
             {label:"PURCHASES", ids:["purchases","suppliers","logistics","agents"]},
             {label:"EXPENSES",  ids:["expenses"]},
             {label:"FINANCE",   ids:["cashflow"]},
@@ -3717,7 +3719,7 @@ return(
 
           {/* ─── CUSTOMERS ─── */}
           {tab==="customers"&&(
-            <CustomersPanel Badge={Badge} customers={customers} search={search} shop={shop} setCustomers={setCustomers} user={user} dbDeleteCustomer={dbDeleteCustomer}/>
+            <CustomersPanel Badge={Badge} customers={customers} search={search} shop={shop} setCustomers={setCustomers} user={user} dbDeleteCustomer={dbDeleteCustomer} sales={sales}/>
           )}
 
           {/* ─── SUPPLIERS ─── */}
@@ -3791,8 +3793,10 @@ return(
             />
           )}
 
-          {/* ── SALES INVOICES TAB ── */}
-
+          {/* INVOICES placeholder */}
+          {tab==="invoices"&&(
+            <InvoicesPanel shop={shop}/>
+          )}
 
           {/* ── CASH FLOW ── */}
           {tab==="cashflow"&&(()=>{
@@ -7120,7 +7124,7 @@ const CustomerEditModal=({customer,shop,onSave,onClose})=>{
 };
 
 /* ── CustomersPanel ── */
-const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCustomer})=>{
+const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCustomer,sales=[]})=>{
   const [viewCust,setViewCust]=useState(null);
   const [editCust,setEditCust]=useState(null);
   const [delCust,setDelCust]=useState(null);   // customer staged for deletion
@@ -7143,6 +7147,30 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
     "Banned":         {bg:"#fee2e2",color:"#991b1b",border:"#f87171",ic:"🚫"},
   };
   const tc=t=>tagColor[t]||{bg:"#f1f5f9",color:"#475569",border:"#e2e8f0",ic:"👤"};
+
+  // ── Refund stats per customer from sales data ──
+  const refundStats=React.useMemo(()=>{
+    const map={};
+    (sales||[]).forEach(s=>{
+      const phone=(s.phone||s.contact||"").replace(/\D/g,"").slice(-10);
+      const status=(s.ful||s.status||"").toUpperCase();
+      const isRefund=status==="REFUNDED"||status==="RETRN RCVD"||status==="RETURN RECEIVED";
+      if(!phone)return;
+      if(!map[phone])map[phone]={count:0,amount:0};
+      if(isRefund){
+        map[phone].count+=1;
+        map[phone].amount+=Number(s.refundAmt)||Number(s.amount)||0;
+      }
+    });
+    return map;
+  },[sales]);
+
+  const getRefunds=(c)=>{
+    const phone=(c.phone||"").replace(/\D/g,"").slice(-10);
+    return refundStats[phone]||{count:0,amount:0};
+  };
+
+  const fmtAmt=(v,spend)=>spend>=10000?("₹"+Math.round(v).toLocaleString()):("£"+v.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2}));
 
   /* ── shared input style for edit form ── */
   const einp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 12px",
@@ -7194,7 +7222,10 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                   {l:"WhatsApp",      v:viewCust.whatsapp||"—",      ic:"💬"},
                   {l:"Email",         v:viewCust.email||"—",         ic:"📧"},
                   {l:"Purchases",     v:viewCust.purchases||0,        ic:"🛒"},
-                  {l:"Total Spend",   v:(viewCust.spend>=10000?"₹":"£")+(viewCust.spend||0).toLocaleString(), ic:"💰"},
+                  {l:"Gross Spend",   v:fmtAmt(viewCust.spend||0,viewCust.spend||0),ic:"💰"},
+                  {l:"Refunds",       v:(()=>{const r=getRefunds(viewCust);return r.count>0?r.count+" refund"+(r.count>1?"s":""):"None";})(), ic:"↩️"},
+                  {l:"Refund Amount", v:(()=>{const r=getRefunds(viewCust);return r.count>0?fmtAmt(r.amount,viewCust.spend||0):"—";})(), ic:"💸"},
+                  {l:"Net Spend",     v:(()=>{const r=getRefunds(viewCust);return fmtAmt(Math.max(0,(viewCust.spend||0)-r.amount),viewCust.spend||0);})(), ic:"✅"},
                   {l:"Last Order",    v:viewCust.last||"—",           ic:"📅"},
                   {l:"Addressee",     v:viewCust.addressee||"—",      ic:"🏷"},
                 ].map((f,i)=>(
@@ -7340,9 +7371,11 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
         <table style={{width:"100%",borderCollapse:"collapse"}}>
           <thead>
             <tr style={{background:"#f8fafc",borderBottom:"1px solid #f1f5f9"}}>
-              {["Customer","Contact","Address","Purchases","Total Spend","Last Order","Tag","Actions"].map(h=>(
+              {["Customer","Contact","Address","Purchases","Amount","Refunds","Rfnd. Amt","Net Spend","Last Order","Tag","Actions"].map(h=>(
                 <th key={h} style={{padding:"11px 16px",fontSize:10,fontWeight:800,color:"#64748b",
-                  textTransform:"uppercase",letterSpacing:"0.06em",textAlign:"left",whiteSpace:"nowrap"}}>
+                  textTransform:"uppercase",letterSpacing:"0.06em",
+                  textAlign:(h==="Purchases"||h==="Amount"||h==="Refunds"||h==="Rfnd. Amt"||h==="Net Spend")?"right":"left",
+                  whiteSpace:"nowrap"}}>
                   {h}
                 </th>
               ))}
@@ -7350,7 +7383,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
           </thead>
           <tbody>
             {filtered.length===0&&(
-              <tr><td colSpan={8} style={{padding:40,textAlign:"center",color:"#94a3b8",fontSize:13}}>No customers found</td></tr>
+              <tr><td colSpan={11} style={{padding:40,textAlign:"center",color:"#94a3b8",fontSize:13}}>No customers found</td></tr>
             )}
             {filtered.map((c,i)=>{
               const isH=hovR===c.id;
@@ -7389,14 +7422,39 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                   <td style={{padding:"13px 16px",fontSize:12,color:"#64748b",maxWidth:160}}>
                     <span style={{display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.address}</span>
                   </td>
-                  <td style={{padding:"13px 16px",textAlign:"center"}}>
+                  {/* Purchases */}
+                  <td style={{padding:"13px 16px",textAlign:"right"}}>
                     <span style={{fontSize:14,fontWeight:800,color:shop.accent}}>{c.purchases}</span>
                   </td>
-                  <td style={{padding:"13px 16px"}}>
+                  {/* Amount (gross spend) */}
+                  <td style={{padding:"13px 16px",textAlign:"right"}}>
                     <span style={{fontFamily:"DM Mono,monospace",fontSize:13,fontWeight:700,color:"#0f172a"}}>
-                      {c.spend>=10000?("₹"+c.spend.toLocaleString()):("£"+c.spend.toLocaleString())}
+                      {fmtAmt(c.spend,c.spend)}
                     </span>
                   </td>
+                  {/* Refunds count */}
+                  {(()=>{const r=getRefunds(c);return(<>
+                    <td style={{padding:"13px 16px",textAlign:"right"}}>
+                      {r.count>0
+                        ?<span style={{fontSize:13,fontWeight:800,color:"#dc2626",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:6,padding:"2px 9px"}}>{r.count}</span>
+                        :<span style={{fontSize:12,color:"#cbd5e1"}}>—</span>}
+                    </td>
+                    {/* Refund Amount */}
+                    <td style={{padding:"13px 16px",textAlign:"right"}}>
+                      {r.count>0
+                        ?<span style={{fontFamily:"DM Mono,monospace",fontSize:13,fontWeight:700,color:"#dc2626"}}>
+                            {fmtAmt(r.amount,c.spend)}
+                          </span>
+                        :<span style={{fontSize:12,color:"#cbd5e1"}}>—</span>}
+                    </td>
+                    {/* Net Spend */}
+                    <td style={{padding:"13px 16px",textAlign:"right"}}>
+                      <span style={{fontFamily:"DM Mono,monospace",fontSize:13,fontWeight:800,
+                        color:r.count>0?"#166534":"#0f172a"}}>
+                        {fmtAmt(Math.max(0,(c.spend||0)-r.amount),c.spend)}
+                      </span>
+                    </td>
+                  </>);})()} 
                   <td style={{padding:"13px 16px",fontSize:12,color:"#64748b"}}>{c.last}</td>
                   <td style={{padding:"13px 16px"}}>
                     {c.tag&&(
@@ -7976,8 +8034,8 @@ const INITIAL_USERS=[
    avatar:"linear-gradient(135deg,#64748b,#334155)", shops:["ros-india"]},
 ];
 const ROLE_NAV={
-  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","cashflow","documents","analytics","reports","messages","returns","settings"],
-  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","cashflow","documents","analytics","reports","messages","returns"],
+  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports","messages","returns","settings"],
+  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports","messages","returns"],
   staff:["sales","messages"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
