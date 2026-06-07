@@ -2231,8 +2231,9 @@ const SuppliersTabPanel=({shop,shopId,suppliers=[],setSuppData})=>{
 
   const handleSave=async(form)=>{
     setSaving(true);
+    // Only pass id if editing existing supplier
     const payload={
-      id: form.id||Date.now().toString(),
+      ...(form.id?{id:form.id}:{}),
       name: form.name,
       contact: form.contact||form.contactPerson||"",
       phone: form.phone||form.whatsapp||"",
@@ -2243,7 +2244,12 @@ const SuppliersTabPanel=({shop,shopId,suppliers=[],setSuppData})=>{
       address: form.address||"",
       remarks: form.remarks||"",
     };
-    await dbSaveSupplier(shopId, payload).catch(e=>console.error("Save supplier error:",e));
+    const result=await dbSaveSupplier(shopId, payload);
+    if(result&&result.error){
+      alert("Failed to save supplier: "+result.error);
+      setSaving(false);
+      return;
+    }
     const fresh=await dbLoadSuppliers(shopId).catch(()=>null);
     if(fresh) setSuppData(fresh);
     setSaving(false);

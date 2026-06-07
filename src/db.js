@@ -446,28 +446,38 @@ export const dbDeleteCustomer = async (id, shopId) => {
    SUPPLIERS  (shop-isolated)
    ═══════════════════════════════════════════════════════════ */
 export const dbSaveSupplier = async (shopId, s) => {
-  if (!sb) return;
-  const { data: existing } = await sb.from('suppliers').select('id')
-    .eq('id', s.id).eq('shop_id', shopId).maybeSingle();
+  if (!sb) return { error: 'No Supabase client' };
 
   const payload = {
-    id:       s.id,
     shop_id:  shopId,
     name:     s.name || '',
     contact:  s.contact || '',
     phone:    s.phone || '',
     email:    s.email || '',
-    category: s.category || '',
+    category: s.category || 'General',
     terms:    s.terms || '',
-    notes:    s.notes || '',
+    place:    s.place || '',
+    address:  s.address || '',
+    remarks:  s.remarks || s.notes || '',
   };
 
-  const { error } = existing
-    ? await sb.from('suppliers').update(payload).eq('id', s.id).eq('shop_id', shopId)
-    : await sb.from('suppliers').insert(payload);
+  // If existing id provided, try update first
+  if (s.id) {
+    const { data: existing } = await sb.from('suppliers').select('id')
+      .eq('id', s.id).eq('shop_id', shopId).maybeSingle();
+    if (existing) {
+      const { error } = await sb.from('suppliers').update(payload).eq('id', s.id).eq('shop_id', shopId);
+      if (error) { console.error('Update supplier error:', error); return { error: error.message }; }
+      console.log('✅ Supplier updated:', s.id);
+      return { error: null };
+    }
+  }
 
-  if (error) console.error('Save supplier error:', error);
-  else console.log('✅ Supplier saved:', s.id);
+  // Insert new — let Supabase generate UUID
+  const { data, error } = await sb.from('suppliers').insert(payload).select('id').single();
+  if (error) { console.error('Insert supplier error:', error); return { error: error.message }; }
+  console.log('✅ Supplier inserted:', data?.id);
+  return { error: null, id: data?.id };
 };
 
 export const dbLoadSuppliers = async (shopId) => {
@@ -481,9 +491,11 @@ export const dbLoadSuppliers = async (shopId) => {
     contact:  r.contact || '',
     phone:    r.phone || '',
     email:    r.email || '',
-    category: r.category || '',
+    category: r.category || 'General',
     terms:    r.terms || '',
-    notes:    r.notes || '',
+    place:    r.place || '',
+    address:  r.address || '',
+    remarks:  r.remarks || r.notes || '',
   }));
 };
 
