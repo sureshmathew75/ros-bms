@@ -192,36 +192,52 @@ export const dbDeleteSale = async (id, shopId) => {
    PURCHASES
    ═══════════════════════════════════════════════════════════ */
 export const dbSavePurchase = async (shopId, p) => {
-  if (!sb) return;
-  const { data: existing } = await sb.from('purchases').select('id')
-    .eq('id', p.id).eq('shop_id', shopId).maybeSingle();
+  if (!sb) return { error: 'No Supabase client' };
+
+  const id = p.id || p.purchaseId;
+  if (!id) return { error: 'No purchase ID provided' };
 
   const payload = {
-    id:            p.id,
+    id,
     shop_id:       shopId,
     date:          p.date || today(),
     supplier:      p.supplier || p.sup || '',
-    invoice_no:    p.invoiceNo || '',
+    invoice_no:    p.invoiceNo || p.invoice_no || '',
     batch:         p.batch || '',
     item:          p.item || p.itemCustom || '',
-    qty:           p.qty || '',
+    qty:           String(p.qty || ''),
     total:         Number(p.total) || 0,
     gst:           Number(p.gst) || 0,
-    pay_by:        p.payBy || '',
-    pay_date:      p.payDate || null,
-    logistic_by:   p.logisticBy || '',
-    logistic_ref:  p.logisticRef || '',
-    received_date: p.receivedDate || null,
+    pay_by:        p.payBy || p.pay_by || '',
+    pay_date:      p.payDate || p.pay_date || null,
+    logistic_by:   p.logisticBy || p.logistic_by || '',
+    logistic_ref:  p.logisticRef || p.logistic_ref || '',
+    received_date: p.receivedDate || p.received_date || null,
     remarks:       p.remarks || '',
     status:        p.status || 'PENDING',
   };
 
-  const { error } = existing
-    ? await sb.from('purchases').update(payload).eq('id', p.id).eq('shop_id', shopId)
-    : await sb.from('purchases').insert(payload);
+  // Always try insert first; if duplicate key, fall back to update
+  const { error: insertErr } = await sb.from('purchases').insert(payload);
+  if (!insertErr) {
+    console.log('✅ Purchase saved (insert):', id);
+    return { error: null };
+  }
 
-  if (error) console.error('❌ Save purchase error:', error);
-  else console.log('✅ Purchase saved:', p.id);
+  // If duplicate (code 23505), update instead
+  if (insertErr.code === '23505') {
+    const { error: updateErr } = await sb.from('purchases')
+      .update(payload).eq('id', id).eq('shop_id', shopId);
+    if (updateErr) {
+      console.error('❌ Purchase update error:', updateErr);
+      return { error: updateErr.message };
+    }
+    console.log('✅ Purchase saved (update):', id);
+    return { error: null };
+  }
+
+  console.error('❌ Purchase insert error:', insertErr);
+  return { error: insertErr.message };
 };
 
 export const dbLoadPurchases = async (shopId) => {
