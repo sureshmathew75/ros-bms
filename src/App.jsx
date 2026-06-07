@@ -2341,7 +2341,7 @@ const SuppliersTabPanel=({shop,shopId,suppliers=[],setSuppData})=>{
                 </td>
                 <td style={{padding:"12px 16px",color:"#94a3b8",fontSize:12,maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.remarks||"—"}</td>
                 <td style={{padding:"12px 16px"}}>
-                  <div style={{display:"flex",gap:6"}}>
+                  <div style={{display:"flex",gap:6}}>
                     <button onClick={()=>setEditSupp(s)}
                       style={{padding:"5px 12px",borderRadius:7,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontSize:12,fontWeight:600,cursor:"pointer"}}>✏️ Edit</button>
                     <button onClick={()=>handleDelete(s.id)}
