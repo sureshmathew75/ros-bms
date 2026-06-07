@@ -4430,7 +4430,7 @@ return(
         <div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)"}} onClick={()=>setViewPurchRow(null)}/>
           <div style={{position:"relative",background:"white",borderRadius:18,boxShadow:"0 24px 64px rgba(0,0,0,0.18)",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",zIndex:81}}>
-            <div style={{padding:"16px 20px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"10",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,background:"white",zIndex:2}}>
+            <div style={{padding:"16px 20px",borderBottom:"1px solid #f1f5f9",display:"flex",justifyContent:"space-between",alignItems:"center",position:"sticky",top:0,background:"white",zIndex:2}}>
               <div>
                 <p style={{margin:0,fontSize:10,fontWeight:700,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.06em"}}>Purchase Detail</p>
                 <h3 style={{margin:0,fontSize:16,fontWeight:900,color:"#0f172a",fontFamily:"DM Mono,monospace"}}>{viewPurchRow.id}</h3>
