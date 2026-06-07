@@ -6564,6 +6564,11 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false})=
   const [supplierList,setSupplierList]=useState([...SUPPLIERS]);
   const [showNewSup,setShowNewSup]=useState(false);
 
+  // Load live suppliers from Supabase on mount
+  React.useEffect(()=>{
+    dbLoadSuppliers(shopId).then(data=>{if(data&&data.length>0)setSupplierList(data);}).catch(()=>{});
+  },[]);
+
   const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white",transition:"border-color 0.15s"};
   const inpGray={...inp,background:"#f1f5f9",color:"#64748b",cursor:"not-allowed"};
   const fo=e=>e.target.style.borderColor=shop.accent;
