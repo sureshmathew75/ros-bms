@@ -367,7 +367,7 @@ export const dbLoadLogistics = async (shopId) => {
     .order('created_at', { ascending: false });
   if (error) { console.error('Load logistics error:', error); return null; }
   return data.map(r => ({
-    id:           r.shipment_ref || r.id,
+    id:           r.shipment_ref || (r.id ? r.id.slice(0,8).toUpperCase() : ''),
     uuid:         r.id,
     order:        r.order_ref || '',
     supplier:     r.supplier || '',

@@ -2664,6 +2664,203 @@ const AgentsTabPanel=({shop,shopId,agents=[],setAgentData})=>{
 };
 /* ── End AgentsTabPanel ──────────────────────────────────────────────────── */
 
+
+/* ═══════════════════════════════════════════════════════════
+   LOGISTICS TAB PANEL
+   ═══════════════════════════════════════════════════════════ */
+const LogisticsTabPanel=({logs=[],shopId,shop,onNewShipment,onView,onEdit,onDelete})=>{
+  const [search,setSearch]=React.useState("");
+  const [statusFilter,setStatusFilter]=React.useState("ALL");
+
+  const filtered=logs.filter(l=>{
+    const q=search.toLowerCase();
+    const matchQ=!q||(l.id||"").toLowerCase().includes(q)||
+      (l.supplier||"").toLowerCase().includes(q)||
+      (l.agent||"").toLowerCase().includes(q)||
+      (l.track||"").toLowerCase().includes(q);
+    const matchS=statusFilter==="ALL"||(l.status||"")=== statusFilter;
+    return matchQ&&matchS;
+  });
+
+  const statuses=["ALL",...new Set(logs.map(l=>l.status||"PENDING").filter(Boolean))];
+
+  const statusColor={
+    PENDING:    {bg:"#fef9c3",color:"#854d0e",border:"#fde047"},
+    DISPATCHED: {bg:"#dbeafe",color:"#1e40af",border:"#93c5fd"},
+    IN_TRANSIT: {bg:"#eff6ff",color:"#1d4ed8",border:"#93c5fd"},
+    RECEIVED:   {bg:"#dcfce7",color:"#166534",border:"#86efac"},
+    DELIVERED:  {bg:"#f0fdf4",color:"#15803d",border:"#86efac"},
+    CANCELLED:  {bg:"#fef2f2",color:"#dc2626",border:"#fca5a5"},
+  };
+
+  const fmtId=(id="")=>{
+    // Show short ref — SHP-1234 or first 8 chars if UUID
+    if(id.includes("-")&&id.length>12&&!id.startsWith("SHP")&&!id.startsWith("PH")&&!id.startsWith("PI")){
+      return id.slice(0,8).toUpperCase();
+    }
+    return id;
+  };
+
+  const fmtAmt=(v)=>v>0?(shop.symbol||"£")+Number(v).toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2}):"—";
+
+  return(
+    <div>
+      {/* Header */}
+      <div style={{padding:"18px 20px 14px",borderBottom:"1px solid #f1f5f9"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:12}}>
+          <div>
+            <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>🚚 Logistics & Shipments</h2>
+            <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>{logs.length} shipment{logs.length!==1?"s":""}</p>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <input value={search} onChange={e=>setSearch(e.target.value)}
+              placeholder="Search ID, supplier, agent, tracking…"
+              style={{padding:"7px 14px",borderRadius:9,border:"1px solid #e2e8f0",fontSize:12,fontFamily:"inherit",outline:"none",width:240}}/>
+            <button onClick={onNewShipment}
+              style={{padding:"8px 18px",borderRadius:10,border:"none",background:shop.accent,
+                color:"white",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                boxShadow:"0 2px 8px "+shop.accent+"44",whiteSpace:"nowrap"}}>
+              + New Shipment
+            </button>
+          </div>
+        </div>
+        {/* Status filter */}
+        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+          {statuses.map(s=>{
+            const col=statusColor[s]||{bg:"#f8fafc",color:"#64748b",border:"#e2e8f0"};
+            return(
+              <button key={s} onClick={()=>setStatusFilter(s)}
+                style={{padding:"4px 12px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                  border:"1px solid "+(statusFilter===s?col.border||shop.accent:"#e2e8f0"),
+                  background:statusFilter===s?(col.bg||shop.accent):"white",
+                  color:statusFilter===s?(col.color||"white"):"#64748b"}}>
+                {s==="ALL"?`All (${logs.length})`:s}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Table */}
+      <div style={{overflowX:"auto"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+          <thead>
+            <tr>
+              {["Shipment ID","Supplier","Agent","Tracking","Amount","Status","Docs","Actions"].map(h=>(
+                <th key={h} style={{padding:"10px 16px",fontSize:11,fontWeight:800,color:"#64748b",
+                  textTransform:"uppercase",letterSpacing:"0.05em",background:"#f8fafc",
+                  borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap",
+                  textAlign:h==="Amount"?"right":"left"}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filtered.length===0?(
+              <tr><td colSpan={8} style={{padding:"60px 20px",textAlign:"center",color:"#94a3b8"}}>
+                <div style={{fontSize:36,marginBottom:10}}>🚚</div>
+                <p style={{margin:0,fontSize:14,fontWeight:600}}>{search||statusFilter!=="ALL"?"No shipments match":"No shipments yet"}</p>
+                <p style={{margin:"6px 0 0",fontSize:12}}>Click "+ New Shipment" to add one</p>
+              </td></tr>
+            ):filtered.map((l,i)=>{
+              const sc=statusColor[l.status||"PENDING"]||{bg:"#f8fafc",color:"#64748b",border:"#e2e8f0"};
+              const hasDocs=(l.documents||[]).length>0;
+              return(
+                <tr key={l.uuid||l.id}
+                  style={{background:i%2===0?"white":"#fafafa",borderBottom:"1px solid #f1f5f9",
+                    transition:"background 0.1s",cursor:"pointer"}}
+                  onMouseEnter={e=>e.currentTarget.style.background=shop.accent+"0d"}
+                  onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"white":"#fafafa"}
+                  onClick={()=>onView(l)}>
+                  {/* Shipment ID */}
+                  <td style={{padding:"12px 16px"}} onClick={e=>e.stopPropagation()}>
+                    <span style={{fontFamily:"DM Mono,monospace",fontWeight:800,fontSize:12,color:shop.accent}}>
+                      {fmtId(l.id)}
+                    </span>
+                    {l.order&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>PO: {l.order}</div>}
+                  </td>
+                  {/* Supplier */}
+                  <td style={{padding:"12px 16px",fontWeight:600,color:"#1e293b",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    {l.supplier||"—"}
+                  </td>
+                  {/* Agent */}
+                  <td style={{padding:"12px 16px",color:"#64748b",maxWidth:120,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    {l.agent||l.agentCustom||"—"}
+                  </td>
+                  {/* Tracking */}
+                  <td style={{padding:"12px 16px",fontFamily:"DM Mono,monospace",fontSize:11,color:"#374151"}}>
+                    {l.track||l.trackingNo||"—"}
+                  </td>
+                  {/* Amount */}
+                  <td style={{padding:"12px 16px",textAlign:"right",fontWeight:700,color:"#0f172a",whiteSpace:"nowrap"}}>
+                    {fmtAmt(l.cost)}
+                  </td>
+                  {/* Status */}
+                  <td style={{padding:"12px 16px"}}>
+                    <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:999,
+                      background:sc.bg,color:sc.color,border:"1px solid "+sc.border,whiteSpace:"nowrap"}}>
+                      {l.status||"PENDING"}
+                    </span>
+                  </td>
+                  {/* Docs */}
+                  <td style={{padding:"12px 16px",textAlign:"center"}}>
+                    {hasDocs?(
+                      <span title={`${(l.documents||[]).length} document(s) attached`}
+                        style={{display:"inline-flex",alignItems:"center",gap:3,fontSize:12,fontWeight:700,
+                          color:"#166534",background:"#dcfce7",border:"1px solid #86efac",
+                          borderRadius:999,padding:"2px 8px"}}>
+                        ✓ {(l.documents||[]).length}
+                      </span>
+                    ):(
+                      <span title="No documents attached"
+                        style={{display:"inline-flex",alignItems:"center",fontSize:16,color:"#cbd5e1"}}>
+                        ✕
+                      </span>
+                    )}
+                  </td>
+                  {/* Actions */}
+                  <td style={{padding:"12px 16px"}} onClick={e=>e.stopPropagation()}>
+                    <div style={{display:"flex",gap:5,alignItems:"center"}}>
+                      <button onClick={()=>onView(l)}
+                        style={{padding:"5px 10px",borderRadius:7,border:"1px solid #e2e8f0",
+                          background:"white",color:"#374151",fontSize:11,fontWeight:700,
+                          cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                        👁 View
+                      </button>
+                      <button onClick={()=>onEdit(l)}
+                        style={{padding:"5px 10px",borderRadius:7,border:"1px solid "+shop.accent,
+                          background:shop.accent+"12",color:shop.accent,fontSize:11,fontWeight:700,
+                          cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                        ✏️ Edit
+                      </button>
+                      <button onClick={()=>onDelete(l)}
+                        style={{padding:"5px 9px",borderRadius:7,border:"1px solid #fca5a5",
+                          background:"#fff5f5",color:"#dc2626",fontSize:11,cursor:"pointer",whiteSpace:"nowrap"}}>
+                        🗑️
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Footer */}
+      {filtered.length>0&&(
+        <div style={{padding:"10px 20px",borderTop:"1px solid #f1f5f9",display:"flex",
+          justifyContent:"space-between",fontSize:12,color:"#64748b",background:"#f8fafc"}}>
+          <span>{filtered.length} shipment{filtered.length!==1?"s":""}</span>
+          <span style={{fontWeight:700,color:"#0f172a"}}>
+            Total: {fmtAmt(filtered.reduce((a,l)=>a+(Number(l.cost)||0),0))}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+};
+/* ── End LogisticsTabPanel ───────────────────────────────────────────────── */
+
 const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,initialTab="sales"})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":(initialTab||"sales"));
   const [hov,setHov]=useState(null);
@@ -4205,13 +4402,14 @@ return(
 
           {/* ─── LOGISTICS ─── */}
           {tab==="logistics"&&(
-            <LogisticsPanel
+            <LogisticsTabPanel
               logs={logs}
-              onNewShipment={()=>setModal("new-shipment")}
+              shopId={shopId}
               shop={shop}
-              onViewShipment={(l)=>setViewLogRow(l)}
-              onEditShipment={(l)=>setEditLogRow(l)}
-              onDeleteShipment={async(l)=>{
+              onNewShipment={()=>setModal("new-shipment")}
+              onView={(l)=>setViewLogRow(l)}
+              onEdit={(l)=>setEditLogRow(l)}
+              onDelete={async(l)=>{
                 if(!window.confirm("Delete shipment "+(l.id||"")+"? This cannot be undone."))return;
                 const uuid=l.uuid||l.id;
                 await dbDeleteLogistic(uuid,shopId);
