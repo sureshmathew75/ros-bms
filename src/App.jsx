@@ -3804,7 +3804,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     if((tab==="fulfilment"||tab==="dashboard")&&!messagesLoaded){
       dbLoadMessages(shopId).then(data=>{setMessages(data||[]);setMessagesLoaded(true);}).catch(()=>{});
     }
-    if((tab==="fulfilment"||tab==="dashboard")&&!returnsLoaded){
+    if((tab==="fulfilment"||tab==="returns"||tab==="dashboard")&&!returnsLoaded){
       dbLoadReturns(shopId).then(data=>{setReturns(data||[]);setReturnsLoaded(true);}).catch(()=>{});
     }
   },[tab]);
@@ -3889,6 +3889,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"analytics",l:"Analytics",ic:"📊"},
     {id:"reports",  l:"Reports",  ic:"📋"},
     {id:"fulfilment", l:"Fulfilment", ic:"🚀"},
+    {id:"returns",  l:"Returns",  ic:"↩️"},
   ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings");
 
   const filtSales=sales.filter(s=>{
@@ -4153,7 +4154,7 @@ return(
         <nav style={{flex:1,padding:"10px 8px 6px",overflowY:"auto",overflowX:"hidden",scrollbarWidth:"none"}}>
           {/* group labels */}
           {[
-            {label:"MAIN",      ids:["dashboard","sales","customers","fulfilment","invoices"]},
+            {label:"MAIN",      ids:["dashboard","sales","customers","fulfilment","returns","invoices"]},
             {label:"PURCHASES", ids:["purchases","suppliers","logistics","agents"]},
             {label:"EXPENSES",  ids:["expenses"]},
             {label:"FINANCE",   ids:["cashflow"]},
@@ -5369,6 +5370,19 @@ return(
           {/* REPORTS */}
           {tab==="reports"&&(
             <ReportsPanel shop={shop} showPdf={showPdf} sales={sales} customers={customers} fmt={fmt} shopId={shopId} exps={exps} purch={purch}/>
+          )}
+
+          {/* ── RETURNS TAB ── */}
+          {tab==="returns"&&(
+            <ReturnsPanel
+              shopId={shopId}
+              shop={shop}
+              returns={returns}
+              setReturns={setReturns}
+              user={user}
+              messages={messages}
+              setMessages={setMessages}
+            />
           )}
 
           {/* ── FULFILMENT TAB ── */}
@@ -9928,8 +9942,8 @@ const INITIAL_USERS=[
    avatar:"linear-gradient(135deg,#64748b,#334155)", shops:["ros-india"]},
 ];
 const ROLE_NAV={
-  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports","fulfilment","settings"],
-  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports","fulfilment"],
+  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports","fulfilment","returns","settings"],
+  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports","fulfilment","returns"],
   staff:["sales","fulfilment"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
