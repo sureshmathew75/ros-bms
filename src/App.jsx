@@ -4872,14 +4872,31 @@ return(
                 setStatusFilter={setStatusFilter}
                 statusTabs={statusTabs}
                 onSaveTracking={async (saleId, trackingNo) => {
-                  // Save tracking number to Supabase and update local state
                   const sale = sales.find(s => s.id === saleId);
                   if (!sale) return;
-                  const updated = { ...sale, trackingNo };
+                  // Auto-set status to FULFILLED and sentDate to today when tracking added
+                  const today = new Date().toISOString().slice(0,10);
+                  const currentStatus = sale.ful || sale.status || "";
+                  const isFulfilled = ["FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD",
+                    "EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED",
+                    "RETURN REQUESTED","RETURN RECEIVED"].includes(currentStatus);
+                  const updated = {
+                    ...sale,
+                    trackingNo,
+                    ful:      isFulfilled ? currentStatus : "FULFILLED",
+                    status:   isFulfilled ? currentStatus : "FULFILLED",
+                    sentDate: sale.sentDate || today,
+                  };
                   await dbSaveSale(shopId, updated);
                   setSalesData(prev => ({
                     ...prev,
-                    [shopId]: (prev[shopId] || []).map(s => s.id === saleId ? { ...s, trackingNo } : s),
+                    [shopId]: (prev[shopId] || []).map(s => s.id === saleId ? {
+                      ...s,
+                      trackingNo,
+                      ful:      updated.ful,
+                      status:   updated.status,
+                      sentDate: updated.sentDate,
+                    } : s),
                   }));
                 }}
                 onMarkDelivered={(sale) => setMarkDeliveredSale(sale)}
