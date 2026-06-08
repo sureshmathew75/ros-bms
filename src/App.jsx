@@ -3390,6 +3390,370 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData})=>{
 };
 /* ── End ExpensesTabPanel ────────────────────────────────────────────────── */
 
+
+/* ═══════════════════════════════════════════════════════════
+   FULFILMENT PANEL
+   5 tabs: Dispatched · Informed · Delivered · Completed · Messages
+   ═══════════════════════════════════════════════════════════ */
+const FulfilmentPanel=({salesData,shopId,shop,messages,setMessages,returns,setReturns,user,setMarkDeliveredSale,setTab,fmt})=>{
+  const [stage,setStage]=React.useState("dispatched");
+  const [shopFilter,setShopFilter]=React.useState("ALL");
+  const [search,setSearch]=React.useState("");
+
+  const SHOPS=[
+    {id:"ALL",label:"All Shops"},
+    {id:"ros-selections",label:"ROS Selections"},
+    {id:"ros-hairlines",label:"ROS Hairlines"},
+    {id:"ros-india",label:"ROS India"},
+  ];
+  const SHOP_MAP={"ros-selections":{accent:"#059669",name:"ROS UK"},"ros-hairlines":{accent:"#dc5078",name:"ROS Hairlines"},"ros-india":{accent:"#f59e0b",name:"ROS India"}};
+
+  // Flatten all sales across all shops
+  const allSales=React.useMemo(()=>{
+    const arr=[];
+    Object.entries(salesData||{}).forEach(([sid,sales])=>{
+      (sales||[]).forEach(s=>arr.push({...s,_shopId:sid}));
+    });
+    return arr;
+  },[salesData]);
+
+  const today=new Date();today.setHours(0,0,0,0);
+
+  const daysAgo=(dateStr)=>{
+    if(!dateStr)return null;
+    const d=new Date(dateStr);d.setHours(0,0,0,0);
+    return Math.floor((today-d)/(1000*60*60*24));
+  };
+
+  const daysLeft=(dateStr)=>{
+    if(!dateStr)return null;
+    const d=new Date(dateStr);d.setHours(0,0,0,0);
+    return Math.ceil((d-today)/(1000*60*60*24));
+  };
+
+  // Classify each sale into a stage
+  const classified=React.useMemo(()=>{
+    const dispatched=[],informed=[],delivered=[],completed=[];
+    allSales.forEach(s=>{
+      const status=(s.ful||s.status||"").toUpperCase();
+      const isFulfilled=["FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD",
+        "EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED",
+        "RETURN REQUESTED","RETURN RECEIVED"].includes(status);
+      if(!isFulfilled)return;
+
+      const hasDelivery=!!s.deliveryDate;
+      const deliveryMsgSent=messages.some(m=>m.saleId===s.id&&m.messageType==="DELIVERY_CONFIRM"&&m.status==="SENT");
+      const hasReturn=returns.some(r=>r.saleId===s.id);
+      const deliveryDays=hasDelivery?daysAgo(s.deliveryDate):null;
+      const isCompleted=hasDelivery&&deliveryDays>=14&&!hasReturn;
+
+      if(isCompleted){
+        completed.push(s);
+      } else if(hasDelivery){
+        delivered.push(s);
+      } else if(deliveryMsgSent){
+        informed.push(s);
+      } else {
+        dispatched.push(s);
+      }
+    });
+    return {dispatched,informed,delivered,completed};
+  },[allSales,messages,returns]);
+
+  const filterSales=(arr)=>arr.filter(s=>{
+    const matchShop=shopFilter==="ALL"||(s._shopId||shopId)===shopFilter;
+    const q=search.toLowerCase();
+    const matchQ=!q||(s.id||"").toLowerCase().includes(q)||(s.customer||"").toLowerCase().includes(q)||(s.trackingNo||"").toLowerCase().includes(q);
+    return matchShop&&matchQ;
+  });
+
+  const stageSales=filterSales(classified[stage]||[]);
+
+  const STAGES=[
+    {id:"dispatched",label:"Dispatched",ic:"🚚",color:"#0369a1",desc:"Fulfilled, awaiting customer notification"},
+    {id:"informed",  label:"Informed",  ic:"💬",color:"#7c3aed",desc:"Customer notified, awaiting delivery"},
+    {id:"delivered", label:"Delivered", ic:"✅",color:"#059669",desc:"Delivered, return window open"},
+    {id:"completed", label:"Completed", ic:"🏁",color:"#374151",desc:"14 days passed, order closed"},
+    {id:"messages",  label:"Messages",  ic:"📨",color:"#dc2626",desc:"WhatsApp queue"},
+  ];
+
+  const fmtD=d=>{if(!d)return"—";try{const p=d.split("-");return p.length===3?`${p[2]}/${p[1]}/${p[0].slice(2)}`:d;}catch{return d;}};
+
+  const DaysBadge=({days,label})=>{
+    if(days===null||days===undefined)return<span style={{color:"#94a3b8",fontSize:11}}>—</span>;
+    const color=days<=1?"#dc2626":days<=3?"#f59e0b":"#059669";
+    const bg=days<=1?"#fef2f2":days<=3?"#fffbeb":"#f0fdf4";
+    return<span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:999,background:bg,color,border:"1px solid "+color+"33"}}>{label||days+"d"}</span>;
+  };
+
+  // Messages sub-panel (reuses existing logic)
+  const readyCount=messages.filter(m=>m.status==="READY").length;
+
+  const openWhatsApp=(phone,body)=>{
+    const clean=phone.replace(/\D/g,"");
+    const e164=clean.startsWith("0")?"44"+clean.slice(1):clean;
+    window.open("https://wa.me/"+e164+"?text="+encodeURIComponent(body),"_blank","noopener,noreferrer");
+  };
+
+  const handleSent=async(id)=>{
+    await dbMarkMessageSent(id);
+    setMessages(prev=>prev.map(m=>m.id===id?{...m,status:"SENT",sentAt:new Date().toISOString()}:m));
+  };
+  const handleCancel=async(id)=>{
+    await dbCancelMessage(id,user?.name||"Staff");
+    setMessages(prev=>prev.map(m=>m.id===id?{...m,status:"CANCELLED"}:m));
+  };
+  const handleDeleteMsg=async(id)=>{
+    if(!window.confirm("Delete this message?"))return;
+    await dbDeleteMessage(id);
+    setMessages(prev=>prev.filter(m=>m.id!==id));
+  };
+
+  return(
+    <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
+      {/* Header */}
+      <div style={{padding:"16px 20px 12px",borderBottom:"1px solid #f1f5f9",flexShrink:0}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:12}}>
+          <div>
+            <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>🚀 Fulfilment</h2>
+            <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>Order journey from dispatch to completion</p>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            {/* Shop filter */}
+            <div style={{display:"flex",gap:4}}>
+              {SHOPS.map(sh=>(
+                <button key={sh.id} onClick={()=>setShopFilter(sh.id)}
+                  style={{padding:"5px 12px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                    border:"1px solid "+(shopFilter===sh.id?(SHOP_MAP[sh.id]?.accent||"#374151"):"#e2e8f0"),
+                    background:shopFilter===sh.id?(SHOP_MAP[sh.id]?.accent||"#374151")+"18":"white",
+                    color:shopFilter===sh.id?(SHOP_MAP[sh.id]?.accent||"#374151"):"#64748b"}}>
+                  {sh.label}
+                </button>
+              ))}
+            </div>
+            <input value={search} onChange={e=>setSearch(e.target.value)}
+              placeholder="Search customer, invoice…"
+              style={{padding:"6px 12px",borderRadius:9,border:"1px solid #e2e8f0",fontSize:12,fontFamily:"inherit",outline:"none",width:180}}/>
+          </div>
+        </div>
+
+        {/* Stage tabs */}
+        <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+          {STAGES.map(st=>{
+            const count=st.id==="messages"?messages.filter(m=>m.status==="READY").length:(classified[st.id]||[]).length;
+            const isActive=stage===st.id;
+            return(
+              <button key={st.id} onClick={()=>setStage(st.id)}
+                style={{display:"flex",alignItems:"center",gap:6,padding:"7px 14px",borderRadius:10,
+                  cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:700,
+                  border:"1px solid "+(isActive?st.color:"#e2e8f0"),
+                  background:isActive?st.color+"15":"white",
+                  color:isActive?st.color:"#64748b",transition:"all 0.15s"}}>
+                <span>{st.ic}</span>
+                <span>{st.label}</span>
+                {count>0&&<span style={{background:isActive?st.color:"#e2e8f0",color:isActive?"white":"#64748b",
+                  borderRadius:999,fontSize:10,fontWeight:800,padding:"1px 7px",minWidth:18,textAlign:"center"}}>
+                  {count}
+                </span>}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Content */}
+      <div style={{flex:1,overflowY:"auto"}}>
+
+        {/* ── MESSAGES STAGE ── */}
+        {stage==="messages"&&(
+          <div>
+            <div style={{padding:"12px 20px",borderBottom:"1px solid #f1f5f9",display:"flex",gap:6,flexWrap:"wrap"}}>
+              {["READY","SENT","CANCELLED","ALL"].map(f=>(
+                <button key={f} onClick={()=>setSearch(f==="ALL"?"":"__filter_"+f)}
+                  style={{padding:"4px 12px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                    border:"1px solid #e2e8f0",background:"white",color:"#64748b"}}>
+                  {f}{f==="READY"&&readyCount>0?` (${readyCount})`:""}
+                </button>
+              ))}
+            </div>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+              <thead><tr>
+                {["Type","Customer","Sale ID","Phone","Status","Actions"].map(h=>(
+                  <th key={h} style={{padding:"9px 16px",fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em",background:"#f8fafc",borderBottom:"1px solid #e2e8f0",textAlign:"left",whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {messages.filter(m=>shopFilter==="ALL"||m.shopId===shopFilter).map((msg,i)=>{
+                  const typeStyle=MESSAGE_TYPE_COLOR[msg.messageType]||{bg:"#f8fafc",border:"#e2e8f0",text:"#374151"};
+                  return(
+                    <tr key={msg.id} style={{background:i%2===0?"white":"#fafafa",borderBottom:"1px solid #f1f5f9"}}>
+                      <td style={{padding:"10px 16px"}}>
+                        <span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:999,
+                          background:typeStyle.bg,border:"1px solid "+typeStyle.border,color:typeStyle.text,whiteSpace:"nowrap"}}>
+                          {MESSAGE_TYPE_LABEL[msg.messageType]||msg.messageType}
+                        </span>
+                      </td>
+                      <td style={{padding:"10px 16px",fontWeight:700,color:"#0f172a"}}>{msg.customer}</td>
+                      <td style={{padding:"10px 16px",fontFamily:"DM Mono,monospace",fontSize:11,color:shop.accent}}>{msg.saleId}</td>
+                      <td style={{padding:"10px 16px",fontFamily:"DM Mono,monospace",fontSize:11,color:"#64748b"}}>{msg.phone}</td>
+                      <td style={{padding:"10px 16px"}}>
+                        {msg.status==="READY"&&<span style={{fontSize:11,fontWeight:700,color:"#0369a1"}}>● Ready</span>}
+                        {msg.status==="SENT"&&<span style={{fontSize:11,fontWeight:700,color:"#059669"}}>✓ Sent</span>}
+                        {msg.status==="CANCELLED"&&<span style={{fontSize:11,color:"#94a3b8"}}>✕ Cancelled</span>}
+                      </td>
+                      <td style={{padding:"10px 16px"}}>
+                        <div style={{display:"flex",gap:5}}>
+                          {msg.status==="READY"&&<>
+                            <button onClick={()=>openWhatsApp(msg.phone,msg.messageBody)}
+                              style={{padding:"4px 9px",borderRadius:6,border:"none",background:"#25d366",color:"white",fontSize:11,fontWeight:700,cursor:"pointer"}}>WhatsApp</button>
+                            <button onClick={()=>handleSent(msg.id)}
+                              style={{padding:"4px 9px",borderRadius:6,border:"1px solid #86efac",background:"#f0fdf4",color:"#166534",fontSize:11,fontWeight:700,cursor:"pointer"}}>✓ Sent</button>
+                            <button onClick={()=>handleCancel(msg.id)}
+                              style={{padding:"4px 9px",borderRadius:6,border:"1px solid #e2e8f0",background:"white",color:"#94a3b8",fontSize:11,cursor:"pointer"}}>✕</button>
+                          </>}
+                          <button onClick={()=>handleDeleteMsg(msg.id)}
+                            style={{padding:"4px 8px",borderRadius:6,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",fontSize:11,cursor:"pointer"}}>🗑️</button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+                {messages.filter(m=>shopFilter==="ALL"||m.shopId===shopFilter).length===0&&(
+                  <tr><td colSpan={6} style={{padding:"60px 20px",textAlign:"center",color:"#94a3b8"}}>
+                    <div style={{fontSize:36,marginBottom:10}}>📭</div>
+                    <p style={{margin:0,fontWeight:600}}>No messages</p>
+                  </td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {/* ── SALE STAGES ── */}
+        {stage!=="messages"&&(
+          <div>
+            {/* Stage description */}
+            <div style={{padding:"10px 20px",background:"#f8fafc",borderBottom:"1px solid #f1f5f9",fontSize:12,color:"#64748b"}}>
+              {STAGES.find(s=>s.id===stage)?.desc} · <strong>{stageSales.length} order{stageSales.length!==1?"s":""}</strong>
+            </div>
+
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+              <thead><tr>
+                {["Invoice","Customer","Shop","Item","Tracking",
+                  stage==="dispatched"?"Dispatched":
+                  stage==="informed"?"Notified":
+                  stage==="delivered"?"Delivered / Return Window":
+                  "Completed",
+                  "Actions"].map(h=>(
+                  <th key={h} style={{padding:"9px 16px",fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",
+                    letterSpacing:"0.05em",background:"#f8fafc",borderBottom:"1px solid #e2e8f0",textAlign:"left",whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {stageSales.length===0?(
+                  <tr><td colSpan={7} style={{padding:"60px 20px",textAlign:"center",color:"#94a3b8"}}>
+                    <div style={{fontSize:40,marginBottom:10}}>
+                      {stage==="dispatched"?"🚚":stage==="informed"?"💬":stage==="delivered"?"✅":"🏁"}
+                    </div>
+                    <p style={{margin:0,fontSize:14,fontWeight:600}}>No orders in {stage}</p>
+                  </td></tr>
+                ):stageSales.map((s,i)=>{
+                  const shopAcc=SHOP_MAP[s._shopId]||{accent:shop.accent,name:s._shopId};
+                  const deliveryDaysAgo=s.deliveryDate?daysAgo(s.deliveryDate):null;
+                  const returnDeadline=s.deliveryDate?new Date(new Date(s.deliveryDate).getTime()+14*86400000):null;
+                  const daysRemainingReturn=returnDeadline?daysLeft(returnDeadline.toISOString().slice(0,10)):null;
+
+                  return(
+                    <tr key={s.id} style={{background:i%2===0?"white":"#fafafa",borderBottom:"1px solid #f1f5f9",
+                      transition:"background 0.1s"}}
+                      onMouseEnter={e=>e.currentTarget.style.background=shopAcc.accent+"0d"}
+                      onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"white":"#fafafa"}>
+                      <td style={{padding:"11px 16px",fontFamily:"DM Mono,monospace",fontWeight:800,fontSize:12,color:shopAcc.accent}}>{s.id}</td>
+                      <td style={{padding:"11px 16px",fontWeight:700,color:"#0f172a",maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.customer}</td>
+                      <td style={{padding:"11px 16px"}}>
+                        <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:999,
+                          background:shopAcc.accent+"18",color:shopAcc.accent,border:"1px solid "+shopAcc.accent+"33"}}>
+                          {shopAcc.name}
+                        </span>
+                      </td>
+                      <td style={{padding:"11px 16px",color:"#374151",fontSize:12,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.item||"—"}</td>
+                      <td style={{padding:"11px 16px"}}>
+                        {s.trackingNo?(
+                          <a href={"https://www.royalmail.com/track-your-item#/tracking-results/"+s.trackingNo}
+                            target="_blank" rel="noreferrer"
+                            style={{fontSize:11,fontFamily:"DM Mono,monospace",fontWeight:700,color:"#0369a1",
+                              background:"#f0f9ff",border:"1px solid #bae6fd",borderRadius:6,padding:"2px 8px",textDecoration:"none"}}>
+                            {s.trackingNo}
+                          </a>
+                        ):<span style={{color:"#cbd5e1",fontSize:11}}>—</span>}
+                      </td>
+                      <td style={{padding:"11px 16px"}}>
+                        {stage==="dispatched"&&(
+                          <span style={{fontSize:12,color:"#64748b"}}>{s.sentDate?fmtD(s.sentDate)+" · "+daysAgo(s.sentDate)+"d ago":"—"}</span>
+                        )}
+                        {stage==="informed"&&(
+                          <span style={{fontSize:12,color:"#7c3aed",fontWeight:600}}>Notified</span>
+                        )}
+                        {stage==="delivered"&&(
+                          <div>
+                            <p style={{margin:"0 0 3px",fontSize:12,color:"#059669",fontWeight:700}}>✅ {fmtD(s.deliveryDate)}</p>
+                            <DaysBadge days={daysRemainingReturn} label={daysRemainingReturn<=0?"Expired":daysRemainingReturn+"d left"}/>
+                          </div>
+                        )}
+                        {stage==="completed"&&(
+                          <span style={{fontSize:12,color:"#374151"}}>✓ {fmtD(s.deliveryDate)}</span>
+                        )}
+                      </td>
+                      {/* Actions */}
+                      <td style={{padding:"11px 16px"}}>
+                        <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+                          {stage==="dispatched"&&(
+                            <button onClick={()=>setMarkDeliveredSale(s)}
+                              style={{padding:"4px 9px",borderRadius:7,border:"1px solid #86efac",background:"#f0fdf4",
+                                color:"#059669",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+                              ✅ Mark Delivered
+                            </button>
+                          )}
+                          {stage==="dispatched"&&s.phone&&(
+                            <button onClick={()=>{
+                              const msg=messages.find(m=>m.saleId===s.id&&m.messageType==="DELIVERY_CONFIRM"&&m.status==="READY");
+                              if(msg)openWhatsApp(msg.phone,msg.messageBody);
+                              else alert("No delivery message queued yet. Mark as delivered first.");
+                            }}
+                              style={{padding:"4px 9px",borderRadius:7,border:"none",background:"#25d366",
+                                color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+                              WhatsApp
+                            </button>
+                          )}
+                          {stage==="delivered"&&(
+                            <button onClick={()=>setTab("sales")}
+                              style={{padding:"4px 9px",borderRadius:7,border:"1px solid #e2e8f0",background:"white",
+                                color:"#374151",fontSize:11,fontWeight:600,cursor:"pointer",whiteSpace:"nowrap"}}>
+                              View Sale →
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            {/* Footer */}
+            {stageSales.length>0&&(
+              <div style={{padding:"8px 20px",borderTop:"1px solid #f1f5f9",fontSize:11,color:"#94a3b8",background:"#f8fafc"}}>
+                {stageSales.length} order{stageSales.length!==1?"s":" "} · {STAGES.find(s=>s.id===stage)?.label}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+/* ── End FulfilmentPanel ─────────────────────────────────────────────────── */
+
 const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,initialTab="sales"})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":(initialTab||"sales"));
   const [hov,setHov]=useState(null);
@@ -3435,12 +3799,12 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [returns,setReturns]=useState([]);
   const [returnsLoaded,setReturnsLoaded]=useState(false);
 
-  // Load messages + returns on tab open; also load returns on dashboard for Actions Today
+  // Load messages + returns on tab open or dashboard
   React.useEffect(()=>{
-    if((tab==="messages"||tab==="dashboard")&&!messagesLoaded){
+    if((tab==="fulfilment"||tab==="dashboard")&&!messagesLoaded){
       dbLoadMessages(shopId).then(data=>{setMessages(data||[]);setMessagesLoaded(true);}).catch(()=>{});
     }
-    if((tab==="returns"||tab==="dashboard")&&!returnsLoaded){
+    if((tab==="fulfilment"||tab==="dashboard")&&!returnsLoaded){
       dbLoadReturns(shopId).then(data=>{setReturns(data||[]);setReturnsLoaded(true);}).catch(()=>{});
     }
   },[tab]);
@@ -3524,8 +3888,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"documents",l:"Documents",ic:"📎"},
     {id:"analytics",l:"Analytics",ic:"📊"},
     {id:"reports",  l:"Reports",  ic:"📋"},
-    {id:"messages", l:"Messages", ic:"💬"},
-    {id:"returns",  l:"Returns",  ic:"↩️"},
+    {id:"fulfilment", l:"Fulfilment", ic:"🚀"},
   ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings");
 
   const filtSales=sales.filter(s=>{
@@ -3790,7 +4153,7 @@ return(
         <nav style={{flex:1,padding:"10px 8px 6px",overflowY:"auto",overflowX:"hidden",scrollbarWidth:"none"}}>
           {/* group labels */}
           {[
-            {label:"MAIN",      ids:["dashboard","sales","customers","messages","returns","invoices"]},
+            {label:"MAIN",      ids:["dashboard","sales","customers","fulfilment","invoices"]},
             {label:"PURCHASES", ids:["purchases","suppliers","logistics","agents"]},
             {label:"EXPENSES",  ids:["expenses"]},
             {label:"FINANCE",   ids:["cashflow"]},
@@ -3885,7 +4248,7 @@ return(
                       }}>{n.l}</span>
 
                       {/* badge for messages ready count */}
-                      {n.id==="messages"&&messages.filter(m=>m.status==="READY").length>0&&!coll&&(
+                      {n.id==="fulfilment"&&messages.filter(m=>m.status==="READY").length>0&&!coll&&(
                         <span style={{marginLeft:"auto",minWidth:18,height:18,borderRadius:999,background:"#ef4444",color:"white",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px",flexShrink:0}}>
                           {messages.filter(m=>m.status==="READY").length}
                         </span>
@@ -4144,10 +4507,10 @@ return(
             const refundsPending=returns.filter(r=>r.status==="RETURN_RECEIVED"&&r.resolution==="refund"&&!r.refundDate).length;
             const awaitingDelivery=sales.filter(s=>(s.ful||s.status)==="FULFILLED"&&!s.deliveryDate).length;
             const actionsToday=[
-              messagesReady>0&&{icon:"📨",label:"Messages Ready",count:messagesReady,color:"#1d4ed8",bg:"#eff6ff",border:"#93c5fd",tab:"messages"},
-              returnsNeedReview>0&&{icon:"↩️",label:"Returns Need Review",count:returnsNeedReview,color:"#c2410c",bg:"#fff7ed",border:"#fdba74",tab:"returns"},
-              returnsExpiringSoon>0&&{icon:"⚠️",label:"Returns Expiring Soon",count:returnsExpiringSoon,color:"#b45309",bg:"#fffbeb",border:"#fcd34d",tab:"returns"},
-              refundsPending>0&&{icon:"💰",label:"Refunds Pending",count:refundsPending,color:"#6d28d9",bg:"#f5f3ff",border:"#c4b5fd",tab:"returns"},
+              messagesReady>0&&{icon:"📨",label:"Messages Ready",count:messagesReady,color:"#1d4ed8",bg:"#eff6ff",border:"#93c5fd",tab:"fulfilment"},
+              returnsNeedReview>0&&{icon:"↩️",label:"Returns Need Review",count:returnsNeedReview,color:"#c2410c",bg:"#fff7ed",border:"#fdba74",tab:"fulfilment"},
+              returnsExpiringSoon>0&&{icon:"⚠️",label:"Returns Expiring Soon",count:returnsExpiringSoon,color:"#b45309",bg:"#fffbeb",border:"#fcd34d",tab:"fulfilment"},
+              refundsPending>0&&{icon:"💰",label:"Refunds Pending",count:refundsPending,color:"#6d28d9",bg:"#f5f3ff",border:"#c4b5fd",tab:"fulfilment"},
               awaitingDelivery>0&&{icon:"📦",label:"Awaiting Delivery",count:awaitingDelivery,color:"#0369a1",bg:"#f0f9ff",border:"#7dd3fc",tab:"sales"},
             ].filter(Boolean);
 
@@ -5008,28 +5371,20 @@ return(
             <ReportsPanel shop={shop} showPdf={showPdf} sales={sales} customers={customers} fmt={fmt} shopId={shopId} exps={exps} purch={purch}/>
           )}
 
-          {/* ── MESSAGES TAB ── */}
-          {tab==="messages"&&(
-            <MessagesPanel
+          {/* ── FULFILMENT TAB ── */}
+          {tab==="fulfilment"&&(
+            <FulfilmentPanel
+              salesData={salesData}
               shopId={shopId}
               shop={shop}
               messages={messages}
               setMessages={setMessages}
-              user={user}
-              sales={sales}
-            />
-          )}
-
-          {/* ── RETURNS TAB ── */}
-          {tab==="returns"&&(
-            <ReturnsPanel
-              shopId={shopId}
-              shop={shop}
               returns={returns}
               setReturns={setReturns}
               user={user}
-              messages={messages}
-              setMessages={setMessages}
+              setMarkDeliveredSale={setMarkDeliveredSale}
+              setTab={setTab}
+              fmt={fmt}
             />
           )}
 
@@ -9573,9 +9928,9 @@ const INITIAL_USERS=[
    avatar:"linear-gradient(135deg,#64748b,#334155)", shops:["ros-india"]},
 ];
 const ROLE_NAV={
-  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports","messages","returns","settings"],
-  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports","messages","returns"],
-  staff:["sales","messages"],
+  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports","fulfilment","settings"],
+  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports","fulfilment"],
+  staff:["sales","fulfilment"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
 
