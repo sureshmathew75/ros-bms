@@ -3198,8 +3198,8 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData})=>{
   const [saving,setSaving]=React.useState(false);
   const [confirmDelete,setConfirmDelete]=React.useState(null);
 
-  const CATEGORIES=["Rent","Utilities","Salaries","Packaging","Shipping","Marketing","Software","Equipment","Travel","Other"];
-  const METHODS=["Cash","Bank Transfer","Credit Card","Debit Card","PayPal","Other"];
+  const CATEGORIES=["Rent","Utilities","Salaries","Packaging","Shipping","Marketing","Software","Equipment","Travel","Professional Expenses","Agents Expenses","Other"];
+  const METHODS=["Bank Transfer","UPI","Other"];
 
   const cats=["ALL",...new Set(exps.map(e=>e.cat).filter(Boolean))];
   const filtered=exps.filter(e=>{
