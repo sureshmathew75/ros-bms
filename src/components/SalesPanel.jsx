@@ -312,6 +312,7 @@ export default function SalesPanel({
   statusRowBg: statusRowBgProp,
   onSaveTracking,
   onMarkDelivered,
+  onInlineEdit,
 }) {
   const [hovR,    setHovR]    = useState(null);
   const [hovCard, setHovCard] = useState(null);
@@ -319,6 +320,9 @@ export default function SalesPanel({
   const [reloading, setReloading] = useState(false);
   const [editTrackingId, setEditTrackingId] = useState(null);
   const [trackingInput,  setTrackingInput]  = useState("");
+  const [editAmountId,   setEditAmountId]   = useState(null);
+  const [amountInput,    setAmountInput]    = useState("");
+  const [editStatusId,   setEditStatusId]   = useState(null);
   /* Month picker state */
   const [pickedMonth, setPickedMonth] = useState(null);   // "YYYY-MM" or null
   const [pickerOpen,  setPickerOpen]  = useState(false);
@@ -1073,24 +1077,52 @@ export default function SalesPanel({
                         )}
                       </span>
                     </td>
-                    {/* Amount */}
-                    <td style={{ padding: "12px 16px", textAlign: "right" }}>
-                      {(() => {
-                        const sym = shop?.symbol || "£";
-                        const net = (Number(s.amount)||0) - (Number(s.adjAmt)||0);
-                        const orig = Number(s.amount)||0;
-                        const fmtVal = (v) => fmt ? fmt(shopId, v) : sym + v.toLocaleString("en-GB", {minimumFractionDigits:2,maximumFractionDigits:2});
-                        return (
-                          <>
-                            <span style={{ fontWeight: 800, fontSize: 13, color: "#0f172a" }}>{fmtVal(net)}</span>
-                            {(Number(s.adjAmt)||0) > 0 && (
-                              <div style={{ fontSize: 10, color: "#d97706", marginTop: 2, whiteSpace: "nowrap" }}>
-                                was {fmtVal(orig)}
-                              </div>
-                            )}
-                          </>
-                        );
-                      })()}
+                    {/* Amount — inline editable */}
+                    <td style={{ padding: "8px 10px", textAlign: "right" }} onClick={e => e.stopPropagation()}>
+                      {editAmountId === s.id ? (
+                        <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "flex-end" }}>
+                          <input
+                            autoFocus
+                            type="number"
+                            value={amountInput}
+                            onChange={e => setAmountInput(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === "Enter") {
+                                if (onInlineEdit) onInlineEdit(s.id, { amount: amountInput });
+                                setEditAmountId(null);
+                              }
+                              if (e.key === "Escape") setEditAmountId(null);
+                            }}
+                            style={{ width: 80, padding: "5px 8px", borderRadius: 7, border: "1.5px solid #7dd3fc",
+                              fontSize: 12, fontFamily: "DM Mono,monospace", outline: "none", textAlign: "right" }}
+                          />
+                          <button onClick={() => { if (onInlineEdit) onInlineEdit(s.id, { amount: amountInput }); setEditAmountId(null); }}
+                            style={{ padding: "5px 7px", borderRadius: 7, border: "none", background: "#0369a1", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>✓</button>
+                          <button onClick={() => setEditAmountId(null)}
+                            style={{ padding: "5px 6px", borderRadius: 7, border: "1px solid #e2e8f0", background: "white", color: "#94a3b8", fontSize: 11, cursor: "pointer" }}>✕</button>
+                        </div>
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1 }}>
+                          {(() => {
+                            const sym = shop?.symbol || "£";
+                            const net = (Number(s.amount)||0) - (Number(s.adjAmt)||0);
+                            const orig = Number(s.amount)||0;
+                            const fmtVal = (v) => fmt ? fmt(shopId, v) : sym + v.toLocaleString("en-GB", {minimumFractionDigits:2,maximumFractionDigits:2});
+                            return (<>
+                              <span
+                                onClick={() => { setEditAmountId(s.id); setAmountInput(String(s.amount||"")); }}
+                                title="Click to edit amount"
+                                style={{ fontWeight: 800, fontSize: 13, color: "#0f172a", cursor: "text",
+                                  borderBottom: "1px dashed #cbd5e1", paddingBottom: 1 }}>
+                                {fmtVal(net)}
+                              </span>
+                              {(Number(s.adjAmt)||0) > 0 && (
+                                <div style={{ fontSize: 10, color: "#d97706", whiteSpace: "nowrap" }}>was {fmtVal(orig)}</div>
+                              )}
+                            </>);
+                          })()}
+                        </div>
+                      )}
                     </td>
                     {/* Payment */}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
@@ -1104,9 +1136,33 @@ export default function SalesPanel({
                         </div>
                       )}
                     </td>
-                    {/* Status */}
-                    <td style={{ padding: "12px 16px", textAlign: "right" }}>
-                      <Badge l={ful} />
+                    {/* Status — inline editable dropdown */}
+                    <td style={{ padding: "8px 10px", textAlign: "right" }} onClick={e => e.stopPropagation()}>
+                      {editStatusId === s.id ? (
+                        <select
+                          autoFocus
+                          value={ful}
+                          onChange={e => {
+                            if (onInlineEdit) onInlineEdit(s.id, { ful: e.target.value, status: e.target.value });
+                            setEditStatusId(null);
+                          }}
+                          onBlur={() => setEditStatusId(null)}
+                          style={{ padding: "5px 8px", borderRadius: 8, border: "1.5px solid #7dd3fc",
+                            fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer",
+                            background: "white", minWidth: 130 }}>
+                          {(statusTabs || STATUS_TABS).map(t => (
+                            <option key={t.key} value={t.key}>{t.label}</option>
+                          ))}
+                        </select>
+                      ) : (
+                        <div
+                          onClick={() => setEditStatusId(s.id)}
+                          title="Click to change status"
+                          style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                          <Badge l={ful} />
+                          <span style={{ fontSize: 9, color: "#94a3b8" }}>▼</span>
+                        </div>
+                      )}
                     </td>
                     {/* Tags */}
                     <td style={{ padding: "8px 16px" }}>

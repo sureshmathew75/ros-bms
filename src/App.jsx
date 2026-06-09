@@ -5329,6 +5329,16 @@ return(
                   }));
                 }}
                 onMarkDelivered={(sale) => setMarkDeliveredSale(sale)}
+                onInlineEdit={async (saleId, changes) => {
+                  const sale = sales.find(s => s.id === saleId);
+                  if (!sale) return;
+                  const updated = { ...sale, ...changes };
+                  await dbSaveSale(shopId, updated);
+                  setSalesData(prev => ({
+                    ...prev,
+                    [shopId]: (prev[shopId] || []).map(s => s.id === saleId ? { ...s, ...changes } : s),
+                  }));
+                }}
               />
             );
           })()}
