@@ -1073,7 +1073,7 @@ export default function SalesPanel({
                     <tr key={`summary-${row._monthKey}`}>
                       <td colSpan={shopId==="ros-india"&&!isStaff ? 13 : 12} style={{ padding: 0 }}>
                         <div style={{
-                          display: "flex", alignItems: "center", flexWrap: "wrap", gap: 0,
+                          display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", gap: 0,
                           padding: "8px 16px",
                           background: "linear-gradient(90deg,#f0fdf4 0%,#dcfce7 40%,#f0fdf4 100%)",
                           borderTop: "1px solid #86efac", borderBottom: "2px solid #86efac",
