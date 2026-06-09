@@ -230,7 +230,7 @@ function fyLabel(startYear) {
 
 function buildRowsWithSeparators(sortedRows, showFY = true, showMonth = true) {
   const result = [];
-  // Helper: collect all sales between two indices for summary
+  // Always show summary footer; showMonth/showFY control separator dividers only
   const makeSummary = (rows, monthK, label) => {
     const count  = rows.length;
     const qty    = rows.reduce((a,s)=>a+(Number(s.qty)||1),0);
@@ -253,25 +253,29 @@ function buildRowsWithSeparators(sortedRows, showFY = true, showMonth = true) {
       const prevMK = monthKey(prev.date);
       const currMK2 = monthKey(curr.date);
       if (showFY && prevFY !== currFY) {
-        if (showMonth && monthBatch.length > 0)
+        // Always inject summary before FY break
+        if (monthBatch.length > 0)
           result.push(makeSummary(monthBatch, curMK, curMLabel));
         monthBatch = [];
         result.push({ _type: "fy", _fyStart: currFY, _label: fyLabel(currFY) });
       }
-      if (showMonth && prevMK !== currMK2) {
+      if (prevMK !== currMK2) {
+        // Always inject summary at month boundary
         if (monthBatch.length > 0)
           result.push(makeSummary(monthBatch, curMK, curMLabel));
         monthBatch = [];
         curMK = currMK2;
         curMLabel = monthLabel(curr.date);
-        result.push({ _type: "month", _monthKey: currMK2, _label: monthLabel(curr.date) });
+        // Only show visual separator if showMonth is true
+        if (showMonth)
+          result.push({ _type: "month", _monthKey: currMK2, _label: monthLabel(curr.date) });
       }
     }
     monthBatch.push(curr);
     result.push(curr);
   }
-  // Summary for last month
-  if (showMonth && monthBatch.length > 0)
+  // Always inject summary for last/only batch
+  if (monthBatch.length > 0)
     result.push(makeSummary(monthBatch, curMK, curMLabel));
   return result;
 }
