@@ -235,7 +235,8 @@ function buildRowsWithSeparators(sortedRows, showFY = true, showMonth = true) {
     const count  = rows.length;
     const qty    = rows.reduce((a,s)=>a+(Number(s.qty)||1),0);
     const amount = rows.reduce((a,s)=>a+(Number(s.amount)||0),0);
-    const refund = rows.reduce((a,s)=>a+(Number(s.adjAmt)||Number(s.refundAmt)||0),0);
+    // Refund = adjAmt (adjustment/discount) + refundAmt (explicit refund) - use whichever is set
+    const refund = rows.reduce((a,s)=>a+Math.max(Number(s.adjAmt)||0, Number(s.refundAmt)||0),0);
     const net    = amount - refund;
     return { _type:"monthSummary", _monthKey:monthK, _label:label, count, qty, amount, refund, net };
   };
@@ -1200,12 +1201,12 @@ export default function SalesPanel({
                     </td>
                     {/* Refund */}
                     <td style={{ padding: "8px 10px", textAlign: "right" }}>
-                      {(Number(s.adjAmt)||Number(s.refundAmt))>0 ? (
+                      {Math.max(Number(s.adjAmt)||0,Number(s.refundAmt)||0)>0 ? (
                         <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:1}}>
                           <span style={{fontFamily:"DM Mono,monospace",fontWeight:800,fontSize:12,
                             color:"#dc2626",background:"#fef2f2",border:"1px solid #fecaca",
                             borderRadius:6,padding:"2px 8px",whiteSpace:"nowrap"}}>
-                            -{fmtAmt(Number(s.adjAmt)||Number(s.refundAmt)||0)}
+                            -{fmtAmt(Math.max(Number(s.adjAmt)||0,Number(s.refundAmt)||0))}
                           </span>
                           {s.adjType&&<span style={{fontSize:9,color:"#94a3b8",textTransform:"uppercase"}}>{s.adjType}</span>}
                         </div>
@@ -1399,7 +1400,7 @@ export default function SalesPanel({
             </span>
             <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>
               Subtotal:{" "}
-              {fmtAmt(sortedSales.reduce((a, s) => a + (Number(s.amount) || 0) - (Number(s.adjAmt) || 0), 0))}
+              {fmtAmt(sortedSales.reduce((a, s) => a + (Number(s.amount) || 0) - Math.max(Number(s.adjAmt)||0, Number(s.refundAmt)||0), 0))}
             </span>
           </div>
         )}
