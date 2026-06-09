@@ -1910,6 +1910,8 @@ const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages})=
   const [selectedReturn,setSelectedReturn]=React.useState(null);
   const [search,setSearch]=React.useState("");
   const [confirmDelete,setConfirmDelete]=React.useState(null); // {id, customer}
+  const [selected,setSelected]=React.useState(new Set());
+  const [bulkConfirm,setBulkConfirm]=React.useState(false);
 
   // ── On-load scan: 7-day reminder + 14-day expiry ──
   React.useEffect(()=>{
@@ -2050,6 +2052,24 @@ Thank you for shopping with ROS.`,
       </div>
 
       {/* Table */}
+      {/* Bulk action bar */}
+      {selected.size>0&&(
+        <div style={{margin:"0 12px 10px",padding:"10px 14px",background:"#0f172a",borderRadius:10,
+          display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,fontWeight:700,color:"white"}}>{selected.size} selected</span>
+          <div style={{flex:1}}/>
+          <button onClick={()=>setBulkConfirm(true)}
+            style={{padding:"6px 16px",borderRadius:8,border:"1px solid rgba(239,68,68,0.5)",
+              background:"rgba(239,68,68,0.15)",color:"#fca5a5",fontSize:12,fontWeight:700,
+              cursor:"pointer",fontFamily:"inherit"}}>
+            🗑️ Delete Selected
+          </button>
+          <button onClick={()=>setSelected(new Set())}
+            style={{padding:"6px 10px",borderRadius:8,border:"none",background:"transparent",
+              color:"#64748b",fontSize:11,cursor:"pointer"}}>Clear</button>
+        </div>
+      )}
+
       <div style={{padding:"0 12px"}}>
         {filtered.length===0?(
           <div style={{textAlign:"center",padding:"60px 20px",color:"#94a3b8"}}>
@@ -2059,8 +2079,15 @@ Thank you for shopping with ROS.`,
           </div>
         ):(
           <div>
-            {/* Column headers */}
-            <div style={{display:"grid",gridTemplateColumns:"130px 1fr 110px 100px 90px 80px",gap:8,padding:"8px 14px",borderRadius:10,background:"#f8fafc",border:"1px solid #e2e8f0",marginBottom:8}}>
+            {/* Column headers with Select All */}
+            <div style={{display:"grid",gridTemplateColumns:"32px 130px 1fr 110px 100px 90px 80px",gap:8,padding:"8px 14px",borderRadius:10,background:"#f8fafc",border:"1px solid #e2e8f0",marginBottom:8}}>
+              <input type="checkbox"
+                checked={filtered.length>0&&filtered.every(r=>selected.has(r.id))}
+                onChange={e=>{
+                  if(e.target.checked) setSelected(new Set(filtered.map(r=>r.id)));
+                  else setSelected(new Set());
+                }}
+                style={{width:15,height:15,cursor:"pointer",accentColor:shop.accent}}/>
               {["Return ID","Customer","Status","Deadline","Days Left",""].map(h=>(
                 <span key={h} style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</span>
               ))}
@@ -2070,40 +2097,46 @@ Thank you for shopping with ROS.`,
               const days=daysRemaining(ret.returnDeadline);
               const statusStyle=RETURN_STATUS_STYLE[ret.status]||{bg:"#f8fafc",border:"#e2e8f0",text:"#374151",label:ret.status};
               const isClosed=["REFUNDED","EXCHANGED","RETURN_EXPIRED"].includes(ret.status);
+              const isSelected=selected.has(ret.id);
               return(
                 <div key={ret.id}
-                  onClick={()=>setSelectedReturn(ret)}
-                  style={{display:"grid",gridTemplateColumns:"130px 1fr 110px 100px 90px 80px",gap:8,padding:"11px 14px",
-                    borderRadius:12,border:"1px solid #e2e8f0",marginBottom:8,background:"white",
-                    cursor:"pointer",transition:"box-shadow 0.15s",
-                    boxShadow:"0 1px 3px rgba(0,0,0,0.04)",
+                  style={{display:"grid",gridTemplateColumns:"32px 130px 1fr 110px 100px 90px 80px",gap:8,padding:"11px 14px",
+                    borderRadius:12,border:"1px solid "+(isSelected?shop.accent:"#e2e8f0"),marginBottom:8,
+                    background:isSelected?shop.accent+"08":"white",
+                    cursor:"pointer",transition:"box-shadow 0.15s",boxShadow:"0 1px 3px rgba(0,0,0,0.04)",
                     opacity:isClosed?0.65:1}}
                   onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.10)"}
                   onMouseLeave={e=>e.currentTarget.style.boxShadow="0 1px 3px rgba(0,0,0,0.04)"}>
-                  <div>
+                  {/* Checkbox */}
+                  <div style={{display:"flex",alignItems:"center"}} onClick={e=>e.stopPropagation()}>
+                    <input type="checkbox" checked={isSelected}
+                      onChange={()=>setSelected(prev=>{const s=new Set(prev);s.has(ret.id)?s.delete(ret.id):s.add(ret.id);return s;})}
+                      style={{width:15,height:15,cursor:"pointer",accentColor:shop.accent}}/>
+                  </div>
+                  <div onClick={()=>setSelectedReturn(ret)}>
                     <p style={{margin:0,fontSize:12,fontWeight:800,color:shop.accent,fontFamily:"DM Mono,monospace"}}>{ret.id}</p>
                     <p style={{margin:"1px 0 0",fontSize:10,color:"#94a3b8"}}>{ret.resolution==="exchange"?"🔄":"💰"} {ret.resolution}</p>
                   </div>
-                  <div>
+                  <div onClick={()=>setSelectedReturn(ret)}>
                     <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ret.customer}</p>
                     <p style={{margin:"1px 0 0",fontSize:11,color:"#64748b"}}>{ret.saleId}</p>
                   </div>
-                  <div style={{display:"flex",alignItems:"center"}}>
+                  <div style={{display:"flex",alignItems:"center"}} onClick={()=>setSelectedReturn(ret)}>
                     <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:999,
                       background:statusStyle.bg,border:"1px solid "+statusStyle.border,color:statusStyle.text,whiteSpace:"nowrap"}}>
                       {statusStyle.label}
                     </span>
                   </div>
-                  <div style={{display:"flex",alignItems:"center"}}>
+                  <div style={{display:"flex",alignItems:"center"}} onClick={()=>setSelectedReturn(ret)}>
                     <span style={{fontSize:12,color:"#374151"}}>{fmtDate(ret.returnDeadline)}</span>
                   </div>
-                  <div style={{display:"flex",alignItems:"center"}}>
+                  <div style={{display:"flex",alignItems:"center"}} onClick={()=>setSelectedReturn(ret)}>
                     {isClosed?<span style={{fontSize:11,color:"#94a3b8"}}>—</span>:<DaysChip days={days}/>}
                   </div>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:8}}>
-                    <span style={{fontSize:11,color:shop.accent,fontWeight:700}}>View →</span>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:6}} onClick={e=>e.stopPropagation()}>
+                    <span onClick={()=>setSelectedReturn(ret)} style={{fontSize:11,color:shop.accent,fontWeight:700,cursor:"pointer"}}>View →</span>
                     <button
-                      onClick={e=>{e.stopPropagation();setConfirmDelete({id:ret.id,customer:ret.customer});}}
+                      onClick={()=>setConfirmDelete({id:ret.id,customer:ret.customer})}
                       title="Delete return"
                       style={{width:26,height:26,borderRadius:7,border:"1px solid #fecaca",background:"#fff5f5",
                         color:"#dc2626",fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",
@@ -2130,6 +2163,38 @@ Thank you for shopping with ROS.`,
             setSelectedReturn(null);
           }}
         />
+      )}
+
+      {/* Bulk delete confirmation */}
+      {bulkConfirm&&(
+        <div style={{position:"fixed",inset:0,zIndex:90,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.55)",backdropFilter:"blur(4px)"}}
+            onClick={()=>setBulkConfirm(false)}/>
+          <div style={{position:"relative",background:"white",borderRadius:16,
+            boxShadow:"0 24px 64px rgba(0,0,0,0.20)",width:"100%",maxWidth:380,padding:28,textAlign:"center"}}>
+            <div style={{fontSize:40,marginBottom:12}}>🗑️</div>
+            <h3 style={{margin:"0 0 8px",fontSize:17,fontWeight:800,color:"#0f172a"}}>Delete {selected.size} Returns</h3>
+            <p style={{margin:"0 0 6px",fontSize:13,color:"#374151"}}>
+              You are about to permanently delete <strong>{selected.size} return record{selected.size>1?"s":""}</strong>.
+            </p>
+            <p style={{margin:"0 0 24px",fontSize:12,color:"#ef4444",fontWeight:600}}>⚠️ This cannot be undone.</p>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <button onClick={()=>setBulkConfirm(false)}
+                style={{padding:"11px 0",borderRadius:10,border:"1px solid #e2e8f0",background:"white",
+                  color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+              <button onClick={async()=>{
+                const ids=[...selected];
+                await Promise.all(ids.map(id=>dbDeleteReturn(id)));
+                setReturns(prev=>prev.filter(r=>!ids.includes(r.id)));
+                setSelected(new Set());
+                setBulkConfirm(false);
+              }}
+                style={{padding:"11px 0",borderRadius:10,border:"none",background:"#dc2626",
+                  color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",
+                  boxShadow:"0 4px 12px rgba(220,38,38,0.35)"}}>🗑️ Delete All</button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Delete confirmation modal */}
@@ -7534,6 +7599,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false}
   const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
   const [editCustOpen,setEditCustOpen]=useState(false);
+  const [invoiceEditing,setInvoiceEditing]=useState(false);
   const [editCustMatches,setEditCustMatches]=useState([]);
   const [editAddrOpen,setEditAddrOpen]=useState(false);
   const [editAddrMatches,setEditAddrMatches]=useState([]);
@@ -7555,7 +7621,36 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false}
       <Divider title="Basic Info"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         <div><label style={lbl}>Date</label><input type="date" value={form.date} readOnly={isStaff} onChange={isStaff?undefined:e=>set("date",e.target.value)} style={{...inp,background:isStaff?"#f8fafc":"white",cursor:isStaff?"default":"auto"}} onFocus={fo} onBlur={bl}/></div>
-        <div><label style={lbl}>Invoice Number</label><input value={form.invoiceNo} readOnly style={{...inp,background:"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,cursor:"default"}}/></div>
+        <div>
+          <label style={lbl}>Invoice Number</label>
+          <div style={{display:"flex",gap:6}}>
+            <input
+              value={form.invoiceNo}
+              readOnly={!invoiceEditing||isStaff}
+              onChange={e=>set("invoiceNo",e.target.value)}
+              style={{...inp,flex:1,background:invoiceEditing&&!isStaff?"white":"#f8fafc",
+                fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,
+                border:"1px solid "+(invoiceEditing&&!isStaff?shop.accent:"#e2e8f0"),
+                cursor:invoiceEditing&&!isStaff?"auto":"default"}}
+              onFocus={fo} onBlur={bl}/>
+            {!isStaff&&(
+              <button onClick={()=>setInvoiceEditing(v=>!v)}
+                title={invoiceEditing?"Lock invoice number":"Edit invoice number"}
+                style={{flexShrink:0,width:34,height:34,borderRadius:8,cursor:"pointer",
+                  border:"1px solid "+(invoiceEditing?shop.accent:"#e2e8f0"),
+                  background:invoiceEditing?shop.accent:"#f8fafc",
+                  color:invoiceEditing?"white":"#64748b",fontSize:13,
+                  display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}}>
+                {invoiceEditing?"✓":"✏️"}
+              </button>
+            )}
+          </div>
+          {invoiceEditing&&!isStaff&&(
+            <p style={{margin:"3px 0 0",fontSize:10,color:"#f59e0b",fontWeight:600}}>
+              ⚠️ Changing the invoice number will update it permanently
+            </p>
+          )}
+        </div>
       </div>
       <Divider title="Customer"/>
       <div style={{marginBottom:16}}>
