@@ -1390,8 +1390,7 @@ export default function SalesPanel({
             display: "flex", alignItems: "center", justifyContent: "space-between",
             padding: "10px 20px", borderTop: "1px solid #f1f5f9", background: "#f8fafc",
           }}>
-            <div style={{ flex: 1 }} />
-            <span style={{ fontSize: 12, color: "#94a3b8" }}>
+            <span style={{ fontSize: 12, color: "#94a3b8", marginLeft: "auto" }}>
               {sortedSales.length} record{sortedSales.length !== 1 ? "s" : ""}
               {statusTab !== "ALL" && (
                 <span style={{ color: activeTabCfg.color, fontWeight: 700 }}>
