@@ -230,6 +230,20 @@ function fyLabel(startYear) {
 
 function buildRowsWithSeparators(sortedRows, showFY = true, showMonth = true) {
   const result = [];
+  // Helper: collect all sales between two indices for summary
+  const makeSummary = (rows, monthK, label) => {
+    const count  = rows.length;
+    const qty    = rows.reduce((a,s)=>a+(Number(s.qty)||1),0);
+    const amount = rows.reduce((a,s)=>a+(Number(s.amount)||0),0);
+    const refund = rows.reduce((a,s)=>a+(Number(s.adjAmt)||Number(s.refundAmt)||0),0);
+    const net    = amount - refund;
+    return { _type:"monthSummary", _monthKey:monthK, _label:label, count, qty, amount, refund, net };
+  };
+
+  let monthBatch = [];
+  let curMK = sortedRows.length > 0 ? monthKey(sortedRows[0].date) : null;
+  let curMLabel = sortedRows.length > 0 ? monthLabel(sortedRows[0].date) : "";
+
   for (let i = 0; i < sortedRows.length; i++) {
     const curr = sortedRows[i];
     const prev = sortedRows[i - 1];
@@ -237,14 +251,28 @@ function buildRowsWithSeparators(sortedRows, showFY = true, showMonth = true) {
       const prevFY = fyStartYear(prev);
       const currFY = fyStartYear(curr);
       const prevMK = monthKey(prev.date);
-      const currMK = monthKey(curr.date);
-      if (showFY && prevFY !== currFY)
+      const currMK2 = monthKey(curr.date);
+      if (showFY && prevFY !== currFY) {
+        if (showMonth && monthBatch.length > 0)
+          result.push(makeSummary(monthBatch, curMK, curMLabel));
+        monthBatch = [];
         result.push({ _type: "fy", _fyStart: currFY, _label: fyLabel(currFY) });
-      if (showMonth && prevMK !== currMK)
-        result.push({ _type: "month", _monthKey: currMK, _label: monthLabel(curr.date) });
+      }
+      if (showMonth && prevMK !== currMK2) {
+        if (monthBatch.length > 0)
+          result.push(makeSummary(monthBatch, curMK, curMLabel));
+        monthBatch = [];
+        curMK = currMK2;
+        curMLabel = monthLabel(curr.date);
+        result.push({ _type: "month", _monthKey: currMK2, _label: monthLabel(curr.date) });
+      }
     }
+    monthBatch.push(curr);
     result.push(curr);
   }
+  // Summary for last month
+  if (showMonth && monthBatch.length > 0)
+    result.push(makeSummary(monthBatch, curMK, curMLabel));
   return result;
 }
 
@@ -929,13 +957,13 @@ export default function SalesPanel({
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
             <thead>
               <tr style={{ background: "#f8fafc" }}>
-                {["Invoice", "Date", "Customer", "Item", "Amount", "Payment", "Status", "Tags",
+                {["Invoice", "Date", "Customer", "Item", "Amount", "Refund", "Payment", "Status", "Tags",
                   ...(shopId==="ros-india"&&!isStaff ? ["Pur. Amount"] : []),
                   "Tracking", "Delivered", "Actions"]
                   .map((h, i) => (
                     <th key={h} style={{
                       padding: "11px 16px",
-                      textAlign: (h==="Amount"||h==="Payment"||h==="Status"||h==="Pur. Amount") ? "right" : "left",
+                      textAlign: (h==="Amount"||h==="Refund"||h==="Payment"||h==="Status"||h==="Pur. Amount") ? "right" : "left",
                       fontSize: 11, fontWeight: 800, color: "#94a3b8",
                       textTransform: "uppercase", letterSpacing: "0.06em",
                       borderBottom: "1px solid #f1f5f9", whiteSpace: "nowrap",
@@ -950,7 +978,7 @@ export default function SalesPanel({
               {/* Empty state */}
               {rowsWithSeparators.length === 0 && (
                 <tr>
-                  <td colSpan={shopId==="ros-india"&&!isStaff ? 12 : 11} style={{ padding: "52px 16px", textAlign: "center" }}>
+                  <td colSpan={shopId==="ros-india"&&!isStaff ? 13 : 12} style={{ padding: "52px 16px", textAlign: "center" }}>
                     <div style={{ fontSize: 36, marginBottom: 10 }}>🛒</div>
                     <p style={{ margin: 0, fontWeight: 700, color: "#94a3b8", fontSize: 14 }}>
                       No {statusTab !== "ALL" ? activeTabCfg.label.toLowerCase() + " " : ""}sales found
@@ -970,7 +998,7 @@ export default function SalesPanel({
                 if (row._type === "fy") {
                   return (
                     <tr key={`fy-${row._fyStart}-${idx}`}>
-                      <td colSpan={shopId==="ros-india"&&!isStaff ? 12 : 11} style={{ padding: 0 }}>
+                      <td colSpan={shopId==="ros-india"&&!isStaff ? 13 : 12} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", gap: 10,
                           padding: "9px 16px",
@@ -1002,7 +1030,7 @@ export default function SalesPanel({
                 if (row._type === "month") {
                   return (
                     <tr key={`month-${row._monthKey}-${idx}`}>
-                      <td colSpan={shopId==="ros-india"&&!isStaff ? 12 : 11} style={{ padding: 0 }}>
+                      <td colSpan={shopId==="ros-india"&&!isStaff ? 13 : 12} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", gap: 10,
                           padding: "6px 16px",
@@ -1028,6 +1056,48 @@ export default function SalesPanel({
                           }}>
                             ↕ month boundary
                           </span>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                }
+
+                /* ── MONTH SUMMARY ROW ──────────────────────────────────── */
+                if (row._type === "monthSummary") {
+                  return (
+                    <tr key={`summary-${row._monthKey}`}>
+                      <td colSpan={shopId==="ros-india"&&!isStaff ? 13 : 12} style={{ padding: 0 }}>
+                        <div style={{
+                          display: "flex", alignItems: "center", flexWrap: "wrap", gap: 0,
+                          padding: "8px 16px",
+                          background: "linear-gradient(90deg,#f0fdf4 0%,#dcfce7 40%,#f0fdf4 100%)",
+                          borderTop: "1px solid #86efac", borderBottom: "2px solid #86efac",
+                        }}>
+                          <span style={{ fontSize: 11, fontWeight: 800, color: "#166534",
+                            textTransform: "uppercase", letterSpacing: "0.06em", marginRight: 16 }}>
+                            ∑ {row._label}
+                          </span>
+                          {[
+                            { l: "Records", v: row.count },
+                            { l: "Items",   v: row.qty },
+                            { l: "Sold",    v: fmtAmt(row.amount) },
+                            { l: "Refund",  v: row.refund > 0 ? "-"+fmtAmt(row.refund) : "—", red: row.refund > 0 },
+                            { l: "Net",     v: fmtAmt(row.net), highlight: true },
+                          ].map(({ l, v, red, highlight }) => (
+                            <div key={l} style={{
+                              display: "flex", flexDirection: "column", alignItems: "flex-end",
+                              padding: "2px 14px",
+                              borderLeft: "1px solid #86efac",
+                            }}>
+                              <span style={{ fontSize: 9, fontWeight: 700, color: "#4ade80",
+                                textTransform: "uppercase", letterSpacing: "0.06em" }}>{l}</span>
+                              <span style={{
+                                fontSize: 13, fontWeight: 900,
+                                fontFamily: highlight || red ? "DM Mono,monospace" : "inherit",
+                                color: red ? "#dc2626" : highlight ? "#166534" : "#374151",
+                              }}>{v}</span>
+                            </div>
+                          ))}
                         </div>
                       </td>
                     </tr>
@@ -1124,6 +1194,22 @@ export default function SalesPanel({
                         </div>
                       )}
                     </td>
+                    {/* Refund */}
+                    <td style={{ padding: "8px 10px", textAlign: "right" }}>
+                      {(Number(s.adjAmt)||Number(s.refundAmt))>0 ? (
+                        <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:1}}>
+                          <span style={{fontFamily:"DM Mono,monospace",fontWeight:800,fontSize:12,
+                            color:"#dc2626",background:"#fef2f2",border:"1px solid #fecaca",
+                            borderRadius:6,padding:"2px 8px",whiteSpace:"nowrap"}}>
+                            -{fmtAmt(Number(s.adjAmt)||Number(s.refundAmt)||0)}
+                          </span>
+                          {s.adjType&&<span style={{fontSize:9,color:"#94a3b8",textTransform:"uppercase"}}>{s.adjType}</span>}
+                        </div>
+                      ):(
+                        <span style={{color:"#cbd5e1",fontSize:11}}>—</span>
+                      )}
+                    </td>
+
                     {/* Payment */}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <Badge l={s.pay || "SHOP"} />
