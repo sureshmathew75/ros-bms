@@ -1390,6 +1390,7 @@ export default function SalesPanel({
             display: "flex", alignItems: "center", justifyContent: "space-between",
             padding: "10px 20px", borderTop: "1px solid #f1f5f9", background: "#f8fafc",
           }}>
+            <div style={{ flex: 1 }} />
             <span style={{ fontSize: 12, color: "#94a3b8" }}>
               {sortedSales.length} record{sortedSales.length !== 1 ? "s" : ""}
               {statusTab !== "ALL" && (
@@ -1398,10 +1399,7 @@ export default function SalesPanel({
                 </span>
               )}
             </span>
-            <span style={{ fontSize: 12, fontWeight: 700, color: "#374151" }}>
-              Subtotal:{" "}
-              {fmtAmt(sortedSales.reduce((a, s) => a + (Number(s.amount) || 0) - Math.max(Number(s.adjAmt)||0, Number(s.refundAmt)||0), 0))}
-            </span>
+
           </div>
         )}
       </div>
