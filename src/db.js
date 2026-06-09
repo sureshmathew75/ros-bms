@@ -284,6 +284,7 @@ export const dbSaveExpense = async (shopId, e) => {
     amount:  Number(e.amount) || 0,
     method:  e.method || '',
     notes:   e.notes || '',
+    pay_to:  e.payTo || '',
   };
 
   // Update existing row by UUID
@@ -315,6 +316,7 @@ export const dbLoadExpenses = async (shopId) => {
     amount: Number(r.amount) || 0,
     method: r.method || '',
     notes:  r.notes || '',
+    payTo:  r.pay_to || '',
   }));
 };
 

@@ -3221,7 +3221,7 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData})=>{
 
   const handleSave=async(form)=>{
     setSaving(true);
-    const payload={...form};
+    const payload={...form,payTo:form.payTo||''};
     if(editExp) payload._uuid=editExp.uuid||editExp.id;
     const result=await dbSaveExpense(shopId,payload);
     if(result&&result.error){alert("Save failed: "+result.error);setSaving(false);return;}
@@ -3244,7 +3244,7 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData})=>{
   const ExpenseForm=({initial={},onSave,onClose})=>{
     const [f,setF]=React.useState({
       date:new Date().toISOString().slice(0,10),
-      cat:"",desc:"",amount:"",method:"Bank Transfer",notes:"",...initial
+      cat:"",desc:"",amount:"",method:"Bank Transfer",notes:"",payTo:"",...initial
     });
     const s=(k,v)=>setF(p=>({...p,[k]:v}));
     return(
@@ -3261,6 +3261,8 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData})=>{
         </div>
         <div><label style={lbl}>Description *</label>
           <input value={f.desc} onChange={e=>s("desc",e.target.value)} placeholder="What was this expense for?" style={inp}/></div>
+        <div><label style={lbl}>Payment To</label>
+          <input value={f.payTo||""} onChange={e=>s("payTo",e.target.value)} placeholder="Person or company name" style={inp}/></div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           <div><label style={lbl}>Amount ({shop.symbol})</label>
             <input type="number" value={f.amount} onChange={e=>s("amount",e.target.value)} placeholder="0.00" style={inp}/></div>
@@ -3346,7 +3348,7 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData})=>{
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead>
             <tr>
-              {["Date","Category","Description","Amount","Method","Notes","Actions"].map(h=>(
+              {["Date","Category","Description","Pay To","Amount","Method","Notes","Actions"].map(h=>(
                 <th key={h} style={{padding:"10px 16px",fontSize:11,fontWeight:800,color:"#64748b",
                   textTransform:"uppercase",letterSpacing:"0.05em",background:"#f8fafc",
                   borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap",
@@ -3371,6 +3373,7 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData})=>{
                   </span>
                 </td>
                 <td style={{padding:"12px 16px",color:"#374151",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.desc||"—"}</td>
+                <td style={{padding:"12px 16px",color:"#374151",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.payTo||"—"}</td>
                 <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,color:"#dc2626",whiteSpace:"nowrap"}}>{fmt(shopId,Number(e.amount)||0)}</td>
                 <td style={{padding:"12px 16px",color:"#64748b",fontSize:12}}>{e.method||"—"}</td>
                 <td style={{padding:"12px 16px",color:"#94a3b8",fontSize:12,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.notes||"—"}</td>
