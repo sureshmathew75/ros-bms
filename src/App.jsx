@@ -7475,7 +7475,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
    NEW PURCHASE FORM
 ══════════════════════════════════════════════════════ */
 /* ── TagPicker: multi-tag chip selector used in EditSaleForm & NewSaleForm ── */
-const SALE_TAG_PRESETS=["Advance Sale","Budget Friendly","Bulk Sale","Discounted Sale","Exchange Sale","Final Payment Sale","Normal Sale"];
+const SALE_TAG_PRESETS=["Advance Sale","Part Payment","Final Payment Sale","Budget Friendly","Bulk Sale","Discounted Sale","Exchange Sale","Normal Sale"];
 const parseTags=str=>str?str.split(",").map(t=>t.trim()).filter(Boolean):[];
 const joinTags=arr=>arr.join(", ");
 const TagPicker=({value,onChange,accent,accentBg,inp,fo,bl,lbl})=>{
@@ -8005,6 +8005,19 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false}
       </>}
 
       <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
+
+      {/* Expected Total — only shown for Advance Sale */}
+      {parseTags(form.tag||"").includes("Advance Sale")&&(
+        <div style={{marginBottom:12,padding:"12px 14px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10}}>
+          <label style={{...lbl,color:"#92400e"}}>💰 Expected Total ({shop.symbol})</label>
+          <input type="number" value={form.expectedTotal||""} onChange={e=>set("expectedTotal",e.target.value)}
+            placeholder="Enter full expected amount e.g. 1500"
+            style={{...inp,border:"1.5px solid #fbbf24",background:"white"}} onFocus={fo} onBlur={bl}/>
+          <p style={{margin:"4px 0 0",fontSize:11,color:"#92400e"}}>
+            Total amount across all instalments. Used to calculate balance.
+          </p>
+        </div>
+      )}
       <div style={{marginBottom:16}}>
         <label style={lbl}>Remarks</label>
         <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Any additional notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
@@ -8999,6 +9012,19 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🏷️ Tags & Notes</p>
               <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
+
+      {/* Expected Total — only shown for Advance Sale */}
+      {parseTags(form.tag||"").includes("Advance Sale")&&(
+        <div style={{marginBottom:12,padding:"12px 14px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10}}>
+          <label style={{...lbl,color:"#92400e"}}>💰 Expected Total ({shop.symbol})</label>
+          <input type="number" value={form.expectedTotal||""} onChange={e=>set("expectedTotal",e.target.value)}
+            placeholder="Enter full expected amount e.g. 1500"
+            style={{...inp,border:"1.5px solid #fbbf24",background:"white"}} onFocus={fo} onBlur={bl}/>
+          <p style={{margin:"4px 0 0",fontSize:11,color:"#92400e"}}>
+            Total amount across all instalments. Used to calculate balance.
+          </p>
+        </div>
+      )}
               <div style={{marginTop:7}}><label style={lbl}>Remarks</label><input value={form.remarks} onChange={e=>set("remarks",e.target.value)} placeholder="Notes…" style={inp} onFocus={fo} onBlur={bl}/></div>
             </div>
 

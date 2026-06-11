@@ -33,6 +33,7 @@ export const dbSaveSale = async (shopId, sale) => {
     ful:           String(sale.ful || sale.status || ''),
     sent_date:     String(sale.sentDate || ''),
     dispatch_from: sale.dispatchFrom || '',
+    expected_total: Number(sale.expectedTotal) || 0,
     return_req_date: String(sale.returnReqDate || ''),
     return_rcvd:   String(sale.returnRcvd || ''),
     refund_amt:    Number(sale.refundAmt) || 0,
@@ -174,6 +175,7 @@ export const dbLoadSales = async (shopId) => {
     paidBy:        r.paid_by || '',
     trackingNo:    r.tracking_no || '',
     dispatchFrom:  r.dispatch_from || '',
+    expectedTotal: Number(r.expected_total) || 0,
     deliveryDate:  r.delivery_date || '',
     deliveryTime:  r.delivery_time || '',
   }));

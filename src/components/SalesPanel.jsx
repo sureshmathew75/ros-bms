@@ -500,6 +500,47 @@ export default function SalesPanel({
     [statusFiltered]
   );
 
+  /* ── Instalment groups ──────────────────────────────────────────────── */
+  const INSTALMENT_TAGS = ["Advance Sale", "Part Payment", "Final Payment Sale"];
+  const instalmentGroups = useMemo(() => {
+    // Group sales by phone+name that have instalment tags
+    const groups = {};
+    sortedSales.forEach(s => {
+      const tags = (s.tag || "").split(",").map(t => t.trim());
+      const isInstalment = tags.some(t => INSTALMENT_TAGS.includes(t));
+      if (!isInstalment) return;
+      const phone = (s.phone || s.contact || "").replace(/\D/g, "").slice(-10);
+      const name = (s.customer || "").toLowerCase().trim();
+      if (!phone && !name) return;
+      const key = `${name}__${phone}`;
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(s);
+    });
+    // Only return groups with 2+ sales
+    const result = {};
+    Object.entries(groups).forEach(([k, v]) => {
+      if (v.length >= 1) result[k] = v; // even single advance shows expected total
+    });
+    return result;
+  }, [sortedSales]);
+
+  const getInstalmentKey = (s) => {
+    const tags = (s.tag || "").split(",").map(t => t.trim());
+    const isInstalment = tags.some(t => INSTALMENT_TAGS.includes(t));
+    if (!isInstalment) return null;
+    const phone = (s.phone || s.contact || "").replace(/\D/g, "").slice(-10);
+    const name = (s.customer || "").toLowerCase().trim();
+    return `${name}__${phone}`;
+  };
+
+  const instalmentTagType = (s) => {
+    const tags = (s.tag || "").split(",").map(t => t.trim());
+    if (tags.includes("Advance Sale")) return "advance";
+    if (tags.includes("Final Payment Sale")) return "final";
+    if (tags.includes("Part Payment")) return "part";
+    return null;
+  };
+
   /* ── Rows with month / FY separators ────────────────────────────────── */
   // Only show FY separator when viewing year or lifetime
   // Only show month separator when viewing year, lifetime, or FY (not day/week/single month)
@@ -1124,10 +1165,22 @@ export default function SalesPanel({
 
                 /* ── SALE ROW ────────────────────────────────────────────── */
                 const s   = row;
+                const instKey   = getInstalmentKey(s);
+                const instGroup = instKey ? (instalmentGroups[instKey] || []) : [];
+                const instType  = instalmentTagType(s);
+                const isInstalment = !!instType;
+                // Colour per instalment type
+                const instColor = instType==="advance"?"#f59e0b":instType==="final"?"#059669":instType==="part"?"#7c3aed":"transparent";
+                const instBg    = instType==="advance"?"#fffbeb":instType==="final"?"#f0fdf4":instType==="part"?"#f5f3ff":"transparent";
+                // Show instalment summary row only on the advance sale
+                const showInstalmentSummary = instType === "advance" && instGroup.length >= 1;
+                const totalPaid = instGroup.reduce((a,x) => a + (Number(x.amount)||0), 0);
+                const expectedTotal = Number(s.expectedTotal) || 0;
+                const balance = expectedTotal > 0 ? expectedTotal - totalPaid : null;
                 const ful = s.ful || s.status || "PENDING";
                 const isH = hovR === s.id;
                 const mergedRowBg = { ...STATUS_ROW_BG, ...(statusRowBgProp || {}) };
-                const rowBg = isH ? `${accent}10` : (mergedRowBg[ful] || "white");
+                const rowBg = isH ? `${accent}10` : (isInstalment ? instBg : (mergedRowBg[ful] || "white"));
 
                 return (
                   <tr key={s.id}
@@ -1138,12 +1191,24 @@ export default function SalesPanel({
                       background: rowBg, cursor: "pointer",
                       borderBottom: "1px solid #f8fafc",
                       transition: "background 0.12s",
+                      borderLeft: isInstalment ? `3px solid ${instColor}` : "3px solid transparent",
                     }}>
                     {/* Invoice */}
                     <td style={{ padding: "12px 16px" }}>
                       <span style={{ fontFamily: "DM Mono,monospace", fontWeight: 700, fontSize: 12, color: accent }}>
                         {s.id}
                       </span>
+                      {isInstalment && (
+                        <div style={{ marginTop: 2 }}>
+                          <span style={{
+                            fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999,
+                            background: instColor + "20", color: instColor,
+                            border: `1px solid ${instColor}44`, textTransform: "uppercase", letterSpacing: "0.05em"
+                          }}>
+                            {instType === "advance" ? "💰 Advance" : instType === "final" ? "✅ Final" : "🔄 Part"}
+                          </span>
+                        </div>
+                      )}
                     </td>
                     {/* Date */}
                     <td style={{ padding: "12px 16px" }}>
@@ -1476,7 +1541,20 @@ export default function SalesPanel({
 
         const defaultFrom = shopId === "ros-india" ? "India-Unit1" : "UK";
 
-        const reportSales = sales
+        const INST_TAGS_R = ["Advance Sale", "Part Payment", "Final Payment Sale"];
+        // Build instalment groups
+        const rInstGroups = {};
+        sales.forEach(s => {
+          const stags = (s.tag||"").split(",").map(t=>t.trim());
+          if (!stags.some(t=>INST_TAGS_R.includes(t))) return;
+          const ph = (s.phone||s.contact||"").replace(/[^0-9]/g,"").slice(-10);
+          const nm = (s.customer||"").toLowerCase().trim();
+          const k = nm+"__"+ph;
+          if (!rInstGroups[k]) rInstGroups[k] = [];
+          rInstGroups[k].push(s);
+        });
+
+        const filteredSales = sales
           .filter(s => {
             const st = (s.ful || s.status || "").toUpperCase();
             const matchStatus = activeStatuses.some(r => st === r.toUpperCase());
@@ -1486,6 +1564,27 @@ export default function SalesPanel({
             return matchStatus && (!crossOnly || isCross) && matchUnit;
           })
           .sort((a, b) => daysWaiting(b.date) - daysWaiting(a.date));
+
+        // Deduplicate instalment groups — one row per group (advance sale leads)
+        const seenRInst = new Set();
+        const reportSales = [];
+        filteredSales.forEach(s => {
+          const stags = (s.tag||"").split(",").map(t=>t.trim());
+          const isInst = stags.some(t=>INST_TAGS_R.includes(t));
+          if (isInst) {
+            const ph = (s.phone||s.contact||"").replace(/[^0-9]/g,"").slice(-10);
+            const nm = (s.customer||"").toLowerCase().trim();
+            const k = nm+"__"+ph;
+            if (!seenRInst.has(k)) {
+              seenRInst.add(k);
+              const grp = rInstGroups[k] || [s];
+              const advance = grp.find(x=>(x.tag||"").includes("Advance Sale")) || grp[0];
+              reportSales.push({...advance, _grp: grp, _grouped: true});
+            }
+          } else {
+            reportSales.push(s);
+          }
+        });
 
         const reportTitle = shopId === "ros-india"
           ? "ROS India — Pending Dispatch Report"
@@ -1647,8 +1746,38 @@ export default function SalesPanel({
                         <td style={{padding:"11px 16px",fontFamily:"DM Mono,monospace",fontSize:12,color:"#64748b"}}>{s.phone||s.contact||"—"}</td>
                         <td style={{padding:"11px 16px",color:"#374151",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.item||"—"}</td>
                         {rptUnit!=="India-Unit1"&&(
-                          <td style={{padding:"11px 16px",textAlign:"right",fontWeight:800,color:"#0f172a",whiteSpace:"nowrap"}}>
-                            {fmt?fmt(shopId,Number(s.amount)||0):(shop.symbol||"£")+(Number(s.amount)||0).toLocaleString()}
+                          <td style={{padding:"11px 16px",textAlign:"right",verticalAlign:"top"}}>
+                            {s._grouped ? (() => {
+                              const grp = (s._grp||[s]).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+                              const expTotal = Number(s.expectedTotal)||0;
+                              const totalPaid = grp.reduce((a,x)=>a+(Number(x.amount)||0),0);
+                              const balance = expTotal>0?expTotal-totalPaid:null;
+                              const tagLbl = x => {
+                                const t=(x.tag||"").split(",").map(t=>t.trim());
+                                return t.includes("Advance Sale")?"Advance":t.includes("Final Payment Sale")?"Final":t.includes("Part Payment")?"Part":"Pmt";
+                              };
+                              const col = l => l==="Advance"?"#92400e":l==="Final"?"#166534":"#5b21b6";
+                              const bg  = l => l==="Advance"?"#fffbeb":l==="Final"?"#f0fdf4":"#f5f3ff";
+                              return(
+                                <div>
+                                  {grp.map(x=>(
+                                    <div key={x.id} style={{display:"flex",justifyContent:"flex-end",alignItems:"center",gap:5,marginBottom:2}}>
+                                      <span style={{fontSize:10,color:"#94a3b8"}}>{fmtD(x.date)}</span>
+                                      <span style={{fontSize:9,padding:"1px 5px",borderRadius:999,background:bg(tagLbl(x)),color:col(tagLbl(x)),fontWeight:700}}>{tagLbl(x)}</span>
+                                      <span style={{fontWeight:800,fontSize:12,fontFamily:"DM Mono,monospace"}}>{fmt?fmt(shopId,Number(x.amount)||0):(shop.symbol||"£")+(Number(x.amount)||0).toLocaleString()}</span>
+                                    </div>
+                                  ))}
+                                  <div style={{borderTop:"1px dashed #e2e8f0",paddingTop:3,marginTop:2,display:"flex",justifyContent:"flex-end",gap:8}}>
+                                    <span style={{fontSize:10,color:"#374151"}}>Paid: <b>{fmt?fmt(shopId,totalPaid):(shop.symbol||"£")+totalPaid.toLocaleString()}</b></span>
+                                    {balance!==null&&<span style={{fontSize:10,fontWeight:800,color:balance>0?"#dc2626":"#059669"}}>{balance>0?"Bal: "+(fmt?fmt(shopId,balance):(shop.symbol||"£")+balance.toLocaleString()):"✅ Fully Paid"}</span>}
+                                  </div>
+                                </div>
+                              );
+                            })():(
+                              <span style={{fontWeight:800,fontSize:12,fontFamily:"DM Mono,monospace"}}>
+                                {fmt?fmt(shopId,Number(s.amount)||0):(shop.symbol||"£")+(Number(s.amount)||0).toLocaleString()}
+                              </span>
+                            )}
                           </td>
                         )}
                         <td style={{padding:"11px 16px"}}>
