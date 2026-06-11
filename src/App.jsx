@@ -3201,7 +3201,7 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
 
   const BUILTIN_CATEGORIES=["Rent","Utilities","Salaries","Packaging","Shipping","Marketing","Software","Equipment","Travel","Professional Expenses","Agents Expenses","Other"];
   const CATEGORIES=[...BUILTIN_CATEGORIES,...expCats.filter(c=>!BUILTIN_CATEGORIES.includes(c))];
-  const METHODS=["Bank Transfer","UPI","Other"];
+  const METHODS=["Bank Transfer","UPI","PayPal","Other"];
 
   const cats=["ALL",...new Set(exps.map(e=>e.cat).filter(Boolean))];
   const filtered=exps.filter(e=>{
@@ -3246,7 +3246,7 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
   const ExpenseForm=({initial={},onSave,onClose})=>{
     const [f,setF]=React.useState({
       date:new Date().toISOString().slice(0,10),
-      cat:"",desc:"",amount:"",method:"Bank Transfer",notes:"",payTo:"",...initial
+      cat:"",desc:"",amount:"",method:"Bank Transfer",notes:"",payTo:"",invoiceNo:"",invoiceDate:"",...initial
     });
     const s=(k,v)=>setF(p=>({...p,[k]:v}));
     return(
@@ -3293,6 +3293,12 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
               {METHODS.map(m=><option key={m}>{m}</option>)}
             </select>
           </div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+          <div><label style={lbl}>Invoice No.</label>
+            <input value={f.invoiceNo||""} onChange={e=>s("invoiceNo",e.target.value)} placeholder="e.g. INV-0042" style={inp}/></div>
+          <div><label style={lbl}>Invoice Date</label>
+            <input type="date" value={f.invoiceDate||""} onChange={e=>s("invoiceDate",e.target.value)} style={inp}/></div>
         </div>
         <div><label style={lbl}>Notes</label>
           <textarea value={f.notes} onChange={e=>s("notes",e.target.value)} rows={2}
@@ -3388,7 +3394,7 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead>
             <tr>
-              {["Date","Category","Description","Pay To","Amount","Method","Notes","Actions"].map(h=>(
+              {["Date","Category","Description","Pay To","Invoice No.","Amount","Method","Notes","Actions"].map(h=>(
                 <th key={h} style={{padding:"10px 16px",fontSize:11,fontWeight:800,color:"#64748b",
                   textTransform:"uppercase",letterSpacing:"0.05em",background:"#f8fafc",
                   borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap",
@@ -3414,6 +3420,7 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
                 </td>
                 <td style={{padding:"12px 16px",color:"#374151",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.desc||"—"}</td>
                 <td style={{padding:"12px 16px",color:"#374151",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.payTo||"—"}</td>
+                <td style={{padding:"12px 16px",color:"#64748b",fontFamily:"DM Mono,monospace",fontSize:11,whiteSpace:"nowrap"}}>{e.invoiceNo||"—"}</td>
                 <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,color:"#dc2626",whiteSpace:"nowrap"}}>{fmt(shopId,Number(e.amount)||0)}</td>
                 <td style={{padding:"12px 16px",color:"#64748b",fontSize:12}}>{e.method||"—"}</td>
                 <td style={{padding:"12px 16px",color:"#94a3b8",fontSize:12,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.notes||"—"}</td>
