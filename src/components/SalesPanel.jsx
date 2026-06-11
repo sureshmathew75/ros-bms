@@ -1586,8 +1586,9 @@ export default function SalesPanel({
           }
         });
 
+        const unitLabel = rptUnit === "India-Unit1" ? "Unit 1" : rptUnit === "India-Unit2" ? "Unit 2" : null;
         const reportTitle = shopId === "ros-india"
-          ? "ROS India — Pending Dispatch Report"
+          ? (unitLabel ? `ROS India — ${unitLabel} Dispatch Report` : "ROS India — Pending Dispatch Report")
           : "ROS UK — Pending Dispatch Report";
 
         const shopLabel = shopId === "ros-india" ? "ROS India · INR" :
@@ -1614,7 +1615,7 @@ export default function SalesPanel({
               <td>${s.item||"—"}</td>
               ${rptUnit!=="India-Unit1"?`<td style="text-align:right;font-weight:800">${fmt?fmt(shopId,Number(s.amount)||0):(shop.symbol||"£")+(Number(s.amount)||0).toLocaleString()}</td>`:""}
               <td><span style="background:#fef9c3;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">${s.ful||s.status||"—"}</span></td>
-              <td>${isCross?`<span style="color:#c2410c;font-weight:700">⚠ ${dispFrom}</span>`:`<span style="color:#64748b">${dispFrom}</span>`}</td>
+              ${rptUnit==="ALL"?`<td>${isCross?`<span style="color:#c2410c;font-weight:700">⚠ ${dispFrom}</span>`:`<span style="color:#64748b">${dispFrom}</span>`}</td>`:""}
             </tr>`;
           }).join("");
 
@@ -1641,7 +1642,7 @@ export default function SalesPanel({
             </div>
           </div>
           <table>
-            <thead><tr><th>Order Date</th><th>Waiting</th><th>Customer</th><th>Phone</th><th>Item</th>${rptUnit!=='India-Unit1'?'<th>Amount</th>':''}<th>Status</th><th>Dispatch From</th></tr></thead>
+            <thead><tr><th>Order Date</th><th>Waiting</th><th>Customer</th><th>Phone</th><th>Item</th>${rptUnit!=='India-Unit1'?'<th>Amount</th>':''}<th>Status</th>${rptUnit==='ALL'?'<th>Dispatch From</th>':''}</tr></thead>
             <tbody>${rows}</tbody>
           </table>
           <div class="footer">Developed by ROS Nexus · ros-bms.vercel.app · ${new Date().toLocaleDateString("en-GB")}</div>
@@ -1657,7 +1658,19 @@ export default function SalesPanel({
               <div style={{width:40,height:40,background:accent,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:900,fontSize:15,flexShrink:0}}>ROS</div>
               <div style={{flex:1}}>
                 <h2 style={{margin:0,fontSize:16,fontWeight:900,color:"#0f172a"}}>{reportTitle}</h2>
-                <p style={{margin:0,fontSize:11,color:"#64748b"}}>{shopLabel}{rptUnit!=="ALL"?" · "+(rptUnit==="India-Unit1"?"Unit 1":"Unit 2"):""} · {reportSales.length} pending orders</p>
+                <p style={{margin:0,fontSize:11,color:"#64748b"}}>{shopLabel} · {reportSales.length} pending orders</p>
+                {rptUnit!=="ALL"&&(
+                  <div style={{marginTop:4,display:"inline-flex",alignItems:"center",gap:6,
+                    padding:"3px 12px",borderRadius:999,
+                    background:rptUnit==="India-Unit1"?"#eff6ff":"#f0fdf4",
+                    border:"1px solid "+(rptUnit==="India-Unit1"?"#93c5fd":"#86efac")}}>
+                    <span style={{fontSize:13,fontWeight:900,color:rptUnit==="India-Unit1"?"#1d4ed8":"#166534"}}>
+                      {rptUnit==="India-Unit1"?"🏭 DISPATCH UNIT 1":"🏭 DISPATCH UNIT 2"}
+                    </span>
+                    {rptUnit==="India-Unit1"&&<span style={{fontSize:10,color:"#64748b"}}>Agency Staff · Prices Hidden</span>}
+                    {rptUnit==="India-Unit2"&&<span style={{fontSize:10,color:"#64748b"}}>Own Staff</span>}
+                  </div>
+                )}
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                 {/* Status filter pills */}
@@ -1711,7 +1724,7 @@ export default function SalesPanel({
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
                 <thead style={{position:"sticky",top:0,zIndex:2}}>
                   <tr>
-                    {["Order Date","Waiting","Customer","Phone","Item",...(rptUnit!=="India-Unit1"?["Amount"]:[]),"Status","Dispatch From"].map(h=>(
+                    {["Order Date","Waiting","Customer","Phone","Item",...(rptUnit!=="India-Unit1"?["Amount"]:[]),"Status",...(rptUnit==="ALL"?["Dispatch From"]:[])] .map(h=>(
                       <th key={h} style={{padding:"10px 16px",fontSize:11,fontWeight:800,color:"#64748b",
                         textTransform:"uppercase",letterSpacing:"0.05em",background:"#f8fafc",
                         borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap",
@@ -1787,16 +1800,18 @@ export default function SalesPanel({
                             {s.ful||s.status||"—"}
                           </span>
                         </td>
-                        <td style={{padding:"11px 16px"}}>
-                          {isCross?(
-                            <span style={{fontSize:12,fontWeight:700,color:"#c2410c",display:"flex",alignItems:"center",gap:4}}>
-                              ⚠️ {dispFrom}
-                              <span style={{fontSize:10,color:"#f97316"}}>cross</span>
-                            </span>
-                          ):(
-                            <span style={{fontSize:12,color:"#64748b"}}>{dispFrom==="India-Unit1"?"🇮🇳 Unit 1":dispFrom==="India-Unit2"?"🇮🇳 Unit 2":dispFrom==="UK"?"🇬🇧 UK":dispFrom}</span>
-                          )}
-                        </td>
+                        {rptUnit==="ALL"&&(
+                          <td style={{padding:"11px 16px"}}>
+                            {isCross?(
+                              <span style={{fontSize:12,fontWeight:700,color:"#c2410c",display:"flex",alignItems:"center",gap:4}}>
+                                ⚠️ {dispFrom}
+                                <span style={{fontSize:10,color:"#f97316"}}>cross</span>
+                              </span>
+                            ):(
+                              <span style={{fontSize:12,color:"#64748b"}}>{dispFrom==="India-Unit1"?"🇮🇳 Unit 1":dispFrom==="India-Unit2"?"🇮🇳 Unit 2":dispFrom==="UK"?"🇬🇧 UK":dispFrom}</span>
+                            )}
+                          </td>
+                        )}
                       </tr>
                     );
                   })}
