@@ -23,7 +23,8 @@ import {
 import { formatCurrency, formatDate, formatNumber } from "./utils";
 import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser, dbLoadShopItems, dbAddShopItem, dbDeleteShopItem, dbSaveDelivery, dbLoadMessages, dbAddMessage, dbMarkMessageSent, dbCancelMessage, dbMessageExists, dbLoadReturns, dbSaveReturn, dbNextReturnId, dbDeleteReturn, dbDeleteMessage, dbDeleteMessages, dbSaveSupplier, dbLoadSuppliers, dbDeleteSupplier,
   dbUploadDoc, dbDeleteDoc, dbSavePurchaseDocs, dbSaveLogisticDocs,
-  dbSaveAgent, dbLoadAgents, dbDeleteAgent } from "./db";
+  dbSaveAgent, dbLoadAgents, dbDeleteAgent,
+  dbLoadExpenseCategories, dbSaveExpenseCategory, dbDeleteExpenseCategory } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -3190,7 +3191,7 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
 /* ═══════════════════════════════════════════════════════════
    EXPENSES TAB PANEL
    ═══════════════════════════════════════════════════════════ */
-const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData})=>{
+const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCats})=>{
   const [showForm,setShowForm]=React.useState(false);
   const [editExp,setEditExp]=React.useState(null);
   const [search,setSearch]=React.useState("");
@@ -3198,7 +3199,8 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData})=>{
   const [saving,setSaving]=React.useState(false);
   const [confirmDelete,setConfirmDelete]=React.useState(null);
 
-  const CATEGORIES=["Rent","Utilities","Salaries","Packaging","Shipping","Marketing","Software","Equipment","Travel","Professional Expenses","Agents Expenses","Other"];
+  const BUILTIN_CATEGORIES=["Rent","Utilities","Salaries","Packaging","Shipping","Marketing","Software","Equipment","Travel","Professional Expenses","Agents Expenses","Other"];
+  const CATEGORIES=[...BUILTIN_CATEGORIES,...expCats.filter(c=>!BUILTIN_CATEGORIES.includes(c))];
   const METHODS=["Bank Transfer","UPI","Other"];
 
   const cats=["ALL",...new Set(exps.map(e=>e.cat).filter(Boolean))];
@@ -3252,10 +3254,30 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData})=>{
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
           <div><label style={lbl}>Date</label>
             <input type="date" value={f.date} onChange={e=>s("date",e.target.value)} style={inp}/></div>
-          <div><label style={lbl}>Category</label>
-            <select value={f.cat} onChange={e=>s("cat",e.target.value)} style={inp}>
+          <div>
+            <label style={lbl}>Category</label>
+            <select value={f.cat} onChange={e=>{
+              if(e.target.value==="__add_new__"){
+                const newCat=window.prompt("Enter new category name:");
+                if(newCat&&newCat.trim()){
+                  const name=newCat.trim();
+                  dbSaveExpenseCategory(shopId,name).then(r=>{
+                    if(!r||!r.error){
+                      if(setExpCats) setExpCats(prev=>[...prev.filter(c=>c!==name),name].sort());
+                      s("cat",name);
+                    } else {
+                      alert("Failed to save category: "+r.error);
+                    }
+                  });
+                }
+              } else {
+                s("cat",e.target.value);
+              }
+            }} style={inp}>
               <option value="">— Select —</option>
-              {CATEGORIES.map(c=><option key={c}>{c}</option>)}
+              {CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
+              <option disabled>──────────</option>
+              <option value="__add_new__">➕ Add new category…</option>
             </select>
           </div>
         </div>
@@ -3331,15 +3353,33 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData})=>{
 
         {/* Category filter */}
         <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-          {cats.map(c=>(
-            <button key={c} onClick={()=>setCatFilter(c)}
-              style={{padding:"4px 12px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
-                border:"1px solid "+(catFilter===c?shop.accent:"#e2e8f0"),
-                background:catFilter===c?shop.accent:"white",
-                color:catFilter===c?"white":"#64748b"}}>
-              {c}
-            </button>
-          ))}
+          {cats.map(c=>{
+            const isCustom=c!=="ALL"&&!BUILTIN_CATEGORIES.includes(c);
+            return(
+              <div key={c} style={{display:"inline-flex",alignItems:"center",gap:0}}>
+                <button onClick={()=>setCatFilter(c)}
+                  style={{padding:"4px 12px",borderRadius:isCustom?"999px 0 0 999px":"999px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                    border:"1px solid "+(catFilter===c?shop.accent:"#e2e8f0"),borderRight:isCustom?"none":undefined,
+                    background:catFilter===c?shop.accent:"white",
+                    color:catFilter===c?"white":"#64748b"}}>
+                  {c}
+                </button>
+                {isCustom&&(
+                  <button onClick={()=>{
+                    if(!window.confirm("Delete category '"+c+"'?"))return;
+                    dbDeleteExpenseCategory(shopId,c).then(()=>{
+                      if(setExpCats) setExpCats(prev=>prev.filter(x=>x!==c));
+                      if(catFilter===c) setCatFilter("ALL");
+                    });
+                  }}
+                    style={{padding:"4px 7px",borderRadius:"0 999px 999px 0",fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                      border:"1px solid "+(catFilter===c?shop.accent:"#e2e8f0"),
+                      background:catFilter===c?shop.accent+"cc":"#fef2f2",
+                      color:catFilter===c?"white":"#dc2626"}}>×</button>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -3856,6 +3896,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [suppData,setSuppData]=useState([]);
   const [agentData,setAgentData]=useState([]);
   const [expData,setExpData]=useState([]);
+  const [expCats,setExpCats]=useState([]);
   const [logData,setLogData]=useState([]);
   const [markDeliveredSale,setMarkDeliveredSale]=useState(null);
   const [editPurchRow,setEditPurchRow]=useState(null);
@@ -3883,6 +3924,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     dbLoadSuppliers(shopId).then(d=>{if(d)setSuppData(d);}).catch(()=>{});
     dbLoadAgents(shopId).then(d=>{if(d)setAgentData(d);}).catch(()=>{});
     dbLoadExpenses(shopId).then(d=>{if(d)setExpData(d);}).catch(()=>{});
+    dbLoadExpenseCategories(shopId).then(d=>{if(d)setExpCats(d);}).catch(()=>{});
     dbLoadLogistics(shopId).then(d=>{if(d)setLogData(d);}).catch(()=>{});
   },[shopId]);
 
@@ -5426,6 +5468,8 @@ return(
               shop={shop}
               shopId={shopId}
               setExpData={setExpData}
+              expCats={expCats}
+              setExpCats={setExpCats}
             />
           )}
 

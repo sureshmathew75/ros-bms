@@ -929,3 +929,30 @@ export const dbDeleteAgent = async (id) => {
   const { error } = await sb.from('agents').delete().eq('id', id);
   if (error) console.error('Delete agent error:', error);
 };
+
+/* ═══════════════════════════════════════════════════════════
+   EXPENSE CATEGORIES
+   ═══════════════════════════════════════════════════════════ */
+export const dbLoadExpenseCategories = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('expense_categories').select('*')
+    .eq('shop_id', shopId).order('name');
+  if (error) { console.error('Load expense categories error:', error); return []; }
+  return (data || []).map(r => r.name);
+};
+
+export const dbSaveExpenseCategory = async (shopId, name) => {
+  if (!sb) return { error: 'No client' };
+  // Check if already exists
+  const { data: existing } = await sb.from('expense_categories').select('id')
+    .eq('shop_id', shopId).eq('name', name).maybeSingle();
+  if (existing) return { error: null }; // already exists
+  const { error } = await sb.from('expense_categories').insert({ shop_id: shopId, name });
+  if (error) { console.error('Save expense category error:', error); return { error: error.message }; }
+  return { error: null };
+};
+
+export const dbDeleteExpenseCategory = async (shopId, name) => {
+  if (!sb) return;
+  await sb.from('expense_categories').delete().eq('shop_id', shopId).eq('name', name);
+};
