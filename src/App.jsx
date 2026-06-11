@@ -153,7 +153,7 @@ const BSTYLE={
   "REFUNDED":                 {bg:"#f3e4ff",c:"#7e22ce",b:"#d8b4fe"},
   // ── India-specific delivery statuses ──
   "ORDER NOT PLACED":         {bg:"#fef9c3",c:"#a16207",b:"#fde047"},
-  "WORK IN PROGRESS":         {bg:"#dbeafe",c:"#1d4ed8",b:"#bfdbfe"},
+  "IN PROGRESS":         {bg:"#dbeafe",c:"#1d4ed8",b:"#bfdbfe"},
   "PHOTO GIVEN TO CUSTOMER":  {bg:"#e0f2fe",c:"#0369a1",b:"#bae6fd"},
   "AWAITING TRACKING INFO.":  {bg:"#fef3c7",c:"#92400e",b:"#fcd34d"},
   "RETURN REQUESTED":         {bg:"#ffedd5",c:"#c2410c",b:"#fed7aa"},
@@ -187,7 +187,7 @@ const STATUS_ROW_BG={
   "REFUNDED":                  "#faf5ff",
   // India-specific
   "ORDER NOT PLACED":          "#fffbeb",
-  "WORK IN PROGRESS":          "#eff6ff",
+  "IN PROGRESS":          "#eff6ff",
   "PHOTO GIVEN TO CUSTOMER":   "#f0f9ff",
   "AWAITING TRACKING INFO.":   "#fffbeb",
   "RETURN REQUESTED":          "#fff7ed",
@@ -5248,7 +5248,7 @@ return(
             const indiaStatuses=[
               {key:"ALL",                        label:"All",         emoji:"🗂️"},
               {key:"ORDER NOT PLACED",           label:"Not Placed",  emoji:"🕐"},
-              {key:"WORK IN PROGRESS",           label:"In Progress", emoji:"🔧"},
+              {key:"IN PROGRESS",           label:"In Progress", emoji:"🔧"},
               {key:"PHOTO GIVEN TO CUSTOMER",    label:"Photo Sent",  emoji:"📸"},
               {key:"AWAITING TRACKING INFO.",    label:"Awaiting",    emoji:"📦"},
               {key:"FULFILLED",                  label:"Fulfilled",   emoji:"✅"},
@@ -7609,7 +7609,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false}
   const isReturnReceived=["RETURN RECEIVED","RETRN RCVD"].includes(form.status);
   const isExchanged=form.status==="EXCHANGED";
   const isRefunded=form.status==="REFUNDED";
-  const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","WORK IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
+  const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
   const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
   const [editCustOpen,setEditCustOpen]=useState(false);
@@ -7875,7 +7875,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false}
           <select value={form.status} onChange={e=>set("status",e.target.value)}
             style={{...inp,fontWeight:700,color:statusColor[form.status]||"#374151"}}>
             {(shopId==="ros-india"
-              ? ["ORDER NOT PLACED","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]
+              ? ["ORDER NOT PLACED","IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]
               : ["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]
             ).map(o=>(
               <option key={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>
@@ -8874,7 +8874,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const isReturnRequested=["RETURN REQUESTED","RTRN REQSTD"].includes(form.status);
   const isReturnReceived=["RETURN RECEIVED","RETRN RCVD"].includes(form.status);
   const isRefundOnly=["EXCHANGED","REFUNDED"].includes(form.status);
-  const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","WORK IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
+  const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
 
   const handleAddCustomer=(newCust)=>{setCustomerList(l=>[newCust,...l]);set("customer",newCust.name);set("contact",newCust.phone);setShowNewCust(false);};
   const updateLine=(id,key,val)=>setLines(ls=>ls.map(l=>l.id===id?{...l,[key]:val}:l));
@@ -9001,7 +9001,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🚚 Payment & Delivery</p>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
                 <div><label style={lbl}>Payment By</label><select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"].map(o=><option key={o}>{o}</option>)}</select></div>
-                <div><label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["ORDER NOT PLACED","WORK IN PROGRESS","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select></div>
+                <div><label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["ORDER NOT PLACED","IN PROGRESS","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select></div>
               </div>
               {form.payBy==="SHOP"&&(
                 <div style={{marginBottom:7}}><label style={lbl}>Shop Invoice No.</label><input value={form.shopInvoiceNo} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/></div>
