@@ -1724,7 +1724,7 @@ export default function SalesPanel({
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
                 <thead style={{position:"sticky",top:0,zIndex:2}}>
                   <tr>
-                    {["Order Date","Waiting","Customer","Phone","Item",...(rptUnit!=="India-Unit1"?["Amount"]:[]),"Status",...(rptUnit==="ALL"?["Dispatch From"]:[])] .map(h=>(
+                    {["Order Date","Waiting","Customer","Phone","Item",...(rptUnit!=="India-Unit1"?["Amount"]:[]),"Status",...(rptUnit==="ALL"?["Dispatch From"]:[])].map(h=>(
                       <th key={h} style={{padding:"10px 16px",fontSize:11,fontWeight:800,color:"#64748b",
                         textTransform:"uppercase",letterSpacing:"0.05em",background:"#f8fafc",
                         borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap",
