@@ -357,6 +357,8 @@ export default function SalesPanel({
   const [amountInput,    setAmountInput]    = useState("");
   const [editStatusId,   setEditStatusId]   = useState(null);
   const [showReport,     setShowReport]     = useState(false);
+  const [rptStatuses,    setRptStatuses]    = useState(null); // null = use defaults
+  const [crossOnly,      setCrossOnly]      = useState(false);
   /* Month picker state */
   const [pickedMonth, setPickedMonth] = useState(null);   // "YYYY-MM" or null
   const [pickerOpen,  setPickerOpen]  = useState(false);
@@ -1455,9 +1457,8 @@ export default function SalesPanel({
           ? ["ORDER NOT PLACED","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","PENDING"]
           : ["PENDING","PROCESSING","ON HOLD","AWAITING PAYMENT"];
 
-        const [rptStatuses, setRptStatuses] = React.useState(UNFULFILLED);
-        const [crossOnly,   setCrossOnly]   = React.useState(false);
-
+        // Use top-level state; init defaults on open
+        const activeStatuses = rptStatuses || UNFULFILLED;
         const today = new Date(); today.setHours(0,0,0,0);
         const daysWaiting = (dateStr) => {
           if (!dateStr) return 0;
@@ -1470,7 +1471,7 @@ export default function SalesPanel({
         const reportSales = sales
           .filter(s => {
             const st = (s.ful || s.status || "").toUpperCase();
-            const matchStatus = rptStatuses.some(r => st === r.toUpperCase());
+            const matchStatus = activeStatuses.some(r => st === r.toUpperCase());
             const dispFrom = s.dispatchFrom || defaultFrom;
             const isCross = dispFrom !== defaultFrom;
             return matchStatus && (!crossOnly || isCross);
@@ -1553,13 +1554,14 @@ export default function SalesPanel({
               <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                 {/* Status filter pills */}
                 {ALL_STATUSES.map(st => (
-                  <button key={st} onClick={() => setRptStatuses(prev =>
-                    prev.includes(st) ? prev.filter(x=>x!==st) : [...prev,st]
-                  )}
+                  <button key={st} onClick={() => setRptStatuses(prev => {
+                    const cur = prev || UNFULFILLED;
+                    return cur.includes(st) ? cur.filter(x=>x!==st) : [...cur,st];
+                  })}
                     style={{padding:"4px 10px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
-                      border:"1px solid "+(rptStatuses.includes(st)?accent:"#e2e8f0"),
-                      background:rptStatuses.includes(st)?accent+"18":"white",
-                      color:rptStatuses.includes(st)?accent:"#64748b"}}>
+                      border:"1px solid "+(activeStatuses.includes(st)?accent:"#e2e8f0"),
+                      background:activeStatuses.includes(st)?accent+"18":"white",
+                      color:activeStatuses.includes(st)?accent:"#64748b"}}>
                     {st}
                   </button>
                 ))}
