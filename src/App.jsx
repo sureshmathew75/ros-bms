@@ -7564,6 +7564,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false}
     trackingNo:  sale.trackingNo||"",
     deliveryDate: sale.deliveryDate||"",
     deliveryTime: sale.deliveryTime||"",
+    expectedTotal: sale.expectedTotal||"",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
