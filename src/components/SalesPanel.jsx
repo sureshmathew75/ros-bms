@@ -359,6 +359,7 @@ export default function SalesPanel({
   const [showReport,     setShowReport]     = useState(false);
   const [rptStatuses,    setRptStatuses]    = useState(null); // null = use defaults
   const [crossOnly,      setCrossOnly]      = useState(false);
+  const [rptUnit,        setRptUnit]        = useState("ALL"); // ALL / India-Unit1 / India-Unit2
   /* Month picker state */
   const [pickedMonth, setPickedMonth] = useState(null);   // "YYYY-MM" or null
   const [pickerOpen,  setPickerOpen]  = useState(false);
@@ -1364,9 +1365,9 @@ export default function SalesPanel({
 
                     {/* Dispatch From */}
                     {(()=>{
-                      const defaultFrom = shopId === "ros-india" ? "India" : "UK";
+                      const defaultFrom = shopId === "ros-india" ? "India-Unit1" : "UK";
                       const current = s.dispatchFrom || defaultFrom;
-                      const isCross = current !== defaultFrom;
+                      const isIndia = current.startsWith("India"); const isDefaultIndia = defaultFrom.startsWith("India"); const isCross = isIndia !== isDefaultIndia;
                       return (
                         <td style={{ padding: "8px 10px" }} onClick={e => e.stopPropagation()}>
                           <select
@@ -1381,8 +1382,15 @@ export default function SalesPanel({
                               background: isCross ? "#fff7ed" : "#f8fafc",
                               color: isCross ? "#c2410c" : "#64748b",
                             }}>
-                            <option value="UK">🇬🇧 UK</option>
-                            <option value="India">🇮🇳 India</option>
+                            {shopId === "ros-india" ? (<>
+                              <option value="India-Unit1">🇮🇳 India · Unit 1</option>
+                              <option value="India-Unit2">🇮🇳 India · Unit 2</option>
+                              <option value="UK">🇬🇧 UK</option>
+                            </>) : (<>
+                              <option value="UK">🇬🇧 UK</option>
+                              <option value="India-Unit1">🇮🇳 India · Unit 1</option>
+                              <option value="India-Unit2">🇮🇳 India · Unit 2</option>
+                            </>)}
                           </select>
                           {isCross && (
                             <div style={{ fontSize: 9, color: "#f97316", fontWeight: 700, marginTop: 2, textAlign: "center" }}>
@@ -1466,15 +1474,16 @@ export default function SalesPanel({
           return Math.floor((today - d) / 86400000);
         };
 
-        const defaultFrom = shopId === "ros-india" ? "India" : "UK";
+        const defaultFrom = shopId === "ros-india" ? "India-Unit1" : "UK";
 
         const reportSales = sales
           .filter(s => {
             const st = (s.ful || s.status || "").toUpperCase();
             const matchStatus = activeStatuses.some(r => st === r.toUpperCase());
             const dispFrom = s.dispatchFrom || defaultFrom;
-            const isCross = dispFrom !== defaultFrom;
-            return matchStatus && (!crossOnly || isCross);
+            const isCross = dispFrom.startsWith('India') !== defaultFrom.startsWith('India');
+            const matchUnit = rptUnit === 'ALL' || dispFrom === rptUnit;
+            return matchStatus && (!crossOnly || isCross) && matchUnit;
           })
           .sort((a, b) => daysWaiting(b.date) - daysWaiting(a.date));
 
@@ -1496,7 +1505,7 @@ export default function SalesPanel({
           const rows = reportSales.map(s => {
             const days = daysWaiting(s.date);
             const dispFrom = s.dispatchFrom || defaultFrom;
-            const isCross = dispFrom !== defaultFrom;
+            const isCross = dispFrom.startsWith('India') !== defaultFrom.startsWith('India');
             const dayColor = days >= 5 ? "#dc2626" : days >= 3 ? "#d97706" : "#059669";
             return `<tr style="background:${isCross?"#fff7ed":"white"}">
               <td>${fmtD(s.date)}</td>
@@ -1504,7 +1513,7 @@ export default function SalesPanel({
               <td style="font-weight:700">${s.customer||"—"}</td>
               <td>${s.phone||s.contact||"—"}</td>
               <td>${s.item||"—"}</td>
-              <td style="text-align:right;font-weight:800">${fmt?fmt(shopId,Number(s.amount)||0):(shop.symbol||"£")+(Number(s.amount)||0).toLocaleString()}</td>
+              ${rptUnit!=="India-Unit1"?`<td style="text-align:right;font-weight:800">${fmt?fmt(shopId,Number(s.amount)||0):(shop.symbol||"£")+(Number(s.amount)||0).toLocaleString()}</td>`:""}
               <td><span style="background:#fef9c3;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">${s.ful||s.status||"—"}</span></td>
               <td>${isCross?`<span style="color:#c2410c;font-weight:700">⚠ ${dispFrom}</span>`:`<span style="color:#64748b">${dispFrom}</span>`}</td>
             </tr>`;
@@ -1533,7 +1542,7 @@ export default function SalesPanel({
             </div>
           </div>
           <table>
-            <thead><tr><th>Order Date</th><th>Waiting</th><th>Customer</th><th>Phone</th><th>Item</th><th>Amount</th><th>Status</th><th>Dispatch From</th></tr></thead>
+            <thead><tr><th>Order Date</th><th>Waiting</th><th>Customer</th><th>Phone</th><th>Item</th>${rptUnit!=='India-Unit1'?'<th>Amount</th>':''}<th>Status</th><th>Dispatch From</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
           <div class="footer">Developed by ROS Nexus · ros-bms.vercel.app · ${new Date().toLocaleDateString("en-GB")}</div>
@@ -1549,7 +1558,7 @@ export default function SalesPanel({
               <div style={{width:40,height:40,background:accent,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:900,fontSize:15,flexShrink:0}}>ROS</div>
               <div style={{flex:1}}>
                 <h2 style={{margin:0,fontSize:16,fontWeight:900,color:"#0f172a"}}>{reportTitle}</h2>
-                <p style={{margin:0,fontSize:11,color:"#64748b"}}>{shopLabel} · {reportSales.length} pending orders</p>
+                <p style={{margin:0,fontSize:11,color:"#64748b"}}>{shopLabel}{rptUnit!=="ALL"?" · "+(rptUnit==="India-Unit1"?"Unit 1":"Unit 2"):""} · {reportSales.length} pending orders</p>
               </div>
               <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
                 {/* Status filter pills */}
@@ -1566,6 +1575,19 @@ export default function SalesPanel({
                   </button>
                 ))}
                 <div style={{width:1,height:20,background:"#e2e8f0"}}/>
+                {shopId==="ros-india"&&(<>
+                  <div style={{width:1,height:20,background:"#e2e8f0"}}/>
+                  <span style={{fontSize:11,color:"#64748b",fontWeight:600}}>Unit:</span>
+                  {[["ALL","All Units"],["India-Unit1","Unit 1"],["India-Unit2","Unit 2"]].map(([val,lbl])=>(
+                    <button key={val} onClick={()=>setRptUnit(val)}
+                      style={{padding:"4px 12px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                        border:"1px solid "+(rptUnit===val?"#7c3aed":"#e2e8f0"),
+                        background:rptUnit===val?"#f5f3ff":"white",color:rptUnit===val?"#7c3aed":"#64748b"}}>
+                      {lbl}
+                    </button>
+                  ))}
+                  <div style={{width:1,height:20,background:"#e2e8f0"}}/>
+                </>)}
                 <button onClick={()=>setCrossOnly(v=>!v)}
                   style={{padding:"4px 12px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
                     border:"1px solid "+(crossOnly?"#f97316":"#e2e8f0"),
@@ -1590,7 +1612,7 @@ export default function SalesPanel({
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
                 <thead style={{position:"sticky",top:0,zIndex:2}}>
                   <tr>
-                    {["Order Date","Waiting","Customer","Phone","Item","Amount","Status","Dispatch From"].map(h=>(
+                    {["Order Date","Waiting","Customer","Phone","Item",...(rptUnit!=="India-Unit1"?["Amount"]:[]),"Status","Dispatch From"].map(h=>(
                       <th key={h} style={{padding:"10px 16px",fontSize:11,fontWeight:800,color:"#64748b",
                         textTransform:"uppercase",letterSpacing:"0.05em",background:"#f8fafc",
                         borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap",
@@ -1624,9 +1646,11 @@ export default function SalesPanel({
                         <td style={{padding:"11px 16px",fontWeight:700,color:"#0f172a"}}>{s.customer||"—"}</td>
                         <td style={{padding:"11px 16px",fontFamily:"DM Mono,monospace",fontSize:12,color:"#64748b"}}>{s.phone||s.contact||"—"}</td>
                         <td style={{padding:"11px 16px",color:"#374151",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.item||"—"}</td>
-                        <td style={{padding:"11px 16px",textAlign:"right",fontWeight:800,color:"#0f172a",whiteSpace:"nowrap"}}>
-                          {fmt?fmt(shopId,Number(s.amount)||0):(shop.symbol||"£")+(Number(s.amount)||0).toLocaleString()}
-                        </td>
+                        {rptUnit!=="India-Unit1"&&(
+                          <td style={{padding:"11px 16px",textAlign:"right",fontWeight:800,color:"#0f172a",whiteSpace:"nowrap"}}>
+                            {fmt?fmt(shopId,Number(s.amount)||0):(shop.symbol||"£")+(Number(s.amount)||0).toLocaleString()}
+                          </td>
+                        )}
                         <td style={{padding:"11px 16px"}}>
                           <span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999,
                             background:"#fef9c3",color:"#854d0e",border:"1px solid #fde047",whiteSpace:"nowrap"}}>
@@ -1640,7 +1664,7 @@ export default function SalesPanel({
                               <span style={{fontSize:10,color:"#f97316"}}>cross</span>
                             </span>
                           ):(
-                            <span style={{fontSize:12,color:"#64748b"}}>{dispFrom}</span>
+                            <span style={{fontSize:12,color:"#64748b"}}>{dispFrom==="India-Unit1"?"🇮🇳 Unit 1":dispFrom==="India-Unit2"?"🇮🇳 Unit 2":dispFrom==="UK"?"🇬🇧 UK":dispFrom}</span>
                           )}
                         </td>
                       </tr>
