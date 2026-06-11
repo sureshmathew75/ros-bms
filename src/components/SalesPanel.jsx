@@ -964,7 +964,7 @@ export default function SalesPanel({
               <tr style={{ background: "#f8fafc" }}>
                 {["Invoice", "Date", "Customer", "Item", "Amount", "Refund", "Payment", "Status", "Tags",
                   ...(shopId==="ros-india"&&!isStaff ? ["Pur. Amount"] : []),
-                  "Tracking", "Delivered", "Actions"]
+                  "Tracking", "Delivered", "From", "Actions"]
                   .map((h, i) => (
                     <th key={h} style={{
                       padding: "11px 16px",
@@ -983,7 +983,7 @@ export default function SalesPanel({
               {/* Empty state */}
               {rowsWithSeparators.length === 0 && (
                 <tr>
-                  <td colSpan={shopId==="ros-india"&&!isStaff ? 13 : 12} style={{ padding: "52px 16px", textAlign: "center" }}>
+                  <td colSpan={shopId==="ros-india"&&!isStaff ? 14 : 13} style={{ padding: "52px 16px", textAlign: "center" }}>
                     <div style={{ fontSize: 36, marginBottom: 10 }}>🛒</div>
                     <p style={{ margin: 0, fontWeight: 700, color: "#94a3b8", fontSize: 14 }}>
                       No {statusTab !== "ALL" ? activeTabCfg.label.toLowerCase() + " " : ""}sales found
@@ -1003,7 +1003,7 @@ export default function SalesPanel({
                 if (row._type === "fy") {
                   return (
                     <tr key={`fy-${row._fyStart}-${idx}`}>
-                      <td colSpan={shopId==="ros-india"&&!isStaff ? 13 : 12} style={{ padding: 0 }}>
+                      <td colSpan={shopId==="ros-india"&&!isStaff ? 14 : 13} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", gap: 10,
                           padding: "9px 16px",
@@ -1035,7 +1035,7 @@ export default function SalesPanel({
                 if (row._type === "month") {
                   return (
                     <tr key={`month-${row._monthKey}-${idx}`}>
-                      <td colSpan={shopId==="ros-india"&&!isStaff ? 13 : 12} style={{ padding: 0 }}>
+                      <td colSpan={shopId==="ros-india"&&!isStaff ? 14 : 13} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", gap: 10,
                           padding: "6px 16px",
@@ -1071,7 +1071,7 @@ export default function SalesPanel({
                 if (row._type === "monthSummary") {
                   return (
                     <tr key={`summary-${row._monthKey}`}>
-                      <td colSpan={shopId==="ros-india"&&!isStaff ? 13 : 12} style={{ padding: 0 }}>
+                      <td colSpan={shopId==="ros-india"&&!isStaff ? 14 : 13} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", gap: 0,
                           padding: "8px 16px",
@@ -1349,6 +1349,37 @@ export default function SalesPanel({
                         <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>
                       )}
                     </td>
+
+                    {/* Dispatch From */}
+                    {(()=>{
+                      const defaultFrom = shopId === "ros-india" ? "India" : "UK";
+                      const current = s.dispatchFrom || defaultFrom;
+                      const isCross = current !== defaultFrom;
+                      return (
+                        <td style={{ padding: "8px 10px" }} onClick={e => e.stopPropagation()}>
+                          <select
+                            value={current}
+                            onChange={e => {
+                              if (onInlineEdit) onInlineEdit(s.id, { dispatchFrom: e.target.value });
+                            }}
+                            style={{
+                              padding: "4px 8px", borderRadius: 8, fontSize: 11, fontWeight: 700,
+                              fontFamily: "inherit", cursor: "pointer", outline: "none",
+                              border: "1px solid " + (isCross ? "#f97316" : "#e2e8f0"),
+                              background: isCross ? "#fff7ed" : "#f8fafc",
+                              color: isCross ? "#c2410c" : "#64748b",
+                            }}>
+                            <option value="UK">🇬🇧 UK</option>
+                            <option value="India">🇮🇳 India</option>
+                          </select>
+                          {isCross && (
+                            <div style={{ fontSize: 9, color: "#f97316", fontWeight: 700, marginTop: 2, textAlign: "center" }}>
+                              Cross-dispatch
+                            </div>
+                          )}
+                        </td>
+                      );
+                    })()}
 
                     {/* Actions */}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
