@@ -356,6 +356,7 @@ export default function SalesPanel({
   const [editAmountId,   setEditAmountId]   = useState(null);
   const [amountInput,    setAmountInput]    = useState("");
   const [editStatusId,   setEditStatusId]   = useState(null);
+  const [showReport,     setShowReport]     = useState(false);
   /* Month picker state */
   const [pickedMonth, setPickedMonth] = useState(null);   // "YYYY-MM" or null
   const [pickerOpen,  setPickerOpen]  = useState(false);
@@ -709,6 +710,15 @@ export default function SalesPanel({
               {reloading ? "⏳" : "🔄"}
             </button>
           )}
+          <button onClick={() => setShowReport(true)}
+            style={{
+              display: "flex", alignItems: "center", gap: 6,
+              padding: "8px 14px", borderRadius: 9, border: "1px solid #e2e8f0",
+              background: "white", color: "#374151", fontWeight: 700, fontSize: 13,
+              cursor: "pointer", fontFamily: "inherit",
+            }}>
+            📋 Report
+          </button>
           <button onClick={() => setModal("new-sale")}
             style={{
               display: "flex", alignItems: "center", gap: 6,
@@ -1433,6 +1443,224 @@ export default function SalesPanel({
           </div>
         )}
       </div>
+
+      {/* ══════════════════════════════════════════════════════════
+          PENDING REPORT MODAL
+         ══════════════════════════════════════════════════════════ */}
+      {showReport && (() => {
+        const UNFULFILLED = shopId === "ros-india"
+          ? ["ORDER NOT PLACED","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO."]
+          : ["PENDING"];
+        const ALL_STATUSES = shopId === "ros-india"
+          ? ["ORDER NOT PLACED","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","PENDING"]
+          : ["PENDING","PROCESSING","ON HOLD","AWAITING PAYMENT"];
+
+        const [rptStatuses, setRptStatuses] = React.useState(UNFULFILLED);
+        const [crossOnly,   setCrossOnly]   = React.useState(false);
+
+        const today = new Date(); today.setHours(0,0,0,0);
+        const daysWaiting = (dateStr) => {
+          if (!dateStr) return 0;
+          const d = new Date(dateStr); d.setHours(0,0,0,0);
+          return Math.floor((today - d) / 86400000);
+        };
+
+        const defaultFrom = shopId === "ros-india" ? "India" : "UK";
+
+        const reportSales = sales
+          .filter(s => {
+            const st = (s.ful || s.status || "").toUpperCase();
+            const matchStatus = rptStatuses.some(r => st === r.toUpperCase());
+            const dispFrom = s.dispatchFrom || defaultFrom;
+            const isCross = dispFrom !== defaultFrom;
+            return matchStatus && (!crossOnly || isCross);
+          })
+          .sort((a, b) => daysWaiting(b.date) - daysWaiting(a.date));
+
+        const reportTitle = shopId === "ros-india"
+          ? "ROS India — Pending Dispatch Report"
+          : "ROS UK — Pending Dispatch Report";
+
+        const shopLabel = shopId === "ros-india" ? "ROS India · INR" :
+          shopId === "ros-hairlines" ? "ROS Hairlines UK · GBP" : "ROS Selections UK · GBP";
+
+        const fmtD = d => {
+          if (!d) return "—";
+          try { const p = d.split("-"); return p.length === 3 ? `${p[2]}/${p[1]}/${p[0].slice(2)}` : d; }
+          catch { return d; }
+        };
+
+        const printReport = () => {
+          const w = window.open("","_blank","width=900,height=700");
+          const rows = reportSales.map(s => {
+            const days = daysWaiting(s.date);
+            const dispFrom = s.dispatchFrom || defaultFrom;
+            const isCross = dispFrom !== defaultFrom;
+            const dayColor = days >= 5 ? "#dc2626" : days >= 3 ? "#d97706" : "#059669";
+            return `<tr style="background:${isCross?"#fff7ed":"white"}">
+              <td>${fmtD(s.date)}</td>
+              <td style="color:${dayColor};font-weight:700">${days}d</td>
+              <td style="font-weight:700">${s.customer||"—"}</td>
+              <td>${s.phone||s.contact||"—"}</td>
+              <td>${s.item||"—"}</td>
+              <td style="text-align:right;font-weight:800">${fmt?fmt(shopId,Number(s.amount)||0):(shop.symbol||"£")+(Number(s.amount)||0).toLocaleString()}</td>
+              <td><span style="background:#fef9c3;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">${s.ful||s.status||"—"}</span></td>
+              <td>${isCross?`<span style="color:#c2410c;font-weight:700">⚠ ${dispFrom}</span>`:`<span style="color:#64748b">${dispFrom}</span>`}</td>
+            </tr>`;
+          }).join("");
+
+          w.document.write(`<!DOCTYPE html><html><head><title>${reportTitle}</title>
+          <style>
+            body{font-family:Arial,sans-serif;margin:0;padding:20px;color:#1e293b;}
+            .header{display:flex;align-items:center;gap:16px;margin-bottom:20px;padding-bottom:14px;border-bottom:2px solid #e2e8f0;}
+            .logo{width:48px;height:48px;background:#059669;border-radius:10px;display:flex;align-items:center;justify-content:center;color:white;font-weight:900;font-size:18px;flex-shrink:0;}
+            h1{margin:0;font-size:18px;color:#0f172a;}
+            p{margin:2px 0 0;font-size:12px;color:#64748b;}
+            table{width:100%;border-collapse:collapse;font-size:12px;}
+            th{background:#f8fafc;padding:8px 10px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;color:#64748b;border-bottom:2px solid #e2e8f0;}
+            td{padding:8px 10px;border-bottom:1px solid #f1f5f9;}
+            tr:hover td{background:#f8fafc;}
+            .footer{margin-top:16px;font-size:11px;color:#94a3b8;text-align:right;}
+            @media print{body{padding:10px;}button{display:none!important;}}
+          </style></head><body>
+          <div class="header">
+            <div class="logo">ROS</div>
+            <div>
+              <h1>${reportTitle}</h1>
+              <p>${shopLabel} · Generated ${new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"})}</p>
+              <p>${reportSales.length} pending order${reportSales.length!==1?"s":""}</p>
+            </div>
+          </div>
+          <table>
+            <thead><tr><th>Order Date</th><th>Waiting</th><th>Customer</th><th>Phone</th><th>Item</th><th>Amount</th><th>Status</th><th>Dispatch From</th></tr></thead>
+            <tbody>${rows}</tbody>
+          </table>
+          <div class="footer">Developed by ROS Nexus · ros-bms.vercel.app · ${new Date().toLocaleDateString("en-GB")}</div>
+          <script>window.onload=()=>window.print();<\/script>
+          </body></html>`);
+          w.document.close();
+        };
+
+        return (
+          <div style={{position:"fixed",inset:0,zIndex:95,display:"flex",flexDirection:"column",background:"white"}}>
+            {/* Report header */}
+            <div style={{padding:"14px 20px",borderBottom:"1px solid #e2e8f0",display:"flex",alignItems:"center",gap:12,flexWrap:"wrap",background:"white",flexShrink:0}}>
+              <div style={{width:40,height:40,background:accent,borderRadius:10,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:900,fontSize:15,flexShrink:0}}>ROS</div>
+              <div style={{flex:1}}>
+                <h2 style={{margin:0,fontSize:16,fontWeight:900,color:"#0f172a"}}>{reportTitle}</h2>
+                <p style={{margin:0,fontSize:11,color:"#64748b"}}>{shopLabel} · {reportSales.length} pending orders</p>
+              </div>
+              <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                {/* Status filter pills */}
+                {ALL_STATUSES.map(st => (
+                  <button key={st} onClick={() => setRptStatuses(prev =>
+                    prev.includes(st) ? prev.filter(x=>x!==st) : [...prev,st]
+                  )}
+                    style={{padding:"4px 10px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                      border:"1px solid "+(rptStatuses.includes(st)?accent:"#e2e8f0"),
+                      background:rptStatuses.includes(st)?accent+"18":"white",
+                      color:rptStatuses.includes(st)?accent:"#64748b"}}>
+                    {st}
+                  </button>
+                ))}
+                <div style={{width:1,height:20,background:"#e2e8f0"}}/>
+                <button onClick={()=>setCrossOnly(v=>!v)}
+                  style={{padding:"4px 12px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                    border:"1px solid "+(crossOnly?"#f97316":"#e2e8f0"),
+                    background:crossOnly?"#fff7ed":"white",color:crossOnly?"#c2410c":"#64748b"}}>
+                  ⚠ Cross-dispatch only
+                </button>
+                <button onClick={printReport}
+                  style={{padding:"8px 16px",borderRadius:9,border:"none",background:"#0f172a",color:"white",
+                    fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
+                  🖨️ Print / PDF
+                </button>
+                <button onClick={()=>setShowReport(false)}
+                  style={{padding:"8px 14px",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",
+                    fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                  ✕ Close
+                </button>
+              </div>
+            </div>
+
+            {/* Table */}
+            <div style={{flex:1,overflowY:"auto"}}>
+              <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+                <thead style={{position:"sticky",top:0,zIndex:2}}>
+                  <tr>
+                    {["Order Date","Waiting","Customer","Phone","Item","Amount","Status","Dispatch From"].map(h=>(
+                      <th key={h} style={{padding:"10px 16px",fontSize:11,fontWeight:800,color:"#64748b",
+                        textTransform:"uppercase",letterSpacing:"0.05em",background:"#f8fafc",
+                        borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap",
+                        textAlign:h==="Amount"?"right":"left"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {reportSales.length===0?(
+                    <tr><td colSpan={8} style={{padding:"80px 20px",textAlign:"center",color:"#94a3b8"}}>
+                      <div style={{fontSize:40,marginBottom:12}}>✅</div>
+                      <p style={{margin:0,fontSize:16,fontWeight:700}}>All clear — no pending orders</p>
+                    </td></tr>
+                  ):reportSales.map((s,i)=>{
+                    const days = daysWaiting(s.date);
+                    const dayColor = days>=5?"#dc2626":days>=3?"#d97706":"#059669";
+                    const dayBg   = days>=5?"#fef2f2":days>=3?"#fffbeb":"#f0fdf4";
+                    const dispFrom = s.dispatchFrom || defaultFrom;
+                    const isCross = dispFrom !== defaultFrom;
+                    return(
+                      <tr key={s.id} style={{background:isCross?"#fff7ed":i%2===0?"white":"#fafafa",
+                        borderBottom:"1px solid #f1f5f9",
+                        borderLeft:isCross?"3px solid #f97316":"3px solid transparent"}}>
+                        <td style={{padding:"11px 16px",color:"#374151",whiteSpace:"nowrap",fontSize:12}}>{fmtD(s.date)}</td>
+                        <td style={{padding:"11px 16px"}}>
+                          <span style={{fontSize:12,fontWeight:800,padding:"2px 9px",borderRadius:999,
+                            background:dayBg,color:dayColor,border:"1px solid "+dayColor+"33",whiteSpace:"nowrap"}}>
+                            {days}d
+                          </span>
+                        </td>
+                        <td style={{padding:"11px 16px",fontWeight:700,color:"#0f172a"}}>{s.customer||"—"}</td>
+                        <td style={{padding:"11px 16px",fontFamily:"DM Mono,monospace",fontSize:12,color:"#64748b"}}>{s.phone||s.contact||"—"}</td>
+                        <td style={{padding:"11px 16px",color:"#374151",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.item||"—"}</td>
+                        <td style={{padding:"11px 16px",textAlign:"right",fontWeight:800,color:"#0f172a",whiteSpace:"nowrap"}}>
+                          {fmt?fmt(shopId,Number(s.amount)||0):(shop.symbol||"£")+(Number(s.amount)||0).toLocaleString()}
+                        </td>
+                        <td style={{padding:"11px 16px"}}>
+                          <span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999,
+                            background:"#fef9c3",color:"#854d0e",border:"1px solid #fde047",whiteSpace:"nowrap"}}>
+                            {s.ful||s.status||"—"}
+                          </span>
+                        </td>
+                        <td style={{padding:"11px 16px"}}>
+                          {isCross?(
+                            <span style={{fontSize:12,fontWeight:700,color:"#c2410c",display:"flex",alignItems:"center",gap:4}}>
+                              ⚠️ {dispFrom}
+                              <span style={{fontSize:10,color:"#f97316"}}>cross</span>
+                            </span>
+                          ):(
+                            <span style={{fontSize:12,color:"#64748b"}}>{dispFrom}</span>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Footer */}
+            {reportSales.length>0&&(
+              <div style={{padding:"10px 20px",borderTop:"1px solid #f1f5f9",display:"flex",justifyContent:"space-between",
+                alignItems:"center",fontSize:12,color:"#64748b",background:"#f8fafc",flexShrink:0}}>
+                <span>{reportSales.length} order{reportSales.length!==1?"s":""} pending</span>
+                <span style={{fontWeight:700,color:"#0f172a"}}>
+                  Total: {fmt?fmt(shopId,reportSales.reduce((a,s)=>a+(Number(s.amount)||0),0)):""}
+                </span>
+              </div>
+            )}
+          </div>
+        );
+      })()}
     </div>
   );
 }
