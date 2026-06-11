@@ -8816,6 +8816,7 @@ const AddTabInput=({onAdd,accent})=>{
 };
 
 const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,onDeleteShopItem,customers=[],sales=[]})=>{
+  const defaultPay = shopId === "ros-india" ? "BANK" : "SHOP";
   const _now=new Date();
   const _yr=_now.getMonth()>=3?_now.getFullYear():_now.getFullYear()-1;
   const _fySuffix=String(_yr+1).slice(-1);
@@ -8840,7 +8841,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     discount:    "",
     otherCharges:"",
     otherChargesLabel:"Other Charges",
-    payBy:       "SHOP",
+    payBy:       defaultPay,
     shopInvoiceNo: "",
     paidBy:      "",
     trackingNo:  "",

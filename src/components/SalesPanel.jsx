@@ -1767,10 +1767,11 @@ export default function SalesPanel({
                                       <span style={{fontWeight:800,fontSize:12,fontFamily:"DM Mono,monospace"}}>{fmt?fmt(shopId,Number(x.amount)||0):(shop.symbol||"£")+(Number(x.amount)||0).toLocaleString()}</span>
                                     </div>
                                   ))}
-                                  <div style={{borderTop:"1px dashed #e2e8f0",paddingTop:3,marginTop:2,display:"flex",justifyContent:"flex-end",gap:8}}>
-                                    <span style={{fontSize:10,color:"#374151"}}>Paid: <b>{fmt?fmt(shopId,totalPaid):(shop.symbol||"£")+totalPaid.toLocaleString()}</b></span>
-                                    {balance!==null&&<span style={{fontSize:10,fontWeight:800,color:balance>0?"#dc2626":"#059669"}}>{balance>0?"Bal: "+(fmt?fmt(shopId,balance):(shop.symbol||"£")+balance.toLocaleString()):"✅ Fully Paid"}</span>}
-                                  </div>
+                                  {balance!==null&&(
+                                    <div style={{borderTop:"1px dashed #e2e8f0",paddingTop:3,marginTop:2,display:"flex",justifyContent:"flex-end"}}>
+                                      <span style={{fontSize:10,fontWeight:800,color:balance>0?"#dc2626":"#059669"}}>{balance>0?"Bal: "+(fmt?fmt(shopId,balance):(shop.symbol||"£")+balance.toLocaleString()):"✅ Fully Paid"}</span>
+                                    </div>
+                                  )}
                                 </div>
                               );
                             })():(
