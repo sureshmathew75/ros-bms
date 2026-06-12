@@ -1295,7 +1295,7 @@ export default function SalesPanel({
 
                     {/* Payment */}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
-                      <Badge l={s.pay || "SHOP"} />
+                      <Badge l={(shopId==="ros-india"&&(s.pay==="BANK"||s.pay==="SIB"))?"SIB":(s.pay||"SHOP")} />
                       {(s.pay === "SHOP" || !s.pay) && s.shopInvoiceNo && (
                         <div style={{
                           fontSize: 10, fontFamily: "DM Mono,monospace",
