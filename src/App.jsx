@@ -2243,7 +2243,7 @@ Thank you for shopping with ROS.`,
                   else setSelected(new Set());
                 }}
                 style={{width:15,height:15,cursor:"pointer",accentColor:shop.accent}}/>
-              {["Return ID","Customer","Status","Deadline","Days Left",""].map(h=>(
+              {["Return ID","Customer","Status","Deadline","Days Left","Next Action",""].map(h=>(
                 <span key={h} style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</span>
               ))}
             </div>
@@ -2251,15 +2251,78 @@ Thank you for shopping with ROS.`,
             {filtered.map(ret=>{
               const days=daysRemaining(ret.returnDeadline);
               const statusStyle=RETURN_STATUS_STYLE[ret.status]||{bg:"#f8fafc",border:"#e2e8f0",text:"#374151",label:ret.status};
-              const isClosed=["REFUNDED","EXCHANGED","RETURN_EXPIRED"].includes(ret.status);
+              const isClosed=["REFUNDED","EXCHANGED"].includes(ret.status);
               const isSelected=selected.has(ret.id);
+
+              const openWA=(phone,msg)=>{
+                const clean=(phone||"").replace(/[^0-9]/g,"");
+                const e164=clean.startsWith("0")?"44"+clean.slice(1):clean;
+                window.open("https://wa.me/"+e164+"?text="+encodeURIComponent(msg),"_blank","noopener,noreferrer");
+              };
+
+              const handleQuickAction=async(newStatus)=>{
+                const today=new Date().toISOString().slice(0,10);
+                const updates={status:newStatus};
+                if(newStatus==="RETURN_RECEIVED") updates.receivedDate=today;
+                if(newStatus==="REFUNDED") updates.refundDate=today;
+                if(newStatus==="EXCHANGED") updates.exchangeDate=today;
+                const updated={...ret,...updates};
+                await dbSaveReturn(updated);
+                if(onSyncSaleStatus){
+                  const saleStatus=newStatus==="RETURN_RECEIVED"?"RETRN RCVD":newStatus==="REFUNDED"?"REFUNDED":newStatus==="EXCHANGED"?"EXCHANGED":null;
+                  if(saleStatus) await onSyncSaleStatus(ret.saleId,saleStatus);
+                }
+                setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
+              };
+
+              // Determine next action button
+              const nextAction=()=>{
+                if(isClosed) return <span style={{fontSize:11,color:"#94a3b8"}}>✅ Closed</span>;
+                if(ret.status==="RETURN_APPROVED") return(
+                  <button onClick={e=>{e.stopPropagation();
+                    openWA(ret.phone,RETURN_APPROVAL_MESSAGE(ret.id,ret.customer,"v1"));
+                    handleQuickAction("MSG_SENT");
+                  }} style={{padding:"4px 10px",borderRadius:7,border:"none",background:"#25d366",
+                    color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+                    💬 Send Instructions
+                  </button>
+                );
+                if(ret.status==="MSG_SENT"||ret.status==="RETURN_IN_TRANSIT") return(
+                  <button onClick={e=>{e.stopPropagation();
+                    if(!window.confirm("Mark item as received?"))return;
+                    handleQuickAction("RETURN_RECEIVED").then(()=>openWA(ret.phone,MSG_RECEIVED(ret.customer,ret.id)));
+                  }} style={{padding:"4px 10px",borderRadius:7,border:"none",background:"#f59e0b",
+                    color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+                    📦 Mark Received
+                  </button>
+                );
+                if(ret.status==="RETURN_RECEIVED") return(
+                  <div style={{display:"flex",gap:4"}}>
+                    <button onClick={e=>{e.stopPropagation();
+                      if(!window.confirm("Mark as Exchanged? This closes the case."))return;
+                      handleQuickAction("EXCHANGED").then(()=>openWA(ret.phone,MSG_EXCHANGED(ret.customer,ret.id)));
+                    }} style={{padding:"4px 8px",borderRadius:7,border:"none",background:"#a21caf",
+                      color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+                      🔄 Exchange
+                    </button>
+                    <button onClick={e=>{e.stopPropagation();
+                      if(!window.confirm("Mark as Refunded? This closes the case."))return;
+                      handleQuickAction("REFUNDED").then(()=>openWA(ret.phone,MSG_REFUNDED(ret.customer,ret.id)));
+                    }} style={{padding:"4px 8px",borderRadius:7,border:"none",background:"#6d28d9",
+                      color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+                      💰 Refund
+                    </button>
+                  </div>
+                );
+                return <span style={{fontSize:11,color:"#94a3b8"}}>—</span>;
+              };
+
               return(
                 <div key={ret.id}
-                  style={{display:"grid",gridTemplateColumns:"32px 130px 1fr 110px 100px 90px 80px",gap:8,padding:"11px 14px",
+                  style={{display:"grid",gridTemplateColumns:"32px 130px 1fr 110px 100px 90px 1fr 80px",gap:8,padding:"11px 14px",
                     borderRadius:12,border:"1px solid "+(isSelected?shop.accent:"#e2e8f0"),marginBottom:8,
-                    background:isSelected?shop.accent+"08":"white",
-                    cursor:"pointer",transition:"box-shadow 0.15s",boxShadow:"0 1px 3px rgba(0,0,0,0.04)",
-                    opacity:isClosed?0.65:1}}
+                    background:isClosed?"#fafafa":isSelected?shop.accent+"08":"white",
+                    cursor:"pointer",transition:"box-shadow 0.15s",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}
                   onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.10)"}
                   onMouseLeave={e=>e.currentTarget.style.boxShadow="0 1px 3px rgba(0,0,0,0.04)"}>
                   {/* Checkbox */}
@@ -2287,6 +2350,10 @@ Thank you for shopping with ROS.`,
                   </div>
                   <div style={{display:"flex",alignItems:"center"}} onClick={()=>setSelectedReturn(ret)}>
                     {isClosed?<span style={{fontSize:11,color:"#94a3b8"}}>—</span>:<DaysChip days={days}/>}
+                  </div>
+                  {/* Next Action */}
+                  <div style={{display:"flex",alignItems:"center"}} onClick={e=>e.stopPropagation()}>
+                    {nextAction()}
                   </div>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:6}} onClick={e=>e.stopPropagation()}>
                     <span onClick={()=>setSelectedReturn(ret)} style={{fontSize:11,color:shop.accent,fontWeight:700,cursor:"pointer"}}>View →</span>
