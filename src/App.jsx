@@ -5697,23 +5697,7 @@ return(
           <NewSaleForm
             shopId={shopId} shop={shop}
             onSave={addSale} onClose={()=>setModal(null)}
-           lastInvoiceNum={(() => {
-              try {
-                const stored = localStorage.getItem("ros_lastInv_"+shopId);
-                if (stored) return parseInt(stored)||1312;
-              } catch{}
-              const now = new Date();
-              const fyStart = now.getMonth() >= 3 ? new Date(now.getFullYear(), 3, 1) : new Date(now.getFullYear() - 1, 3, 1);
-              const fySales = sales.filter(s => {
-                const dt = parseDate(s.date);
-                return dt && !isNaN(dt.getTime()) && dt >= fyStart;
-              });
-              if (fySales.length === 0) return 1312;
-              const nums = fySales.map(s => {
-                const m = (s.id||"").match(/^(?:ROS|IND)(\d{4})\d$/);
-                return m ? parseInt(m[1]) : 0;
-              }).filter(n => n >= 1313 && n <= 9999);
-            })()}
+           lastInvoiceNum={0}
             customers={customers}
             sales={sales}
             shopItems={(shopItems||{})[shopId]||[]}
@@ -7661,7 +7645,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false}
   const isExchanged=form.status==="EXCHANGED";
   const isRefunded=form.status==="REFUNDED";
   const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
-  const PAY_OPTS=["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
+  const PAY_OPTS = shopId==="ros-india" ? ["SIB","HDFC","SHOP"] : ["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
   const [editCustOpen,setEditCustOpen]=useState(false);
   const [invoiceEditing,setInvoiceEditing]=useState(false);
@@ -8868,14 +8852,32 @@ const AddTabInput=({onAdd,accent})=>{
 };
 
 const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,onDeleteShopItem,customers=[],sales=[]})=>{
-  const defaultPay = shopId === "ros-india" ? "BANK" : "SHOP";
+  const defaultPay = shopId === "ros-india" ? "SIB" : "SHOP";
+  const PAY_OPTIONS = shopId === "ros-india" ? ["SIB","HDFC","SHOP"] : ["BANK","SHOP","EXCHANGE","GIFT","PROMOTION"];
   const _now=new Date();
   const _yr=_now.getMonth()>=3?_now.getFullYear():_now.getFullYear()-1;
-  const _fySuffix=String(_yr+1).slice(-1);
- const _stored=()=>{try{const v=localStorage.getItem("ros_lastInv_"+shopId);return v?parseInt(v)||1312:1312;}catch{return 1312;}};
-  const _nextNum=_stored()+1;
-  const _seq=String(_nextNum).padStart(4,"0");
+  // India uses 2-digit suffix (e.g. 27 for FY 2026-27), UK uses 1-digit
+  const _fySuffix = shopId==="ros-india" ? String(_yr+1).slice(-2) : String(_yr+1).slice(-1);
   const _pfx = shopId==="ros-india" ? "IND" : "ROS";
+  // For India: extract 4-digit base from IND[4digits][2digits], reset to 1312 each April
+  const _getLastNum=()=>{
+    try {
+      // Use sales data to find highest invoice number this FY
+      const fyStart=_now.getMonth()>=3?new Date(_now.getFullYear(),3,1):new Date(_now.getFullYear()-1,3,1);
+      if(shopId==="ros-india"){
+        const indNums=(sales||[]).map(s=>{
+          const m=(s.id||"").match(/^IND(\d{4})\d{2}$/);
+          return m?parseInt(m[1]):0;
+        }).filter(n=>n>=1313);
+        return indNums.length>0?Math.max(...indNums):1312;
+      } else {
+        const v=localStorage.getItem("ros_lastInv_"+shopId);
+        return v?parseInt(v)||1312:1312;
+      }
+    } catch{return 1312;}
+  };
+  const _nextNum=_getLastNum()+1;
+  const _seq=String(_nextNum).padStart(4,"0");
   const autoInv=`${_pfx}${_seq}${_fySuffix}`;
 
   // ── Multi-item lines state ──
@@ -9051,7 +9053,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🚚 Payment & Delivery</p>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
-                <div><label style={lbl}>Payment By</label><select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"].map(o=><option key={o}>{o}</option>)}</select></div>
+                <div><label style={lbl}>Payment By</label><select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{PAY_OPTIONS.map(o=><option key={o}>{o}</option>)}</select></div>
                 <div><label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["ORDER NOT PLACED","IN PROGRESS","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select></div>
               </div>
               {form.payBy==="SHOP"&&(
