@@ -2297,7 +2297,7 @@ Thank you for shopping with ROS.`,
                   </button>
                 );
                 if(ret.status==="RETURN_RECEIVED") return(
-                  <div style={{display:"flex",gap:4"}}>
+                  <div style={{display:"flex",gap:4}}>
                     <button onClick={e=>{e.stopPropagation();
                       if(!window.confirm("Mark as Exchanged? This closes the case."))return;
                       handleQuickAction("EXCHANGED").then(()=>openWA(ret.phone,MSG_EXCHANGED(ret.customer,ret.id)));
