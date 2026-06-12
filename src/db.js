@@ -56,7 +56,8 @@ export const dbSaveSale = async (shopId, sale) => {
     pur_inv_date:    String(sale.purInvDate || ''),
     pur_amount:      Number(sale.purAmount) || 0,
     tracking_no:     String(sale.trackingNo || ''),
-    delivery_date:   String(sale.deliveryDate || ''),
+    delivery_date:        String(sale.deliveryDate || ''),
+    delivery_informed:    sale.deliveryInformed ? true : false,
     delivery_time:   String(sale.deliveryTime || ''),
   };
 
@@ -176,7 +177,8 @@ export const dbLoadSales = async (shopId) => {
     trackingNo:    r.tracking_no || '',
     dispatchFrom:  r.dispatch_from || '',
     expectedTotal: Number(r.expected_total) || 0,
-    deliveryDate:  r.delivery_date || '',
+    deliveryDate:      r.delivery_date || '',
+    deliveryInformed:  r.delivery_informed || false,
     deliveryTime:  r.delivery_time || '',
   }));
   return mapped.sort((a, b) => parseDateMs(b.date) - parseDateMs(a.date));

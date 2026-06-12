@@ -4008,7 +4008,6 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"documents",l:"Documents",ic:"📎"},
     {id:"analytics",l:"Analytics",ic:"📊"},
     {id:"reports",  l:"Reports",  ic:"📋"},
-    {id:"fulfilment", l:"Fulfilment", ic:"🚀"},
     {id:"returns",  l:"Returns",  ic:"↩️"},
   ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings");
 
@@ -4274,7 +4273,7 @@ return(
         <nav style={{flex:1,padding:"10px 8px 6px",overflowY:"auto",overflowX:"hidden",scrollbarWidth:"none"}}>
           {/* group labels */}
           {[
-            {label:"MAIN",      ids:["dashboard","sales","customers","fulfilment","returns","invoices"]},
+            {label:"MAIN",      ids:["dashboard","sales","customers","returns","invoices"]},
             {label:"PURCHASES", ids:["purchases","suppliers","logistics","agents"]},
             {label:"EXPENSES",  ids:["expenses"]},
             {label:"FINANCE",   ids:["cashflow"]},
@@ -5384,6 +5383,16 @@ return(
                   }));
                 }}
                 onMarkDelivered={(sale) => setMarkDeliveredSale(sale)}
+                onMarkDeliveryInformed={async (saleId) => {
+                  const sale = sales.find(s => s.id === saleId);
+                  if (!sale) return;
+                  const updated = { ...sale, deliveryInformed: true };
+                  await dbSaveSale(shopId, updated);
+                  setSalesData(prev => ({
+                    ...prev,
+                    [shopId]: (prev[shopId] || []).map(s => s.id === saleId ? { ...s, deliveryInformed: true } : s),
+                  }));
+                }}
                 onInlineEdit={async (saleId, changes) => {
                   const sale = sales.find(s => s.id === saleId);
                   if (!sale) return;
@@ -5392,6 +5401,16 @@ return(
                   setSalesData(prev => ({
                     ...prev,
                     [shopId]: (prev[shopId] || []).map(s => s.id === saleId ? { ...s, ...changes } : s),
+                  }));
+                }}
+                onMarkDeliveryInformed={async (saleId) => {
+                  const sale = sales.find(s => s.id === saleId);
+                  if (!sale) return;
+                  const updated = { ...sale, deliveryInformed: true };
+                  await dbSaveSale(shopId, updated);
+                  setSalesData(prev => ({
+                    ...prev,
+                    [shopId]: (prev[shopId] || []).map(s => s.id === saleId ? { ...s, deliveryInformed: true } : s),
                   }));
                 }}
               />
@@ -10134,9 +10153,9 @@ const INITIAL_USERS=[
    avatar:"linear-gradient(135deg,#64748b,#334155)", shops:["ros-india"]},
 ];
 const ROLE_NAV={
-  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports","fulfilment","returns","settings"],
-  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports","fulfilment","returns"],
-  staff:["sales","fulfilment"],
+  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports","returns","settings"],
+  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports","returns"],
+  staff:["sales","returns"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
 

@@ -346,6 +346,7 @@ export default function SalesPanel({
   onSaveTracking,
   onMarkDelivered,
   onInlineEdit,
+  onMarkDeliveryInformed,
 }) {
   const [hovR,    setHovR]    = useState(null);
   const [hovCard, setHovCard] = useState(null);
@@ -1018,7 +1019,7 @@ export default function SalesPanel({
               <tr style={{ background: "#f8fafc" }}>
                 {["Invoice", "Date", "Customer", "Item", "Amount", "Refund", "Payment", "Status", "Tags",
                   ...(shopId==="ros-india"&&!isStaff ? ["Pur. Amount"] : []),
-                  "Tracking", "Delivered", "From", "Actions"]
+                  "Tracking", "Delivered", "Informed", "From", "Actions"]
                   .map((h, i) => (
                     <th key={h} style={{
                       padding: "11px 16px",
@@ -1037,7 +1038,7 @@ export default function SalesPanel({
               {/* Empty state */}
               {rowsWithSeparators.length === 0 && (
                 <tr>
-                  <td colSpan={shopId==="ros-india"&&!isStaff ? 14 : 13} style={{ padding: "52px 16px", textAlign: "center" }}>
+                  <td colSpan={shopId==="ros-india"&&!isStaff ? 15 : 14} style={{ padding: "52px 16px", textAlign: "center" }}>
                     <div style={{ fontSize: 36, marginBottom: 10 }}>🛒</div>
                     <p style={{ margin: 0, fontWeight: 700, color: "#94a3b8", fontSize: 14 }}>
                       No {statusTab !== "ALL" ? activeTabCfg.label.toLowerCase() + " " : ""}sales found
@@ -1057,7 +1058,7 @@ export default function SalesPanel({
                 if (row._type === "fy") {
                   return (
                     <tr key={`fy-${row._fyStart}-${idx}`}>
-                      <td colSpan={shopId==="ros-india"&&!isStaff ? 14 : 13} style={{ padding: 0 }}>
+                      <td colSpan={shopId==="ros-india"&&!isStaff ? 15 : 14} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", gap: 10,
                           padding: "9px 16px",
@@ -1089,7 +1090,7 @@ export default function SalesPanel({
                 if (row._type === "month") {
                   return (
                     <tr key={`month-${row._monthKey}-${idx}`}>
-                      <td colSpan={shopId==="ros-india"&&!isStaff ? 14 : 13} style={{ padding: 0 }}>
+                      <td colSpan={shopId==="ros-india"&&!isStaff ? 15 : 14} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", gap: 10,
                           padding: "6px 16px",
@@ -1125,7 +1126,7 @@ export default function SalesPanel({
                 if (row._type === "monthSummary") {
                   return (
                     <tr key={`summary-${row._monthKey}`}>
-                      <td colSpan={shopId==="ros-india"&&!isStaff ? 14 : 13} style={{ padding: 0 }}>
+                      <td colSpan={shopId==="ros-india"&&!isStaff ? 15 : 14} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", gap: 0,
                           padding: "8px 16px",
@@ -1423,6 +1424,48 @@ export default function SalesPanel({
                           style={{ padding: "4px 10px", borderRadius: 7, border: "1px dashed #86efac", background: "#f0fdf4", color: "#166534", fontSize: 11, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
                           ✅ Mark Delivered
                         </button>
+                      ) : (
+                        <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>
+                      )}
+                    </td>
+
+
+                    {/* Delivery Informed */}
+                    <td style={{ padding: "8px 10px", minWidth: 90 }} onClick={e => e.stopPropagation()}>
+                      {s.deliveryDate ? (
+                        s.deliveryInformed ? (
+                          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
+                            <div style={{ display: "inline-flex", alignItems: "center", gap: 4,
+                              background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 7,
+                              padding: "3px 8px", whiteSpace: "nowrap" }}>
+                              <span style={{ fontSize: 11 }}>✅</span>
+                              <span style={{ fontSize: 10, fontWeight: 700, color: "#166534" }}>Informed</span>
+                            </div>
+                            <button onClick={() => {
+                              const phone = (s.phone || s.contact || "").replace(/[^0-9]/g, "");
+                              const e164 = phone.startsWith("0") ? "44" + phone.slice(1) : phone;
+                              window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent("Hi " + (s.customer||"") + ",\n\nWe noticed your recent order might have an issue. Please use this link to submit a return request:\nhttps://ros-bms.vercel.app/returns\n\nWe will get back to you shortly. Thank you!"), "_blank", "noopener,noreferrer");
+                            }}
+                              style={{ padding: "3px 8px", borderRadius: 7, border: "1px solid #e2e8f0",
+                                background: "white", color: "#374151", fontSize: 10, fontWeight: 600,
+                                cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                              ↩️ Return Link
+                            </button>
+                          </div>
+                        ) : (
+                          <button onClick={async () => {
+                            const phone = (s.phone || s.contact || "").replace(/[^0-9]/g, "");
+                            const e164 = phone.startsWith("0") ? "44" + phone.slice(1) : phone;
+                            window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent("Dear Customer,\nYour order has been marked as delivered according to the tracking update.\nPlease kindly check and inspect your item. If you have any issues or concerns, please contact us within 2 days of delivery so we can help you as quickly as possible.\nThank you for your purchase and for choosing ROS. We are always happy to assist you.\nThank you 😊"), "_blank", "noopener,noreferrer");
+                            if (onMarkDeliveryInformed) await onMarkDeliveryInformed(s.id);
+                          }}
+                            style={{ padding: "4px 10px", borderRadius: 7, border: "1px dashed #25d366",
+                              background: "#f0fdf4", color: "#166534", fontSize: 11, fontWeight: 700,
+                              cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                              display: "flex", alignItems: "center", gap: 4 }}>
+                            <span>💬</span><span>Notify</span>
+                          </button>
+                        )
                       ) : (
                         <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>
                       )}
