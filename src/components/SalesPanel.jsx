@@ -1529,10 +1529,10 @@ export default function SalesPanel({
          ══════════════════════════════════════════════════════════ */}
       {showReport && (() => {
         const UNFULFILLED = shopId === "ros-india"
-          ? ["ORDER NOT PLACED","IN PROGRESS","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO."]
+          ? ["To Order","IN PROGRESS","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","Tracking Rqd"]
           : ["PENDING"];
         const ALL_STATUSES = shopId === "ros-india"
-          ? ["ORDER NOT PLACED","IN PROGRESS","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","PENDING"]
+          ? ["To Order","IN PROGRESS","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","Tracking Rqd","PENDING"]
           : ["PENDING","PROCESSING","ON HOLD","AWAITING PAYMENT"];
 
         // Use top-level state; init defaults on open

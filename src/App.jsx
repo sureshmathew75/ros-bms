@@ -153,10 +153,10 @@ const BSTYLE={
   "EXCHANGED":                {bg:"#e0e7ff",c:"#4338ca",b:"#c7d2fe"},
   "REFUNDED":                 {bg:"#f3e4ff",c:"#7e22ce",b:"#d8b4fe"},
   // ── India-specific delivery statuses ──
-  "ORDER NOT PLACED":         {bg:"#fef9c3",c:"#a16207",b:"#fde047"},
+  "To Order":         {bg:"#fef9c3",c:"#a16207",b:"#fde047"},
   "IN PROGRESS":         {bg:"#dbeafe",c:"#1d4ed8",b:"#bfdbfe"},
   "PHOTO GIVEN TO CUSTOMER":  {bg:"#e0f2fe",c:"#0369a1",b:"#bae6fd"},
-  "AWAITING TRACKING INFO.":  {bg:"#fef3c7",c:"#92400e",b:"#fcd34d"},
+  "Tracking Rqd":  {bg:"#fef3c7",c:"#92400e",b:"#fcd34d"},
   "RETURN REQUESTED":         {bg:"#ffedd5",c:"#c2410c",b:"#fed7aa"},
   "RETURN RECEIVED":          {bg:"#fee2e2",c:"#991b1b",b:"#fca5a5"},
   "GOOD FEEDBACK RECEIVED":   {bg:"#d1fae5",c:"#065f46",b:"#6ee7b7"},
@@ -190,10 +190,10 @@ const STATUS_ROW_BG={
   "EXCHANGED":                 "#eef2ff",
   "REFUNDED":                  "#faf5ff",
   // India-specific
-  "ORDER NOT PLACED":          "#fffbeb",
+  "To Order":          "#fffbeb",
   "IN PROGRESS":          "#eff6ff",
   "PHOTO GIVEN TO CUSTOMER":   "#f0f9ff",
-  "AWAITING TRACKING INFO.":   "#fffbeb",
+  "Tracking Rqd":   "#fffbeb",
   "RETURN REQUESTED":          "#fff7ed",
   "RETURN RECEIVED":           "#fef2f2",
   "GOOD FEEDBACK RECEIVED":    "#ecfdf5",
@@ -5299,10 +5299,10 @@ return(
           {tab==="sales"&&(()=>{
             const indiaStatuses=[
               {key:"ALL",                        label:"All",         emoji:"🗂️"},
-              {key:"ORDER NOT PLACED",           label:"Not Placed",  emoji:"🕐"},
+              {key:"To Order",           label:"Not Placed",  emoji:"🕐"},
               {key:"IN PROGRESS",           label:"In Progress", emoji:"🔧"},
               {key:"PHOTO GIVEN TO CUSTOMER",    label:"Photo Sent",  emoji:"📸"},
-              {key:"AWAITING TRACKING INFO.",    label:"Awaiting",    emoji:"📦"},
+              {key:"Tracking Rqd",    label:"Awaiting",    emoji:"📦"},
               {key:"FULFILLED",                  label:"Fulfilled",   emoji:"✅"},
               {key:"RETURN REQUESTED",           label:"Rtn Req",     emoji:"↩️"},
               {key:"RETURN RECEIVED",            label:"Rtn Rcvd",    emoji:"📬"},
@@ -7171,7 +7171,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
           const id=get(row,idxId)||("IMP-"+Date.now()+"-"+i);
           const amount=cleanNum(get(row,idxTotal))||cleanNum(get(row,idxPrice));
           const statusRaw=get(row,idxStatus);
-          const ful=statusRaw||(shopId==="ros-india"?"ORDER NOT PLACED":"PENDING");
+          const ful=statusRaw||(shopId==="ros-india"?"To Order":"PENDING");
           imported.push({
             id, customer,
             date:        get(row,idxDate)||new Date().toISOString().slice(0,10),
@@ -7647,7 +7647,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false}
   const isReturnReceived=["RETURN RECEIVED","RETRN RCVD"].includes(form.status);
   const isExchanged=form.status==="EXCHANGED";
   const isRefunded=form.status==="REFUNDED";
-  const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
+  const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","To Order":"#a16207","IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","Tracking Rqd":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
   const PAY_OPTS = shopId==="ros-india" ? ["SIB","HDFC","SHOP"] : ["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
   const [editCustOpen,setEditCustOpen]=useState(false);
@@ -7913,7 +7913,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false}
           <select value={form.status} onChange={e=>set("status",e.target.value)}
             style={{...inp,fontWeight:700,color:statusColor[form.status]||"#374151"}}>
             {(shopId==="ros-india"
-              ? ["ORDER NOT PLACED","IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]
+              ? ["To Order","IN PROGRESS","PHOTO GIVEN TO CUSTOMER","Tracking Rqd","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]
               : ["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]
             ).map(o=>(
               <option key={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>
@@ -8902,7 +8902,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     shopInvoiceNo: "",
     paidBy:      "",
     trackingNo:  "",
-    status:      shopId==="ros-india" ? "ORDER NOT PLACED" : "PENDING",
+    status:      shopId==="ros-india" ? "To Order" : "PENDING",
     sentDate:    "",
     returnReqDate: "",
     returnRcvd:  "",
@@ -8930,7 +8930,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const isReturnRequested=["RETURN REQUESTED","RTRN REQSTD"].includes(form.status);
   const isReturnReceived=["RETURN RECEIVED","RETRN RCVD"].includes(form.status);
   const isRefundOnly=["EXCHANGED","REFUNDED"].includes(form.status);
-  const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","ORDER NOT PLACED":"#a16207","IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","AWAITING TRACKING INFO.":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
+  const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","To Order":"#a16207","IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","Tracking Rqd":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
 
   const handleAddCustomer=(newCust)=>{setCustomerList(l=>[newCust,...l]);set("customer",newCust.name);set("contact",newCust.phone);setShowNewCust(false);};
   const updateLine=(id,key,val)=>setLines(ls=>ls.map(l=>l.id===id?{...l,[key]:val}:l));
@@ -9057,7 +9057,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🚚 Payment & Delivery</p>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
                 <div><label style={lbl}>Payment By</label><select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{PAY_OPTIONS.map(o=><option key={o}>{o}</option>)}</select></div>
-                <div><label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["ORDER NOT PLACED","IN PROGRESS","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select></div>
+                <div><label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["To Order","IN PROGRESS","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select></div>
               </div>
               {form.payBy==="SHOP"&&(
                 <div style={{marginBottom:7}}><label style={lbl}>Shop Invoice No.</label><input value={form.shopInvoiceNo} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/></div>
