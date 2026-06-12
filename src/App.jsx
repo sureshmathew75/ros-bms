@@ -1737,13 +1737,57 @@ const ReturnTrackingPortal=()=>{
    RETURNS PANEL — staff view of all returns
    ═══════════════════════════════════════════════════════════ */
 const RETURN_STATUS_STYLE={
-  RETURN_APPROVED: {bg:"#f0fdf4",border:"#86efac",text:"#166534",label:"Approved"},
+  RETURN_APPROVED:  {bg:"#f0fdf4",border:"#86efac",text:"#166534",label:"Approved"},
+  MSG_SENT:         {bg:"#f0f9ff",border:"#7dd3fc",text:"#0369a1",label:"Instructions Sent"},
   RETURN_IN_TRANSIT:{bg:"#eff6ff",border:"#93c5fd",text:"#1d4ed8",label:"In Transit"},
-  RETURN_RECEIVED: {bg:"#f0f9ff",border:"#7dd3fc",text:"#0369a1",label:"Received"},
-  RETURN_EXPIRED:  {bg:"#fef2f2",border:"#fca5a5",text:"#dc2626",label:"Expired"},
-  REFUNDED:        {bg:"#f5f3ff",border:"#c4b5fd",text:"#6d28d9",label:"Refunded"},
-  EXCHANGED:       {bg:"#fdf4ff",border:"#e879f9",text:"#a21caf",label:"Exchanged"},
+  RETURN_RECEIVED:  {bg:"#fef9c3",border:"#fde047",text:"#854d0e",label:"Received"},
+  REFUNDED:         {bg:"#f5f3ff",border:"#c4b5fd",text:"#6d28d9",label:"Refunded"},
+  EXCHANGED:        {bg:"#fdf4ff",border:"#e879f9",text:"#a21caf",label:"Exchanged"},
 };
+
+// WhatsApp message templates
+const MSG_RECEIVED = (customer, retId) =>
+`Dear ${customer},
+
+We would like to let you know that we have received your returned item. ❤️ 📦
+
+We are now awaiting your confirmation on how you would like to proceed.
+
+• *Exchange*: If you would like an exchange, please select an item from our shop and share a screenshot with us. We will dispatch it promptly without any delay.
+
+• *Refund via Gift Card*: In line with our return policy, you may receive the full amount you paid as a shop gift card. This card is valid for one year and can be used for full or part payments until the total value is fully redeemed.
+
+• *Refund to Bank Account*: If you prefer a direct refund to your account, we can arrange this with a small deduction of £2.99.
+
+Kindly let us know your preferred option so that we can process it without delay. Thank you for your understanding and continued support.
+
+Warm regards,
+ROS`;
+
+const MSG_EXCHANGED = (customer, retId) =>
+`Dear ${customer},
+
+We are pleased to confirm that your exchange request (*${retId}*) has been approved. ✅
+
+Please select an item from our shop and share a screenshot with us — we will dispatch your replacement promptly without any delay.
+
+If you need any assistance choosing, we are happy to help.
+
+Thank you for your patience and for choosing ROS. We look forward to serving you 😊`;
+
+const MSG_REFUNDED = (customer, retId) =>
+`Dear ${customer},
+
+We would like to let you know that your payment has been *REFUNDED* ❤️
+
+If you made the payment directly to our bank account, the refund has already been credited. Kindly check your account.
+
+If your purchase was made through the shop, the refund will also be processed by the shop. It may take 2–3 business days for the credit to appear in your account.
+
+If you experience any delays, please let us know.
+We look forward to serving you again in the future.
+
+Thank you`;
 
 const daysRemaining=(deadlineStr)=>{
   if(!deadlineStr)return null;
@@ -1761,7 +1805,7 @@ const DaysChip=({days})=>{
   return <span style={{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:999,background:"#f0fdf4",color:"#166534",border:"1px solid #86efac"}}>🟢 {days}d left</span>;
 };
 
-const ReturnDetailModal=({ret,shop,onClose,onUpdate,user})=>{
+const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
   const [form,setForm]=React.useState({
     status:ret.status,
     trackingNo:ret.trackingNo||"",
@@ -1774,25 +1818,42 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,user})=>{
   const [saving,setSaving]=React.useState(false);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const days=daysRemaining(ret.returnDeadline);
+  const isClosed=["REFUNDED","EXCHANGED"].includes(form.status);
 
   const inp={width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box",background:"white"};
   const lbl={display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
 
-  const handleSave=async()=>{
+  const openWA=(phone,msg)=>{
+    const clean=(phone||"").replace(/[^0-9]/g,"");
+    const e164=clean.startsWith("0")?"44"+clean.slice(1):clean;
+    window.open("https://wa.me/"+e164+"?text="+encodeURIComponent(msg),"_blank","noopener,noreferrer");
+  };
+
+  const handleStatusChange=async(newStatus)=>{
+    if(isClosed)return;
+    const today=new Date().toISOString().slice(0,10);
+    const updates={status:newStatus};
+    if(newStatus==="RETURN_RECEIVED") updates.receivedDate=today;
+    if(newStatus==="REFUNDED") updates.refundDate=today;
+    if(newStatus==="EXCHANGED") updates.exchangeDate=today;
     setSaving(true);
-    await dbSaveReturn({
-      ...ret,
-      status:form.status,
-      trackingNo:form.trackingNo,
-      courier:form.courier,
-      receivedDate:form.receivedDate,
-      refundDate:form.refundDate,
-      exchangeDate:form.exchangeDate,
-      staffNotes:form.staffNotes,
-    });
-    onUpdate({...ret,status:form.status,trackingNo:form.trackingNo,courier:form.courier,
-      receivedDate:form.receivedDate,refundDate:form.refundDate,exchangeDate:form.exchangeDate,
-      staffNotes:form.staffNotes});
+    const updated={...ret,...form,...updates};
+    await dbSaveReturn(updated);
+    // Sync sale status
+    if(onSyncSaleStatus){
+      const saleStatus=newStatus==="RETURN_RECEIVED"?"RETRN RCVD":newStatus==="REFUNDED"?"REFUNDED":newStatus==="EXCHANGED"?"EXCHANGED":null;
+      if(saleStatus) await onSyncSaleStatus(ret.saleId,saleStatus);
+    }
+    setForm(f=>({...f,...updates}));
+    onUpdate({...updated});
+    setSaving(false);
+  };
+
+  const handleSave=async()=>{
+    if(isClosed)return;
+    setSaving(true);
+    await dbSaveReturn({...ret,...form});
+    onUpdate({...ret,...form});
     setSaving(false);
     onClose();
   };
@@ -1803,24 +1864,31 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,user})=>{
   return(
     <div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
       <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)"}} onClick={onClose}/>
-      <div style={{position:"relative",background:"white",borderRadius:18,boxShadow:"0 24px 64px rgba(0,0,0,0.18)",width:"100%",maxWidth:540,maxHeight:"90vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div style={{position:"relative",background:"white",borderRadius:18,boxShadow:"0 24px 64px rgba(0,0,0,0.18)",width:"100%",maxWidth:560,maxHeight:"92vh",display:"flex",flexDirection:"column",overflow:"hidden"}}>
         {/* Header */}
         <div style={{padding:"16px 20px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"10",flexShrink:0}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
             <div>
-              <p style={{margin:"0 0 2px",fontSize:11,fontWeight:700,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.06em"}}>Return Detail</p>
+              <p style={{margin:"0 0 2px",fontSize:11,fontWeight:700,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.06em"}}>Return Case</p>
               <h3 style={{margin:"0 0 2px",fontSize:17,fontWeight:900,color:"#0f172a",fontFamily:"DM Mono,monospace"}}>{ret.id}</h3>
               <p style={{margin:0,fontSize:12,color:"#64748b"}}>{ret.customer} · {ret.phone} · Sale: {ret.saleId}</p>
             </div>
-            <button onClick={onClose} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",flexShrink:0}}>×</button>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:999,
+                background:statusStyle.bg,color:statusStyle.text,border:"1px solid "+statusStyle.border}}>
+                {statusStyle.label}
+              </span>
+              <button onClick={onClose} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b"}}>×</button>
+            </div>
           </div>
         </div>
 
-        <div style={{flex:1,overflowY:"auto",padding:"16px 20px"}}>
-          {/* Key info row */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
+        <div style={{flex:1,overflowY:"auto",padding:"16px 20px",display:"flex",flexDirection:"column",gap:14}}>
+
+          {/* Key info */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
             <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",border:"1px solid #e2e8f0"}}>
-              <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>Resolution</p>
+              <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>Requested</p>
               <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ret.resolution==="exchange"?"🔄 Exchange":"💰 Refund"}</p>
             </div>
             <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",border:"1px solid #e2e8f0"}}>
@@ -1833,32 +1901,107 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,user})=>{
           </div>
 
           {/* Reason */}
-          <div style={{background:"#fffbeb",borderRadius:10,padding:"10px 14px",border:"1px solid #fde68a",marginBottom:16}}>
-            <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#92400e",textTransform:"uppercase"}}>Reason</p>
+          <div style={{background:"#fffbeb",borderRadius:10,padding:"10px 14px",border:"1px solid #fde68a"}}>
+            <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#92400e",textTransform:"uppercase"}}>Return Reason</p>
             <p style={{margin:0,fontSize:13,color:"#374151"}}>{ret.reason}</p>
           </div>
 
-          {/* Status */}
-          <div style={{marginBottom:14}}>
-            <label style={lbl}>Status</label>
-            <select value={form.status} onChange={e=>set("status",e.target.value)}
-              style={{...inp,fontWeight:700,color:statusStyle.text,background:statusStyle.bg,border:"1.5px solid "+statusStyle.border}}>
-              {Object.entries(RETURN_STATUS_STYLE).map(([k,v])=>(
-                <option key={k} value={k}>{v.label}</option>
-              ))}
-            </select>
-          </div>
+          {/* ── ACTION BUTTONS ── */}
+          {!isClosed&&(
+            <div style={{background:"#f8fafc",borderRadius:12,padding:"14px",border:"1px solid #e2e8f0"}}>
+              <p style={{margin:"0 0 10px",fontSize:11,fontWeight:800,color:"#374151",textTransform:"uppercase",letterSpacing:"0.05em"}}>Actions</p>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
 
-          {/* Customer tracking */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+                {/* Step 1: Send Instructions (if not yet sent) */}
+                {form.status==="RETURN_APPROVED"&&(
+                  <button onClick={()=>{
+                    openWA(ret.phone, RETURN_APPROVAL_MESSAGE(ret.id,ret.customer,"v1"));
+                    handleStatusChange("MSG_SENT");
+                  }}
+                    style={{padding:"10px 16px",borderRadius:10,border:"none",background:"#25d366",color:"white",
+                      fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:8}}>
+                    💬 Send Return Instructions
+                  </button>
+                )}
+
+                {/* Step 2: Mark Received (after instructions sent) */}
+                {(form.status==="MSG_SENT"||form.status==="RETURN_IN_TRANSIT")&&(
+                  <button onClick={()=>{
+                    if(!window.confirm("Mark item as received and notify customer?"))return;
+                    handleStatusChange("RETURN_RECEIVED").then(()=>{
+                      openWA(ret.phone, MSG_RECEIVED(ret.customer, ret.id));
+                    });
+                  }}
+                    style={{padding:"10px 16px",borderRadius:10,border:"none",background:"#f59e0b",color:"white",
+                      fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:8}}>
+                    📦 Mark Received & Notify Customer
+                  </button>
+                )}
+
+                {/* Re-send received message if already received */}
+                {form.status==="RETURN_RECEIVED"&&(
+                  <button onClick={()=>openWA(ret.phone, MSG_RECEIVED(ret.customer, ret.id))}
+                    style={{padding:"10px 16px",borderRadius:10,border:"1px solid #f59e0b",background:"#fffbeb",color:"#92400e",
+                      fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:8}}>
+                    💬 Resend Receipt Notification
+                  </button>
+                )}
+
+                {/* Step 3a: Exchange */}
+                {["MSG_SENT","RETURN_IN_TRANSIT","RETURN_RECEIVED"].includes(form.status)&&(
+                  <button onClick={()=>{
+                    if(!window.confirm("Mark as Exchanged? This will close the case."))return;
+                    handleStatusChange("EXCHANGED").then(()=>{
+                      openWA(ret.phone, MSG_EXCHANGED(ret.customer, ret.id));
+                    });
+                  }}
+                    style={{padding:"10px 16px",borderRadius:10,border:"none",background:"#a21caf",color:"white",
+                      fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:8}}>
+                    🔄 Mark Exchanged & Send Message
+                  </button>
+                )}
+
+                {/* Step 3b: Refund */}
+                {["MSG_SENT","RETURN_IN_TRANSIT","RETURN_RECEIVED"].includes(form.status)&&(
+                  <button onClick={()=>{
+                    if(!window.confirm("Mark as Refunded? This will close the case."))return;
+                    handleStatusChange("REFUNDED").then(()=>{
+                      openWA(ret.phone, MSG_REFUNDED(ret.customer, ret.id));
+                    });
+                  }}
+                    style={{padding:"10px 16px",borderRadius:10,border:"none",background:"#6d28d9",color:"white",
+                      fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:8}}>
+                    💰 Mark Refunded & Send Message
+                  </button>
+                )}
+
+              </div>
+            </div>
+          )}
+
+          {/* Closed banner */}
+          {isClosed&&(
+            <div style={{background:form.status==="REFUNDED"?"#f5f3ff":"#fdf4ff",borderRadius:12,padding:"14px 16px",
+              border:"1px solid "+(form.status==="REFUNDED"?"#c4b5fd":"#e879f9"),textAlign:"center"}}>
+              <p style={{margin:0,fontSize:14,fontWeight:800,color:form.status==="REFUNDED"?"#6d28d9":"#a21caf"}}>
+                {form.status==="REFUNDED"?"💰 Case Closed — Refunded":"🔄 Case Closed — Exchanged"}
+              </p>
+              <p style={{margin:"4px 0 0",fontSize:11,color:"#94a3b8"}}>
+                {form.status==="REFUNDED"?fmtDate(form.refundDate):fmtDate(form.exchangeDate)}
+              </p>
+            </div>
+          )}
+
+          {/* Tracking */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <div>
               <label style={lbl}>Customer Tracking No.</label>
               <input value={form.trackingNo} onChange={e=>set("trackingNo",e.target.value)}
-                placeholder="Customer's return tracking" style={inp}/>
+                placeholder="Customer's return tracking" style={inp} disabled={isClosed}/>
             </div>
             <div>
               <label style={lbl}>Courier</label>
-              <select value={form.courier} onChange={e=>set("courier",e.target.value)} style={inp}>
+              <select value={form.courier} onChange={e=>set("courier",e.target.value)} style={inp} disabled={isClosed}>
                 <option value="">— Select —</option>
                 {["Royal Mail","Evri","DPD","Parcelforce","DHL","UPS","Other"].map(c=><option key={c}>{c}</option>)}
               </select>
@@ -1866,50 +2009,58 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,user})=>{
           </div>
 
           {/* Dates */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:14}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
             <div>
-              <label style={lbl}>Received Date</label>
-              <input type="date" value={form.receivedDate} onChange={e=>set("receivedDate",e.target.value)} style={inp}/>
+              <label style={lbl}>Received</label>
+              <input type="date" value={form.receivedDate} onChange={e=>set("receivedDate",e.target.value)} style={inp} disabled={isClosed}/>
             </div>
             <div>
               <label style={lbl}>Refund Date</label>
-              <input type="date" value={form.refundDate} onChange={e=>set("refundDate",e.target.value)} style={inp}/>
+              <input type="date" value={form.refundDate} onChange={e=>set("refundDate",e.target.value)} style={inp} disabled={isClosed}/>
             </div>
             <div>
               <label style={lbl}>Exchange Date</label>
-              <input type="date" value={form.exchangeDate} onChange={e=>set("exchangeDate",e.target.value)} style={inp}/>
+              <input type="date" value={form.exchangeDate} onChange={e=>set("exchangeDate",e.target.value)} style={inp} disabled={isClosed}/>
             </div>
           </div>
 
           {/* Staff notes */}
-          <div style={{marginBottom:8}}>
+          <div>
             <label style={lbl}>Staff Notes</label>
             <textarea value={form.staffNotes} onChange={e=>set("staffNotes",e.target.value)}
               rows={3} placeholder="Internal notes — visible to staff only…"
               style={{...inp,resize:"vertical"}}/>
           </div>
 
-          {/* Return address version */}
-          <p style={{margin:"4px 0 0",fontSize:11,color:"#94a3b8"}}>Return address version sent: <strong>{ret.returnAddressVersion||"v1"}</strong> · Created: {fmtDate(ret.createdAt)}</p>
+          <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>Return address sent: <strong>{ret.returnAddressVersion||"v1"}</strong> · Created: {fmtDate(ret.createdAt)}</p>
         </div>
 
         {/* Footer */}
-        <div style={{padding:"12px 20px",borderTop:"1px solid #f1f5f9",display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,flexShrink:0}}>
-          <button onClick={onClose}
-            style={{padding:"11px 0",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-            Cancel
-          </button>
-          <button onClick={handleSave} disabled={saving}
-            style={{padding:"11px 0",borderRadius:10,border:"none",background:saving?"#94a3b8":shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:saving?"default":"pointer",fontFamily:"inherit",boxShadow:saving?"none":"0 4px 12px "+shop.accent+"44"}}>
-            {saving?"Saving…":"💾 Save Changes"}
-          </button>
-        </div>
+        {!isClosed&&(
+          <div style={{padding:"12px 20px",borderTop:"1px solid #f1f5f9",display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,flexShrink:0}}>
+            <button onClick={onClose}
+              style={{padding:"11px 0",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              Cancel
+            </button>
+            <button onClick={handleSave} disabled={saving}
+              style={{padding:"11px 0",borderRadius:10,border:"none",background:saving?"#94a3b8":shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:saving?"default":"pointer",fontFamily:"inherit",boxShadow:saving?"none":"0 4px 12px "+shop.accent+"44"}}>
+              {saving?"Saving…":"💾 Save Notes"}
+            </button>
+          </div>
+        )}
+        {isClosed&&(
+          <div style={{padding:"12px 20px",borderTop:"1px solid #f1f5f9",flexShrink:0}}>
+            <button onClick={onClose} style={{width:"100%",padding:"11px 0",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              Close
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
 };
 
-const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages})=>{
+const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,onSyncSaleStatus})=>{
   const [filter,setFilter]=React.useState("ALL");
   const [selectedReturn,setSelectedReturn]=React.useState(null);
   const [search,setSearch]=React.useState("");
@@ -2162,6 +2313,7 @@ Thank you for shopping with ROS.`,
           shop={shop}
           user={user}
           onClose={()=>setSelectedReturn(null)}
+          onSyncSaleStatus={onSyncSaleStatus}
           onUpdate={(updated)=>{
             setReturns(prev=>prev.map(r=>r.id===updated.id?updated:r));
             setSelectedReturn(null);
@@ -5523,23 +5675,19 @@ return(
               user={user}
               messages={messages}
               setMessages={setMessages}
-            />
-          )}
-
-          {/* ── FULFILMENT TAB ── */}
-          {tab==="fulfilment"&&(
-            <FulfilmentPanel
-              salesData={salesData}
-              shopId={shopId}
-              shop={shop}
-              messages={messages}
-              setMessages={setMessages}
-              returns={returns}
-              setReturns={setReturns}
-              user={user}
-              setMarkDeliveredSale={setMarkDeliveredSale}
-              setTab={setTab}
-              fmt={fmt}
+              onSyncSaleStatus={async (saleId, newStatus) => {
+                const allSales = Object.values(salesData).flat();
+                const sale = allSales.find(s => s.id === saleId);
+                if (!sale) return;
+                const sid = Object.keys(salesData).find(k => (salesData[k]||[]).some(s=>s.id===saleId));
+                if (!sid) return;
+                const updated = { ...sale, ful: newStatus, status: newStatus };
+                await dbSaveSale(sid, updated);
+                setSalesData(prev => ({
+                  ...prev,
+                  [sid]: (prev[sid]||[]).map(s => s.id===saleId ? {...s, ful:newStatus, status:newStatus} : s),
+                }));
+              }}
             />
           )}
 
