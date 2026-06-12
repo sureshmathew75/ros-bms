@@ -1833,6 +1833,7 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
     if(isClosed)return;
     const today=new Date().toISOString().slice(0,10);
     const updates={status:newStatus};
+    if(newStatus==="MSG_SENT") updates.instructionsSentAt=today;
     if(newStatus==="RETURN_RECEIVED") updates.receivedDate=today;
     if(newStatus==="REFUNDED") updates.refundDate=today;
     if(newStatus==="EXCHANGED") updates.exchangeDate=today;
@@ -2261,6 +2262,7 @@ Thank you for shopping with ROS.`,
               const handleQuickAction=async(newStatus)=>{
                 const today=new Date().toISOString().slice(0,10);
                 const updates={status:newStatus};
+                if(newStatus==="MSG_SENT") updates.instructionsSentAt=today;
                 if(newStatus==="RETURN_RECEIVED") updates.receivedDate=today;
                 if(newStatus==="REFUNDED") updates.refundDate=today;
                 if(newStatus==="EXCHANGED") updates.exchangeDate=today;
@@ -2336,6 +2338,10 @@ Thank you for shopping with ROS.`,
                   <div onClick={()=>setSelectedReturn(ret)}>
                     <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ret.customer}</p>
                     <p style={{margin:"1px 0 0",fontSize:11,color:"#64748b"}}>{ret.saleId}</p>
+                    <p style={{margin:"3px 0 0",fontSize:10,color:"#94a3b8"}}>
+                      📅 {fmtDate(ret.createdAt)}
+                      {ret.instructionsSentAt&&<span style={{marginLeft:6,color:"#0369a1"}}>✅ {fmtDate(ret.instructionsSentAt)}</span>}
+                    </p>
                   </div>
                   <div style={{display:"flex",alignItems:"center"}} onClick={()=>setSelectedReturn(ret)}>
                     <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:999,
