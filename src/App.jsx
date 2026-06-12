@@ -5403,16 +5403,6 @@ return(
                     [shopId]: (prev[shopId] || []).map(s => s.id === saleId ? { ...s, ...changes } : s),
                   }));
                 }}
-                onMarkDeliveryInformed={async (saleId) => {
-                  const sale = sales.find(s => s.id === saleId);
-                  if (!sale) return;
-                  const updated = { ...sale, deliveryInformed: true };
-                  await dbSaveSale(shopId, updated);
-                  setSalesData(prev => ({
-                    ...prev,
-                    [shopId]: (prev[shopId] || []).map(s => s.id === saleId ? { ...s, deliveryInformed: true } : s),
-                  }));
-                }}
               />
             );
           })()}
