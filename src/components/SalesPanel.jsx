@@ -1529,10 +1529,10 @@ export default function SalesPanel({
          ══════════════════════════════════════════════════════════ */}
       {showReport && (() => {
         const UNFULFILLED = shopId === "ros-india"
-          ? ["ORDER NOT PLACED","IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO."]
+          ? ["ORDER NOT PLACED","IN PROGRESS","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO."]
           : ["PENDING"];
         const ALL_STATUSES = shopId === "ros-india"
-          ? ["ORDER NOT PLACED","IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","PENDING"]
+          ? ["ORDER NOT PLACED","IN PROGRESS","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","AWAITING TRACKING INFO.","PENDING"]
           : ["PENDING","PROCESSING","ON HOLD","AWAITING PAYMENT"];
 
         // Use top-level state; init defaults on open
@@ -1562,10 +1562,11 @@ export default function SalesPanel({
         const filteredSales = sales
           .filter(s => {
             const st = (s.ful || s.status || "").toUpperCase();
-            const matchStatus = activeStatuses.some(r => st === r.toUpperCase());
+            const normSt = st === 'WORK IN PROGRESS' ? 'IN PROGRESS' : st;
+            const matchStatus = activeStatuses.some(r => normSt === r.toUpperCase() || st === r.toUpperCase());
             const dispFrom = s.dispatchFrom || defaultFrom;
             const isCross = dispFrom.startsWith('India') !== defaultFrom.startsWith('India');
-            const effectiveFrom = s.dispatchFrom || defaultFrom;
+            const effectiveFrom = (!s.dispatchFrom || s.dispatchFrom === '') ? defaultFrom : s.dispatchFrom;
             const matchUnit = rptUnit === 'ALL' || effectiveFrom === rptUnit;
             return matchStatus && (!crossOnly || isCross) && matchUnit;
           })
