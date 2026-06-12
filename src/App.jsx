@@ -2061,7 +2061,7 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
 };
 
 const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,onSyncSaleStatus})=>{
-  const [filter,setFilter]=React.useState("ALL");
+  const [filter,setFilter]=React.useState("ACTIVE");
   const [selectedReturn,setSelectedReturn]=React.useState(null);
   const [search,setSearch]=React.useState("");
   const [confirmDelete,setConfirmDelete]=React.useState(null); // {id, customer}
@@ -2153,20 +2153,19 @@ Thank you for shopping with ROS.`,
     scanReturns().catch(console.error);
   },[returns.length]);
 
-  const ACTIVE_STATUSES=["RETURN_APPROVED","RETURN_IN_TRANSIT","RETURN_RECEIVED"];
+  const ACTIVE_STATUSES=["RETURN_APPROVED","MSG_SENT","RETURN_IN_TRANSIT"];
   const filtered=returns.filter(r=>{
-    const matchStatus=filter==="ALL"?true:filter==="ACTIVE"?ACTIVE_STATUSES.includes(r.status):r.status===filter;
+    const matchStatus=filter==="ACTIVE"?ACTIVE_STATUSES.includes(r.status):r.status===filter;
     const q=search.toLowerCase();
     const matchSearch=!q||r.id.toLowerCase().includes(q)||r.customer.toLowerCase().includes(q)||r.saleId.toLowerCase().includes(q)||r.phone.includes(q);
     return matchStatus&&matchSearch;
   });
 
   const counts={
-    ALL:returns.length,
     ACTIVE:returns.filter(r=>ACTIVE_STATUSES.includes(r.status)).length,
     RETURN_RECEIVED:returns.filter(r=>r.status==="RETURN_RECEIVED").length,
+    EXCHANGED:returns.filter(r=>r.status==="EXCHANGED").length,
     REFUNDED:returns.filter(r=>r.status==="REFUNDED").length,
-    RETURN_EXPIRED:returns.filter(r=>r.status==="RETURN_EXPIRED").length,
   };
 
   const fmtDate=d=>{if(!d)return"—";try{return new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short"});}catch{return d;}};
@@ -2189,11 +2188,10 @@ Thank you for shopping with ROS.`,
         {/* Filter tabs */}
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
           {[
-            {key:"ALL",label:"All"},
-            {key:"ACTIVE",label:"Active"},
-            {key:"RETURN_RECEIVED",label:"Received"},
-            {key:"REFUNDED",label:"Refunded"},
-            {key:"RETURN_EXPIRED",label:"Expired"},
+            {key:"ACTIVE",    label:"Active"},
+            {key:"RETURN_RECEIVED", label:"Received"},
+            {key:"EXCHANGED", label:"Exchanged"},
+            {key:"REFUNDED",  label:"Refunded"},
           ].map(f=>(
             <button key={f.key} onClick={()=>setFilter(f.key)}
               style={{padding:"5px 14px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
