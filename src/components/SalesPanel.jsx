@@ -754,7 +754,7 @@ export default function SalesPanel({
               {reloading ? "⏳" : "🔄"}
             </button>
           )}
-          <button onClick={() => setShowReport(true)}
+          <button onClick={() => { setShowReport(true); setRptStatuses(null); setCrossOnly(false); setRptUnit('ALL'); }}
             style={{
               display: "flex", alignItems: "center", gap: 6,
               padding: "8px 14px", borderRadius: 9, border: "1px solid #e2e8f0",
@@ -1438,7 +1438,12 @@ export default function SalesPanel({
                           <select
                             value={current}
                             onChange={e => {
-                              if (onInlineEdit) onInlineEdit(s.id, { dispatchFrom: e.target.value });
+                              const newVal = e.target.value;
+                              const currentVal = s.dispatchFrom || defaultFrom;
+                              if (currentVal && currentVal !== defaultFrom && newVal !== currentVal) {
+                                if (!window.confirm("Change dispatch unit from '" + (currentVal==="India-Unit1"?"Unit 1":currentVal==="India-Unit2"?"Unit 2":currentVal) + "' to '" + (newVal==="India-Unit1"?"Unit 1":newVal==="India-Unit2"?"Unit 2":newVal) + "'?\n\nMake sure this is intentional.")) return;
+                              }
+                              if (onInlineEdit) onInlineEdit(s.id, { dispatchFrom: newVal });
                             }}
                             style={{
                               padding: "4px 8px", borderRadius: 8, fontSize: 11, fontWeight: 700,
@@ -1560,7 +1565,8 @@ export default function SalesPanel({
             const matchStatus = activeStatuses.some(r => st === r.toUpperCase());
             const dispFrom = s.dispatchFrom || defaultFrom;
             const isCross = dispFrom.startsWith('India') !== defaultFrom.startsWith('India');
-            const matchUnit = rptUnit === 'ALL' || dispFrom === rptUnit;
+            const effectiveFrom = s.dispatchFrom || defaultFrom;
+            const matchUnit = rptUnit === 'ALL' || effectiveFrom === rptUnit;
             return matchStatus && (!crossOnly || isCross) && matchUnit;
           })
           .sort((a, b) => daysWaiting(b.date) - daysWaiting(a.date));
@@ -1577,9 +1583,14 @@ export default function SalesPanel({
             const k = nm+"__"+ph;
             if (!seenRInst.has(k)) {
               seenRInst.add(k);
-              const grp = rInstGroups[k] || [s];
-              const advance = grp.find(x=>(x.tag||"").includes("Advance Sale")) || grp[0];
-              reportSales.push({...advance, _grp: grp, _grouped: true});
+              // Use all sales in group (all statuses) for payment breakdown display
+              const fullGrp = rInstGroups[k] || [s];
+              // Representative row = earliest pending sale in group, or advance, or first
+              const pendingSales = fullGrp.filter(x => activeStatuses.some(r=>(x.ful||x.status||"").toUpperCase()===r.toUpperCase()));
+              const advance = fullGrp.find(x=>(x.tag||"").includes("Advance Sale")) || fullGrp[0];
+              const rep = pendingSales.length > 0 ? (pendingSales.find(x=>(x.tag||"").includes("Advance Sale")) || pendingSales[0]) : advance;
+              reportSales.push({...rep, _grp: fullGrp, _grouped: true, expectedTotal: advance.expectedTotal});
+              seenRInst.add(k);
             }
           } else {
             reportSales.push(s);
