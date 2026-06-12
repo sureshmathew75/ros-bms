@@ -2188,7 +2188,7 @@ Thank you for shopping with ROS.`,
         {/* Filter tabs */}
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
           {[
-            {key:"ACTIVE",    label:"Active"},
+            {key:"ACTIVE",    label:"Expecting"},
             {key:"RETURN_RECEIVED", label:"Received"},
             {key:"EXCHANGED", label:"Exchanged"},
             {key:"REFUNDED",  label:"Refunded"},
