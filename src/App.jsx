@@ -168,7 +168,10 @@ const BSTYLE={
   Paid:             {bg:"#dcfce7",c:"#15803d",b:"#bbf7d0"},
   Pending:          {bg:"#fef9c3",c:"#a16207",b:"#fde047"},
   Partial:          {bg:"#ffedd5",c:"#c2410c",b:"#fed7aa"},
-  SHOP:             {bg:"#dbeafe",c:"#1d4ed8",b:"#bfdbfe"},
+  SHOP:             {bg:"#f1f5f9",c:"#475569",b:"#e2e8f0"},
+  BANK:             {bg:"#dbeafe",c:"#1d4ed8",b:"#bfdbfe"},
+  SIB:              {bg:"#fef2f2",c:"#b91c1c",b:"#fca5a5"},
+  HDFC:             {bg:"#eff6ff",c:"#1d4ed8",b:"#93c5fd"},
   // ── Customer tags ──
   VIP:              {bg:"#fef9c3",c:"#854d0e",b:"#fde047"},
   Wholesale:        {bg:"#f3e8ff",c:"#7e22ce",b:"#e9d5ff"},
