@@ -1614,20 +1614,55 @@ export default function SalesPanel({
 
         const printReport = () => {
           const w = window.open("","_blank","width=900,height=700");
+
+          const fmtAmt2 = v => fmt ? fmt(shopId, Number(v)||0) : (shop.symbol||"£") + (Number(v)||0).toLocaleString("en-IN");
+          const tagLblP = x => {
+            const t=(x.tag||"").split(",").map(t=>t.trim());
+            return t.includes("Advance Sale")?"Advance":t.includes("Final Payment Sale")?"Final":t.includes("Part Payment")?"Part":"";
+          };
+          const tagColP = l => l==="Advance"?"#92400e":l==="Final"?"#166534":l==="Part"?"#5b21b6":"#374151";
+          const tagBgP  = l => l==="Advance"?"#fffbeb":l==="Final"?"#f0fdf4":l==="Part"?"#f5f3ff":"white";
+
           const rows = reportSales.map(s => {
             const days = daysWaiting(s.date);
-            const dispFrom = s.dispatchFrom || defaultFrom;
+            const dispFrom = ((!s.dispatchFrom||s.dispatchFrom==='')?defaultFrom:s.dispatchFrom);
             const isCross = dispFrom.startsWith('India') !== defaultFrom.startsWith('India');
             const dayColor = days >= 5 ? "#dc2626" : days >= 3 ? "#d97706" : "#059669";
+
+            // Build amount cell — instalment breakdown or single amount
+            let amountCell = "";
+            if (rptUnit !== "India-Unit1") {
+              if (s._grouped && s._grp && s._grp.length > 0) {
+                const grp = [...s._grp].sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+                const expTotal = Number(s.expectedTotal)||0;
+                const totalPaid = grp.reduce((a,x)=>a+(Number(x.amount)||0),0);
+                const balance = expTotal > 0 ? expTotal - totalPaid : null;
+                const lines = grp.map(x => {
+                  const lbl = tagLblP(x);
+                  return `<div style="display:flex;justify-content:space-between;align-items:center;gap:12;margin-bottom:2px">
+                    <span style="font-size:10px;color:#94a3b8">${fmtD(x.date)}</span>
+                    ${lbl?`<span style="font-size:10px;padding:1px 5px;border-radius:3px;background:${tagBgP(lbl)};color:${tagColP(lbl)};font-weight:700">${lbl}</span>`:""}
+                    <span style="font-weight:800;font-size:12px">${fmtAmt2(x.amount)}</span>
+                  </div>`;
+                }).join("");
+                const balLine = balance !== null
+                  ? `<div style="border-top:1px dashed #e2e8f0;margin-top:3px;padding-top:3px;text-align:right;font-weight:800;font-size:12px;color:${balance>0?"#dc2626":"#059669"}">${balance>0?"Bal: "+fmtAmt2(balance):"✅ Fully Paid"}</div>`
+                  : "";
+                amountCell = `<td style="vertical-align:top">${lines}${balLine}</td>`;
+              } else {
+                amountCell = `<td style="text-align:right;font-weight:800;vertical-align:top">${fmtAmt2(s.amount)}</td>`;
+              }
+            }
+
             return `<tr style="background:${isCross?"#fff7ed":"white"}">
-              <td>${fmtD(s.date)}</td>
-              <td style="color:${dayColor};font-weight:700">${days}d</td>
-              <td style="font-weight:700">${s.customer||"—"}</td>
-              <td>${s.phone||s.contact||"—"}</td>
-              <td>${s.item||"—"}</td>
-              ${rptUnit!=="India-Unit1"?`<td style="text-align:right;font-weight:800">${fmt?fmt(shopId,Number(s.amount)||0):(shop.symbol||"£")+(Number(s.amount)||0).toLocaleString()}</td>`:""}
-              <td><span style="background:#fef9c3;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">${s.ful||s.status||"—"}</span></td>
-              ${rptUnit==="ALL"?`<td>${isCross?`<span style="color:#c2410c;font-weight:700">⚠ ${dispFrom}</span>`:`<span style="color:#64748b">${dispFrom}</span>`}</td>`:""}
+              <td style="vertical-align:top">${fmtD(s.date)}</td>
+              <td style="color:${dayColor};font-weight:700;vertical-align:top">${days}d</td>
+              <td style="font-weight:700;vertical-align:top">${s.customer||"—"}</td>
+              <td style="vertical-align:top">${s.phone||s.contact||"—"}</td>
+              <td style="vertical-align:top">${s.item||"—"}</td>
+              ${amountCell}
+              <td style="vertical-align:top"><span style="background:#fef9c3;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">${s.ful||s.status||"—"}</span></td>
+              ${rptUnit==="ALL"?`<td style="vertical-align:top">${isCross?`<span style="color:#c2410c;font-weight:700">⚠ ${dispFrom}</span>`:`<span style="color:#64748b">${dispFrom}</span>`}</td>`:""}
             </tr>`;
           }).join("");
 
