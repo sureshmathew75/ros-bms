@@ -1231,6 +1231,10 @@ Thank you for shopping with ROS. We look forward to resolving this for you.`;
    ═══════════════════════════════════════════════════════════ */
 const ReturnsPortal=()=>{
   const [step,setStep]=React.useState("form"); // form | success | error
+  // Read shop from URL param for display purposes (filtering handled by phone match)
+  const urlShop=new URLSearchParams(window.location.search).get("shop")||"";
+  const shopNames={"ros-selections":"ROS Selections","ros-hairlines":"ROS Hairlines","ros-india":"ROS India"};
+  const portalShopName=shopNames[urlShop]||"ROS";
   const [loading,setLoading]=React.useState(false);
   const [generatedId,setGeneratedId]=React.useState("");
   const [errorMsg,setErrorMsg]=React.useState("");
@@ -1377,6 +1381,7 @@ const ReturnsPortal=()=>{
       <div style={{background:"white",borderRadius:20,boxShadow:"0 20px 60px rgba(0,0,0,0.10)",maxWidth:480,width:"100%",padding:40,textAlign:"center"}}>
         <div style={{width:72,height:72,borderRadius:"50%",background:"#dcfce7",border:"3px solid #16a34a",display:"flex",alignItems:"center",justifyContent:"center",fontSize:32,margin:"0 auto 20px"}}>✅</div>
         <h1 style={{margin:"0 0 8px",fontSize:24,fontWeight:800,color:"#0f172a"}}>Return Approved</h1>
+        <p style={{margin:"0 0 8px",fontSize:12,color:"#94a3b8"}}>{portalShopName}</p>
         <p style={{margin:"0 0 20px",fontSize:14,color:"#64748b"}}>Your return request has been submitted successfully.</p>
         <div style={{background:"#f0fdf4",borderRadius:12,padding:"16px 20px",border:"1px solid #86efac",marginBottom:20}}>
           <p style={{margin:"0 0 4px",fontSize:11,fontWeight:700,color:"#166534",textTransform:"uppercase",letterSpacing:"0.05em"}}>Your Return ID</p>
@@ -2249,6 +2254,26 @@ Thank you for shopping with ROS.`,
         </div>
 
         {/* Filter tabs */}
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+          {/* Copy return link button */}
+          <div style={{display:"flex",gap:6,alignItems:"center",marginLeft:"auto"}}>
+            <span style={{fontSize:11,color:"#94a3b8"}}>Share return form:</span>
+            {[
+              {id:"ros-selections",label:"🇬🇧 ROS Selections",color:"#059669"},
+              {id:"ros-hairlines", label:"🇬🇧 ROS Hairlines", color:"#dc5078"},
+              {id:"ros-india",     label:"🇮🇳 ROS India",     color:"#f59e0b"},
+            ].filter(s=>s.id===shopId||shopId===undefined).map(s=>(
+              <button key={s.id} onClick={()=>{
+                const link=`https://ros-bms.vercel.app/returns?shop=${s.id}`;
+                navigator.clipboard.writeText(link).then(()=>alert("Link copied!\n"+link));
+              }} style={{padding:"5px 12px",borderRadius:8,border:"1px solid "+s.color+"44",
+                background:s.color+"10",color:s.color,fontSize:11,fontWeight:700,
+                cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                📋 Copy Link
+              </button>
+            ))}
+          </div>
+        </div>
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
           {[
             {key:"ACTIVE",    label:"Expecting"},
