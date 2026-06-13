@@ -2445,11 +2445,47 @@ Thank you for shopping with ROS.`,
                     </span>
                   </div>
                   <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}} onClick={()=>setSelectedReturn(ret)}>
-                    <span style={{fontSize:12,color:"#374151",fontWeight:600}}>{fmtDate(ret.returnDeadline)}</span>
-                    <span style={{fontSize:9,color:"#94a3b8",whiteSpace:"nowrap"}}>return window closing</span>
+                    {(()=>{
+                      if(isClosed){
+                        const resDate=ret.exchangeDate||ret.refundDate||"";
+                        return<>
+                          <span style={{fontSize:12,color:"#059669",fontWeight:700}}>✅ Resolved</span>
+                          <span style={{fontSize:10,color:"#94a3b8"}}>{resDate?fmtDate(resDate):"—"}</span>
+                        </>;
+                      }
+                      if(ret.status==="RETURN_RECEIVED"){
+                        const recvd=ret.receivedDate?new Date(ret.receivedDate):null;
+                        const today0=new Date();today0.setHours(0,0,0,0);
+                        const daysWaiting=recvd?Math.floor((today0-recvd)/86400000):0;
+                        const waitColor=daysWaiting>=7?"#dc2626":daysWaiting>=3?"#d97706":"#64748b";
+                        return<>
+                          <span style={{fontSize:11,fontWeight:700,color:waitColor}}>⏳ Awaiting decision</span>
+                          <span style={{fontSize:10,color:waitColor}}>{daysWaiting===0?"Received today":daysWaiting===1?"Received yesterday":`Received ${daysWaiting}d ago`}</span>
+                        </>;
+                      }
+                      // Expecting / In Transit — show deadline
+                      return<>
+                        <span style={{fontSize:12,color:"#374151",fontWeight:600}}>{fmtDate(ret.returnDeadline)}</span>
+                        <span style={{fontSize:9,color:"#94a3b8",whiteSpace:"nowrap"}}>return window closing</span>
+                      </>;
+                    })()}
                   </div>
                   <div style={{display:"flex",alignItems:"center"}} onClick={()=>setSelectedReturn(ret)}>
-                    {isClosed?<span style={{fontSize:11,color:"#94a3b8"}}>—</span>:<DaysChip days={days}/>}
+                    {(()=>{
+                      if(isClosed) return <span style={{fontSize:11,color:"#94a3b8"}}>—</span>;
+                      if(ret.status==="RETURN_RECEIVED"){
+                        const recvd=ret.receivedDate?new Date(ret.receivedDate):null;
+                        const today0=new Date();today0.setHours(0,0,0,0);
+                        const daysWaiting=recvd?Math.floor((today0-recvd)/86400000):0;
+                        const waitColor=daysWaiting>=7?"#dc2626":daysWaiting>=3?"#d97706":"#059669";
+                        const waitBg=daysWaiting>=7?"#fef2f2":daysWaiting>=3?"#fffbeb":"#f0fdf4";
+                        return<span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:999,
+                          background:waitBg,color:waitColor,border:"1px solid "+waitColor+"33",whiteSpace:"nowrap"}}>
+                          {daysWaiting}d waiting
+                        </span>;
+                      }
+                      return <DaysChip days={days}/>;
+                    })()}
                   </div>
                   {/* Next Action */}
                   <div style={{display:"flex",alignItems:"center"}} onClick={e=>e.stopPropagation()}>
