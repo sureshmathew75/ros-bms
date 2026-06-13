@@ -1746,6 +1746,17 @@ const RETURN_STATUS_STYLE={
 };
 
 // WhatsApp message templates
+const MSG_REMINDER = (customer, retId, hardDeadline) =>
+`Dear ${customer}, we noticed we have not received your return item yet for return request *${retId}*.
+
+As a courtesy, we are extending your return window by a further 7 days. *We must receive your item by ${hardDeadline}* — not just dispatched, but physically received by us by this date.
+
+If we do not receive the item by this date, unfortunately we will be unable to process your return request.
+
+If you have already dispatched the item, please share your tracking number with us so we can monitor it.
+
+Thank you 😊`;
+
 const MSG_RECEIVED = (customer, retId) =>
 `Dear ${customer},
 
@@ -2305,15 +2316,54 @@ Thank you for shopping with ROS.`,
                     💬 Send Instructions
                   </button>
                 );
-                if(ret.status==="MSG_SENT"||ret.status==="RETURN_IN_TRANSIT") return(
-                  <button onClick={e=>{e.stopPropagation();
-                    if(!window.confirm("Mark item as received?"))return;
-                    handleQuickAction("RETURN_RECEIVED").then(()=>openWA(ret.phone,MSG_RECEIVED(ret.customer,ret.id)));
-                  }} style={{padding:"4px 10px",borderRadius:7,border:"none",background:"#f59e0b",
-                    color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
-                    📦 Mark Received
-                  </button>
-                );
+                if(ret.status==="MSG_SENT"||ret.status==="RETURN_IN_TRANSIT") {
+                  // Calculate days since instructions sent
+                  const instrDate = ret.instructionsSentAt ? new Date(ret.instructionsSentAt) : null;
+                  const today0 = new Date(); today0.setHours(0,0,0,0);
+                  const daysSinceInstr = instrDate ? Math.floor((today0 - instrDate) / 86400000) : 0;
+                  // Hard deadline = instructionsSentAt + 14 days
+                  const hardDeadlineDate = instrDate ? new Date(instrDate.getTime() + 14*86400000) : null;
+                  const hardDeadlineStr = hardDeadlineDate ? hardDeadlineDate.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) : "";
+                  const hardDeadlineFmt = hardDeadlineDate ? `${String(hardDeadlineDate.getDate()).padStart(2,"0")}/${String(hardDeadlineDate.getMonth()+1).padStart(2,"0")}` : "";
+                  const isWindowClosed = hardDeadlineDate && today0 > hardDeadlineDate;
+                  const showReminder = !ret.reminderSentAt && daysSinceInstr >= 6 && !isWindowClosed;
+
+                  return(
+                    <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                      <button onClick={e=>{e.stopPropagation();
+                        if(!window.confirm("Mark item as received?"))return;
+                        handleQuickAction("RETURN_RECEIVED").then(()=>openWA(ret.phone,MSG_RECEIVED(ret.customer,ret.id)));
+                      }} style={{padding:"4px 10px",borderRadius:7,border:"none",background:"#f59e0b",
+                        color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+                        📦 Mark Received
+                      </button>
+                      {showReminder&&(
+                        <button onClick={async e=>{e.stopPropagation();
+                          if(!window.confirm("Send reminder to "+ret.customer+"?"))return;
+                          openWA(ret.phone, MSG_REMINDER(ret.customer, ret.id, hardDeadlineStr));
+                          const today2=new Date().toISOString().slice(0,10);
+                          const updated={...ret, reminderSentAt:today2};
+                          await dbSaveReturn(updated);
+                          setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
+                        }} style={{padding:"4px 10px",borderRadius:7,border:"1px solid #dc2626",
+                          background:"#fef2f2",color:"#dc2626",fontSize:10,fontWeight:700,
+                          cursor:"pointer",whiteSpace:"nowrap"}}>
+                          🔔 Send Reminder
+                        </button>
+                      )}
+                      {ret.reminderSentAt&&(
+                        <span style={{fontSize:9,color:"#94a3b8",whiteSpace:"nowrap"}}>
+                          🔔 Reminded {fmtShort(ret.reminderSentAt)}
+                        </span>
+                      )}
+                      {isWindowClosed&&(
+                        <span style={{fontSize:9,color:"#dc2626",fontWeight:700,whiteSpace:"nowrap"}}>
+                          ⛔ Window closed
+                        </span>
+                      )}
+                    </div>
+                  );
+                }
                 if(ret.status==="RETURN_RECEIVED") return(
                   <div style={{display:"flex",gap:4}}>
                     <button onClick={e=>{e.stopPropagation();
@@ -2352,6 +2402,18 @@ Thank you for shopping with ROS.`,
                   <div onClick={()=>setSelectedReturn(ret)}>
                     <p style={{margin:0,fontSize:12,fontWeight:800,color:shop.accent,fontFamily:"DM Mono,monospace"}}>{ret.id}</p>
                     <p style={{margin:"1px 0 0",fontSize:10,color:"#94a3b8"}}>{ret.resolution==="exchange"?"🔄":"💰"} {ret.resolution}</p>
+                    {(()=>{
+                      if(ret.status!=="MSG_SENT"&&ret.status!=="RETURN_IN_TRANSIT")return null;
+                      if(ret.reminderSentAt)return null;
+                      const iDate=ret.instructionsSentAt?new Date(ret.instructionsSentAt):null;
+                      if(!iDate)return null;
+                      const d=new Date();d.setHours(0,0,0,0);
+                      const days=Math.floor((d-iDate)/86400000);
+                      if(days<6)return null;
+                      return<span style={{display:"inline-block",marginTop:2,fontSize:9,fontWeight:800,
+                        padding:"1px 6px",borderRadius:999,background:"#fef2f2",color:"#dc2626",
+                        border:"1px solid #fca5a5"}}>🔔 Reminder Due</span>;
+                    })()}
                   </div>
                   <div onClick={()=>setSelectedReturn(ret)}>
                     <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ret.customer}</p>
@@ -2364,6 +2426,7 @@ Thank you for shopping with ROS.`,
                           ret.createdAt&&{ic:"📋",label:"Requested",date:ret.createdAt,color:"#374151"},
                           ret.instructionsSentAt&&{ic:"✅",label:"Instructions",date:ret.instructionsSentAt,color:"#059669"},
                           ret.receivedDate&&{ic:"📦",label:"Received",date:ret.receivedDate,color:"#d97706"},
+                          ret.reminderSentAt&&{ic:"🔔",label:"Reminder",date:ret.reminderSentAt,color:"#dc2626"},
                           ret.exchangeDate&&{ic:"🔄",label:"Exchanged",date:ret.exchangeDate,color:"#a21caf"},
                           ret.refundDate&&{ic:"💰",label:"Refunded",date:ret.refundDate,color:"#6d28d9"},
                         ].filter(Boolean);
