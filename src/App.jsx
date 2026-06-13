@@ -2381,8 +2381,9 @@ Thank you for shopping with ROS.`,
                       {statusStyle.label}
                     </span>
                   </div>
-                  <div style={{display:"flex",alignItems:"center"}} onClick={()=>setSelectedReturn(ret)}>
-                    <span style={{fontSize:12,color:"#374151"}}>{fmtDate(ret.returnDeadline)}</span>
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}} onClick={()=>setSelectedReturn(ret)}>
+                    <span style={{fontSize:12,color:"#374151",fontWeight:600}}>{fmtDate(ret.returnDeadline)}</span>
+                    <span style={{fontSize:9,color:"#94a3b8",whiteSpace:"nowrap"}}>return window closing</span>
                   </div>
                   <div style={{display:"flex",alignItems:"center"}} onClick={()=>setSelectedReturn(ret)}>
                     {isClosed?<span style={{fontSize:11,color:"#94a3b8"}}>—</span>:<DaysChip days={days}/>}
