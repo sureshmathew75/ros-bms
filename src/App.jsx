@@ -4287,6 +4287,288 @@ const FulfilmentPanel=({salesData,shopId,shop,messages,setMessages,returns,setRe
 };
 /* ── End FulfilmentPanel ─────────────────────────────────────────────────── */
 
+
+/* ═══════════════════════════════════════════════════════════
+   BANK RECONCILIATION PANEL — Starling CSV import
+   ROS Selections only (for now)
+   ═══════════════════════════════════════════════════════════ */
+const BankReconciliationPanel=({shop,shopId,fmt})=>{
+  const [txns,setTxns]=React.useState([]);
+  const [catFilter,setCatFilter]=React.useState("ALL");
+  const [search,setSearch]=React.useState("");
+  const [fileName,setFileName]=React.useState("");
+  const fileRef=React.useRef(null);
+
+  const CATEGORIES={
+    SHOPIFY_PAYOUT:  {label:"Shopify Payout",    color:"#059669",bg:"#f0fdf4",border:"#86efac",  ic:"🟢"},
+    WHATSAPP_SALE:   {label:"WhatsApp Sale",      color:"#0369a1",bg:"#f0f9ff",border:"#7dd3fc",  ic:"🔵"},
+    POSTAGE:         {label:"Postage & Shipping", color:"#7c3aed",bg:"#f5f3ff",border:"#c4b5fd",  ic:"📮"},
+    STAFF:           {label:"Staff Payment",      color:"#374151",bg:"#f8fafc",border:"#e2e8f0",  ic:"👤"},
+    STOCK_PURCHASE:  {label:"Stock Purchase",     color:"#b45309",bg:"#fffbeb",border:"#fde68a",  ic:"📦"},
+    SOFTWARE:        {label:"Software & Subs",    color:"#0891b2",bg:"#ecfeff",border:"#a5f3fc",  ic:"💻"},
+    SUPPLIES:        {label:"Purchases & Supplies",color:"#dc2626",bg:"#fef2f2",border:"#fca5a5", ic:"🛒"},
+    DIRECT_DEBIT:    {label:"Direct Debit",       color:"#6d28d9",bg:"#f5f3ff",border:"#c4b5fd",  ic:"📋"},
+    MANUAL_REVIEW:   {label:"⚠ Manual Review",    color:"#c2410c",bg:"#fff7ed",border:"#fed7aa",  ic:"⚠️"},
+    OTHER:           {label:"Other",              color:"#64748b",bg:"#f8fafc",border:"#e2e8f0",  ic:"•"},
+  };
+
+  const SHOPIFY_NAMES=["SHOPIFY INC","SHOPIFY"];
+  const POSTAGE_NAMES=["ROYAL MAIL","PARCEL2GO","PARCEL FORCE","EVRI","DPD","HERMES","COLLECT+"];
+  const STOCK_NAMES=["REMITLY","WESTERN UNION","MONEY GRAM","TRANSFERWISE","WISE"];
+  const SOFTWARE_NAMES=["ANTHROPIC","CLAUDE","GOOGLE","MICROSOFT","ADOBE","DROPBOX","ZOOM","SLACK","CANVA","VERCEL","NETLIFY"];
+  const SUPPLIES_NAMES=["AMAZON","ARGOS","EBAY","IKEA","STAPLES","CURRYS","TESCO","NEXT","JOHN LEWIS"];
+  const REVIEW_NAMES=["LIDL","ASDA","TESCO","SAINSBURY","MORRISONS","ALDI","WAITROSE","BOOTS","KLARNA","CONTACTLESS","PIZZA","SUMUP"];
+  const REVIEW_TYPES=["CONTACTLESS"];
+
+  const categorise=(row)=>{
+    const cp=(row.counterParty||"").toUpperCase();
+    const ref=(row.reference||"").toUpperCase();
+    const type=(row.type||"").toUpperCase();
+    const amt=Number(row.amount)||0;
+
+    if(SHOPIFY_NAMES.some(n=>cp.includes(n))) return "SHOPIFY_PAYOUT";
+    if(REVIEW_TYPES.includes(type)) return "MANUAL_REVIEW";
+    if(REVIEW_NAMES.some(n=>cp.includes(n)||ref.includes(n))) return "MANUAL_REVIEW";
+    if(POSTAGE_NAMES.some(n=>cp.includes(n))) return "POSTAGE";
+    if(STOCK_NAMES.some(n=>cp.includes(n))) return "STOCK_PURCHASE";
+    if(SOFTWARE_NAMES.some(n=>cp.includes(n))) return "SOFTWARE";
+    if(SUPPLIES_NAMES.some(n=>cp.includes(n))) return "SUPPLIES";
+    if(type==="DIRECT DEBIT") return "DIRECT_DEBIT";
+    if(type==="FASTER PAYMENT"&&amt>0) return "WHATSAPP_SALE";
+    if(type==="FASTER PAYMENT"&&amt<0) return "STAFF";
+    if(type==="CARD SUBSCRIPTION") return "SOFTWARE";
+    if(type==="ONLINE PAYMENT"&&amt<0) return "SUPPLIES";
+    return "OTHER";
+  };
+
+  const parseCSV=(text)=>{
+    const lines=text.trim().split("\n");
+    const headers=lines[0].split(",").map(h=>h.trim().replace(/^"|"$/g,""));
+    const rows=[];
+    for(let i=1;i<lines.length;i++){
+      if(!lines[i].trim())continue;
+      const cols=lines[i].split(",").map(c=>c.trim().replace(/^"|"$/g,""));
+      const row={
+        date:      cols[0]||"",
+        counterParty: cols[1]||"",
+        reference: cols[2]||"",
+        type:      cols[3]||"",
+        amount:    parseFloat(cols[4])||0,
+        balance:   parseFloat(cols[5])||0,
+        starlingCat: cols[6]||"",
+        notes:     cols[7]||"",
+      };
+      row.category=categorise(row);
+      row._id=i;
+      rows.push(row);
+    }
+    return rows;
+  };
+
+  const handleFile=(file)=>{
+    if(!file)return;
+    setFileName(file.name);
+    const reader=new FileReader();
+    reader.onload=(e)=>{
+      const parsed=parseCSV(e.target.result);
+      setTxns(parsed);
+      setCatFilter("ALL");
+    };
+    reader.readAsText(file);
+  };
+
+  const filtered=txns.filter(t=>{
+    const matchCat=catFilter==="ALL"||(catFilter==="IN"?t.amount>0:catFilter==="OUT"?t.amount<0:t.category===catFilter);
+    const q=search.toLowerCase();
+    const matchQ=!q||(t.counterParty||"").toLowerCase().includes(q)||(t.reference||"").toLowerCase().includes(q);
+    return matchCat&&matchQ;
+  });
+
+  // Summary stats
+  const totalIn=txns.filter(t=>t.amount>0).reduce((a,t)=>a+t.amount,0);
+  const totalOut=txns.filter(t=>t.amount<0).reduce((a,t)=>a+Math.abs(t.amount),0);
+  const shopifyTotal=txns.filter(t=>t.category==="SHOPIFY_PAYOUT").reduce((a,t)=>a+t.amount,0);
+  const waTotal=txns.filter(t=>t.category==="WHATSAPP_SALE").reduce((a,t)=>a+t.amount,0);
+  const reviewCount=txns.filter(t=>t.category==="MANUAL_REVIEW").length;
+
+  const fmtAmt=(v)=>{
+    const abs=Math.abs(v);
+    const str="£"+abs.toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2});
+    return v<0?"-"+str:str;
+  };
+
+  const fmtD=(d)=>{
+    if(!d)return"—";
+    const p=d.split("/");
+    return p.length===3?`${p[0]}/${p[1]}/${p[2].slice(2)}`:d;
+  };
+
+  const exportCSV=()=>{
+    const rows=[["Date","Counter Party","Reference","Type","Amount","Balance","Our Category","Starling Category"]];
+    filtered.forEach(t=>{
+      rows.push([t.date,t.counterParty,t.reference,t.type,t.amount,t.balance,CATEGORIES[t.category]?.label||t.category,t.starlingCat]);
+    });
+    const csv=rows.map(r=>r.map(c=>`"${c}"`).join(",")).join("\n");
+    const blob=new Blob([csv],{type:"text/csv"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;a.download="ROS_Selections_Statement_Categorised.csv";a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  if(shopId!=="ros-selections"){
+    return(
+      <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>
+        <div style={{fontSize:40,marginBottom:12}}>📊</div>
+        <p style={{fontSize:14,fontWeight:600}}>Bank Reconciliation is currently available for ROS Selections only.</p>
+        <p style={{fontSize:12}}>Other shops coming soon.</p>
+      </div>
+    );
+  }
+
+  return(
+    <div>
+      {/* Header */}
+      <div style={{padding:"18px 20px 14px",borderBottom:"1px solid #f1f5f9"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:14}}>
+          <div>
+            <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>📊 Bank Statement</h2>
+            <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>
+              {fileName?`${fileName} · ${txns.length} transactions`:"Upload a Starling CSV to categorise transactions"}
+            </p>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <input ref={fileRef} type="file" accept=".csv" style={{display:"none"}}
+              onChange={e=>handleFile(e.target.files[0])}/>
+            <button onClick={()=>fileRef.current&&fileRef.current.click()}
+              style={{padding:"8px 16px",borderRadius:9,border:"1px solid "+shop.accent,
+                background:shop.accent+"10",color:shop.accent,fontSize:13,fontWeight:700,
+                cursor:"pointer",fontFamily:"inherit"}}>
+              ⬆ Upload CSV
+            </button>
+            {txns.length>0&&(
+              <>
+                <input value={search} onChange={e=>setSearch(e.target.value)}
+                  placeholder="Search transactions…"
+                  style={{padding:"7px 12px",borderRadius:9,border:"1px solid #e2e8f0",fontSize:12,fontFamily:"inherit",outline:"none",width:180}}/>
+                <button onClick={exportCSV}
+                  style={{padding:"8px 16px",borderRadius:9,border:"none",background:"#0f172a",
+                    color:"white",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                  ⬇ Export
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* KPI cards */}
+        {txns.length>0&&(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:10,marginBottom:14}}>
+            {[
+              {l:"Total In",   v:fmtAmt(totalIn),   c:"#059669",bg:"#f0fdf4"},
+              {l:"Total Out",  v:fmtAmt(-totalOut),  c:"#dc2626",bg:"#fef2f2"},
+              {l:"Shopify",    v:fmtAmt(shopifyTotal),c:"#059669",bg:"#f0fdf4"},
+              {l:"WhatsApp",   v:fmtAmt(waTotal),    c:"#0369a1",bg:"#f0f9ff"},
+              {l:"⚠ Review",   v:reviewCount+" txns",c:"#c2410c",bg:"#fff7ed"},
+            ].map(k=>(
+              <div key={k.l} style={{background:k.bg,borderRadius:12,padding:"10px 14px",border:"1px solid "+k.c+"22"}}>
+                <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>{k.l}</p>
+                <p style={{margin:0,fontSize:16,fontWeight:900,color:k.c}}>{k.v}</p>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Category filter pills */}
+        {txns.length>0&&(
+          <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+            {[{key:"ALL",label:`All (${txns.length})`},{key:"IN",label:"Money In"},{key:"OUT",label:"Money Out"},
+              ...Object.entries(CATEGORIES).map(([k,v])=>({key:k,label:`${v.ic} ${v.label} (${txns.filter(t=>t.category===k).length})`}))
+            ].map(f=>(
+              <button key={f.key} onClick={()=>setCatFilter(f.key)}
+                style={{padding:"4px 10px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                  border:"1px solid "+(catFilter===f.key?shop.accent:"#e2e8f0"),
+                  background:catFilter===f.key?shop.accent:"white",
+                  color:catFilter===f.key?"white":"#64748b",whiteSpace:"nowrap"}}>
+                {f.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Empty state */}
+      {txns.length===0&&(
+        <div style={{padding:"80px 20px",textAlign:"center",color:"#94a3b8"}}>
+          <div style={{fontSize:48,marginBottom:16}}>📊</div>
+          <p style={{margin:0,fontSize:16,fontWeight:700,color:"#374151"}}>Upload your Starling CSV</p>
+          <p style={{margin:"8px 0 0",fontSize:13}}>Go to Starling → Statements → Export CSV, then upload here</p>
+          <button onClick={()=>fileRef.current&&fileRef.current.click()}
+            style={{marginTop:20,padding:"10px 24px",borderRadius:10,border:"none",
+              background:shop.accent,color:"white",fontSize:14,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+            ⬆ Upload CSV
+          </button>
+        </div>
+      )}
+
+      {/* Table */}
+      {txns.length>0&&(
+        <>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+              <thead>
+                <tr>
+                  {["Date","Counter Party","Reference","Type","Category","Amount","Balance"].map(h=>(
+                    <th key={h} style={{padding:"9px 14px",fontSize:11,fontWeight:800,color:"#64748b",
+                      textTransform:"uppercase",letterSpacing:"0.05em",background:"#f8fafc",
+                      borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap",
+                      textAlign:(h==="Amount"||h==="Balance")?"right":"left"}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((t,i)=>{
+                  const cat=CATEGORIES[t.category]||CATEGORIES.OTHER;
+                  const isIn=t.amount>0;
+                  return(
+                    <tr key={t._id} style={{background:i%2===0?"white":"#fafafa",borderBottom:"1px solid #f1f5f9"}}>
+                      <td style={{padding:"10px 14px",color:"#64748b",whiteSpace:"nowrap",fontSize:12}}>{fmtD(t.date)}</td>
+                      <td style={{padding:"10px 14px",fontWeight:600,color:"#0f172a",maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.counterParty||"—"}</td>
+                      <td style={{padding:"10px 14px",color:"#64748b",fontSize:12,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.reference||"—"}</td>
+                      <td style={{padding:"10px 14px",fontSize:11,color:"#94a3b8"}}>{t.type}</td>
+                      <td style={{padding:"10px 14px"}}>
+                        <span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:999,
+                          background:cat.bg,color:cat.color,border:"1px solid "+cat.border,whiteSpace:"nowrap"}}>
+                          {cat.ic} {cat.label}
+                        </span>
+                      </td>
+                      <td style={{padding:"10px 14px",textAlign:"right",fontWeight:800,
+                        color:isIn?"#059669":"#dc2626",whiteSpace:"nowrap",fontFamily:"DM Mono,monospace"}}>
+                        {isIn?"+":""}{fmtAmt(t.amount)}
+                      </td>
+                      <td style={{padding:"10px 14px",textAlign:"right",color:"#94a3b8",fontSize:12,fontFamily:"DM Mono,monospace"}}>
+                        {fmtAmt(t.balance)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          <div style={{padding:"10px 20px",borderTop:"1px solid #f1f5f9",display:"flex",
+            justifyContent:"space-between",fontSize:12,color:"#64748b",background:"#f8fafc"}}>
+            <span>{filtered.length} transaction{filtered.length!==1?"s":""}</span>
+            <span style={{fontWeight:800,color:filtered.reduce((a,t)=>a+t.amount,0)>=0?"#059669":"#dc2626"}}>
+              Net: {fmtAmt(filtered.reduce((a,t)=>a+t.amount,0))}
+            </span>
+          </div>
+        </>
+      )}
+    </div>
+  );
+};
+/* ── End BankReconciliationPanel ─────────────────────────────────────────── */
+
 const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,initialTab="sales"})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":(initialTab||"sales"));
   const [hov,setHov]=useState(null);
@@ -4419,7 +4701,8 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"products", l:"Products", ic:"🏷️"},
     {id:"invoices", l:"Sales Invoices", ic:"🧾"},
     {id:"expenses", l:"Expenses", ic:"💳"},
-    {id:"cashflow", l:"Cash Flow",ic:"🏦"},
+    {id:"cashflow",       l:"Cash Flow",     ic:"🏦"},
+    {id:"reconciliation", l:"Bank Statement", ic:"📊"},
     {id:"documents",l:"Documents",ic:"📎"},
     {id:"analytics",l:"Analytics",ic:"📊"},
     {id:"reports",  l:"Reports",  ic:"📋"},
@@ -4691,7 +4974,7 @@ return(
             {label:"MAIN",      ids:["dashboard","sales","customers","returns","invoices"]},
             {label:"PURCHASES", ids:["purchases","suppliers","logistics","agents"]},
             {label:"EXPENSES",  ids:["expenses"]},
-            {label:"FINANCE",   ids:["cashflow"]},
+            {label:"FINANCE",   ids:["cashflow","reconciliation"]},
             {label:"INSIGHTS",  ids:["documents","analytics","reports"]},
           ].map(group=>{
             const groupItems=NAV.filter(n=>group.ids.includes(n.id));
@@ -5905,6 +6188,11 @@ return(
               expCats={expCats}
               setExpCats={setExpCats}
             />
+          )}
+
+          {/* ─── BANK RECONCILIATION ─── */}
+          {tab==="reconciliation"&&(
+            <BankReconciliationPanel shop={shop} shopId={shopId} fmt={fmt}/>
           )}
 
           {/* ─── DOCUMENTS ─── */}
@@ -10555,8 +10843,8 @@ const INITIAL_USERS=[
    avatar:"linear-gradient(135deg,#64748b,#334155)", shops:["ros-india"]},
 ];
 const ROLE_NAV={
-  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports","returns","settings"],
-  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","documents","analytics","reports","returns"],
+  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","reconciliation","documents","analytics","reports","returns","settings"],
+  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","reconciliation","documents","analytics","reports","returns"],
   staff:["sales","returns"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
