@@ -1903,13 +1903,46 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
               <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>Requested</p>
               <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ret.resolution==="exchange"?"🔄 Exchange":"💰 Refund"}</p>
             </div>
-            <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",border:"1px solid #e2e8f0"}}>
-              <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>Deadline</p>
-              <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{fmtDate(ret.returnDeadline)}</p>
-            </div>
-            <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",border:"1px solid #e2e8f0",display:"flex",alignItems:"center",justifyContent:"center"}}>
-              <DaysChip days={days}/>
-            </div>
+            {/* Show deadline only for Expecting stage */}
+            {(form.status==="RETURN_APPROVED"||form.status==="MSG_SENT"||form.status==="RETURN_IN_TRANSIT")?(
+              <>
+                <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",border:"1px solid #e2e8f0"}}>
+                  <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>Return Window Closes</p>
+                  <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{fmtDate(ret.returnDeadline)}</p>
+                </div>
+                <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",border:"1px solid #e2e8f0",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  <DaysChip days={days}/>
+                </div>
+              </>
+            ):form.status==="RETURN_RECEIVED"?(
+              <>
+                <div style={{background:"#fffbeb",borderRadius:10,padding:"10px 12px",border:"1px solid #fde68a"}}>
+                  <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#92400e",textTransform:"uppercase"}}>Received On</p>
+                  <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{fmtDate(form.receivedDate)||"—"}</p>
+                </div>
+                <div style={{background:"#fffbeb",borderRadius:10,padding:"10px 12px",border:"1px solid #fde68a",display:"flex",flexDirection:"column",justifyContent:"center"}}>
+                  <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#92400e",textTransform:"uppercase"}}>⏳ Awaiting Decision</p>
+                  {(()=>{
+                    const recvd=form.receivedDate?new Date(form.receivedDate.split("T")[0]):null;
+                    if(recvd){recvd.setHours(0,0,0,0);}
+                    const t=new Date();t.setHours(0,0,0,0);
+                    const d=recvd?Math.round((t-recvd)/86400000):0;
+                    const c=d>=7?"#dc2626":d>=3?"#d97706":"#059669";
+                    return<p style={{margin:0,fontSize:12,fontWeight:700,color:c}}>{d===0?"Received today":d===1?"1 day ago":`${d} days ago`}</p>;
+                  })()}
+                </div>
+              </>
+            ):(
+              <>
+                <div style={{background:"#f0fdf4",borderRadius:10,padding:"10px 12px",border:"1px solid #86efac"}}>
+                  <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#166534",textTransform:"uppercase"}}>Resolved On</p>
+                  <p style={{margin:0,fontSize:13,fontWeight:700,color:"#059669"}}>{fmtDate(form.exchangeDate||form.refundDate)||"—"}</p>
+                </div>
+                <div style={{background:"#f0fdf4",borderRadius:10,padding:"10px 12px",border:"1px solid #86efac",display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  <span style={{fontSize:22}}>✅</span>
+                </div>
+              </>
+            )}
           </div>
 
           {/* Reason */}
