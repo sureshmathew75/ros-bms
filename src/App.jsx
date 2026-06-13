@@ -2061,8 +2061,26 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
   );
 };
 
-const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,onSyncSaleStatus})=>{
+const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,onSyncSaleStatus,salesData={}})=>{
   const [filter,setFilter]=React.useState("ACTIVE");
+
+  // Flatten all sales for delivery date lookup
+  const allSales=React.useMemo(()=>{
+    return Object.values(salesData||{}).flat();
+  },[salesData]);
+
+  const getDeliveryDate=(saleId)=>{
+    const sale=allSales.find(s=>s.id===saleId);
+    return sale?.deliveryDate||"";
+  };
+
+  const fmtShort=d=>{
+    if(!d)return"";
+    try{
+      const p=d.split("T")[0].split("-");
+      return p.length===3?`${p[2]}/${p[1]}`:"";
+    }catch{return"";}
+  };
   const [selectedReturn,setSelectedReturn]=React.useState(null);
   const [search,setSearch]=React.useState("");
   const [confirmDelete,setConfirmDelete]=React.useState(null); // {id, customer}
@@ -2338,10 +2356,24 @@ Thank you for shopping with ROS.`,
                   <div onClick={()=>setSelectedReturn(ret)}>
                     <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ret.customer}</p>
                     <p style={{margin:"1px 0 0",fontSize:11,color:"#64748b"}}>{ret.saleId}</p>
-                    <p style={{margin:"3px 0 0",fontSize:10,color:"#94a3b8"}}>
-                      📅 {fmtDate(ret.createdAt)}
-                      {ret.instructionsSentAt&&<span style={{marginLeft:6,color:"#0369a1"}}>✅ {fmtDate(ret.instructionsSentAt)}</span>}
-                    </p>
+                    <div style={{marginTop:4,display:"flex",flexWrap:"wrap",gap:"2px 10px"}}>
+                      {(()=>{
+                        const delivDate=getDeliveryDate(ret.saleId);
+                        const items=[
+                          delivDate&&{ic:"🚚",label:"Delivered",date:delivDate,color:"#0369a1"},
+                          ret.createdAt&&{ic:"📋",label:"Requested",date:ret.createdAt,color:"#374151"},
+                          ret.instructionsSentAt&&{ic:"✅",label:"Instructions",date:ret.instructionsSentAt,color:"#059669"},
+                          ret.receivedDate&&{ic:"📦",label:"Received",date:ret.receivedDate,color:"#d97706"},
+                          ret.exchangeDate&&{ic:"🔄",label:"Exchanged",date:ret.exchangeDate,color:"#a21caf"},
+                          ret.refundDate&&{ic:"💰",label:"Refunded",date:ret.refundDate,color:"#6d28d9"},
+                        ].filter(Boolean);
+                        return items.map((item,i)=>(
+                          <span key={i} style={{fontSize:10,color:item.color,whiteSpace:"nowrap"}}>
+                            {item.ic} <span style={{color:"#94a3b8"}}>{item.label}:</span> {fmtShort(item.date)}
+                          </span>
+                        ));
+                      })()}
+                    </div>
                   </div>
                   <div style={{display:"flex",alignItems:"center"}} onClick={()=>setSelectedReturn(ret)}>
                     <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:999,
@@ -5746,6 +5778,7 @@ return(
               user={user}
               messages={messages}
               setMessages={setMessages}
+              salesData={salesData}
               onSyncSaleStatus={async (saleId, newStatus) => {
                 const allSales = Object.values(salesData).flat();
                 const sale = allSales.find(s => s.id === saleId);
