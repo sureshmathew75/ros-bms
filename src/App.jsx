@@ -2454,9 +2454,10 @@ Thank you for shopping with ROS.`,
                         </>;
                       }
                       if(ret.status==="RETURN_RECEIVED"){
-                        const recvd=ret.receivedDate?new Date(ret.receivedDate):null;
+                        const recvd=ret.receivedDate?new Date(ret.receivedDate.split("T")[0]):null;
+                        if(recvd)recvd.setHours(0,0,0,0);
                         const today0=new Date();today0.setHours(0,0,0,0);
-                        const daysWaiting=recvd?Math.floor((today0-recvd)/86400000):0;
+                        const daysWaiting=recvd?Math.round((today0-recvd)/86400000):0;
                         const waitColor=daysWaiting>=7?"#dc2626":daysWaiting>=3?"#d97706":"#64748b";
                         return<>
                           <span style={{fontSize:11,fontWeight:700,color:waitColor}}>⏳ Awaiting decision</span>
@@ -2474,9 +2475,10 @@ Thank you for shopping with ROS.`,
                     {(()=>{
                       if(isClosed) return <span style={{fontSize:11,color:"#94a3b8"}}>—</span>;
                       if(ret.status==="RETURN_RECEIVED"){
-                        const recvd=ret.receivedDate?new Date(ret.receivedDate):null;
+                        const recvd=ret.receivedDate?new Date(ret.receivedDate.split("T")[0]):null;
+                        if(recvd)recvd.setHours(0,0,0,0);
                         const today0=new Date();today0.setHours(0,0,0,0);
-                        const daysWaiting=recvd?Math.floor((today0-recvd)/86400000):0;
+                        const daysWaiting=recvd?Math.round((today0-recvd)/86400000):0;
                         const waitColor=daysWaiting>=7?"#dc2626":daysWaiting>=3?"#d97706":"#059669";
                         const waitBg=daysWaiting>=7?"#fef2f2":daysWaiting>=3?"#fffbeb":"#f0fdf4";
                         return<span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:999,
