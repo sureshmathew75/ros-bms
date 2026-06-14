@@ -24,7 +24,8 @@ import { formatCurrency, formatDate, formatNumber } from "./utils";
 import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser, dbLoadShopItems, dbAddShopItem, dbDeleteShopItem, dbSaveDelivery, dbLoadMessages, dbAddMessage, dbMarkMessageSent, dbCancelMessage, dbMessageExists, dbLoadReturns, dbSaveReturn, dbNextReturnId, dbDeleteReturn, dbDeleteMessage, dbDeleteMessages, dbSaveSupplier, dbLoadSuppliers, dbDeleteSupplier,
   dbUploadDoc, dbDeleteDoc, dbSavePurchaseDocs, dbSaveLogisticDocs,
   dbSaveAgent, dbLoadAgents, dbDeleteAgent,
-  dbLoadExpenseCategories, dbSaveExpenseCategory, dbDeleteExpenseCategory } from "./db";
+  dbLoadExpenseCategories, dbSaveExpenseCategory, dbDeleteExpenseCategory,
+  dbLoadHistoricalData, dbSaveHistoricalRecord, dbDeleteHistoricalRecord, dbImportHistoricalCSV } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -4569,6 +4570,321 @@ const BankReconciliationPanel=({shop,shopId,fmt})=>{
 };
 /* ── End BankReconciliationPanel ─────────────────────────────────────────── */
 
+
+/* ═══════════════════════════════════════════════════════════
+   HISTORICAL DATA PANEL
+   ═══════════════════════════════════════════════════════════ */
+const MONTH_NAMES=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+const HistoricalDataPanel=({shop,shopId,histData=[],setHistData,fmt})=>{
+  const [showForm,setShowForm]=React.useState(false);
+  const [editRec,setEditRec]=React.useState(null);
+  const [saving,setSaving]=React.useState(false);
+  const [importing,setImporting]=React.useState(false);
+  const [yearFilter,setYearFilter]=React.useState("ALL");
+  const fileRef=React.useRef(null);
+
+  const years=["ALL",...new Set(histData.map(r=>r.year)).values()].sort((a,b)=>b-a);
+  const filtered=histData.filter(r=>yearFilter==="ALL"||r.year===Number(yearFilter));
+
+  const sym=shopId==="ros-india"?"₹":"£";
+
+  const fmtAmt=(v)=>sym+Number(v||0).toLocaleString(shopId==="ros-india"?"en-IN":"en-GB",{minimumFractionDigits:0,maximumFractionDigits:0});
+
+  const handleSave=async(form)=>{
+    setSaving(true);
+    const rec={
+      month:Number(form.month), year:Number(form.year),
+      orders:Number(form.orders)||0,
+      grossSales:Number(form.grossSales)||0,
+      refunds:Number(form.refunds)||0,
+      netSales:Number(form.netSales)||(Number(form.grossSales)||0)-(Number(form.refunds)||0),
+      shopifySales:Number(form.shopifySales)||0,
+      whatsappSales:Number(form.whatsappSales)||0,
+      purchases:Number(form.purchases)||0,
+      expenses:Number(form.expenses)||0,
+      notes:form.notes||"",
+    };
+    if(editRec) rec.id=editRec.id;
+    const result=await dbSaveHistoricalRecord(shopId,rec);
+    if(result.error){alert("Save failed: "+result.error);setSaving(false);return;}
+    const fresh=await dbLoadHistoricalData(shopId).catch(()=>null);
+    if(fresh)setHistData(fresh);
+    setSaving(false);setShowForm(false);setEditRec(null);
+  };
+
+  const handleDelete=async(id)=>{
+    if(!window.confirm("Delete this record?"))return;
+    await dbDeleteHistoricalRecord(id);
+    setHistData(prev=>prev.filter(r=>r.id!==id));
+  };
+
+  const handleCSVImport=(file)=>{
+    if(!file)return;
+    setImporting(true);
+    const reader=new FileReader();
+    reader.onload=async(e)=>{
+      const lines=e.target.result.trim().split("\n");
+      const headers=lines[0].split(",").map(h=>h.trim());
+      const rows=[];
+      for(let i=1;i<lines.length;i++){
+        if(!lines[i].trim())continue;
+        const cols=lines[i].split(",").map(c=>c.trim());
+        const row={};
+        headers.forEach((h,j)=>row[h]=cols[j]||"");
+        if(row.shop_id===shopId||!row.shop_id){
+          if(!row.shop_id)row.shop_id=shopId;
+          rows.push(row);
+        }
+      }
+      if(rows.length===0){alert("No rows found for this shop in the CSV.");setImporting(false);return;}
+      const result=await dbImportHistoricalCSV(rows);
+      if(result.error){alert("Import failed: "+result.error);setImporting(false);return;}
+      const fresh=await dbLoadHistoricalData(shopId).catch(()=>null);
+      if(fresh)setHistData(fresh);
+      setImporting(false);
+      alert(`✅ Imported ${rows.length} records successfully!`);
+    };
+    reader.readAsText(file);
+  };
+
+  const downloadTemplate=()=>{
+    const header="month,year,shop_id,orders,gross_sales,refunds,net_sales,shopify_sales,whatsapp_sales,expenses,notes";
+    const example=`2,2021,${shopId},12,3500,0,3500,2000,1500,800,First month`;
+    const csv=header+"\n"+example;
+    const blob=new Blob([csv],{type:"text/csv"});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement("a");
+    a.href=url;a.download=`historical_template_${shopId}.csv`;a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const inp={width:"100%",padding:"8px 11px",borderRadius:8,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
+  const lbl={display:"block",fontSize:10,fontWeight:700,color:"#374151",marginBottom:3,textTransform:"uppercase",letterSpacing:"0.05em"};
+
+  const RecordForm=({initial={},onSave,onClose})=>{
+    const now=new Date();
+    const [f,setF]=React.useState({month:String(now.getMonth()+1),year:String(now.getFullYear()),orders:"",grossSales:"",refunds:"0",netSales:"",shopifySales:"",whatsappSales:"",purchases:"",expenses:"",notes:"",...initial});
+    const s=(k,v)=>setF(p=>({...p,[k]:v}));
+    // Auto-calculate net
+    React.useEffect(()=>{
+      const net=(Number(f.grossSales)||0)-(Number(f.refunds)||0);
+      s("netSales",String(net));
+    },[f.grossSales,f.refunds]);
+    return(
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div><label style={lbl}>Month</label>
+            <select value={f.month} onChange={e=>s("month",e.target.value)} style={inp}>
+              {MONTH_NAMES.map((m,i)=><option key={i+1} value={i+1}>{m}</option>)}
+            </select>
+          </div>
+          <div><label style={lbl}>Year</label>
+            <select value={f.year} onChange={e=>s("year",e.target.value)} style={inp}>
+              {Array.from({length:new Date().getFullYear()-2020},(_,i)=>2021+i).map(y=><option key={y}>{y}</option>)}
+            </select>
+          </div>
+        </div>
+        <div><label style={lbl}>Number of Orders</label>
+          <input type="number" value={f.orders} onChange={e=>s("orders",e.target.value)} placeholder="0" style={inp}/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div><label style={lbl}>Gross Sales ({sym})</label>
+            <input type="number" value={f.grossSales} onChange={e=>s("grossSales",e.target.value)} placeholder="0" style={inp}/></div>
+          <div><label style={lbl}>Refunds ({sym})</label>
+            <input type="number" value={f.refunds} onChange={e=>s("refunds",e.target.value)} placeholder="0" style={inp}/></div>
+        </div>
+        <div style={{background:"#f0fdf4",borderRadius:8,padding:"8px 12px",border:"1px solid #86efac"}}>
+          <label style={{...lbl,color:"#166534"}}>Net Sales ({sym}) — auto calculated</label>
+          <p style={{margin:0,fontSize:16,fontWeight:800,color:"#166534"}}>{fmtAmt(f.netSales)}</p>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div><label style={lbl}>Shopify Sales ({sym})</label>
+            <input type="number" value={f.shopifySales} onChange={e=>s("shopifySales",e.target.value)} placeholder="0" style={inp}/></div>
+          <div><label style={lbl}>WhatsApp Sales ({sym})</label>
+            <input type="number" value={f.whatsappSales} onChange={e=>s("whatsappSales",e.target.value)} placeholder="0" style={inp}/></div>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          <div><label style={lbl}>Purchases ({sym}) — optional</label>
+            <input type="number" value={f.purchases||""} onChange={e=>s("purchases",e.target.value)} placeholder="0 (optional)" style={inp}/></div>
+          <div><label style={lbl}>Expenses ({sym}) — optional</label>
+            <input type="number" value={f.expenses} onChange={e=>s("expenses",e.target.value)} placeholder="0 (optional)" style={inp}/></div>
+        </div>
+        <div><label style={lbl}>Notes</label>
+          <input value={f.notes} onChange={e=>s("notes",e.target.value)} placeholder="e.g. Launched Shopify, Ramadan peak..." style={inp}/></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,paddingTop:4}}>
+          <button disabled={saving} onClick={()=>{
+            if(!f.month||!f.year||!f.grossSales){alert("Month, year and gross sales are required.");return;}
+            onSave(f);
+          }} style={{padding:"10px 0",borderRadius:9,border:"none",background:saving?"#94a3b8":shop.accent,
+            color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            {saving?"Saving…":"💾 Save"}
+          </button>
+          <button onClick={onClose} style={{padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",
+            background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+        </div>
+      </div>
+    );
+  };
+
+  // Totals
+  const totalOrders=filtered.reduce((a,r)=>a+r.orders,0);
+  const totalNet=filtered.reduce((a,r)=>a+r.netSales,0);
+  const totalExp=filtered.reduce((a,r)=>a+r.expenses,0);
+
+  return(
+    <div>
+      {/* Header */}
+      <div style={{padding:"18px 20px 14px",borderBottom:"1px solid #f1f5f9"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:12}}>
+          <div>
+            <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>📈 Historical Data</h2>
+            <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>{histData.length} monthly records · Feb 2021 onwards</p>
+          </div>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={downloadTemplate}
+              style={{padding:"7px 14px",borderRadius:9,border:"1px solid #e2e8f0",background:"white",
+                color:"#374151",fontSize:12,fontWeight:600,cursor:"pointer",fontFamily:"inherit"}}>
+              ⬇ Download Template
+            </button>
+            <input ref={fileRef} type="file" accept=".csv" style={{display:"none"}}
+              onChange={e=>handleCSVImport(e.target.files[0])}/>
+            <button onClick={()=>fileRef.current&&fileRef.current.click()} disabled={importing}
+              style={{padding:"7px 14px",borderRadius:9,border:"1px solid "+shop.accent,
+                background:shop.accent+"10",color:shop.accent,fontSize:12,fontWeight:700,
+                cursor:"pointer",fontFamily:"inherit"}}>
+              {importing?"Importing…":"⬆ Import CSV"}
+            </button>
+            <button onClick={()=>{setEditRec(null);setShowForm(true);}}
+              style={{padding:"8px 16px",borderRadius:10,border:"none",background:shop.accent,
+                color:"white",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                boxShadow:"0 2px 8px "+shop.accent+"44"}}>
+              + Add Month
+            </button>
+          </div>
+        </div>
+
+        {/* Year filter */}
+        <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:12}}>
+          {years.map(y=>(
+            <button key={y} onClick={()=>setYearFilter(String(y))}
+              style={{padding:"4px 12px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                border:"1px solid "+(yearFilter===String(y)?shop.accent:"#e2e8f0"),
+                background:yearFilter===String(y)?shop.accent:"white",
+                color:yearFilter===String(y)?"white":"#64748b"}}>
+              {y}
+            </button>
+          ))}
+        </div>
+
+        {/* KPI cards */}
+        {filtered.length>0&&(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+            {[
+              {l:"Total Orders",v:totalOrders.toLocaleString(),c:"#0369a1",bg:"#f0f9ff"},
+              {l:"Net Sales",   v:fmtAmt(totalNet),            c:"#059669",bg:"#f0fdf4"},
+              {l:"Expenses",    v:totalExp>0?fmtAmt(totalExp):"—",c:"#dc2626",bg:"#fef2f2"},
+              {l:"Purchases",   v:filtered.reduce((a,r)=>a+(r.purchases||0),0)>0?fmtAmt(filtered.reduce((a,r)=>a+(r.purchases||0),0)):"—",c:"#b45309",bg:"#fffbeb"},
+            ].map(k=>(
+              <div key={k.l} style={{background:k.bg,borderRadius:12,padding:"10px 14px",border:"1px solid "+k.c+"22"}}>
+                <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>{k.l}</p>
+                <p style={{margin:0,fontSize:18,fontWeight:900,color:k.c}}>{k.v}</p>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Table */}
+      {filtered.length===0?(
+        <div style={{padding:"60px 20px",textAlign:"center",color:"#94a3b8"}}>
+          <div style={{fontSize:40,marginBottom:12}}>📈</div>
+          <p style={{margin:0,fontSize:14,fontWeight:600}}>No historical data yet</p>
+          <p style={{margin:"8px 0 16px",fontSize:12}}>Download the template, fill in your monthly figures, then import</p>
+          <button onClick={downloadTemplate}
+            style={{padding:"10px 20px",borderRadius:10,border:"none",background:shop.accent,
+              color:"white",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+            ⬇ Download Template
+          </button>
+        </div>
+      ):(
+        <>
+          <div style={{overflowX:"auto"}}>
+            <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
+              <thead><tr>
+                {["Month","Orders","Gross Sales","Refunds","Net Sales","Shopify","WhatsApp","Purchases","Expenses","Notes",""].map(h=>(
+                  <th key={h} style={{padding:"9px 14px",fontSize:11,fontWeight:800,color:"#64748b",
+                    textTransform:"uppercase",letterSpacing:"0.05em",background:"#f8fafc",
+                    borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap",
+                    textAlign:["Orders","Gross Sales","Refunds","Net Sales","Shopify","WhatsApp","Purchases","Expenses"].includes(h)?"right":"left"}}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {filtered.map((r,i)=>(
+                  <tr key={r.id} style={{background:i%2===0?"white":"#fafafa",borderBottom:"1px solid #f1f5f9"}}>
+                    <td style={{padding:"10px 14px",fontWeight:700,color:"#0f172a",whiteSpace:"nowrap"}}>
+                      {MONTH_NAMES[(r.month||1)-1]} {r.year}
+                    </td>
+                    <td style={{padding:"10px 14px",textAlign:"right",color:"#374151"}}>{r.orders||"—"}</td>
+                    <td style={{padding:"10px 14px",textAlign:"right",color:"#374151"}}>{r.grossSales>0?fmtAmt(r.grossSales):"—"}</td>
+                    <td style={{padding:"10px 14px",textAlign:"right",color:"#dc2626"}}>{r.refunds>0?"-"+fmtAmt(r.refunds):"—"}</td>
+                    <td style={{padding:"10px 14px",textAlign:"right",fontWeight:800,color:"#059669"}}>{r.netSales>0?fmtAmt(r.netSales):"—"}</td>
+                    <td style={{padding:"10px 14px",textAlign:"right",color:"#374151"}}>{r.shopifySales>0?fmtAmt(r.shopifySales):"—"}</td>
+                    <td style={{padding:"10px 14px",textAlign:"right",color:"#374151"}}>{r.whatsappSales>0?fmtAmt(r.whatsappSales):"—"}</td>
+                    <td style={{padding:"10px 14px",textAlign:"right",color:"#b45309"}}>{r.purchases>0?fmtAmt(r.purchases):"—"}</td>
+                    <td style={{padding:"10px 14px",textAlign:"right",color:"#dc2626"}}>{r.expenses>0?fmtAmt(r.expenses):"—"}</td>
+                    <td style={{padding:"10px 14px",color:"#94a3b8",fontSize:12,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.notes||"—"}</td>
+                    <td style={{padding:"10px 14px"}}>
+                      <div style={{display:"flex",gap:5}}>
+                        <button onClick={()=>{
+                          setEditRec({...r,month:String(r.month),year:String(r.year),
+                            grossSales:String(r.grossSales),refunds:String(r.refunds),
+                            netSales:String(r.netSales),shopifySales:String(r.shopifySales),
+                            whatsappSales:String(r.whatsappSales),purchases:String(r.purchases||0),expenses:String(r.expenses)});
+                          setShowForm(true);
+                        }} style={{padding:"4px 9px",borderRadius:7,border:"1px solid "+shop.accent,
+                          background:shop.accent+"12",color:shop.accent,fontSize:11,fontWeight:700,cursor:"pointer"}}>✏️</button>
+                        <button onClick={()=>handleDelete(r.id)}
+                          style={{padding:"4px 8px",borderRadius:7,border:"1px solid #fca5a5",
+                            background:"#fff5f5",color:"#dc2626",fontSize:11,cursor:"pointer"}}>🗑️</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div style={{padding:"10px 20px",borderTop:"1px solid #f1f5f9",fontSize:12,color:"#64748b",background:"#f8fafc",display:"flex",justifyContent:"space-between"}}>
+            <span>{filtered.length} month{filtered.length!==1?"s":""}</span>
+            <span style={{fontWeight:800,color:"#059669"}}>Net: {fmtAmt(totalNet)}</span>
+          </div>
+        </>
+      )}
+
+      {/* Add/Edit Modal */}
+      {showForm&&(
+        <div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)"}}
+            onClick={()=>{setShowForm(false);setEditRec(null);}}/>
+          <div style={{position:"relative",background:"white",borderRadius:18,
+            boxShadow:"0 24px 64px rgba(0,0,0,0.2)",width:"100%",maxWidth:440,
+            maxHeight:"90vh",overflowY:"auto",zIndex:81}}>
+            <div style={{padding:"14px 18px",borderBottom:"1px solid #f1f5f9",display:"flex",
+              justifyContent:"space-between",alignItems:"center",background:shop.accent+"10",borderRadius:"18px 18px 0 0"}}>
+              <h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>{editRec?"✏️ Edit Month":"➕ Add Month"}</h3>
+              <button onClick={()=>{setShowForm(false);setEditRec(null);}}
+                style={{width:28,height:28,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:16,color:"#64748b"}}>×</button>
+            </div>
+            <div style={{padding:18}}>
+              <RecordForm initial={editRec||{}} onSave={handleSave} onClose={()=>{setShowForm(false);setEditRec(null);}}/>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+/* ── End HistoricalDataPanel ─────────────────────────────────────────────── */
+
 const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,initialTab="sales"})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":(initialTab||"sales"));
   const [hov,setHov]=useState(null);
@@ -4604,6 +4920,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [agentData,setAgentData]=useState([]);
   const [expData,setExpData]=useState([]);
   const [expCats,setExpCats]=useState([]);
+  const [histData,setHistData]=useState([]);
   const [logData,setLogData]=useState([]);
   const [markDeliveredSale,setMarkDeliveredSale]=useState(null);
   const [editPurchRow,setEditPurchRow]=useState(null);
@@ -4632,6 +4949,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     dbLoadAgents(shopId).then(d=>{if(d)setAgentData(d);}).catch(()=>{});
     dbLoadExpenses(shopId).then(d=>{if(d)setExpData(d);}).catch(()=>{});
     dbLoadExpenseCategories(shopId).then(d=>{if(d)setExpCats(d);}).catch(()=>{});
+    dbLoadHistoricalData(shopId).then(d=>{if(d)setHistData(d);}).catch(()=>{});
     dbLoadLogistics(shopId).then(d=>{if(d)setLogData(d);}).catch(()=>{});
   },[shopId]);
 
@@ -4704,6 +5022,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"cashflow",       l:"Cash Flow",     ic:"🏦"},
     {id:"reconciliation", l:"Bank Statement", ic:"📊"},
     {id:"documents",l:"Documents",ic:"📎"},
+    {id:"historical",l:"History",   ic:"📈"},
     {id:"analytics",l:"Analytics",ic:"📊"},
     {id:"reports",  l:"Reports",  ic:"📋"},
     {id:"returns",  l:"Returns",  ic:"↩️"},
@@ -4975,7 +5294,7 @@ return(
             {label:"PURCHASES", ids:["purchases","suppliers","logistics","agents"]},
             {label:"EXPENSES",  ids:["expenses"]},
             {label:"FINANCE",   ids:["cashflow","reconciliation"]},
-            {label:"INSIGHTS",  ids:["documents","analytics","reports"]},
+            {label:"INSIGHTS",  ids:["documents","analytics","reports","historical"]},
           ].map(group=>{
             const groupItems=NAV.filter(n=>group.ids.includes(n.id));
             if(groupItems.length===0)return null;
@@ -6193,6 +6512,17 @@ return(
           {/* ─── BANK RECONCILIATION ─── */}
           {tab==="reconciliation"&&(
             <BankReconciliationPanel shop={shop} shopId={shopId} fmt={fmt}/>
+          )}
+
+          {/* ─── HISTORICAL DATA ─── */}
+          {tab==="historical"&&(
+            <HistoricalDataPanel
+              shop={shop}
+              shopId={shopId}
+              histData={histData}
+              setHistData={setHistData}
+              fmt={fmt}
+            />
           )}
 
           {/* ─── DOCUMENTS ─── */}
@@ -10843,8 +11173,8 @@ const INITIAL_USERS=[
    avatar:"linear-gradient(135deg,#64748b,#334155)", shops:["ros-india"]},
 ];
 const ROLE_NAV={
-  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","reconciliation","documents","analytics","reports","returns","settings"],
-  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","reconciliation","documents","analytics","reports","returns"],
+  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","reconciliation","documents","analytics","reports","historical","returns","settings"],
+  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","reconciliation","documents","analytics","reports","historical","returns"],
   staff:["sales","returns"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
@@ -11014,7 +11344,7 @@ const LoginScreen=({onLogin,users})=>{
                   {err||(success?"Signing in…":"Enter your 4-digit PIN")}
                 </p>
               </div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginTop:20,opacity:success?0.35:1,transition:"opacity 0.3s"}}>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginTop:20,opacity:success?0.35:1,transition:"opacity 0.3s"}}>
                 {[1,2,3,4,5,6,7,8,9,"",0,"⌫"].map((d,i)=>{
                   const isEmpty=d==="";const isDel=d==="⌫";
                   return(

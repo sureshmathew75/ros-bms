@@ -966,3 +966,60 @@ export const dbDeleteExpenseCategory = async (shopId, name) => {
   if (!sb) return;
   await sb.from('expense_categories').delete().eq('shop_id', shopId).eq('name', name);
 };
+
+/* ═══════════════════════════════════════════════════════════
+   HISTORICAL DATA
+   ═══════════════════════════════════════════════════════════ */
+export const dbLoadHistoricalData = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('historical_data').select('*')
+    .eq('shop_id', shopId).order('year').order('month');
+  if (error) { console.error('Load historical data error:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id, shopId: r.shop_id, month: r.month, year: r.year,
+    orders: Number(r.orders)||0, grossSales: Number(r.gross_sales)||0,
+    refunds: Number(r.refunds)||0, netSales: Number(r.net_sales)||0,
+    shopifySales: Number(r.shopify_sales)||0, whatsappSales: Number(r.whatsapp_sales)||0,
+    purchases: Number(r.purchases)||0, expenses: Number(r.expenses)||0, notes: r.notes||'',
+  }));
+};
+
+export const dbSaveHistoricalRecord = async (shopId, rec) => {
+  if (!sb) return { error: 'No client' };
+  const payload = {
+    shop_id: shopId, month: rec.month, year: rec.year,
+    orders: Number(rec.orders)||0,
+    gross_sales: Number(rec.grossSales)||0,
+    refunds: Number(rec.refunds)||0,
+    net_sales: Number(rec.netSales)||0,
+    shopify_sales: Number(rec.shopifySales)||0,
+    whatsapp_sales: Number(rec.whatsappSales)||0,
+    purchases: Number(rec.purchases)||0,
+    expenses: Number(rec.expenses)||0,
+    notes: rec.notes||'',
+  };
+  const { error } = await sb.from('historical_data')
+    .upsert(payload, { onConflict: 'shop_id,month,year' });
+  if (error) { console.error('Save historical error:', error); return { error: error.message }; }
+  return { error: null };
+};
+
+export const dbDeleteHistoricalRecord = async (id) => {
+  if (!sb) return;
+  await sb.from('historical_data').delete().eq('id', id);
+};
+
+export const dbImportHistoricalCSV = async (rows) => {
+  if (!sb) return { error: 'No client' };
+  const payloads = rows.map(r => ({
+    shop_id: r.shop_id, month: Number(r.month), year: Number(r.year),
+    orders: Number(r.orders)||0, gross_sales: Number(r.gross_sales)||0,
+    refunds: Number(r.refunds)||0, net_sales: Number(r.net_sales)||0,
+    shopify_sales: Number(r.shopify_sales)||0, whatsapp_sales: Number(r.whatsapp_sales)||0,
+    purchases: Number(r.purchases)||0, expenses: Number(r.expenses)||0, notes: r.notes||'',
+  }));
+  const { error } = await sb.from('historical_data')
+    .upsert(payloads, { onConflict: 'shop_id,month,year' });
+  if (error) { console.error('Import historical error:', error); return { error: error.message }; }
+  return { error: null };
+};
