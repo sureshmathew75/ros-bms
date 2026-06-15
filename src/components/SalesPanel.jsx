@@ -833,7 +833,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
           )}
           {/* Column visibility toggle */}
           <div style={{position:"relative"}}>
-            <button onClick={()=>setShowColMenu(v=>!v)}
+            <button onClick={e=>{e.stopPropagation();setShowColMenu(v=>!v);}}
               style={{display:"flex",alignItems:"center",gap:5,padding:"8px 12px",borderRadius:9,
                 border:"1px solid #e2e8f0",background:"white",color:"#374151",
                 fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
