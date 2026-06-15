@@ -387,7 +387,7 @@ export default function SalesPanel({
   const [rptUnit,        setRptUnit]        = useState("ALL"); // ALL / India-Unit1 / India-Unit2
 
   // Close column menu on outside click
-  React.useEffect(() => {
+  useEff(() => {
     if (!showColMenu) return;
     const handler = () => setShowColMenu(false);
     window.addEventListener("click", handler);
