@@ -1410,7 +1410,9 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                                 const grpSales = (sales||[]).filter(x => {
                                   const xp=(x.phone||x.contact||"").replace(/[^0-9]/g,"").slice(-10);
                                   const xn=(x.customer||"").toLowerCase().trim();
-                                  return xp===phone && xn===name;
+                                  const xtags=(x.tag||"").split(",").map(t=>t.trim());
+                                  const isInst=xtags.some(t=>["Advance Sale","Part Payment","Final Payment Sale"].includes(t));
+                                  return xp===phone && xn===name && isInst;
                                 });
                                 const totalPaid = grpSales.reduce((a,x)=>a+(Number(x.amount)||0),0);
                                 const balance   = expTotal - totalPaid;
