@@ -1464,6 +1464,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                                 // Only show Fully Paid if there's an explicit Final Payment Sale in the group
                                 const hasFinal = grpSales.some(x=>(x.tag||"").includes("Final Payment Sale"));
                                 const isFullyPaid = balance <= 0 && hasFinal;
+
                                 balanceBlock = (
                                   <div style={{marginTop:2,textAlign:"right"}}>
                                     <div style={{fontSize:9,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.04em"}}>of {fmtVal(expTotal)}</div>
@@ -1939,7 +1940,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
               const advance = fullGrp.find(x=>(x.tag||"").includes("Advance Sale")) || fullGrp[0];
               const rep = pendingSales.length > 0 ? (pendingSales.find(x=>(x.tag||"").includes("Advance Sale")) || pendingSales[0]) : advance;
               reportSales.push({...rep, _grp: fullGrp, _grouped: true, expectedTotal: advance.expectedTotal});
-              seenRInst.add(k);
+              seenRInst.add(gk);
             }
           } else {
             reportSales.push(s);
