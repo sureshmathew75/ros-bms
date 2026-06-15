@@ -602,7 +602,11 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
     const result = {};
     Object.entries(rawGroups).forEach(([custKey, custSales]) => {
       // Sort by date ascending
-      const sorted = [...custSales].sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+      const sorted = [...custSales].sort((a,b)=>{
+        const d=(a.date||"").localeCompare(b.date||"");
+        if(d!==0)return d;
+        return (a.invoiceNo||a.id||"").localeCompare(b.invoiceNo||b.id||"");
+      });
       let currentGroup = null;
       let groupIdx = 0;
       sorted.forEach(s => {
@@ -1440,6 +1444,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                                 const phone = (s.phone||s.contact||"").replace(/[^0-9]/g,"").slice(-10);
                                 const name  = (s.customer||"").toLowerCase().trim();
                                 const advDate = s.date || s.createdAt || "";
+                                const advInv = s.invoiceNo || s.id || "";
                                 const grpSales = (sales||[]).filter(x => {
                                   const xp=(x.phone||x.contact||"").replace(/[^0-9]/g,"").slice(-10);
                                   const xn=(x.customer||"").toLowerCase().trim();
@@ -1448,7 +1453,11 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                                   // Only count payments on or after this advance sale date
                                   const xDate = x.date || x.createdAt || "";
                                   const afterAdv = !advDate || !xDate || xDate >= advDate;
-                                  return xp===phone && xn===name && isInst && afterAdv;
+                                  // If same date, also require invoice >= advance invoice (to exclude older orders on same day)
+                                  const xInv = x.invoiceNo || x.id || "";
+                                  const sameDay = xDate === advDate;
+                                  const invOk = !sameDay || !advInv || !xInv || xInv >= advInv;
+                                  return xp===phone && xn===name && isInst && afterAdv && invOk;
                                 });
                                 const totalPaid = grpSales.reduce((a,x)=>a+(Number(x.amount)||0),0);
                                 const balance   = expTotal - totalPaid;
@@ -1883,7 +1892,11 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
         // Split each customer into separate order groups per Advance Sale
         const rInstGroups = {};
         Object.entries(rInstGroupsRaw).forEach(([custKey, custSales]) => {
-          const sorted = [...custSales].sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+          const sorted = [...custSales].sort((a,b)=>{
+        const d=(a.date||"").localeCompare(b.date||"");
+        if(d!==0)return d;
+        return (a.invoiceNo||a.id||"").localeCompare(b.invoiceNo||b.id||"");
+      });
           let grpKey = null; let gi = 0;
           sorted.forEach(s => {
             const st = (s.tag||"").split(",").map(t=>t.trim());
