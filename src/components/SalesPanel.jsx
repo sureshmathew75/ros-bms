@@ -1341,7 +1341,6 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                       )}
                     </td>
                     {showCol("Date")&&(
-                    {/* Date */}
                     <td style={{ padding: "12px 16px" }}>
                       <span style={{ fontSize: 12, color: "#64748b", whiteSpace: "nowrap" }}>
                         {fmtDateForSale(s)}
@@ -1458,7 +1457,6 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                       )}
                     </td>
                     {showCol("Refund")&&(
-                    {/* Refund */}
                     <td style={{ padding: "8px 10px", textAlign: "right" }}>
                       {Math.max(Number(s.adjAmt)||0,Number(s.refundAmt)||0)>0 ? (
                         <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:1}}>
@@ -1662,7 +1660,6 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
 
 
                     {showCol("Informed")&&(
-                    {/* Delivery Informed */}
                     <td style={{ padding: "8px 10px", minWidth: 90 }} onClick={e => e.stopPropagation()}>
                       {s.deliveryDate ? (
                         s.deliveryInformed ? (
