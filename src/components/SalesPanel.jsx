@@ -1628,7 +1628,13 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                               if (currentVal && currentVal !== defaultFrom && newVal !== currentVal) {
                                 if (!window.confirm("Change dispatch unit from '" + (currentVal==="India-Unit1"?"Unit 1":currentVal==="India-Unit2"?"Unit 2":currentVal) + "' to '" + (newVal==="India-Unit1"?"Unit 1":newVal==="India-Unit2"?"Unit 2":newVal) + "'?\n\nMake sure this is intentional.")) return;
                               }
-                              if (onInlineEdit) onInlineEdit(s.id, { dispatchFrom: newVal });
+                              const changes = { dispatchFrom: newVal };
+                              // ROS India Unit 2 → default status UNFULFILLED
+                              if (shopId === "ros-india" && newVal === "India-Unit2") {
+                                changes.ful = "UNFULFILLED";
+                                changes.status = "UNFULFILLED";
+                              }
+                              if (onInlineEdit) onInlineEdit(s.id, changes);
                             }}
                             style={{
                               padding: "4px 8px", borderRadius: 8, fontSize: 11, fontWeight: 700,

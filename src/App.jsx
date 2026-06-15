@@ -9941,6 +9941,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     shopInvoiceNo: "",
     paidBy:      "",
     trackingNo:  "",
+    dispatchFrom: shopId==="ros-india" ? "India-Unit1" : "",
     status:      shopId==="ros-india" ? "To Order" : "PENDING",
     sentDate:    "",
     returnReqDate: "",
@@ -9988,7 +9989,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     const filledLines=lines.filter(l=>l.name.trim()||(parseFloat(l.price)>0));
     const combinedItem=filledLines.map(l=>`${l.name}(x${l.qty})`).join(", ")||"Sale";
     const combinedQty=filledLines.reduce((s,l)=>s+(parseFloat(l.qty)||0),0)||1;
-    onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""});
+    onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||"",dispatchFrom:form.dispatchFrom||""});
   };
 
   return(<>
@@ -10096,6 +10097,20 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🚚 Payment & Delivery</p>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
                 <div><label style={lbl}>Payment By</label><select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{PAY_OPTIONS.map(o=><option key={o}>{o}</option>)}</select></div>
+                {shopId==="ros-india"&&(
+                  <div><label style={lbl}>Dispatch Unit</label>
+                    <select value={form.dispatchFrom} onChange={e=>{
+                      const v=e.target.value;
+                      set("dispatchFrom",v);
+                      // Auto-set status based on unit
+                      if(v==="India-Unit2") set("status","UNFULFILLED");
+                      else if(form.status==="UNFULFILLED") set("status","To Order");
+                    }} style={inp}>
+                      <option value="India-Unit1">🇮🇳 Unit 1 (Default)</option>
+                      <option value="India-Unit2">🇮🇳 Unit 2</option>
+                    </select>
+                  </div>
+                )}
                 <div><label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["To Order","IN PROGRESS","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select></div>
               </div>
               {form.payBy==="SHOP"&&(
