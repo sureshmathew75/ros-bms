@@ -2176,11 +2176,13 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                                       <span style={{fontWeight:800,fontSize:12,fontFamily:"DM Mono,monospace"}}>{fmt?fmt(shopId,Number(x.amount)||0):(shop.symbol||"£")+(Number(x.amount)||0).toLocaleString()}</span>
                                     </div>
                                   ))}
-                                  {balance!==null&&(
+                                  {balance!==null&&(()=>{
+                                    const hasFinalLocal=grp.some(x=>(x.tag||"").includes("Final Payment Sale"));
+                                    return(
                                     <div style={{borderTop:"1px dashed #e2e8f0",paddingTop:3,marginTop:2,display:"flex",justifyContent:"flex-end"}}>
-                                      <span style={{fontSize:10,fontWeight:800,color:(balance>0||!hasFinalPayment)?"#dc2626":"#059669"}}>{(balance>0||!hasFinalPayment)?"Bal: "+(fmt?fmt(shopId,Math.max(balance,0)):(shop.symbol||"£")+Math.max(balance,0).toLocaleString()):"✅ Fully Paid"}</span>
-                                    </div>
-                                  )}
+                                      <span style={{fontSize:10,fontWeight:800,color:(balance>0||!hasFinalLocal)?"#dc2626":"#059669"}}>{(balance>0||!hasFinalLocal)?"Bal: "+(fmt?fmt(shopId,Math.max(balance,0)):(shop.symbol||"£")+Math.max(balance,0).toLocaleString()):"✅ Fully Paid"}</span>
+                                    </div>);
+                                  })()}
                                 </div>
                               );
                             })():(
