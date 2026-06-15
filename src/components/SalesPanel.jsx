@@ -1346,7 +1346,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                         {fmtDateForSale(s)}
                       </span>
                     </td>
-                    )}}
+                    )}
                     {/* Customer */}
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ fontWeight: 700, fontSize: 13, color: "#0f172a", textTransform: "uppercase" }}>{s.customer}</div>
@@ -1472,7 +1472,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                       )}
                     </td>
 
-                    )}}
+                    )}
                     {showCol("Payment")&&(
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <Badge l={(shopId==="ros-india"&&(s.pay==="BANK"||s.pay==="SIB"))?"SIB":(s.pay||"SHOP")} />
@@ -1701,7 +1701,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                       )}
                     </td>
 
-                    )}}
+                    )}
                     {/* Dispatch From */}
                     {showCol("From")&&(()=>{
                       const defaultFrom = shopId === "ros-india" ? "India-Unit1" : "UK";
@@ -1749,7 +1749,8 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                           )}
                         </td>
                       );
-                    })()}
+                    })()
+                    )}
 
                     {/* Actions */}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
