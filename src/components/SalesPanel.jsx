@@ -1336,6 +1336,9 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                 const totalPaid = instGroup.reduce((a,x) => a + (Number(x.amount)||0), 0);
                 const expectedTotal = Number(s.expectedTotal) || 0;
                 const balance = expectedTotal > 0 ? expectedTotal - totalPaid : null;
+                // Only mark fully paid if group contains an explicit Final Payment Sale
+                const hasFinalPayment = instGroup.some(x => (x.tag||"").includes("Final Payment Sale"));
+                const isActuallyFullyPaid = balance !== null && balance <= 0 && hasFinalPayment;
                 const ful = s.ful || s.status || "PENDING";
                 const isH = hovR === s.id;
                 const mergedRowBg = { ...STATUS_ROW_BG, ...(statusRowBgProp || {}) };
@@ -1449,7 +1452,9 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                                 });
                                 const totalPaid = grpSales.reduce((a,x)=>a+(Number(x.amount)||0),0);
                                 const balance   = expTotal - totalPaid;
-                                const isFullyPaid = balance <= 0;
+                                // Only show Fully Paid if there's an explicit Final Payment Sale in the group
+                                const hasFinal = grpSales.some(x=>(x.tag||"").includes("Final Payment Sale"));
+                                const isFullyPaid = balance <= 0 && hasFinal;
                                 balanceBlock = (
                                   <div style={{marginTop:2,textAlign:"right"}}>
                                     <div style={{fontSize:9,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.04em"}}>of {fmtVal(expTotal)}</div>
@@ -2159,7 +2164,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                                   ))}
                                   {balance!==null&&(
                                     <div style={{borderTop:"1px dashed #e2e8f0",paddingTop:3,marginTop:2,display:"flex",justifyContent:"flex-end"}}>
-                                      <span style={{fontSize:10,fontWeight:800,color:balance>0?"#dc2626":"#059669"}}>{balance>0?"Bal: "+(fmt?fmt(shopId,balance):(shop.symbol||"£")+balance.toLocaleString()):"✅ Fully Paid"}</span>
+                                      <span style={{fontSize:10,fontWeight:800,color:(balance>0||!hasFinalPayment)?"#dc2626":"#059669"}}>{(balance>0||!hasFinalPayment)?"Bal: "+(fmt?fmt(shopId,Math.max(balance,0)):(shop.symbol||"£")+Math.max(balance,0).toLocaleString()):"✅ Fully Paid"}</span>
                                     </div>
                                   )}
                                 </div>
