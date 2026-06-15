@@ -580,8 +580,10 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
   /* ── Instalment groups ──────────────────────────────────────────────── */
   const INSTALMENT_TAGS = ["Advance Sale", "Part Payment", "Final Payment Sale"];
   const instalmentGroups = useMemo(() => {
-    // Group sales by phone+name that have instalment tags
-    const groups = {};
+    // Group sales by phone+name+advanceDate — each Advance Sale starts a new group
+    // Once a Final Payment is in a group, that group is closed
+    const rawGroups = {};
+    // First pass: collect all instalment sales by customer
     sortedSales.forEach(s => {
       const tags = (s.tag || "").split(",").map(t => t.trim());
       const isInstalment = tags.some(t => INSTALMENT_TAGS.includes(t));
@@ -590,13 +592,32 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
       const name = (s.customer || "").toLowerCase().trim();
       if (!phone && !name) return;
       const key = `${name}__${phone}`;
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(s);
+      if (!rawGroups[key]) rawGroups[key] = [];
+      rawGroups[key].push(s);
     });
-    // Only return groups with 2+ sales
+
+    // Second pass: split each customer's sales into separate order groups
+    // Each Advance Sale starts a new group; payments after it belong to it
+    // until the next Advance Sale
     const result = {};
-    Object.entries(groups).forEach(([k, v]) => {
-      if (v.length >= 1) result[k] = v; // even single advance shows expected total
+    Object.entries(rawGroups).forEach(([custKey, custSales]) => {
+      // Sort by date ascending
+      const sorted = [...custSales].sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+      let currentGroup = null;
+      let groupIdx = 0;
+      sorted.forEach(s => {
+        const tags = (s.tag||"").split(",").map(t=>t.trim());
+        const isAdv = tags.includes("Advance Sale");
+        if (isAdv) {
+          // Start a new group
+          groupIdx++;
+          currentGroup = `${custKey}__grp${groupIdx}`;
+          result[currentGroup] = [];
+        }
+        if (currentGroup) {
+          result[currentGroup].push(s);
+        }
+      });
     });
     return result;
   }, [sortedSales]);
@@ -607,8 +628,16 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
     if (!isInstalment) return null;
     const phone = (s.phone || s.contact || "").replace(/\D/g, "").slice(-10);
     const name = (s.customer || "").toLowerCase().trim();
-    return `${name}__${phone}`;
+    const custKey = `${name}__${phone}`;
+    // Find which group this sale belongs to
+    const groupKeys = Object.keys(instalmentGroups).filter(k => k.startsWith(custKey+"__grp"));
+    for (const gk of groupKeys) {
+      if (instalmentGroups[gk].some(x => x.id === s.id)) return gk;
+    }
+    return null;
   };
+
+
 
   const instalmentTagType = (s) => {
     const tags = (s.tag || "").split(",").map(t => t.trim());
@@ -1407,12 +1436,16 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                                 // Sum all instalments for this customer
                                 const phone = (s.phone||s.contact||"").replace(/[^0-9]/g,"").slice(-10);
                                 const name  = (s.customer||"").toLowerCase().trim();
+                                const advDate = s.date || s.createdAt || "";
                                 const grpSales = (sales||[]).filter(x => {
                                   const xp=(x.phone||x.contact||"").replace(/[^0-9]/g,"").slice(-10);
                                   const xn=(x.customer||"").toLowerCase().trim();
                                   const xtags=(x.tag||"").split(",").map(t=>t.trim());
                                   const isInst=xtags.some(t=>["Advance Sale","Part Payment","Final Payment Sale"].includes(t));
-                                  return xp===phone && xn===name && isInst;
+                                  // Only count payments on or after this advance sale date
+                                  const xDate = x.date || x.createdAt || "";
+                                  const afterAdv = !advDate || !xDate || xDate >= advDate;
+                                  return xp===phone && xn===name && isInst && afterAdv;
                                 });
                                 const totalPaid = grpSales.reduce((a,x)=>a+(Number(x.amount)||0),0);
                                 const balance   = expTotal - totalPaid;
@@ -1831,16 +1864,27 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
         const defaultFrom = shopId === "ros-india" ? "India-Unit1" : "UK";
 
         const INST_TAGS_R = ["Advance Sale", "Part Payment", "Final Payment Sale"];
-        // Build instalment groups
-        const rInstGroups = {};
+        // Build instalment groups — split by each Advance Sale date per customer
+        const rInstGroupsRaw = {};
         sales.forEach(s => {
           const stags = (s.tag||"").split(",").map(t=>t.trim());
           if (!stags.some(t=>INST_TAGS_R.includes(t))) return;
           const ph = (s.phone||s.contact||"").replace(/[^0-9]/g,"").slice(-10);
           const nm = (s.customer||"").toLowerCase().trim();
           const k = nm+"__"+ph;
-          if (!rInstGroups[k]) rInstGroups[k] = [];
-          rInstGroups[k].push(s);
+          if (!rInstGroupsRaw[k]) rInstGroupsRaw[k] = [];
+          rInstGroupsRaw[k].push(s);
+        });
+        // Split each customer into separate order groups per Advance Sale
+        const rInstGroups = {};
+        Object.entries(rInstGroupsRaw).forEach(([custKey, custSales]) => {
+          const sorted = [...custSales].sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+          let grpKey = null; let gi = 0;
+          sorted.forEach(s => {
+            const st = (s.tag||"").split(",").map(t=>t.trim());
+            if (st.includes("Advance Sale")) { gi++; grpKey = custKey+"__g"+gi; rInstGroups[grpKey]=[]; }
+            if (grpKey) rInstGroups[grpKey].push(s);
+          });
         });
 
         const filteredSales = sales
@@ -1865,11 +1909,13 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
           if (isInst) {
             const ph = (s.phone||s.contact||"").replace(/[^0-9]/g,"").slice(-10);
             const nm = (s.customer||"").toLowerCase().trim();
-            const k = nm+"__"+ph;
-            if (!seenRInst.has(k)) {
-              seenRInst.add(k);
+            const custKey2 = nm+"__"+ph;
+            // Find which group this sale belongs to
+            const gk = Object.keys(rInstGroups).find(k => k.startsWith(custKey2+"__g") && rInstGroups[k].some(x=>x.id===s.id)) || custKey2;
+            if (!seenRInst.has(gk)) {
+              seenRInst.add(gk);
               // Use all sales in group (all statuses) for payment breakdown display
-              const fullGrp = rInstGroups[k] || [s];
+              const fullGrp = rInstGroups[gk] || [s];
               // Representative row = earliest pending sale in group, or advance, or first
               const pendingSales = fullGrp.filter(x => activeStatuses.some(r=>(x.ful||x.status||"").toUpperCase()===r.toUpperCase()));
               const advance = fullGrp.find(x=>(x.tag||"").includes("Advance Sale")) || fullGrp[0];
