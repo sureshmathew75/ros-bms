@@ -1703,12 +1703,14 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
 
                     )}
                     {/* Dispatch From */}
-                    {showCol("From")&&(()=>{
+                    {(()=>{
                       const defaultFrom = shopId === "ros-india" ? "India-Unit1" : "UK";
                       const current = s.dispatchFrom || defaultFrom;
-                      const isIndia = current.startsWith("India"); const isDefaultIndia = defaultFrom.startsWith("India"); const isCross = isIndia !== isDefaultIndia;
-                      return (
-                        <td style={{ padding: "8px 10px" }} onClick={e => e.stopPropagation()}>
+                      const isIndia = current.startsWith("India");
+                      const isDefaultIndia = defaultFrom.startsWith("India");
+                      const isCross = isIndia !== isDefaultIndia;
+                      return showCol("From") ? (
+                      <td style={{ padding: "8px 10px" }} onClick={e => e.stopPropagation()}>
                           <select
                             value={current}
                             onChange={e => {
@@ -1748,9 +1750,8 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                             </div>
                           )}
                         </td>
-                      );
-                    })()
-                    )}
+                      ) : null;
+                    })()}
 
                     {/* Actions */}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
