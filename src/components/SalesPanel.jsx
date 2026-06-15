@@ -1235,7 +1235,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                     onMouseLeave={() => setHovR(null)}
                     style={{
                       background: rowBg, cursor: "pointer",
-                      borderBottom: "1px solid #f8fafc",
+                      borderBottom: "1px solid #e2e8f0",
                       transition: "background 0.12s",
                       borderLeft: isInstalment ? `3px solid ${instColor}` : "3px solid transparent",
                     }}>
