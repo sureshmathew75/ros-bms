@@ -1174,8 +1174,8 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
         background: "white", borderRadius: 16, border: "1px solid #f1f5f9",
         overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.04)",
       }}>
-        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", background: "#f1f5f9", padding: "4px 12px 12px" }}>
+          <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 10px", minWidth: 720 }}>
             <thead>
               <tr style={{ background: "#f8fafc" }}>
                 {["Invoice", "Date", "Customer", "Item", "Amount", "Refund", "Payment", "Status", "Tags",
@@ -1355,12 +1355,15 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                     onMouseLeave={() => setHovR(null)}
                     style={{
                       background: rowBg, cursor: "pointer",
-                      borderBottom: "1px solid #e2e8f0",
-                      transition: "background 0.12s",
-                      borderLeft: isInstalment ? `3px solid ${instColor}` : "3px solid transparent",
+                      transition: "background 0.12s, box-shadow 0.15s, transform 0.15s",
+                      boxShadow: (isH
+                        ? "0 4px 12px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06)"
+                        : "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)")
+                        + (isInstalment ? `, inset 3px 0 0 0 ${instColor}` : ""),
+                      transform: isH ? "translateY(-1px)" : "translateY(0)",
                     }}>
                     {/* Invoice */}
-                    <td style={{ padding: "12px 16px" }}>
+                    <td style={{ padding: "12px 16px", borderTopLeftRadius: 12, borderBottomLeftRadius: 12 }}>
                       <span style={{ fontFamily: "DM Mono,monospace", fontWeight: 700, fontSize: 12, color: accent }}>
                         {s.id}
                       </span>
@@ -1804,7 +1807,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                     })()}
 
                     {/* Actions */}
-                    <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                    <td style={{ padding: "12px 16px", textAlign: "right", borderTopRightRadius: 12, borderBottomRightRadius: 12 }}>
                       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
                         <button
                           onClick={e => { e.stopPropagation(); setInvoiceRow(s); }}
