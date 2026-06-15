@@ -354,6 +354,7 @@ export default function SalesPanel({
   const [reloading, setReloading] = useState(false);
   const [editTrackingId, setEditTrackingId] = useState(null);
   const [trackingInput,  setTrackingInput]  = useState("");
+  const [editCarrierId,  setEditCarrierId]  = useState(null); // saleId being shown carrier dropdown
   const [editAmountId,   setEditAmountId]   = useState(null);
   const [amountInput,    setAmountInput]    = useState("");
   const [editStatusId,   setEditStatusId]   = useState(null);
@@ -500,6 +501,50 @@ export default function SalesPanel({
     }),
     [statusFiltered]
   );
+
+  /* ── Carrier config ─────────────────────────────────────────────────── */
+  const UK_CARRIERS = ["Royal Mail","Evri","DPD","UPS","Parcelforce","Other"];
+  const IN_CARRIERS = ["Speed Post","DTDC","Other"];
+  const CARRIERS = shopId === "ros-india" ? IN_CARRIERS : UK_CARRIERS;
+
+  const trackingURL = (carrier, trackNo) => {
+    switch((carrier||"").toLowerCase()){
+      case "royal mail":   return `https://www.royalmail.com/track-your-item#/tracking-results/${trackNo}`;
+      case "evri":         return `https://www.evri.com/track/${trackNo}`;
+      case "dpd":          return `https://track.dpd.co.uk/parcels/${trackNo}`;
+      case "ups":          return `https://www.ups.com/track?tracknum=${trackNo}`;
+      case "parcelforce":  return `https://www.parcelforce.com/track-trace?trackNumber=${trackNo}`;
+      case "speed post":   return `https://www.indiapost.gov.in/_layouts/15/dop.portal.tracking/trackconsignment.aspx`;
+      case "dtdc":         return `https://tracking.dtdc.com/ctbs-tracking/customerInterface.tr?submitName=showCITrack&cnno=${trackNo}`;
+      default: return null;
+    }
+  };
+
+  const buildTrackingMsg = (sale, carrier, trackNo) => {
+    const url = trackingURL(carrier, trackNo);
+    const carrierName = carrier || "our courier";
+    const trackLine = url
+      ? `You can track your delivery here:
+🔗 ${url}`
+      : `Your tracking number is: ${trackNo}`;
+    return `Dear ${sale.customer||"Customer"},
+
+Your order has been dispatched! 📦
+
+Carrier: ${carrierName}
+Tracking Number: ${trackNo}
+${trackLine}
+
+Thank you for shopping with ROS. If you have any questions, feel free to contact us 😊`;
+  };
+
+  const openTrackingWA = (sale, carrier, trackNo) => {
+    const phone = (sale.phone || sale.contact || "").replace(/[^0-9]/g,"");
+    const e164 = phone.startsWith("0") ? "44" + phone.slice(1) : phone;
+    if (!e164) { alert("No phone number for this customer."); return; }
+    const msg = buildTrackingMsg(sale, carrier, trackNo);
+    window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent(msg), "_blank", "noopener,noreferrer");
+  };
 
   /* ── Instalment groups ──────────────────────────────────────────────── */
   const INSTALMENT_TAGS = ["Advance Sale", "Part Payment", "Final Payment Sale"];
@@ -1365,9 +1410,9 @@ export default function SalesPanel({
                       </td>
                     )}
                     {/* Tracking */}
-                    <td style={{ padding: "8px 10px", minWidth: 160 }} onClick={e => e.stopPropagation()}>
+                    <td style={{ padding: "8px 10px", minWidth: 180 }} onClick={e => e.stopPropagation()}>
                       {editTrackingId === s.id ? (
-                        <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                        <div style={{ display: "flex", flexDirection:"column", gap: 5 }}>
                           <input
                             autoFocus
                             value={trackingInput}
@@ -1384,25 +1429,73 @@ export default function SalesPanel({
                               width: "100%", padding: "5px 8px", borderRadius: 7,
                               border: "1.5px solid #7dd3fc", fontSize: 11,
                               fontFamily: "DM Mono,monospace", outline: "none",
-                              textTransform: "uppercase",
+                              textTransform: "uppercase", boxSizing:"border-box",
                             }}
                           />
-                          <button onClick={() => { if (onSaveTracking) onSaveTracking(s.id, trackingInput.trim()); setEditTrackingId(null); }}
-                            style={{ padding: "5px 8px", borderRadius: 7, border: "none", background: "#0369a1", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer", flexShrink: 0 }}>✓</button>
-                          <button onClick={() => setEditTrackingId(null)}
-                            style={{ padding: "5px 7px", borderRadius: 7, border: "1px solid #e2e8f0", background: "white", color: "#94a3b8", fontSize: 11, cursor: "pointer", flexShrink: 0 }}>✕</button>
+                          <div style={{display:"flex",gap:4}}>
+                            <button onClick={() => { if (onSaveTracking) onSaveTracking(s.id, trackingInput.trim()); setEditTrackingId(null); }}
+                              style={{ flex:1, padding: "5px 8px", borderRadius: 7, border: "none", background: "#0369a1", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>✓ Save</button>
+                            <button onClick={() => setEditTrackingId(null)}
+                              style={{ padding: "5px 8px", borderRadius: 7, border: "1px solid #e2e8f0", background: "white", color: "#94a3b8", fontSize: 11, cursor: "pointer" }}>✕</button>
+                          </div>
                         </div>
                       ) : s.trackingNo ? (
-                        <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
-                          <a href={`https://www.royalmail.com/track-your-item#/tracking-results/${s.trackingNo}`}
-                            target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
-                            style={{ fontSize: 11, fontFamily: "DM Mono,monospace", fontWeight: 700, color: "#0369a1",
-                              textDecoration: "none", background: "#f0f9ff", border: "1px solid #bae6fd",
-                              borderRadius: 6, padding: "3px 8px", whiteSpace: "nowrap",
-                              maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", display: "inline-block" }}
-                            title={s.trackingNo}>{s.trackingNo}</a>
-                          <button onClick={() => { setEditTrackingId(s.id); setTrackingInput(s.trackingNo || ""); }}
-                            style={{ width: 20, height: 20, borderRadius: 5, border: "1px solid #e2e8f0", background: "white", color: "#94a3b8", fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>✏️</button>
+                        <div style={{ display: "flex", flexDirection:"column", gap: 4 }}>
+                          {/* Tracking number + edit */}
+                          <div style={{display:"flex",alignItems:"center",gap:4}}>
+                            {(()=>{
+                              const url = trackingURL(s.carrier, s.trackingNo);
+                              return url ? (
+                                <a href={url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                                  style={{ fontSize: 11, fontFamily: "DM Mono,monospace", fontWeight: 700, color: "#0369a1",
+                                    textDecoration: "none", background: "#f0f9ff", border: "1px solid #bae6fd",
+                                    borderRadius: 6, padding: "3px 8px", whiteSpace: "nowrap",
+                                    maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", display: "inline-block" }}
+                                  title={s.trackingNo}>{s.trackingNo}</a>
+                              ) : (
+                                <span style={{ fontSize: 11, fontFamily: "DM Mono,monospace", fontWeight: 700, color: "#0369a1",
+                                  background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 6, padding: "3px 8px",
+                                  whiteSpace: "nowrap", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", display: "inline-block" }}
+                                  title={s.trackingNo}>{s.trackingNo}</span>
+                              );
+                            })()}
+                            <button onClick={() => { setEditTrackingId(s.id); setTrackingInput(s.trackingNo || ""); }}
+                              style={{ width: 20, height: 20, borderRadius: 5, border: "1px solid #e2e8f0", background: "white", color: "#94a3b8", fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink:0 }}>✏️</button>
+                          </div>
+                          {/* Carrier selector */}
+                          <div style={{display:"flex",alignItems:"center",gap:4}}>
+                            <select
+                              value={s.carrier||""}
+                              onChange={e => { if(onInlineEdit) onInlineEdit(s.id,{carrier:e.target.value}); }}
+                              style={{flex:1,padding:"3px 6px",borderRadius:6,border:"1px solid #e2e8f0",
+                                fontSize:10,fontFamily:"inherit",outline:"none",color:"#64748b",background:"#f8fafc"}}>
+                              <option value="">— Carrier —</option>
+                              {CARRIERS.map(c=><option key={c} value={c}>{c}</option>)}
+                            </select>
+                            {/* Copy tracking */}
+                            <button onClick={()=>navigator.clipboard.writeText(s.trackingNo)}
+                              title="Copy tracking number"
+                              style={{width:22,height:22,borderRadius:5,border:"1px solid #e2e8f0",background:"white",
+                                color:"#94a3b8",fontSize:10,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                              📋
+                            </button>
+                          </div>
+                          {/* WhatsApp button */}
+                          <button
+                            onClick={async()=>{
+                              openTrackingWA(s, s.carrier||CARRIERS[0], s.trackingNo);
+                              if(onInlineEdit) await onInlineEdit(s.id,{trackingNotified:true});
+                            }}
+                            style={{
+                              display:"flex",alignItems:"center",gap:5,padding:"4px 9px",
+                              borderRadius:7,border:"none",
+                              background:s.trackingNotified?"#dcfce7":"#25d366",
+                              color:s.trackingNotified?"#166534":"white",
+                              fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                              width:"100%",justifyContent:"center",
+                            }}>
+                            {s.trackingNotified ? "✅ Notified" : "💬 Send Tracking"}
+                          </button>
                         </div>
                       ) : (
                         <button onClick={() => { setEditTrackingId(s.id); setTrackingInput(""); }}
