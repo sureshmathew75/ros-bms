@@ -1301,12 +1301,59 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                             style={{ padding: "5px 6px", borderRadius: 7, border: "1px solid #e2e8f0", background: "white", color: "#94a3b8", fontSize: 11, cursor: "pointer" }}>✕</button>
                         </div>
                       ) : (
-                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 1 }}>
+                        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
                           {(() => {
                             const sym = shop?.symbol || "£";
                             const net = (Number(s.amount)||0) - (Number(s.adjAmt)||0);
                             const orig = Number(s.amount)||0;
                             const fmtVal = (v) => fmt ? fmt(shopId, v) : sym + v.toLocaleString("en-GB", {minimumFractionDigits:2,maximumFractionDigits:2});
+
+                            // Instalment logic
+                            const tags = (s.tag||"").split(",").map(t=>t.trim());
+                            const isAdvance = tags.includes("Advance Sale");
+                            const isFinal   = tags.includes("Final Payment Sale");
+                            const isPart    = tags.includes("Part Payment");
+
+                            // For advance sale: calculate balance from all sales with same phone+name
+                            let balanceBlock = null;
+                            if (isAdvance) {
+                              const expTotal = Number(s.expectedTotal)||0;
+                              if (expTotal > 0) {
+                                // Sum all instalments for this customer
+                                const phone = (s.phone||s.contact||"").replace(/[^0-9]/g,"").slice(-10);
+                                const name  = (s.customer||"").toLowerCase().trim();
+                                const grpSales = (sales||[]).filter(x => {
+                                  const xp=(x.phone||x.contact||"").replace(/[^0-9]/g,"").slice(-10);
+                                  const xn=(x.customer||"").toLowerCase().trim();
+                                  return xp===phone && xn===name;
+                                });
+                                const totalPaid = grpSales.reduce((a,x)=>a+(Number(x.amount)||0),0);
+                                const balance   = expTotal - totalPaid;
+                                const isFullyPaid = balance <= 0;
+                                balanceBlock = (
+                                  <div style={{marginTop:2,textAlign:"right"}}>
+                                    <div style={{fontSize:9,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.04em"}}>of {fmtVal(expTotal)}</div>
+                                    {isFullyPaid ? (
+                                      <div style={{fontSize:10,fontWeight:800,color:"#059669",whiteSpace:"nowrap"}}>✅ Fully Paid</div>
+                                    ) : (
+                                      <div style={{fontSize:11,fontWeight:800,color:"#dc2626",whiteSpace:"nowrap"}}>
+                                        Bal: {fmtVal(balance)}
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              } else {
+                                // No expected total set — show reminder
+                                balanceBlock = (
+                                  <div style={{marginTop:2,fontSize:9,color:"#f59e0b",fontWeight:700,
+                                    background:"#fffbeb",border:"1px solid #fde68a",borderRadius:4,
+                                    padding:"1px 5px",whiteSpace:"nowrap"}}>
+                                    ⚠ Set expected total
+                                  </div>
+                                );
+                              }
+                            }
+
                             return (<>
                               <span
                                 onClick={() => { setEditAmountId(s.id); setAmountInput(String(s.amount||"")); }}
@@ -1318,6 +1365,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                               {(Number(s.adjAmt)||0) > 0 && (
                                 <div style={{ fontSize: 10, color: "#d97706", whiteSpace: "nowrap" }}>was {fmtVal(orig)}</div>
                               )}
+                              {balanceBlock}
                             </>);
                           })()}
                         </div>
