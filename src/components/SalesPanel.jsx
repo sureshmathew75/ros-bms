@@ -359,9 +359,40 @@ export default function SalesPanel({
   const [amountInput,    setAmountInput]    = useState("");
   const [editStatusId,   setEditStatusId]   = useState(null);
   const [showReport,     setShowReport]     = useState(false);
+  const [showColMenu,    setShowColMenu]    = useState(false);
+
+  // Column visibility — persisted in localStorage globally
+  const COL_DEFAULTS = {
+    "Invoice":true,"Date":true,"Customer":true,"Item":true,
+    "Amount":true,"Refund":false,"Payment":true,"Status":true,
+    "Tags":false,"Pur. Amount":true,"Tracking":true,
+    "Delivered":true,"Informed":false,"From":true,"Actions":true,
+  };
+  const [colVis, setColVis] = useState(() => {
+    try {
+      const saved = localStorage.getItem("ros_col_vis");
+      return saved ? {...COL_DEFAULTS,...JSON.parse(saved)} : COL_DEFAULTS;
+    } catch { return COL_DEFAULTS; }
+  });
+  const toggleCol = (col) => {
+    setColVis(prev => {
+      const next = {...prev, [col]: !prev[col]};
+      try { localStorage.setItem("ros_col_vis", JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+  const showCol = (col) => colVis[col] !== false;
   const [rptStatuses,    setRptStatuses]    = useState(null); // null = use defaults
   const [crossOnly,      setCrossOnly]      = useState(false);
   const [rptUnit,        setRptUnit]        = useState("ALL"); // ALL / India-Unit1 / India-Unit2
+
+  // Close column menu on outside click
+  React.useEffect(() => {
+    if (!showColMenu) return;
+    const handler = () => setShowColMenu(false);
+    window.addEventListener("click", handler);
+    return () => window.removeEventListener("click", handler);
+  }, [showColMenu]);
   /* Month picker state */
   const [pickedMonth, setPickedMonth] = useState(null);   // "YYYY-MM" or null
   const [pickerOpen,  setPickerOpen]  = useState(false);
@@ -800,6 +831,58 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
               {reloading ? "⏳" : "🔄"}
             </button>
           )}
+          {/* Column visibility toggle */}
+          <div style={{position:"relative"}}>
+            <button onClick={()=>setShowColMenu(v=>!v)}
+              style={{display:"flex",alignItems:"center",gap:5,padding:"8px 12px",borderRadius:9,
+                border:"1px solid #e2e8f0",background:"white",color:"#374151",
+                fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+              ⚙ Columns
+            </button>
+            {showColMenu&&(
+              <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:50,
+                background:"white",borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.15)",
+                border:"1px solid #e2e8f0",padding:12,minWidth:180}}
+                onClick={e=>e.stopPropagation()}>
+                <div style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",
+                  letterSpacing:"0.06em",marginBottom:8}}>Show / Hide Columns</div>
+                {/* Presets */}
+                <div style={{display:"flex",gap:5,marginBottom:10}}>
+                  <button onClick={()=>{
+                    const full={...COL_DEFAULTS};Object.keys(full).forEach(k=>full[k]=true);
+                    setColVis(full);try{localStorage.setItem("ros_col_vis",JSON.stringify(full));}catch{}
+                  }} style={{flex:1,padding:"4px 0",borderRadius:6,border:"1px solid #e2e8f0",
+                    background:"#f8fafc",color:"#374151",fontSize:11,fontWeight:600,cursor:"pointer"}}>
+                    Full View
+                  </button>
+                  <button onClick={()=>{
+                    const quick={...COL_DEFAULTS,Refund:false,Payment:false,Tags:false,"Pur. Amount":false,Informed:false,From:false};
+                    setColVis(quick);try{localStorage.setItem("ros_col_vis",JSON.stringify(quick));}catch{}
+                  }} style={{flex:1,padding:"4px 0",borderRadius:6,border:"1px solid #e2e8f0",
+                    background:"#f8fafc",color:"#374151",fontSize:11,fontWeight:600,cursor:"pointer"}}>
+                    Quick View
+                  </button>
+                </div>
+                {/* Column toggles */}
+                {["Invoice","Date","Customer","Item","Amount","Refund","Payment","Status","Tags","Pur. Amount","Tracking","Delivered","Informed","From"].map(col=>(
+                  <label key={col} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 4px",
+                    cursor:"pointer",borderRadius:6,fontSize:12,color:"#374151"}}
+                    onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
+                    onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                    <input type="checkbox" checked={showCol(col)} onChange={()=>toggleCol(col)}
+                      style={{width:14,height:14,cursor:"pointer",accentColor:accent}}/>
+                    {col}
+                  </label>
+                ))}
+                <button onClick={()=>setShowColMenu(false)}
+                  style={{width:"100%",marginTop:8,padding:"6px 0",borderRadius:8,border:"none",
+                    background:accent,color:"white",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                  Done
+                </button>
+              </div>
+            )}
+          </div>
+
           <button onClick={() => { setShowReport(true); setRptStatuses(null); setCrossOnly(false); setRptUnit('ALL'); }}
             style={{
               display: "flex", alignItems: "center", gap: 6,
@@ -1065,6 +1148,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                 {["Invoice", "Date", "Customer", "Item", "Amount", "Refund", "Payment", "Status", "Tags",
                   ...(shopId==="ros-india"&&!isStaff ? ["Pur. Amount"] : []),
                   "Tracking", "Delivered", "Informed", "From", "Actions"]
+                  .filter(h => h==="Actions" || showCol(h))
                   .map((h, i) => (
                     <th key={h} style={{
                       padding: "11px 16px",
@@ -1083,7 +1167,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
               {/* Empty state */}
               {rowsWithSeparators.length === 0 && (
                 <tr>
-                  <td colSpan={shopId==="ros-india"&&!isStaff ? 15 : 14} style={{ padding: "52px 16px", textAlign: "center" }}>
+                  <td colSpan={Object.values(colVis).filter(Boolean).length + 1} style={{ padding: "52px 16px", textAlign: "center" }}>
                     <div style={{ fontSize: 36, marginBottom: 10 }}>🛒</div>
                     <p style={{ margin: 0, fontWeight: 700, color: "#94a3b8", fontSize: 14 }}>
                       No {statusTab !== "ALL" ? activeTabCfg.label.toLowerCase() + " " : ""}sales found
@@ -1103,7 +1187,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                 if (row._type === "fy") {
                   return (
                     <tr key={`fy-${row._fyStart}-${idx}`}>
-                      <td colSpan={shopId==="ros-india"&&!isStaff ? 15 : 14} style={{ padding: 0 }}>
+                      <td colSpan={Object.values(colVis).filter(Boolean).length + 1} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", gap: 10,
                           padding: "9px 16px",
@@ -1135,7 +1219,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                 if (row._type === "month") {
                   return (
                     <tr key={`month-${row._monthKey}-${idx}`}>
-                      <td colSpan={shopId==="ros-india"&&!isStaff ? 15 : 14} style={{ padding: 0 }}>
+                      <td colSpan={Object.values(colVis).filter(Boolean).length + 1} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", gap: 10,
                           padding: "6px 16px",
@@ -1171,7 +1255,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                 if (row._type === "monthSummary") {
                   return (
                     <tr key={`summary-${row._monthKey}`}>
-                      <td colSpan={shopId==="ros-india"&&!isStaff ? 15 : 14} style={{ padding: 0 }}>
+                      <td colSpan={Object.values(colVis).filter(Boolean).length + 1} style={{ padding: 0 }}>
                         <div style={{
                           display: "flex", alignItems: "center", justifyContent: "flex-end", flexWrap: "wrap", gap: 0,
                           padding: "8px 16px",
@@ -1256,12 +1340,14 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                         </div>
                       )}
                     </td>
+                    {showCol("Date")&&(
                     {/* Date */}
                     <td style={{ padding: "12px 16px" }}>
                       <span style={{ fontSize: 12, color: "#64748b", whiteSpace: "nowrap" }}>
                         {fmtDateForSale(s)}
                       </span>
                     </td>
+                    )}}
                     {/* Customer */}
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ fontWeight: 700, fontSize: 13, color: "#0f172a", textTransform: "uppercase" }}>{s.customer}</div>
@@ -1371,6 +1457,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                         </div>
                       )}
                     </td>
+                    {showCol("Refund")&&(
                     {/* Refund */}
                     <td style={{ padding: "8px 10px", textAlign: "right" }}>
                       {Math.max(Number(s.adjAmt)||0,Number(s.refundAmt)||0)>0 ? (
@@ -1387,7 +1474,8 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                       )}
                     </td>
 
-                    {/* Payment */}
+                    )}}
+                    {showCol("Payment")&&(
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <Badge l={(shopId==="ros-india"&&(s.pay==="BANK"||s.pay==="SIB"))?"SIB":(s.pay||"SHOP")} />
                       {(s.pay === "SHOP" || !s.pay) && s.shopInvoiceNo && (
@@ -1399,6 +1487,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                         </div>
                       )}
                     </td>
+                    )}
                     {/* Status — inline editable dropdown */}
                     <td style={{ padding: "8px 10px", textAlign: "right" }} onClick={e => e.stopPropagation()}>
                       {editStatusId === s.id ? (
@@ -1427,7 +1516,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                         </div>
                       )}
                     </td>
-                    {/* Tags */}
+                    {showCol("Tags")&&(
                     <td style={{ padding: "8px 16px" }}>
                       {s.tag ? (
                         <div style={{ display: "flex", flexWrap: "wrap", gap: 3 }}>
@@ -1442,8 +1531,9 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                         </div>
                       ) : <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>}
                     </td>
+                    )}
                     {/* Pur. Amount — ROS INDIA only */}
-                    {shopId==="ros-india"&&!isStaff&&(
+                    {shopId==="ros-india"&&!isStaff&&showCol("Pur. Amount")&&(
                       <td style={{ padding: "12px 16px", textAlign: "right" }}>
                         {s.purInvNo ? (
                           <span style={{
@@ -1571,6 +1661,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                     </td>
 
 
+                    {showCol("Informed")&&(
                     {/* Delivery Informed */}
                     <td style={{ padding: "8px 10px", minWidth: 90 }} onClick={e => e.stopPropagation()}>
                       {s.deliveryDate ? (
@@ -1613,8 +1704,9 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                       )}
                     </td>
 
+                    )}}
                     {/* Dispatch From */}
-                    {(()=>{
+                    {showCol("From")&&(()=>{
                       const defaultFrom = shopId === "ros-india" ? "India-Unit1" : "UK";
                       const current = s.dispatchFrom || defaultFrom;
                       const isIndia = current.startsWith("India"); const isDefaultIndia = defaultFrom.startsWith("India"); const isCross = isIndia !== isDefaultIndia;
