@@ -1811,10 +1811,10 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
          ══════════════════════════════════════════════════════════ */}
       {showReport && (() => {
         const UNFULFILLED = shopId === "ros-india"
-          ? ["To Order","IN PROGRESS","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","Tracking Rqd"]
+          ? ["To Order","IN PROGRESS","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","Tracking Rqd","UNFULFILLED"]
           : ["PENDING"];
         const ALL_STATUSES = shopId === "ros-india"
-          ? ["To Order","IN PROGRESS","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","Tracking Rqd","PENDING"]
+          ? ["To Order","IN PROGRESS","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","Tracking Rqd","UNFULFILLED","PENDING"]
           : ["PENDING","PROCESSING","ON HOLD","AWAITING PAYMENT"];
 
         // Use top-level state; init defaults on open
