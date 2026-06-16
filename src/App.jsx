@@ -3447,6 +3447,44 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
         </div>
       </div>
 
+      {/* Summary cards — always all purchases (ignore filters) */}
+      {(()=>{
+        const net=p=>(Number(p.total)||0)+(Number(p.gst)||0);
+        const now=new Date();
+        const curY=now.getFullYear(), curM=now.getMonth();
+        // Financial year start: Apr (month index 3). Before Apr → FY started previous calendar year.
+        const fyStartYear=curM>=3?curY:curY-1;
+        const fyStart=new Date(fyStartYear,3,1);
+        const fyEnd=new Date(fyStartYear+1,2,31,23,59,59);
+        let mTot=0,yTot=0,lTot=0;
+        (purch||[]).forEach(p=>{
+          const v=net(p); lTot+=v;
+          if(!p.date)return;
+          const d=new Date(p.date);
+          if(isNaN(d))return;
+          if(d.getFullYear()===curY&&d.getMonth()===curM) mTot+=v;
+          if(d>=fyStart&&d<=fyEnd) yTot+=v;
+        });
+        const fyLabel=`FY ${String(fyStartYear).slice(2)}/${String(fyStartYear+1).slice(2)}`;
+        const cards=[
+          {label:"This Month",sub:now.toLocaleDateString("en-GB",{month:"long",year:"numeric"}),val:mTot},
+          {label:"This Financial Year",sub:fyLabel,val:yTot},
+          {label:"Lifetime",sub:`${purch.length} purchase${purch.length!==1?"s":""}`,val:lTot},
+        ];
+        return(
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,padding:"14px 20px 0"}}>
+            {cards.map(c=>(
+              <div key={c.label} style={{background:"white",border:"1px solid #f1f5f9",borderRadius:14,
+                padding:"14px 16px",boxShadow:"0 1px 3px rgba(0,0,0,0.05)",borderTop:"3px solid "+shop.accent}}>
+                <p style={{margin:0,fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>{c.label}</p>
+                <p style={{margin:"6px 0 2px",fontSize:22,fontWeight:900,color:"#0f172a",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,c.val)}</p>
+                <p style={{margin:0,fontSize:11,color:"#94a3b8",fontWeight:600}}>{c.sub}</p>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
       {/* Table */}
       <div style={{overflowX:"auto",position:"relative"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
@@ -7070,6 +7108,10 @@ return(
                   {l:"Amount",v:fmt(shopId,Number(viewPurchRow.total)||0)},
                   {l:"GST / VAT",v:fmt(shopId,Number(viewPurchRow.gst)||0)},
                   {l:"Net Total",v:fmt(shopId,(Number(viewPurchRow.total)||0)+(Number(viewPurchRow.gst)||0))},
+                  ...(shopId==="ros-india"&&(Number(viewPurchRow.advancePaid)||0)>0?[
+                    {l:"Advance Paid",v:fmt(shopId,Number(viewPurchRow.advancePaid)||0)},
+                    {l:"Balance Due",v:fmt(shopId,Number(viewPurchRow.balanceDue)||0)},
+                  ]:[]),
                   {l:"Unit Cost",v:viewPurchRow.qty&&viewPurchRow.total?fmt(shopId,((Number(viewPurchRow.total)||0)+(Number(viewPurchRow.gst)||0))/Number(viewPurchRow.qty)):"—"},
                   {l:"Payment By",v:viewPurchRow.payBy||viewPurchRow.pay_by||"—"},
                   {l:"Payment Date",v:viewPurchRow.payDate||viewPurchRow.pay_date||"—"},
@@ -7092,6 +7134,23 @@ return(
                   {fmt(shopId,(Number(viewPurchRow.total)||0)+(Number(viewPurchRow.gst)||0))}
                 </span>
               </div>
+
+              {/* Advance / Balance status — ros-india only */}
+              {shopId==="ros-india"&&(Number(viewPurchRow.advancePaid)||0)>0&&(()=>{
+                const bal=Number(viewPurchRow.balanceDue)||0;
+                return(
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
+                    background:bal>0?"#fffbeb":"#f0fdf4",border:"1px solid "+(bal>0?"#fcd34d":"#86efac"),
+                    borderRadius:12,padding:"10px 16px",marginBottom:16}}>
+                    <span style={{fontSize:12,fontWeight:700,color:bal>0?"#b45309":"#166534"}}>
+                      {bal>0?"⏳ Balance Due":"✓ Fully Paid"}
+                    </span>
+                    <span style={{fontSize:16,fontWeight:900,color:bal>0?"#b45309":"#166534",fontFamily:"DM Mono,monospace"}}>
+                      {fmt(shopId,bal)}
+                    </span>
+                  </div>
+                );
+              })()}
 
               {/* Documents */}
               <DocUploadSection
