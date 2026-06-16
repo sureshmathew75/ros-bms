@@ -1752,16 +1752,23 @@ const RETURN_STATUS_STYLE={
 };
 
 // WhatsApp message templates
-const MSG_REMINDER = (customer, retId, hardDeadline) =>
-`Dear ${customer}, we noticed we have not received your return item yet for return request *${retId}*.
+const MSG_REMINDER = (customer, retId, hardDeadline, shopName) =>
+`Dear ${customer},
 
-As a courtesy, we are extending your return window by a further 7 days. *We must receive your item by ${hardDeadline}* — not just dispatched, but physically received by us by this date.
+We hope you are well.
 
-If we do not receive the item by this date, unfortunately we will be unable to process your return request.
+We noticed that we have not yet received the item relating to your return request *${retId}*.
 
-If you have already dispatched the item, please share your tracking number with us so we can monitor it.
+As a gesture of goodwill, we would like to kindly extend your return period by an additional 7 days. Please ensure that the item is physically received by us on or before *${hardDeadline}* (please note that dispatching the item before this date will not be sufficient; it must arrive with us by the deadline).
 
-Thank you 😊`;
+If we do not receive the item by this date, we are sorry that we may not be able to proceed with your return request.
+
+If you have already sent the item back, we would appreciate it if you could share the tracking details with us so that we can keep an eye on its progress and assist you if required.
+
+Thank you very much for your cooperation and understanding. We truly appreciate your support.
+
+Kind regards,
+${shopName || "ROS Selections"}`;
 
 const MSG_RECEIVED = (customer, retId) =>
 `Dear ${customer},
@@ -2404,7 +2411,7 @@ Thank you for shopping with ROS.`,
                       {showReminder&&(
                         <button onClick={async e=>{e.stopPropagation();
                           if(!window.confirm("Send reminder to "+ret.customer+"?"))return;
-                          openWA(ret.phone, MSG_REMINDER(ret.customer, ret.id, reminderDeadlineStr));
+                          openWA(ret.phone, MSG_REMINDER(ret.customer, ret.id, reminderDeadlineStr, shop.name));
                           const today2=new Date().toISOString().slice(0,10);
                           const updated={...ret, reminderSentAt:today2};
                           await dbSaveReturn(updated);
