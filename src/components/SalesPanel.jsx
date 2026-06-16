@@ -366,7 +366,7 @@ export default function SalesPanel({
     "Invoice":true,"Date":true,"Customer":true,"Item":true,
     "Amount":true,"Refund":false,"Payment":true,"Status":true,
     "Tags":false,"Pur. Amount":true,"Tracking":true,
-    "Delivered":true,"Informed":false,"From":true,"Actions":true,
+    "Delivered":true,"From":true,"Actions":true,
   };
   const [colVis, setColVis] = useState(() => {
     try {
@@ -889,7 +889,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                     Full View
                   </button>
                   <button onClick={()=>{
-                    const quick={...COL_DEFAULTS,Refund:false,Payment:false,Tags:false,"Pur. Amount":false,Informed:false,From:false};
+                    const quick={...COL_DEFAULTS,Refund:false,Payment:false,Tags:false,"Pur. Amount":false,From:false};
                     setColVis(quick);try{localStorage.setItem("ros_col_vis",JSON.stringify(quick));}catch{}
                   }} style={{flex:1,padding:"4px 0",borderRadius:6,border:"1px solid #e2e8f0",
                     background:"#f8fafc",color:"#374151",fontSize:11,fontWeight:600,cursor:"pointer"}}>
@@ -897,7 +897,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                   </button>
                 </div>
                 {/* Column toggles */}
-                {["Invoice","Date","Customer","Item","Amount","Refund","Payment","Status","Tags","Pur. Amount","Tracking","Delivered","Informed","From"].map(col=>(
+                {["Invoice","Date","Customer","Item","Amount","Refund","Payment","Status","Tags","Pur. Amount","Tracking","Delivered","From"].map(col=>(
                   <label key={col} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 4px",
                     cursor:"pointer",borderRadius:6,fontSize:12,color:"#374151"}}
                     onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
@@ -1180,7 +1180,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
               <tr style={{ background: "#f8fafc" }}>
                 {["Invoice", "Date", "Customer", "Item", "Amount", "Refund", "Payment", "Status", "Tags",
                   ...(shopId==="ros-india"&&!isStaff ? ["Pur. Amount"] : []),
-                  "Tracking", "Delivered", "Informed", "From", "Actions"]
+                  "Tracking", "Delivered", "From", "Actions"]
                   .filter(h => h==="Actions" || showCol(h))
                   .map((h, i) => (
                     <th key={h} style={{
@@ -1694,12 +1694,52 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                       )}
                     </td>
 
-                    {/* Delivered */}
-                    <td style={{ padding: "8px 10px", minWidth: 110 }} onClick={e => e.stopPropagation()}>
+                    {/* Delivered — progressive: Mark Delivered → Send Confirmation → Return Link */}
+                    <td style={{ padding: "8px 10px", minWidth: 150 }} onClick={e => e.stopPropagation()}>
                       {s.deliveryDate ? (
-                        <div style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 7, padding: "4px 9px" }}>
-                          <span style={{ fontSize: 11 }}>✅</span>
-                          <span style={{ fontSize: 11, fontWeight: 700, color: "#166534", whiteSpace: "nowrap" }}>{fmtDate(s.deliveryDate)}</span>
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+                          {/* Delivered date badge */}
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 4, background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 7, padding: "4px 9px" }}>
+                            <span style={{ fontSize: 11 }}>✅</span>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: "#166534", whiteSpace: "nowrap" }}>{fmtDate(s.deliveryDate)}</span>
+                          </div>
+                          {s.deliveryInformed ? (
+                            <>
+                              {/* Notified tick */}
+                              <div style={{ display: "inline-flex", alignItems: "center", gap: 4,
+                                background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 7,
+                                padding: "3px 8px", whiteSpace: "nowrap" }}>
+                                <span style={{ fontSize: 11 }}>✅</span>
+                                <span style={{ fontSize: 10, fontWeight: 700, color: "#166534" }}>Notified</span>
+                              </div>
+                              {/* Return link */}
+                              <button onClick={() => {
+                                const phone = (s.phone || s.contact || "").replace(/[^0-9]/g, "");
+                                const e164 = phone.startsWith("0") ? "44" + phone.slice(1) : phone;
+                                const retLink=`https://ros-bms.vercel.app/returns?shop=${shopId}`;
+                              window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent("Hi " + (s.customer||"") + ",\n\nWe noticed your recent order might have an issue. Please use this link to submit a return request:\n" + retLink + "\n\nWe will get back to you shortly. Thank you!"), "_blank", "noopener,noreferrer");
+                              }}
+                                style={{ padding: "3px 8px", borderRadius: 7, border: "1px solid #e2e8f0",
+                                  background: "white", color: "#374151", fontSize: 10, fontWeight: 600,
+                                  cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                                ↩️ Return Link
+                              </button>
+                            </>
+                          ) : (
+                            /* Send delivery confirmation */
+                            <button onClick={async () => {
+                              const phone = (s.phone || s.contact || "").replace(/[^0-9]/g, "");
+                              const e164 = phone.startsWith("0") ? "44" + phone.slice(1) : phone;
+                              window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent("Dear Customer,\nYour order has been marked as delivered according to the tracking update.\nPlease kindly check and inspect your item. If you have any issues or concerns, please contact us within 2 days of delivery so we can help you as quickly as possible.\nThank you for your purchase and for choosing ROS. We are always happy to assist you.\nThank you 😊"), "_blank", "noopener,noreferrer");
+                              if (onMarkDeliveryInformed) await onMarkDeliveryInformed(s.id);
+                            }}
+                              style={{ padding: "4px 10px", borderRadius: 7, border: "1px dashed #25d366",
+                                background: "#f0fdf4", color: "#166534", fontSize: 11, fontWeight: 700,
+                                cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                                display: "flex", alignItems: "center", gap: 4 }}>
+                              <span>💬</span><span>Send Confirmation</span>
+                            </button>
+                          )}
                         </div>
                       ) : (s.ful || s.status) === "FULFILLED" ? (
                         <button onClick={() => { if (onMarkDelivered) onMarkDelivered(s); }}
@@ -1711,50 +1751,6 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                       )}
                     </td>
 
-
-                    {showCol("Informed")&&(
-                    <td style={{ padding: "8px 10px", minWidth: 90 }} onClick={e => e.stopPropagation()}>
-                      {s.deliveryDate ? (
-                        s.deliveryInformed ? (
-                          <div style={{ display: "flex", flexDirection: "column", gap: 3 }}>
-                            <div style={{ display: "inline-flex", alignItems: "center", gap: 4,
-                              background: "#f0fdf4", border: "1px solid #86efac", borderRadius: 7,
-                              padding: "3px 8px", whiteSpace: "nowrap" }}>
-                              <span style={{ fontSize: 11 }}>✅</span>
-                              <span style={{ fontSize: 10, fontWeight: 700, color: "#166534" }}>Informed</span>
-                            </div>
-                            <button onClick={() => {
-                              const phone = (s.phone || s.contact || "").replace(/[^0-9]/g, "");
-                              const e164 = phone.startsWith("0") ? "44" + phone.slice(1) : phone;
-                              const retLink=`https://ros-bms.vercel.app/returns?shop=${shopId}`;
-                            window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent("Hi " + (s.customer||"") + ",\n\nWe noticed your recent order might have an issue. Please use this link to submit a return request:\n" + retLink + "\n\nWe will get back to you shortly. Thank you!"), "_blank", "noopener,noreferrer");
-                            }}
-                              style={{ padding: "3px 8px", borderRadius: 7, border: "1px solid #e2e8f0",
-                                background: "white", color: "#374151", fontSize: 10, fontWeight: 600,
-                                cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
-                              ↩️ Return Link
-                            </button>
-                          </div>
-                        ) : (
-                          <button onClick={async () => {
-                            const phone = (s.phone || s.contact || "").replace(/[^0-9]/g, "");
-                            const e164 = phone.startsWith("0") ? "44" + phone.slice(1) : phone;
-                            window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent("Dear Customer,\nYour order has been marked as delivered according to the tracking update.\nPlease kindly check and inspect your item. If you have any issues or concerns, please contact us within 2 days of delivery so we can help you as quickly as possible.\nThank you for your purchase and for choosing ROS. We are always happy to assist you.\nThank you 😊"), "_blank", "noopener,noreferrer");
-                            if (onMarkDeliveryInformed) await onMarkDeliveryInformed(s.id);
-                          }}
-                            style={{ padding: "4px 10px", borderRadius: 7, border: "1px dashed #25d366",
-                              background: "#f0fdf4", color: "#166534", fontSize: 11, fontWeight: 700,
-                              cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
-                              display: "flex", alignItems: "center", gap: 4 }}>
-                            <span>💬</span><span>Notify</span>
-                          </button>
-                        )
-                      ) : (
-                        <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>
-                      )}
-                    </td>
-
-                    )}
                     {/* Dispatch From */}
                     {(()=>{
                       const defaultFrom = shopId === "ros-india" ? "India-Unit1" : "UK";
