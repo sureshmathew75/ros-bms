@@ -302,6 +302,12 @@ const STATUS_TABS = [
 ];
 
 const STATUS_ROW_BG = {
+  "UNFULFILLED":   "#fde68a",
+  "To Order":      "#fef3c7",
+  "IN PROGRESS":   "#eff6ff",
+  "WORK IN PROGRESS": "#eff6ff",
+  "PHOTO GIVEN TO CUSTOMER": "#eef2ff",
+  "Tracking Rqd":  "#fef9c3",
   "PENDING":       "#fffbeb",
   "FULFILLED":     "#f0fdf4",
   "GOOD FEEDBACK": "#ecfdf5",
@@ -309,6 +315,22 @@ const STATUS_ROW_BG = {
   "RETRN RCVD":    "#fef2f2",
   "EXCHANGED":     "#eef2ff",
   "REFUNDED":      "#faf5ff",
+};
+
+const STATUS_EDGE = {
+  "UNFULFILLED":   "#f59e0b",
+  "To Order":      "#f59e0b",
+  "IN PROGRESS":   "#3b82f6",
+  "WORK IN PROGRESS": "#3b82f6",
+  "PHOTO GIVEN TO CUSTOMER": "#6366f1",
+  "Tracking Rqd":  "#eab308",
+  "PENDING":       "#fbbf24",
+  "FULFILLED":     "#22c55e",
+  "GOOD FEEDBACK": "#10b981",
+  "RTRN REQSTD":   "#f97316",
+  "RETRN RCVD":    "#ef4444",
+  "EXCHANGED":     "#6366f1",
+  "REFUNDED":      "#a855f7",
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1347,6 +1369,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                 const isH = hovR === s.id;
                 const mergedRowBg = { ...STATUS_ROW_BG, ...(statusRowBgProp || {}) };
                 const rowBg = isH ? `${accent}10` : (isInstalment ? instBg : (mergedRowBg[ful] || "white"));
+                const statusEdge = STATUS_EDGE[ful] || null;
 
                 return (
                   <tr key={s.id}
@@ -1359,7 +1382,9 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                       boxShadow: (isH
                         ? "0 4px 12px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06)"
                         : "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)")
-                        + (isInstalment ? `, inset 3px 0 0 0 ${instColor}` : ""),
+                        + (isInstalment
+                            ? `, inset 4px 0 0 0 ${instColor}`
+                            : (statusEdge ? `, inset 4px 0 0 0 ${statusEdge}` : "")),
                       transform: isH ? "translateY(-1px)" : "translateY(0)",
                     }}>
                     {/* Invoice */}
