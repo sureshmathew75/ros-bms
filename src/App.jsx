@@ -3447,9 +3447,16 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
         </div>
       </div>
 
-      {/* Summary cards — always all purchases (ignore filters) */}
+      {/* Summary cards — cash actually paid (ignore filters) */}
       {(()=>{
-        const net=p=>(Number(p.total)||0)+(Number(p.gst)||0);
+        const netTotalOf=p=>(Number(p.total)||0)+(Number(p.gst)||0);
+        // Cash actually paid: no advance = paid in full; advance with balance owed = advance only; balance cleared = full
+        const paidOf=p=>{
+          const adv=Number(p.advancePaid)||0;
+          const bal=Number(p.balanceDue)||0;
+          if(adv>0&&bal>0) return adv;        // part-paid: count advance only
+          return netTotalOf(p);                // no advance, or balance cleared: count full
+        };
         const now=new Date();
         const curY=now.getFullYear(), curM=now.getMonth();
         // Financial year start: Apr (month index 3). Before Apr → FY started previous calendar year.
@@ -3458,7 +3465,7 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
         const fyEnd=new Date(fyStartYear+1,2,31,23,59,59);
         let mTot=0,yTot=0,lTot=0;
         (purch||[]).forEach(p=>{
-          const v=net(p); lTot+=v;
+          const v=paidOf(p); lTot+=v;
           if(!p.date)return;
           const d=new Date(p.date);
           if(isNaN(d))return;
@@ -3467,9 +3474,9 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
         });
         const fyLabel=`FY ${String(fyStartYear).slice(2)}/${String(fyStartYear+1).slice(2)}`;
         const cards=[
-          {label:"This Month",sub:now.toLocaleDateString("en-GB",{month:"long",year:"numeric"}),val:mTot},
-          {label:"This Financial Year",sub:fyLabel,val:yTot},
-          {label:"Lifetime",sub:`${purch.length} purchase${purch.length!==1?"s":""}`,val:lTot},
+          {label:"This Month · Paid",sub:now.toLocaleDateString("en-GB",{month:"long",year:"numeric"}),val:mTot},
+          {label:"This Financial Year · Paid",sub:fyLabel,val:yTot},
+          {label:"Lifetime · Paid",sub:`${purch.length} purchase${purch.length!==1?"s":""}`,val:lTot},
         ];
         return(
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,padding:"14px 20px 0"}}>
