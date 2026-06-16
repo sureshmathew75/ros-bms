@@ -302,19 +302,19 @@ const STATUS_TABS = [
 ];
 
 const STATUS_ROW_BG = {
-  "UNFULFILLED":   "#fde68a",
-  "To Order":      "#fef3c7",
-  "IN PROGRESS":   "#eff6ff",
-  "WORK IN PROGRESS": "#eff6ff",
-  "PHOTO GIVEN TO CUSTOMER": "#eef2ff",
-  "Tracking Rqd":  "#fef9c3",
-  "PENDING":       "#fffbeb",
-  "FULFILLED":     "#f0fdf4",
-  "GOOD FEEDBACK": "#ecfdf5",
-  "RTRN REQSTD":   "#fff7ed",
-  "RETRN RCVD":    "#fef2f2",
-  "EXCHANGED":     "#eef2ff",
-  "REFUNDED":      "#faf5ff",
+  "UNFULFILLED":   "#fcd34d",
+  "To Order":      "#fcd34d",
+  "IN PROGRESS":   "#dbeafe",
+  "WORK IN PROGRESS": "#dbeafe",
+  "PHOTO GIVEN TO CUSTOMER": "#e0e7ff",
+  "Tracking Rqd":  "#fef08a",
+  "PENDING":       "#fef3c7",
+  "FULFILLED":     "#dcfce7",
+  "GOOD FEEDBACK": "#d1fae5",
+  "RTRN REQSTD":   "#fed7aa",
+  "RETRN RCVD":    "#fecaca",
+  "EXCHANGED":     "#e0e7ff",
+  "REFUNDED":      "#f3e8ff",
 };
 
 const STATUS_EDGE = {
@@ -1196,7 +1196,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
         background: "white", borderRadius: 16, border: "1px solid #f1f5f9",
         overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.04)",
       }}>
-        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", background: "#f1f5f9", padding: "4px 12px 12px" }}>
+        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", background: "#ffffff", padding: "4px 12px 12px" }}>
           <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 10px", minWidth: 720 }}>
             <thead>
               <tr style={{ background: "#f8fafc" }}>
@@ -1368,7 +1368,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                 const ful = s.ful || s.status || "PENDING";
                 const isH = hovR === s.id;
                 const mergedRowBg = { ...STATUS_ROW_BG, ...(statusRowBgProp || {}) };
-                const rowBg = isH ? `${accent}10` : (isInstalment ? instBg : (mergedRowBg[ful] || "white"));
+                const rowBg = isInstalment ? instBg : (mergedRowBg[ful] || "white");
                 const statusEdge = STATUS_EDGE[ful] || null;
 
                 return (
@@ -1380,8 +1380,8 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                       background: rowBg, cursor: "pointer",
                       transition: "background 0.12s, box-shadow 0.15s, transform 0.15s",
                       boxShadow: (isH
-                        ? "0 4px 12px rgba(0,0,0,0.10), 0 2px 4px rgba(0,0,0,0.06)"
-                        : "0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04)")
+                        ? "0 6px 16px rgba(0,0,0,0.14), 0 2px 5px rgba(0,0,0,0.08)"
+                        : "0 3px 8px rgba(0,0,0,0.10), 0 1px 3px rgba(0,0,0,0.06)")
                         + (isInstalment
                             ? `, inset 4px 0 0 0 ${instColor}`
                             : (statusEdge ? `, inset 4px 0 0 0 ${statusEdge}` : "")),
