@@ -3502,6 +3502,23 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
                   {/* Total */}
                   <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,color:"#0f172a",whiteSpace:"nowrap"}}>
                     {netTotal>0?fmt(shopId,netTotal):"—"}
+                    {shopId==="ros-india"&&(Number(p.advancePaid)||0)>0&&(()=>{
+                      const adv=Number(p.advancePaid)||0;
+                      const bal=Number(p.balanceDue)||0;
+                      return(
+                        <div style={{marginTop:3,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
+                          <span style={{fontSize:10,color:"#64748b",fontWeight:600,whiteSpace:"nowrap"}}>
+                            Adv {fmt(shopId,adv)} · Bal {fmt(shopId,bal)}
+                          </span>
+                          <span style={{fontSize:9,fontWeight:800,letterSpacing:"0.04em",padding:"2px 7px",borderRadius:6,whiteSpace:"nowrap",
+                            background:bal>0?"#fffbeb":"#f0fdf4",
+                            border:"1px solid "+(bal>0?"#fcd34d":"#86efac"),
+                            color:bal>0?"#b45309":"#166534"}}>
+                            {bal>0?"BALANCE DUE":"✓ FULLY PAID"}
+                          </span>
+                        </div>
+                      );
+                    })()}
                   </td>
                   {/* Pay By */}
                   <td style={{padding:"12px 16px",color:"#64748b",fontSize:12,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
@@ -9423,6 +9440,8 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
     qty:         "",
     total:       "",
     gst:         "",
+    advancePaid: "",
+    balanceDue:  "",
     payBy:       "HDFC SURESH",
     payDate:     new Date().toISOString().slice(0,10),
     logisticBy:  "",
@@ -9590,6 +9609,49 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
         <label style={{...lbl,color:"#94a3b8"}}>Unit Cost ({shop.symbol}) <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0}}>— auto calculated</span></label>
         <input readOnly value={unitCost} placeholder="Enter quantity and amount above" style={inpGray}/>
       </div>
+
+      {/* Advance / Balance — ros-india only */}
+      {shopId==="ros-india"&&(()=>{
+        const grand=(parseFloat(form.total)||0)+(parseFloat(form.gst)||0);
+        const adv=parseFloat(form.advancePaid)||0;
+        const autoBal=Math.max(grand-adv,0);
+        const balShown=form.balanceDue!==""&&form.balanceDue!=null?form.balanceDue:(adv>0?autoBal.toFixed(2):"");
+        return(
+          <div style={{marginBottom:16}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+              <div>
+                <label style={lbl}>Advance Paid ({shop.symbol})</label>
+                <input type="number" onWheel={e=>e.target.blur()} value={form.advancePaid}
+                  onChange={e=>{
+                    const v=e.target.value; set("advancePaid",v);
+                    // Auto-fill balance from grand total − advance
+                    const a=parseFloat(v)||0;
+                    set("balanceDue", a>0 ? Math.max(grand-a,0).toFixed(2) : "");
+                  }}
+                  placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+              </div>
+              <div>
+                <label style={lbl}>Balance Due ({shop.symbol}) <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0,color:"#94a3b8"}}>auto · editable</span></label>
+                <input type="number" onWheel={e=>e.target.blur()} value={balShown}
+                  onChange={e=>set("balanceDue",e.target.value)}
+                  placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+              </div>
+            </div>
+            {adv>0&&(
+              <div style={{marginTop:8,display:"inline-flex",alignItems:"center",gap:5,
+                background:(parseFloat(balShown)||0)>0?"#fffbeb":"#f0fdf4",
+                border:"1px solid "+((parseFloat(balShown)||0)>0?"#fcd34d":"#86efac"),
+                borderRadius:7,padding:"4px 10px"}}>
+                <span style={{fontSize:11,fontWeight:700,color:(parseFloat(balShown)||0)>0?"#b45309":"#166534"}}>
+                  {(parseFloat(balShown)||0)>0
+                    ? `⏳ Advance paid · ${shop.symbol}${(parseFloat(balShown)||0).toLocaleString()} balance due`
+                    : `✓ Fully paid`}
+                </span>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* PAYMENT */}
       <Divider title="Payment"/>
