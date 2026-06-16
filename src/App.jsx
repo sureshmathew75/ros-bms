@@ -2385,7 +2385,12 @@ Thank you for shopping with ROS.`,
                   const hardDeadlineStr = hardDeadlineDate ? hardDeadlineDate.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) : "";
                   const hardDeadlineFmt = hardDeadlineDate ? `${String(hardDeadlineDate.getDate()).padStart(2,"0")}/${String(hardDeadlineDate.getMonth()+1).padStart(2,"0")}` : "";
                   const isWindowClosed = hardDeadlineDate && today0 > hardDeadlineDate;
-                  const showReminder = !ret.reminderSentAt && daysSinceInstr >= 6 && !isWindowClosed;
+                  // Deadline shown to customer matches the visible "days left" badge (returnDeadline)
+                  const reminderDeadlineStr = ret.returnDeadline
+                    ? new Date(ret.returnDeadline).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})
+                    : hardDeadlineStr;
+                  // Show when badge shows 7 or fewer days left, not yet reminded, window still open
+                  const showReminder = !ret.reminderSentAt && days <= 7 && !isWindowClosed;
 
                   return(
                     <div style={{display:"flex",flexDirection:"column",gap:4}}>
@@ -2399,7 +2404,7 @@ Thank you for shopping with ROS.`,
                       {showReminder&&(
                         <button onClick={async e=>{e.stopPropagation();
                           if(!window.confirm("Send reminder to "+ret.customer+"?"))return;
-                          openWA(ret.phone, MSG_REMINDER(ret.customer, ret.id, hardDeadlineStr));
+                          openWA(ret.phone, MSG_REMINDER(ret.customer, ret.id, reminderDeadlineStr));
                           const today2=new Date().toISOString().slice(0,10);
                           const updated={...ret, reminderSentAt:today2};
                           await dbSaveReturn(updated);
