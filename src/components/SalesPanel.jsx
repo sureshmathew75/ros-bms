@@ -1390,6 +1390,13 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ fontWeight: 700, fontSize: 13, color: "#0f172a", textTransform: "uppercase" }}>{s.customer}</div>
                       {s.phone && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>{s.phone}</div>}
+                      {shopId === "ros-india" && s.paidBy && (
+                        <div style={{ fontSize: 10, color: "#64748b", marginTop: 3, display: "inline-flex", alignItems: "center", gap: 3 }}>
+                          <span style={{ fontSize: 10 }}>💸</span>
+                          <span style={{ fontWeight: 600 }}>Paid by:</span>
+                          <span style={{ fontWeight: 700, color: "#475569" }}>{s.paidBy}</span>
+                        </div>
+                      )}
                     </td>
                     {/* Item */}
                     <td style={{ padding: "12px 16px" }}>
