@@ -6411,6 +6411,7 @@ return(
           {tab==="sales"&&(()=>{
             const indiaStatuses=[
               {key:"ALL",                        label:"All",         emoji:"🗂️"},
+              {key:"UNFULFILLED",        label:"Unfulfilled", emoji:"⏳"},
               {key:"To Order",           label:"Not Placed",  emoji:"🕐"},
               {key:"IN PROGRESS",           label:"In Progress", emoji:"🔧"},
               {key:"PHOTO GIVEN TO CUSTOMER",    label:"Photo Sent",  emoji:"📸"},
@@ -6843,15 +6844,15 @@ return(
               const current=(shopItems||{})[shopId]||[];
               if(current.includes(item)) return;
               dbAddShopItem(shopId,item).then(()=>{
-                dbLoadShopItems().then(data=>{if(data)setShopItems({"ros-selections":data["ros-selections"]||[],"ros-hairlines":data["ros-hairlines"]||[],"ros-india":data["ros-india"]||[]});});
+                dbLoadShopItems().then(data=>{if(data)saveShopItems({"ros-selections":data["ros-selections"]||[],"ros-hairlines":data["ros-hairlines"]||[],"ros-india":data["ros-india"]||[]});});
               });
               const updated={...(shopItems||{}),[shopId]:[...current,item]};
-              setShopItems(updated);
+              saveShopItems(updated);
             }}
             onDeleteShopItem={(item)=>{
               const current=(shopItems||{})[shopId]||[];
               const updated={...(shopItems||{}),[shopId]:current.filter(i=>i!==item)};
-              setShopItems(updated); dbDeleteShopItem(shopId,item);
+              saveShopItems(updated); dbDeleteShopItem(shopId,item);
             }}
           />
         </Modal>
