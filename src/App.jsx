@@ -5138,7 +5138,7 @@ const addSale = async (form) => {
     address:  form.address || "",
     qty:      form.qty || "1",
     item:     encodedItem,
-    ful:      form.status || "PENDING",
+    ful:      form.status || (shopId==="ros-india" ? "To Order" : "UNFULFILLED"),
     pay:      form.payBy || "SHOP",
     rem:      form.remarks || "",
     // Keep saleLines in memory object for immediate display
@@ -6403,7 +6403,7 @@ return(
             ];
             const otherStatuses=[
               {key:"ALL",           label:"All",       emoji:"🗂️"},
-              {key:"PENDING",       label:"Pending",   emoji:"⏳"},
+              {key:"UNFULFILLED",   label:"Unfulfilled", emoji:"⏳"},
               {key:"FULFILLED",     label:"Fulfilled", emoji:"✅"},
               {key:"GOOD FEEDBACK", label:"Good FB",   emoji:"🌟"},
               {key:"RTRN REQSTD",   label:"Rtn Req",   emoji:"↩️"},
@@ -10082,7 +10082,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     paidBy:      "",
     trackingNo:  "",
     dispatchFrom: shopId==="ros-india" ? "India-Unit1" : "",
-    status:      shopId==="ros-india" ? "To Order" : "PENDING",
+    status:      shopId==="ros-india" ? "To Order" : "UNFULFILLED",
     sentDate:    "",
     returnReqDate: "",
     returnRcvd:  "",
