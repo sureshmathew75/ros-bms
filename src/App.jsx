@@ -2353,6 +2353,18 @@ Thank you for shopping with ROS.`,
                 const e164=clean.startsWith("0")?"44"+clean.slice(1):clean;
                 window.open("https://wa.me/"+e164+"?text="+encodeURIComponent(msg),"_blank","noopener,noreferrer");
               };
+              const copyWA=async(phone,msg,btnEl)=>{
+                const text=(phone?`📞 ${phone}\n\n`:"")+msg;
+                try{ await navigator.clipboard.writeText(text); }
+                catch{
+                  const ta=document.createElement("textarea");
+                  ta.value=text; ta.style.position="fixed"; ta.style.opacity="0";
+                  document.body.appendChild(ta); ta.select();
+                  try{ document.execCommand("copy"); }catch{}
+                  document.body.removeChild(ta);
+                }
+                if(btnEl){ const p=btnEl.textContent; btnEl.textContent="✓"; setTimeout(()=>{btnEl.textContent=p;},1200); }
+              };
 
               const handleQuickAction=async(newStatus)=>{
                 const today=new Date().toISOString().slice(0,10);
@@ -2420,6 +2432,16 @@ Thank you for shopping with ROS.`,
                           background:"#fef2f2",color:"#dc2626",fontSize:10,fontWeight:700,
                           cursor:"pointer",whiteSpace:"nowrap"}}>
                           🔔 Send Reminder
+                        </button>
+                      )}
+                      {showReminder&&(
+                        <button title="Copy reminder message (paste in WhatsApp manually)"
+                          onClick={e=>{e.stopPropagation();
+                            copyWA(ret.phone, MSG_REMINDER(ret.customer, ret.id, reminderDeadlineStr, shop.name), e.currentTarget);
+                          }}
+                          style={{padding:"4px 8px",borderRadius:7,border:"1px solid #e2e8f0",
+                            background:"white",color:"#64748b",fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
+                          📋
                         </button>
                       )}
                       {ret.reminderSentAt&&(

@@ -599,6 +599,32 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
     window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent(msg), "_blank", "noopener,noreferrer");
   };
 
+  /* ── Copy a WhatsApp message (with phone) to clipboard as a manual fallback ── */
+  const copyWAMessage = async (sale, msg, btnEl) => {
+    const phone = sale.phone || sale.contact || "";
+    const text = (phone ? `📞 ${phone}\n\n` : "") + msg;
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      // Fallback for older browsers / insecure context
+      const ta = document.createElement("textarea");
+      ta.value = text; ta.style.position = "fixed"; ta.style.opacity = "0";
+      document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch {}
+      document.body.removeChild(ta);
+    }
+    if (btnEl) {
+      const prev = btnEl.textContent;
+      btnEl.textContent = "✓";
+      setTimeout(() => { btnEl.textContent = prev; }, 1200);
+    }
+  };
+  const copyBtnStyle = {
+    padding: "3px 7px", borderRadius: 7, border: "1px solid #e2e8f0",
+    background: "white", color: "#64748b", fontSize: 12, cursor: "pointer",
+    fontFamily: "inherit", lineHeight: 1, flexShrink: 0,
+  };
+
   /* ── Instalment groups ──────────────────────────────────────────────── */
   const INSTALMENT_TAGS = ["Advance Sale", "Part Payment", "Final Payment Sale"];
   const instalmentGroups = useMemo(() => {
@@ -1368,7 +1394,9 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                 const ful = s.ful || s.status || "PENDING";
                 const isH = hovR === s.id;
                 const mergedRowBg = { ...STATUS_ROW_BG, ...(statusRowBgProp || {}) };
-                const rowBg = isInstalment ? instBg : (mergedRowBg[ful] || "white");
+                const fulfilledStages = ["FULFILLED","GOOD FEEDBACK","DELIVERED","COMPLETED","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"];
+                const isFulfilledStage = fulfilledStages.includes(ful);
+                const rowBg = (isInstalment && !isFulfilledStage) ? instBg : (mergedRowBg[ful] || "white");
                 const statusEdge = STATUS_EDGE[ful] || null;
 
                 return (
@@ -1702,21 +1730,26 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                             </button>
                           </div>
                           {/* WhatsApp button */}
-                          <button
-                            onClick={async()=>{
-                              openTrackingWA(s, s.carrier||CARRIERS[0], s.trackingNo);
-                              if(onInlineEdit) await onInlineEdit(s.id,{trackingNotified:true});
-                            }}
-                            style={{
-                              display:"flex",alignItems:"center",gap:5,padding:"4px 9px",
-                              borderRadius:7,border:"none",
-                              background:s.trackingNotified?"#dcfce7":"#25d366",
-                              color:s.trackingNotified?"#166534":"white",
-                              fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
-                              width:"100%",justifyContent:"center",
-                            }}>
-                            {s.trackingNotified ? "✅ Notified" : "💬 Send Tracking"}
-                          </button>
+                          <div style={{ display: "flex", gap: 4, alignItems: "stretch" }}>
+                            <button
+                              onClick={async()=>{
+                                openTrackingWA(s, s.carrier||CARRIERS[0], s.trackingNo);
+                                if(onInlineEdit) await onInlineEdit(s.id,{trackingNotified:true});
+                              }}
+                              style={{
+                                display:"flex",alignItems:"center",gap:5,padding:"4px 9px",
+                                borderRadius:7,border:"none",
+                                background:s.trackingNotified?"#dcfce7":"#25d366",
+                                color:s.trackingNotified?"#166534":"white",
+                                fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+                                flex:1,justifyContent:"center",
+                              }}>
+                              {s.trackingNotified ? "✅ Notified" : "💬 Send Tracking"}
+                            </button>
+                            <button title="Copy tracking message (paste in WhatsApp manually)"
+                              onClick={(e)=>copyWAMessage(s, buildTrackingMsg(s, s.carrier||CARRIERS[0], s.trackingNo), e.currentTarget)}
+                              style={copyBtnStyle}>📋</button>
+                          </div>
                         </div>
                       ) : (
                         <button onClick={() => { setEditTrackingId(s.id); setTrackingInput(""); }}
@@ -1745,32 +1778,51 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                                 <span style={{ fontSize: 10, fontWeight: 700, color: "#166534" }}>Notified</span>
                               </div>
                               {/* Return link */}
-                              <button onClick={() => {
-                                const phone = (s.phone || s.contact || "").replace(/[^0-9]/g, "");
-                                const e164 = phone.startsWith("0") ? "44" + phone.slice(1) : phone;
-                                const retLink=`https://ros-bms.vercel.app/returns?shop=${shopId}`;
-                              window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent("Hi " + (s.customer||"") + ",\n\nWe noticed your recent order might have an issue. Please use this link to submit a return request:\n" + retLink + "\n\nWe will get back to you shortly. Thank you!"), "_blank", "noopener,noreferrer");
-                              }}
-                                style={{ padding: "3px 8px", borderRadius: 7, border: "1px solid #e2e8f0",
-                                  background: "white", color: "#374151", fontSize: 10, fontWeight: 600,
-                                  cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
-                                ↩️ Return Link
-                              </button>
+                              <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                                <button onClick={() => {
+                                  const phone = (s.phone || s.contact || "").replace(/[^0-9]/g, "");
+                                  const e164 = phone.startsWith("0") ? "44" + phone.slice(1) : phone;
+                                  const retLink=`https://ros-bms.vercel.app/returns?shop=${shopId}`;
+                                  const msg = "Hi " + (s.customer||"") + ",\n\nWe noticed your recent order might have an issue. Please use this link to submit a return request:\n" + retLink + "\n\nWe will get back to you shortly. Thank you!";
+                                  window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent(msg), "_blank", "noopener,noreferrer");
+                                }}
+                                  style={{ padding: "3px 8px", borderRadius: 7, border: "1px solid #e2e8f0",
+                                    background: "white", color: "#374151", fontSize: 10, fontWeight: 600,
+                                    cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                                  ↩️ Return Link
+                                </button>
+                                <button title="Copy message (paste in WhatsApp manually)"
+                                  onClick={(e) => {
+                                    const retLink=`https://ros-bms.vercel.app/returns?shop=${shopId}`;
+                                    const msg = "Hi " + (s.customer||"") + ",\n\nWe noticed your recent order might have an issue. Please use this link to submit a return request:\n" + retLink + "\n\nWe will get back to you shortly. Thank you!";
+                                    copyWAMessage(s, msg, e.currentTarget);
+                                  }}
+                                  style={copyBtnStyle}>📋</button>
+                              </div>
                             </>
                           ) : (
                             /* Send delivery confirmation */
-                            <button onClick={async () => {
-                              const phone = (s.phone || s.contact || "").replace(/[^0-9]/g, "");
-                              const e164 = phone.startsWith("0") ? "44" + phone.slice(1) : phone;
-                              window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent("Dear Customer,\nYour order has been marked as delivered according to the tracking update.\nPlease kindly check and inspect your item. If you have any issues or concerns, please contact us within 2 days of delivery so we can help you as quickly as possible.\nThank you for your purchase and for choosing ROS. We are always happy to assist you.\nThank you 😊"), "_blank", "noopener,noreferrer");
-                              if (onMarkDeliveryInformed) await onMarkDeliveryInformed(s.id);
-                            }}
-                              style={{ padding: "4px 10px", borderRadius: 7, border: "1px dashed #25d366",
-                                background: "#f0fdf4", color: "#166534", fontSize: 11, fontWeight: 700,
-                                cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
-                                display: "flex", alignItems: "center", gap: 4 }}>
-                              <span>💬</span><span>Send Confirmation</span>
-                            </button>
+                            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                              <button onClick={async () => {
+                                const phone = (s.phone || s.contact || "").replace(/[^0-9]/g, "");
+                                const e164 = phone.startsWith("0") ? "44" + phone.slice(1) : phone;
+                                const msg = "Dear Customer,\nYour order has been marked as delivered according to the tracking update.\nPlease kindly check and inspect your item. If you have any issues or concerns, please contact us within 2 days of delivery so we can help you as quickly as possible.\nThank you for your purchase and for choosing ROS. We are always happy to assist you.\nThank you 😊";
+                                window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent(msg), "_blank", "noopener,noreferrer");
+                                if (onMarkDeliveryInformed) await onMarkDeliveryInformed(s.id);
+                              }}
+                                style={{ padding: "4px 10px", borderRadius: 7, border: "1px dashed #25d366",
+                                  background: "#f0fdf4", color: "#166534", fontSize: 11, fontWeight: 700,
+                                  cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap",
+                                  display: "flex", alignItems: "center", gap: 4 }}>
+                                <span>💬</span><span>Send Confirmation</span>
+                              </button>
+                              <button title="Copy message (paste in WhatsApp manually)"
+                                onClick={(e) => {
+                                  const msg = "Dear Customer,\nYour order has been marked as delivered according to the tracking update.\nPlease kindly check and inspect your item. If you have any issues or concerns, please contact us within 2 days of delivery so we can help you as quickly as possible.\nThank you for your purchase and for choosing ROS. We are always happy to assist you.\nThank you 😊";
+                                  copyWAMessage(s, msg, e.currentTarget);
+                                }}
+                                style={copyBtnStyle}>📋</button>
+                            </div>
                           )}
                         </div>
                       ) : (s.ful || s.status) === "FULFILLED" ? (
