@@ -560,7 +560,8 @@ export default function SalesPanel({
   const IN_CARRIERS = ["Speed Post","DTDC","Other"];
   const CARRIERS = shopId === "ros-india" ? IN_CARRIERS : UK_CARRIERS;
 
-  const trackingURL = (carrier, trackNo) => {
+  const trackingURL = (carrier, trackNoRaw) => {
+    const trackNo = (trackNoRaw || "").replace(/\s+/g, "");
     switch((carrier||"").toLowerCase()){
       case "royal mail":   return `https://www.royalmail.com/track-your-item#/tracking-results/${trackNo}`;
       case "evri":         return `https://www.evri.com/track/${trackNo}`;
