@@ -1236,6 +1236,8 @@ const ReturnsPortal=()=>{
   const urlShop=new URLSearchParams(window.location.search).get("shop")||"";
   const shopNames={"ros-selections":"ROS Selections","ros-hairlines":"ROS Hairlines","ros-india":"ROS India"};
   const portalShopName=shopNames[urlShop]||"ROS";
+  const portalShop=SHOPS.find(x=>x.id===urlShop);
+  const portalHeaderBg=portalShop?portalShop.cardBg:"linear-gradient(135deg,#166534,#15803d)";
   const [loading,setLoading]=React.useState(false);
   const [generatedId,setGeneratedId]=React.useState("");
   const [errorMsg,setErrorMsg]=React.useState("");
@@ -1401,8 +1403,8 @@ const ReturnsPortal=()=>{
     <div style={{minHeight:"100vh",background:"linear-gradient(135deg,#f8fafc,#f1f5f9)",display:"flex",alignItems:"center",justifyContent:"center",padding:20,fontFamily:"system-ui,sans-serif"}}>
       <div style={{background:"white",borderRadius:20,boxShadow:"0 20px 60px rgba(0,0,0,0.08)",maxWidth:480,width:"100%",overflow:"hidden"}}>
         {/* Header */}
-        <div style={{background:"linear-gradient(135deg,#166534,#15803d)",padding:"28px 32px 24px"}}>
-          <p style={{margin:"0 0 4px",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.08em"}}>ROS Selections</p>
+        <div style={{background:portalHeaderBg,padding:"28px 32px 24px"}}>
+          <p style={{margin:"0 0 4px",fontSize:11,fontWeight:700,color:"rgba(255,255,255,0.7)",textTransform:"uppercase",letterSpacing:"0.08em"}}>{portalShopName}</p>
           <h1 style={{margin:"0 0 4px",fontSize:22,fontWeight:800,color:"white"}}>↩️ Return Request</h1>
           <p style={{margin:0,fontSize:13,color:"rgba(255,255,255,0.8)"}}>14-day return window · Please complete all fields</p>
         </div>
