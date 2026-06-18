@@ -6320,6 +6320,7 @@ return(
             const indiaStatuses=[
               {key:"ALL",                        label:"All",         emoji:"🗂️"},
               {key:"To Order",           label:"To Order",  emoji:"🕐"},
+              {key:"UNFULFILLED",         label:"Unfulfilled",emoji:"⏳"},
               {key:"IN PROGRESS",           label:"In Progress", emoji:"🔧"},
               {key:"PHOTO GIVEN TO CUSTOMER",    label:"Photo Sent",  emoji:"📸"},
               {key:"Tracking Rqd",    label:"Awaiting",    emoji:"📦"},
