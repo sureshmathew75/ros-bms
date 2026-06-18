@@ -1752,23 +1752,16 @@ const RETURN_STATUS_STYLE={
 };
 
 // WhatsApp message templates
-const MSG_REMINDER = (customer, retId, hardDeadline, shopName) =>
-`Dear ${customer},
+const MSG_REMINDER = (customer, retId, hardDeadline) =>
+`Dear ${customer}, we noticed we have not received your return item yet for return request *${retId}*.
 
-We hope you are well.
+As a courtesy, we are extending your return window by a further 7 days. *We must receive your item by ${hardDeadline}* — not just dispatched, but physically received by us by this date.
 
-We noticed that we have not yet received the item relating to your return request *${retId}*.
+If we do not receive the item by this date, unfortunately we will be unable to process your return request.
 
-As a gesture of goodwill, we would like to kindly extend your return period by an additional 7 days. Please ensure that the item is physically received by us on or before *${hardDeadline}* (please note that dispatching the item before this date will not be sufficient; it must arrive with us by the deadline).
+If you have already dispatched the item, please share your tracking number with us so we can monitor it.
 
-If we do not receive the item by this date, we are sorry that we may not be able to proceed with your return request.
-
-If you have already sent the item back, we would appreciate it if you could share the tracking details with us so that we can keep an eye on its progress and assist you if required.
-
-Thank you very much for your cooperation and understanding. We truly appreciate your support.
-
-Kind regards,
-${shopName || "ROS Selections"}`;
+Thank you 😊`;
 
 const MSG_RECEIVED = (customer, retId) =>
 `Dear ${customer},
@@ -2353,18 +2346,6 @@ Thank you for shopping with ROS.`,
                 const e164=clean.startsWith("0")?"44"+clean.slice(1):clean;
                 window.open("https://wa.me/"+e164+"?text="+encodeURIComponent(msg),"_blank","noopener,noreferrer");
               };
-              const copyWA=async(phone,msg,btnEl)=>{
-                const text=(phone?`📞 ${phone}\n\n`:"")+msg;
-                try{ await navigator.clipboard.writeText(text); }
-                catch{
-                  const ta=document.createElement("textarea");
-                  ta.value=text; ta.style.position="fixed"; ta.style.opacity="0";
-                  document.body.appendChild(ta); ta.select();
-                  try{ document.execCommand("copy"); }catch{}
-                  document.body.removeChild(ta);
-                }
-                if(btnEl){ const p=btnEl.textContent; btnEl.textContent="✓"; setTimeout(()=>{btnEl.textContent=p;},1200); }
-              };
 
               const handleQuickAction=async(newStatus)=>{
                 const today=new Date().toISOString().slice(0,10);
@@ -2404,12 +2385,7 @@ Thank you for shopping with ROS.`,
                   const hardDeadlineStr = hardDeadlineDate ? hardDeadlineDate.toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}) : "";
                   const hardDeadlineFmt = hardDeadlineDate ? `${String(hardDeadlineDate.getDate()).padStart(2,"0")}/${String(hardDeadlineDate.getMonth()+1).padStart(2,"0")}` : "";
                   const isWindowClosed = hardDeadlineDate && today0 > hardDeadlineDate;
-                  // Deadline shown to customer matches the visible "days left" badge (returnDeadline)
-                  const reminderDeadlineStr = ret.returnDeadline
-                    ? new Date(ret.returnDeadline).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"})
-                    : hardDeadlineStr;
-                  // Show when badge shows 7 or fewer days left, not yet reminded, window still open
-                  const showReminder = !ret.reminderSentAt && days <= 7 && !isWindowClosed;
+                  const showReminder = !ret.reminderSentAt && daysSinceInstr >= 6 && !isWindowClosed;
 
                   return(
                     <div style={{display:"flex",flexDirection:"column",gap:4}}>
@@ -2423,7 +2399,7 @@ Thank you for shopping with ROS.`,
                       {showReminder&&(
                         <button onClick={async e=>{e.stopPropagation();
                           if(!window.confirm("Send reminder to "+ret.customer+"?"))return;
-                          openWA(ret.phone, MSG_REMINDER(ret.customer, ret.id, reminderDeadlineStr, shop.name));
+                          openWA(ret.phone, MSG_REMINDER(ret.customer, ret.id, hardDeadlineStr));
                           const today2=new Date().toISOString().slice(0,10);
                           const updated={...ret, reminderSentAt:today2};
                           await dbSaveReturn(updated);
@@ -2432,16 +2408,6 @@ Thank you for shopping with ROS.`,
                           background:"#fef2f2",color:"#dc2626",fontSize:10,fontWeight:700,
                           cursor:"pointer",whiteSpace:"nowrap"}}>
                           🔔 Send Reminder
-                        </button>
-                      )}
-                      {showReminder&&(
-                        <button title="Copy reminder message (paste in WhatsApp manually)"
-                          onClick={e=>{e.stopPropagation();
-                            copyWA(ret.phone, MSG_REMINDER(ret.customer, ret.id, reminderDeadlineStr, shop.name), e.currentTarget);
-                          }}
-                          style={{padding:"4px 8px",borderRadius:7,border:"1px solid #e2e8f0",
-                            background:"white",color:"#64748b",fontSize:12,cursor:"pointer",whiteSpace:"nowrap"}}>
-                          📋
                         </button>
                       )}
                       {ret.reminderSentAt&&(
@@ -3469,51 +3435,6 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
         </div>
       </div>
 
-      {/* Summary cards — cash actually paid (ignore filters) */}
-      {(()=>{
-        const netTotalOf=p=>(Number(p.total)||0)+(Number(p.gst)||0);
-        // Cash actually paid: no advance = paid in full; advance with balance owed = advance only; balance cleared = full
-        const paidOf=p=>{
-          const adv=Number(p.advancePaid)||0;
-          const bal=Number(p.balanceDue)||0;
-          if(adv>0&&bal>0) return adv;        // part-paid: count advance only
-          return netTotalOf(p);                // no advance, or balance cleared: count full
-        };
-        const now=new Date();
-        const curY=now.getFullYear(), curM=now.getMonth();
-        // Financial year start: Apr (month index 3). Before Apr → FY started previous calendar year.
-        const fyStartYear=curM>=3?curY:curY-1;
-        const fyStart=new Date(fyStartYear,3,1);
-        const fyEnd=new Date(fyStartYear+1,2,31,23,59,59);
-        let mTot=0,yTot=0,lTot=0;
-        (purch||[]).forEach(p=>{
-          const v=paidOf(p); lTot+=v;
-          if(!p.date)return;
-          const d=new Date(p.date);
-          if(isNaN(d))return;
-          if(d.getFullYear()===curY&&d.getMonth()===curM) mTot+=v;
-          if(d>=fyStart&&d<=fyEnd) yTot+=v;
-        });
-        const fyLabel=`FY ${String(fyStartYear).slice(2)}/${String(fyStartYear+1).slice(2)}`;
-        const cards=[
-          {label:"This Month · Paid",sub:now.toLocaleDateString("en-GB",{month:"long",year:"numeric"}),val:mTot},
-          {label:"This Financial Year · Paid",sub:fyLabel,val:yTot},
-          {label:"Lifetime · Paid",sub:`${purch.length} purchase${purch.length!==1?"s":""}`,val:lTot},
-        ];
-        return(
-          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(180px,1fr))",gap:12,padding:"14px 20px 0"}}>
-            {cards.map(c=>(
-              <div key={c.label} style={{background:"white",border:"1px solid #f1f5f9",borderRadius:14,
-                padding:"14px 16px",boxShadow:"0 1px 3px rgba(0,0,0,0.05)",borderTop:"3px solid "+shop.accent}}>
-                <p style={{margin:0,fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em"}}>{c.label}</p>
-                <p style={{margin:"6px 0 2px",fontSize:22,fontWeight:900,color:"#0f172a",fontFamily:"DM Mono,monospace"}}>{fmt(shopId,c.val)}</p>
-                <p style={{margin:0,fontSize:11,color:"#94a3b8",fontWeight:600}}>{c.sub}</p>
-              </div>
-            ))}
-          </div>
-        );
-      })()}
-
       {/* Table */}
       <div style={{overflowX:"auto",position:"relative"}}>
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
@@ -3569,23 +3490,6 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
                   {/* Total */}
                   <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,color:"#0f172a",whiteSpace:"nowrap"}}>
                     {netTotal>0?fmt(shopId,netTotal):"—"}
-                    {shopId==="ros-india"&&(Number(p.advancePaid)||0)>0&&(()=>{
-                      const adv=Number(p.advancePaid)||0;
-                      const bal=Number(p.balanceDue)||0;
-                      return(
-                        <div style={{marginTop:3,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
-                          <span style={{fontSize:10,color:"#64748b",fontWeight:600,whiteSpace:"nowrap"}}>
-                            Adv {fmt(shopId,adv)} · Bal {fmt(shopId,bal)}
-                          </span>
-                          <span style={{fontSize:9,fontWeight:800,letterSpacing:"0.04em",padding:"2px 7px",borderRadius:6,whiteSpace:"nowrap",
-                            background:bal>0?"#fffbeb":"#f0fdf4",
-                            border:"1px solid "+(bal>0?"#fcd34d":"#86efac"),
-                            color:bal>0?"#b45309":"#166534"}}>
-                            {bal>0?"BALANCE DUE":"✓ FULLY PAID"}
-                          </span>
-                        </div>
-                      );
-                    })()}
                   </td>
                   {/* Pay By */}
                   <td style={{padding:"12px 16px",color:"#64748b",fontSize:12,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
@@ -5160,7 +5064,7 @@ const addSale = async (form) => {
     address:  form.address || "",
     qty:      form.qty || "1",
     item:     encodedItem,
-    ful:      form.status || (shopId==="ros-india" ? "To Order" : "UNFULFILLED"),
+    ful:      form.status || "PENDING",
     pay:      form.payBy || "SHOP",
     rem:      form.remarks || "",
     // Keep saleLines in memory object for immediate display
@@ -6411,8 +6315,7 @@ return(
           {tab==="sales"&&(()=>{
             const indiaStatuses=[
               {key:"ALL",                        label:"All",         emoji:"🗂️"},
-              {key:"UNFULFILLED",        label:"Unfulfilled", emoji:"⏳"},
-              {key:"To Order",           label:"Not Placed",  emoji:"🕐"},
+              {key:"To Order",           label:"To Order",  emoji:"🕐"},
               {key:"IN PROGRESS",           label:"In Progress", emoji:"🔧"},
               {key:"PHOTO GIVEN TO CUSTOMER",    label:"Photo Sent",  emoji:"📸"},
               {key:"Tracking Rqd",    label:"Awaiting",    emoji:"📦"},
@@ -6426,7 +6329,7 @@ return(
             ];
             const otherStatuses=[
               {key:"ALL",           label:"All",       emoji:"🗂️"},
-              {key:"UNFULFILLED",   label:"Unfulfilled", emoji:"⏳"},
+              {key:"PENDING",       label:"Pending",   emoji:"⏳"},
               {key:"FULFILLED",     label:"Fulfilled", emoji:"✅"},
               {key:"GOOD FEEDBACK", label:"Good FB",   emoji:"🌟"},
               {key:"RTRN REQSTD",   label:"Rtn Req",   emoji:"↩️"},
@@ -6844,15 +6747,15 @@ return(
               const current=(shopItems||{})[shopId]||[];
               if(current.includes(item)) return;
               dbAddShopItem(shopId,item).then(()=>{
-                dbLoadShopItems().then(data=>{if(data)saveShopItems({"ros-selections":data["ros-selections"]||[],"ros-hairlines":data["ros-hairlines"]||[],"ros-india":data["ros-india"]||[]});});
+                dbLoadShopItems().then(data=>{if(data)setShopItems({"ros-selections":data["ros-selections"]||[],"ros-hairlines":data["ros-hairlines"]||[],"ros-india":data["ros-india"]||[]});});
               });
               const updated={...(shopItems||{}),[shopId]:[...current,item]};
-              saveShopItems(updated);
+              setShopItems(updated);
             }}
             onDeleteShopItem={(item)=>{
               const current=(shopItems||{})[shopId]||[];
               const updated={...(shopItems||{}),[shopId]:current.filter(i=>i!==item)};
-              saveShopItems(updated); dbDeleteShopItem(shopId,item);
+              setShopItems(updated); dbDeleteShopItem(shopId,item);
             }}
           />
         </Modal>
@@ -7138,10 +7041,6 @@ return(
                   {l:"Amount",v:fmt(shopId,Number(viewPurchRow.total)||0)},
                   {l:"GST / VAT",v:fmt(shopId,Number(viewPurchRow.gst)||0)},
                   {l:"Net Total",v:fmt(shopId,(Number(viewPurchRow.total)||0)+(Number(viewPurchRow.gst)||0))},
-                  ...(shopId==="ros-india"&&(Number(viewPurchRow.advancePaid)||0)>0?[
-                    {l:"Advance Paid",v:fmt(shopId,Number(viewPurchRow.advancePaid)||0)},
-                    {l:"Balance Due",v:fmt(shopId,Number(viewPurchRow.balanceDue)||0)},
-                  ]:[]),
                   {l:"Unit Cost",v:viewPurchRow.qty&&viewPurchRow.total?fmt(shopId,((Number(viewPurchRow.total)||0)+(Number(viewPurchRow.gst)||0))/Number(viewPurchRow.qty)):"—"},
                   {l:"Payment By",v:viewPurchRow.payBy||viewPurchRow.pay_by||"—"},
                   {l:"Payment Date",v:viewPurchRow.payDate||viewPurchRow.pay_date||"—"},
@@ -7164,23 +7063,6 @@ return(
                   {fmt(shopId,(Number(viewPurchRow.total)||0)+(Number(viewPurchRow.gst)||0))}
                 </span>
               </div>
-
-              {/* Advance / Balance status — ros-india only */}
-              {shopId==="ros-india"&&(Number(viewPurchRow.advancePaid)||0)>0&&(()=>{
-                const bal=Number(viewPurchRow.balanceDue)||0;
-                return(
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",
-                    background:bal>0?"#fffbeb":"#f0fdf4",border:"1px solid "+(bal>0?"#fcd34d":"#86efac"),
-                    borderRadius:12,padding:"10px 16px",marginBottom:16}}>
-                    <span style={{fontSize:12,fontWeight:700,color:bal>0?"#b45309":"#166534"}}>
-                      {bal>0?"⏳ Balance Due":"✓ Fully Paid"}
-                    </span>
-                    <span style={{fontSize:16,fontWeight:900,color:bal>0?"#b45309":"#166534",fontFamily:"DM Mono,monospace"}}>
-                      {fmt(shopId,bal)}
-                    </span>
-                  </div>
-                );
-              })()}
 
               {/* Documents */}
               <DocUploadSection
@@ -9529,8 +9411,6 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
     qty:         "",
     total:       "",
     gst:         "",
-    advancePaid: "",
-    balanceDue:  "",
     payBy:       "HDFC SURESH",
     payDate:     new Date().toISOString().slice(0,10),
     logisticBy:  "",
@@ -9698,49 +9578,6 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
         <label style={{...lbl,color:"#94a3b8"}}>Unit Cost ({shop.symbol}) <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0}}>— auto calculated</span></label>
         <input readOnly value={unitCost} placeholder="Enter quantity and amount above" style={inpGray}/>
       </div>
-
-      {/* Advance / Balance — ros-india only */}
-      {shopId==="ros-india"&&(()=>{
-        const grand=(parseFloat(form.total)||0)+(parseFloat(form.gst)||0);
-        const adv=parseFloat(form.advancePaid)||0;
-        const autoBal=Math.max(grand-adv,0);
-        const balShown=form.balanceDue!==""&&form.balanceDue!=null?form.balanceDue:(adv>0?autoBal.toFixed(2):"");
-        return(
-          <div style={{marginBottom:16}}>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-              <div>
-                <label style={lbl}>Advance Paid ({shop.symbol})</label>
-                <input type="number" onWheel={e=>e.target.blur()} value={form.advancePaid}
-                  onChange={e=>{
-                    const v=e.target.value; set("advancePaid",v);
-                    // Auto-fill balance from grand total − advance
-                    const a=parseFloat(v)||0;
-                    set("balanceDue", a>0 ? Math.max(grand-a,0).toFixed(2) : "");
-                  }}
-                  placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
-              </div>
-              <div>
-                <label style={lbl}>Balance Due ({shop.symbol}) <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0,color:"#94a3b8"}}>auto · editable</span></label>
-                <input type="number" onWheel={e=>e.target.blur()} value={balShown}
-                  onChange={e=>set("balanceDue",e.target.value)}
-                  placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
-              </div>
-            </div>
-            {adv>0&&(
-              <div style={{marginTop:8,display:"inline-flex",alignItems:"center",gap:5,
-                background:(parseFloat(balShown)||0)>0?"#fffbeb":"#f0fdf4",
-                border:"1px solid "+((parseFloat(balShown)||0)>0?"#fcd34d":"#86efac"),
-                borderRadius:7,padding:"4px 10px"}}>
-                <span style={{fontSize:11,fontWeight:700,color:(parseFloat(balShown)||0)>0?"#b45309":"#166534"}}>
-                  {(parseFloat(balShown)||0)>0
-                    ? `⏳ Advance paid · ${shop.symbol}${(parseFloat(balShown)||0).toLocaleString()} balance due`
-                    : `✓ Fully paid`}
-                </span>
-              </div>
-            )}
-          </div>
-        );
-      })()}
 
       {/* PAYMENT */}
       <Divider title="Payment"/>
@@ -10105,7 +9942,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     paidBy:      "",
     trackingNo:  "",
     dispatchFrom: shopId==="ros-india" ? "India-Unit1" : "",
-    status:      shopId==="ros-india" ? "To Order" : "UNFULFILLED",
+    status:      shopId==="ros-india" ? "To Order" : "PENDING",
     sentDate:    "",
     returnReqDate: "",
     returnRcvd:  "",
