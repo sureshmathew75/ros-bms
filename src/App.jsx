@@ -5038,7 +5038,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
       (s.tag||"").toLowerCase().includes(q)||
       (s.rem||"").toLowerCase().includes(q)||
       (s.item||"").toLowerCase().includes(q);
-    const matchStatus=statusFilter==="ALL"||(s.ful||s.status||"")===statusFilter;
+    const matchStatus=statusFilter==="ALL"||(s.ful||s.status||"").toUpperCase()===statusFilter.toUpperCase();
     return matchSearch&&matchStatus;
   });
 
