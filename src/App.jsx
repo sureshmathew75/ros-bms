@@ -1238,6 +1238,8 @@ const ReturnsPortal=()=>{
   const portalShopName=shopNames[urlShop]||"ROS";
   const portalShop=SHOPS.find(x=>x.id===urlShop);
   const portalHeaderBg=portalShop?portalShop.cardBg:"linear-gradient(135deg,#166534,#15803d)";
+  const portalPolicies={"ros-selections":"https://rosselections.com/policies/refund-policy","ros-hairlines":"https://roshairlines.com/policies/refund-policy","ros-india":"https://rosindiafashion.com/policies/refund-policy"};
+  const portalPolicyUrl=portalPolicies[urlShop]||"https://rosselections.com/policies/refund-policy";
   const [loading,setLoading]=React.useState(false);
   const [generatedId,setGeneratedId]=React.useState("");
   const [errorMsg,setErrorMsg]=React.useState("");
@@ -1470,7 +1472,7 @@ const ReturnsPortal=()=>{
 
           <p style={{margin:"16px 0 0",fontSize:11,color:"#94a3b8",textAlign:"center",lineHeight:1.5}}>
             By submitting this form you confirm the item is unused, unworn and in its original packaging.<br/>
-            <a href="https://rosselections.com/policies/refund-policy" target="_blank" rel="noreferrer" style={{color:"#166534"}}>View our full returns policy</a>
+            <a href={portalPolicyUrl} target="_blank" rel="noreferrer" style={{color:"#166534"}}>View our full returns policy</a>
           </p>
         </div>
       </div>
