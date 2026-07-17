@@ -339,6 +339,7 @@ export default function SalesPanel({
   TD,
   user,
   isStaff,
+  isSuperadmin,
   statusFilter,
   setStatusFilter,
   statusTabs,
@@ -364,7 +365,7 @@ export default function SalesPanel({
   // Column visibility — persisted in localStorage globally
   const COL_DEFAULTS = {
     "Invoice":true,"Date":true,"Customer":true,"Item":true,
-    "Amount":true,"Refund":false,"Payment":true,"Status":true,
+    "Amount":true,"Verified":true,"Refund":false,"Payment":true,"Status":true,
     "Tags":false,"Pur. Amount":true,"Tracking":true,
     "Delivered":true,"Informed":false,"From":true,"Actions":true,
   };
@@ -1181,7 +1182,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
             <thead>
               <tr style={{ background: "#f8fafc" }}>
-                {["Invoice", "Date", "Customer", "Item", "Amount", "Refund", "Payment", "Status", "Tags",
+                {["Invoice", "Date", "Customer", "Item", "Amount", ...(shopId==="ros-india" ? ["Verified"] : []), "Refund", "Payment", "Status", "Tags",
                   ...(shopId==="ros-india"&&!isStaff ? ["Pur. Amount"] : []),
                   "Tracking", "Delivered", "Informed", "From", "Actions"]
                   .filter(h => h==="Actions" || showCol(h))
@@ -1509,6 +1510,25 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                         </div>
                       )}
                     </td>
+
+                    {shopId==="ros-india" && (
+                    <td style={{ padding: "8px 6px", textAlign: "center" }} onClick={e => e.stopPropagation()}>
+                      <span
+                        onClick={() => { if (isSuperadmin && onInlineEdit) onInlineEdit(s.id, { verified: !s.verified }); }}
+                        title={s.verified ? "Verified" : (isSuperadmin ? "Mark as verified" : "Not verified")}
+                        style={{
+                          display: "inline-flex", alignItems: "center", justifyContent: "center",
+                          width: 20, height: 20, borderRadius: 5, fontSize: 13, fontWeight: 900, lineHeight: 1,
+                          cursor: isSuperadmin ? "pointer" : "default",
+                          color: s.verified ? "#16a34a" : "#cbd5e1",
+                          border: s.verified ? "1px solid #86efac" : "1px solid #e2e8f0",
+                          background: s.verified ? "#f0fdf4" : "transparent",
+                          userSelect: "none"
+                        }}
+                      >✓</span>
+                    </td>
+                    )}
+
                     {showCol("Refund")&&(
                     <td style={{ padding: "8px 10px", textAlign: "right" }}>
                       {Math.max(Number(s.adjAmt)||0,Number(s.refundAmt)||0)>0 ? (

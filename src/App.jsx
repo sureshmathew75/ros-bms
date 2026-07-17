@@ -1496,7 +1496,7 @@ const ReturnTrackingPortal=()=>{
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const fileRef=React.useRef(null);
 
-  const COURIERS=["Royal Mail","Evri","DPD","Parcelforce","DHL","UPS","Other"];
+  const COURIERS=["Royal Mail","Evri","DPD","Parcelforce","DHL","UPS","FedEx","Other"];
 
   const SB_URL="https://fssyvdxqtruacauwygjj.supabase.co";
   const SB_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzc3l2ZHhxdHJ1YWNhdXd5Z2pqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0MDYwODQsImV4cCI6MjA4ODk4MjA4NH0.O8Mp89s2AXCZyvykzLmpiUeC34Hl4LV3NtLgzffJRY4";
@@ -2058,7 +2058,7 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
               <label style={lbl}>Courier</label>
               <select value={form.courier} onChange={e=>set("courier",e.target.value)} style={inp} disabled={isClosed}>
                 <option value="">— Select —</option>
-                {["Royal Mail","Evri","DPD","Parcelforce","DHL","UPS","Other"].map(c=><option key={c}>{c}</option>)}
+                {["Royal Mail","Evri","DPD","Parcelforce","DHL","UPS","FedEx","Other"].map(c=><option key={c}>{c}</option>)}
               </select>
             </div>
           </div>
@@ -6372,6 +6372,7 @@ return(
                 TD={TD}
                 user={user}
                 isStaff={user?.role==="staff"}
+                isSuperadmin={user?.role==="superadmin"}
                 statusRowBg={STATUS_ROW_BG}
                 statusFilter={statusFilter}
                 setStatusFilter={setStatusFilter}

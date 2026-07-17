@@ -78,7 +78,7 @@ export const dbSaveSale = async (shopId, sale) => {
     tag:                 String(sale.tag || ''),
   };
 
-  const payload = { ...core, ...extended };
+  const payload = { ...core, ...extended, verified: sale.verified || false };
 
   // Check if record already exists
   const { data: existing } = await sb.from('sales')
