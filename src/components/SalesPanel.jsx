@@ -1391,6 +1391,9 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ fontWeight: 700, fontSize: 13, color: "#0f172a", textTransform: "uppercase" }}>{s.customer}</div>
                       {s.phone && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>{s.phone}</div>}
+                      {s.paidBy && String(s.paidBy).trim() !== "" && (
+                        <div style={{ fontSize: 10, color: "#b6c0cd", marginTop: 1 }}>{s.paidBy}</div>
+                      )}
                     </td>
                     {/* Item */}
                     <td style={{ padding: "12px 16px" }}>
