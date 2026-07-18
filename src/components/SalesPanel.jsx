@@ -1518,14 +1518,15 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                         title={s.verified ? "Verified" : (isSuperadmin ? "Mark as verified" : "Not verified")}
                         style={{
                           display: "inline-flex", alignItems: "center", justifyContent: "center",
-                          width: 20, height: 20, borderRadius: 5, fontSize: 13, fontWeight: 900, lineHeight: 1,
+                          width: 20, height: 20, borderRadius: "50%", fontSize: 12, fontWeight: 900, lineHeight: 1,
                           cursor: isSuperadmin ? "pointer" : "default",
-                          color: s.verified ? "#16a34a" : "#cbd5e1",
-                          border: s.verified ? "1px solid #86efac" : "1px solid #e2e8f0",
-                          background: s.verified ? "#f0fdf4" : "transparent",
+                          color: s.verified ? "#ffffff" : "#94a3b8",
+                          border: s.verified ? "1px solid #15803d" : "1px solid #cbd5e1",
+                          background: s.verified ? "#16a34a" : "#ffffff",
+                          boxShadow: s.verified ? "0 1px 2px rgba(0,0,0,0.15)" : "none",
                           userSelect: "none"
                         }}
-                      >✓</span>
+                      >{s.verified ? "✓" : "✕"}</span>
                     </td>
                     )}
 
