@@ -184,6 +184,7 @@ export const dbLoadSales = async (shopId) => {
     deliveryDate:      r.delivery_date || '',
     deliveryInformed:  r.delivery_informed || false,
     deliveryTime:  r.delivery_time || '',
+    verified:      r.verified || false,
   }));
   return mapped.sort((a, b) => parseDateMs(b.date) - parseDateMs(a.date));
 };
