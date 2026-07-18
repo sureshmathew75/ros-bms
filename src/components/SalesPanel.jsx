@@ -1514,7 +1514,14 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                     {shopId==="ros-india" && (
                     <td style={{ padding: "8px 6px", textAlign: "center" }} onClick={e => e.stopPropagation()}>
                       <span
-                        onClick={() => { if (isSuperadmin && onInlineEdit) onInlineEdit(s.id, { verified: !s.verified }); }}
+                        onClick={() => {
+                          if (!isSuperadmin || !onInlineEdit) return;
+                          if (s.verified) {
+                            const inv = s.invoiceNo || s.id || "";
+                            if (!window.confirm("Remove verification for " + inv + "?")) return;
+                          }
+                          onInlineEdit(s.id, { verified: !s.verified });
+                        }}
                         title={s.verified ? "Verified" : (isSuperadmin ? "Mark as verified" : "Not verified")}
                         style={{
                           display: "inline-flex", alignItems: "center", justifyContent: "center",
