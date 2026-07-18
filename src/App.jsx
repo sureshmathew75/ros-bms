@@ -6874,11 +6874,15 @@ return(
           <EditSaleForm
             shopId={shopId} shop={shop} sale={editRow} customers={customers} isStaff={user?.role==="staff"}
             onSave={(updated)=>{
+              // Merge over the existing sale so fields the form does not track
+              // (e.g. verified) are preserved on save
+              const existingSale=(sales||[]).find(x=>x.id===updated.id);
+              const merged={...(existingSale||{}),...updated};
               // Update UI instantly so sales list reflects new status immediately
               setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>x.id===updated.id?{...x,...updated}:x)}));
               setModal(null);setEditRow(null);
               // Persist to Supabase then reload to confirm sync
-              dbSaveSale(shopId,updated).then(()=>{
+              dbSaveSale(shopId,merged).then(()=>{
                 dbLoadSales(shopId).then(data=>{
                   if(data) setSalesData(prev=>({...prev,[shopId]:data.map(s=>{
                     if(!s) return s;
