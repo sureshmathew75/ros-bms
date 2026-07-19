@@ -1407,8 +1407,9 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                           color: "#94a3b8", letterSpacing: "0.03em", marginBottom: 2, whiteSpace: "nowrap"
                         }}>{fyCountMap[s.id]}</div>
                       )}
-                      <span style={{ fontFamily: "DM Mono,monospace", fontWeight: 700, fontSize: 12, color: accent }}>
-                        {s.id}
+                      <span style={{ fontFamily: "DM Mono,monospace", fontWeight: 700, fontSize: 12,
+                        color: (shopId!=="ros-india" || /^IND\d{6}$/.test(String(s.id||""))) ? accent : "#cbd5e1" }}>
+                        {(shopId!=="ros-india" || /^IND\d{6}$/.test(String(s.id||""))) ? s.id : "\u2014"}
                       </span>
                       {isInstalment && (
                         <div style={{ marginTop: 2 }}>

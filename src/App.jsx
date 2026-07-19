@@ -6744,6 +6744,7 @@ return(
         <Modal title="✨ New Sale" onClose={()=>setModal(null)} accent={shop.accent}>
           <NewSaleForm
             shopId={shopId} shop={shop}
+            isSuperadmin={user?.role==="superadmin"}
             onSave={addSale} onClose={()=>setModal(null)}
            lastInvoiceNum={0}
             customers={customers}
@@ -6872,7 +6873,7 @@ return(
       {modal==="edit-sale"&&editRow&&(
         <Modal title={"✏️ Edit Sale — "+editRow.id} onClose={()=>{setModal(null);setEditRow(null);}} accent={shop.accent}>
           <EditSaleForm
-            shopId={shopId} shop={shop} sale={editRow} customers={customers} isStaff={user?.role==="staff"}
+            shopId={shopId} shop={shop} sale={editRow} customers={customers} isStaff={user?.role==="staff"} isSuperadmin={user?.role==="superadmin"}
             onSave={(updated)=>{
               // Merge over the existing sale so fields the form does not track
               // (e.g. verified) are preserved on save
@@ -8612,11 +8613,14 @@ const TagPicker=({value,onChange,accent,accentBg,inp,fo,bl,lbl})=>{
   );
 };
 
-const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false})=>{
+const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,isSuperadmin=false})=>{
+  // ros-india: an id only counts as an assigned invoice number when it matches IND######
+  const _hasRealInv = shopId!=="ros-india" || /^IND\d{6}$/.test(String(sale.id||""));
   const [form,setForm]=useState({
     id:          sale.id||"",
     date:        sale.date||new Date().toISOString().slice(0,10),
-    invoiceNo:   sale.id||"",
+    invoiceNo:   _hasRealInv ? (sale.id||"") : "",
+    invAssigned: _hasRealInv,
     customer:    sale.customer||"",
     contact:     sale.phone||sale.contact||"",
     item:        sale.item||"",
@@ -8724,6 +8728,25 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false}
         <div><label style={lbl}>Date</label><input type="date" value={form.date} readOnly={isStaff} onChange={isStaff?undefined:e=>set("date",e.target.value)} style={{...inp,background:isStaff?"#f8fafc":"white",cursor:isStaff?"default":"auto"}} onFocus={fo} onBlur={bl}/></div>
         <div>
           <label style={lbl}>Invoice Number</label>
+          {shopId==="ros-india" && isSuperadmin && (
+            <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:6}}>
+              <button type="button" onClick={()=>{
+                const next=!form.invAssigned;
+                setForm(f=>({...f,invAssigned:next,invoiceNo:next?(f.invoiceNo||""):""}));
+                if(next) setInvoiceEditing(true); else setInvoiceEditing(false);
+              }} style={{
+                width:34,height:19,borderRadius:999,border:"none",cursor:"pointer",padding:0,position:"relative",
+                background:form.invAssigned?shop.accent:"#cbd5e1",transition:"background 0.15s"
+              }}>
+                <span style={{
+                  position:"absolute",top:2,left:form.invAssigned?17:2,width:15,height:15,borderRadius:"50%",
+                  background:"white",transition:"left 0.15s",boxShadow:"0 1px 2px rgba(0,0,0,0.2)"
+                }}/>
+              </button>
+              <span style={{fontSize:10,fontWeight:700,color:form.invAssigned?shop.accent:"#94a3b8"}}>Assign Invoice Number</span>
+            </div>
+          )}
+          {(shopId!=="ros-india" || form.invAssigned) ? (
           <div style={{display:"flex",gap:6}}>
             <input
               value={form.invoiceNo}
@@ -8746,6 +8769,9 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false}
               </button>
             )}
           </div>
+          ) : (
+            <div style={{...inp,background:"#f8fafc",color:"#94a3b8",fontFamily:"DM Mono,monospace",fontSize:12,display:"flex",alignItems:"center"}}>—</div>
+          )}
           {invoiceEditing&&!isStaff&&(
             <p style={{margin:"3px 0 0",fontSize:10,color:"#f59e0b",fontWeight:600}}>
               ⚠️ Changing the invoice number will update it permanently
@@ -9138,7 +9164,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false}
 
       </div>{/* end padding wrapper */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...form,id:form.invoiceNo||sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:parseFloat(form.discount)||0,otherCharges:parseFloat(form.otherCharges)||0,otherChargesLabel:form.otherChargesLabel||"Other Charges",contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""})}
+        <button onClick={()=>onSave({...form,id:(form.invAssigned&&form.invoiceNo)?form.invoiceNo:sale.id,ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:parseFloat(form.discount)||0,otherCharges:parseFloat(form.otherCharges)||0,otherChargesLabel:form.otherChargesLabel||"Other Charges",contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
@@ -9903,7 +9929,7 @@ const AddTabInput=({onAdd,accent})=>{
   );
 };
 
-const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,onDeleteShopItem,customers=[],sales=[]})=>{
+const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,onDeleteShopItem,customers=[],sales=[],isSuperadmin=false})=>{
   const defaultPay = shopId === "ros-india" ? "SIB" : "SHOP";
   const PAY_OPTIONS = shopId === "ros-india" ? ["SIB","HDFC","SHOP"] : ["BANK","SHOP","EXCHANGE","GIFT","PROMOTION"];
   const _now=new Date();
@@ -9938,7 +9964,9 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
 
   const [form,setForm]=useState({
     date:        new Date().toISOString().slice(0,10),
-    invoiceNo:   autoInv,
+    // ros-india: no invoice number until a superadmin assigns one
+    invoiceNo:   shopId==="ros-india" ? "" : autoInv,
+    invAssigned: shopId==="ros-india" ? false : true,
     invEditing:  false,
     customer:    "",
     contact:     "",
@@ -10015,7 +10043,32 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
                 <div><label style={lbl}>Date</label><input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
                 <div><label style={lbl}>Invoice No.</label>
+                  {shopId==="ros-india" && !isSuperadmin ? (
+                    <div style={{...inp,background:"#f8fafc",color:"#94a3b8",fontFamily:"DM Mono,monospace",fontSize:10,display:"flex",alignItems:"center"}}>{form.invAssigned&&form.invoiceNo?form.invoiceNo:"\u2014"}</div>
+                  ) : (
+                  <>
+                  {shopId==="ros-india" && (
+                    <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:5}}>
+                      <button type="button" onClick={()=>{
+                        const next=!form.invAssigned;
+                        setForm(f=>({...f,invAssigned:next,invoiceNo:next?(f.invoiceNo||autoInv):"",invEditing:false}));
+                      }} style={{
+                        width:34,height:19,borderRadius:999,border:"none",cursor:"pointer",padding:0,position:"relative",
+                        background:form.invAssigned?shop.accent:"#cbd5e1",transition:"background 0.15s"
+                      }}>
+                        <span style={{
+                          position:"absolute",top:2,left:form.invAssigned?17:2,width:15,height:15,borderRadius:"50%",
+                          background:"white",transition:"left 0.15s",boxShadow:"0 1px 2px rgba(0,0,0,0.2)"
+                        }}/>
+                      </button>
+                      <span style={{fontSize:10,fontWeight:700,color:form.invAssigned?shop.accent:"#94a3b8"}}>Assign Invoice Number</span>
+                    </div>
+                  )}
+                  {(shopId!=="ros-india" || form.invAssigned) && (
                   <div style={{display:"flex",gap:4}}><input value={form.invoiceNo} readOnly={!form.invEditing} onChange={e=>set("invoiceNo",e.target.value)} style={{...inp,flex:1,background:form.invEditing?"white":"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:10,color:shop.accent}} onFocus={fo} onBlur={bl}/><button onClick={()=>set("invEditing",!form.invEditing)} style={{width:28,height:28,borderRadius:7,cursor:"pointer",border:"1px solid #e2e8f0",background:"#f8fafc",fontSize:11,display:"flex",alignItems:"center",justifyContent:"center"}}>{form.invEditing?"✓":"✏️"}</button></div>
+                  )}
+                  </>
+                  )}
                 </div>
               </div>
             </div>
