@@ -665,6 +665,42 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
     [sortedSales, showFYSep, showMonSep]
   );
 
+  /* ── FY sale counter: "MAY 01/031" (monthly/yearly, resets 1 April) ──
+     Computed from the full shop sales list (not the filtered view), so the
+     numbers stay correct in Month view and renumber automatically when a
+     back-dated sale is inserted. Display only - never written to the DB. */
+  const FY_MONTHS = ["JAN","FEB","MAR","APR","MAY","JUN","JUL","AUG","SEP","OCT","NOV","DEC"];
+  const fyCountMap = useMemo(() => {
+    const map = {};
+    const byFY = {};
+    (sales || []).forEach(s => {
+      const fy = fyStartYear(s);
+      if (fy === null || fy === undefined) return;
+      (byFY[fy] = byFY[fy] || []).push(s);
+    });
+    Object.keys(byFY).forEach(fy => {
+      const list = byFY[fy].slice().sort((a, b) => {
+        const da = safeParseDate(a.date), db = safeParseDate(b.date);
+        const ta = da && !isNaN(da.getTime()) ? da.getTime() : 0;
+        const tb = db && !isNaN(db.getTime()) ? db.getTime() : 0;
+        if (ta !== tb) return ta - tb;
+        return String(a.invoiceNo || a.id || "").localeCompare(String(b.invoiceNo || b.id || ""));
+      });
+      let yearly = 0, monthly = 0, lastMonthKey = null;
+      list.forEach(s => {
+        const d = safeParseDate(s.date);
+        const valid = d && !isNaN(d.getTime());
+        const mk = valid ? (d.getFullYear() + "-" + d.getMonth()) : "na";
+        if (mk !== lastMonthKey) { monthly = 0; lastMonthKey = mk; }
+        yearly++; monthly++;
+        const mon = valid ? FY_MONTHS[d.getMonth()] : "";
+        map[s.id] = (mon ? mon + " " : "") +
+          String(monthly).padStart(2, "0") + "/" + String(yearly).padStart(3, "0");
+      });
+    });
+    return map;
+  }, [sales]);
+
   /* ── Period range label ─────────────────────────────────────────────── */
   const rangeLabel = (() => {
     if (pickedMonth) {
@@ -1365,6 +1401,12 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                     }}>
                     {/* Invoice */}
                     <td style={{ padding: "12px 16px" }}>
+                      {fyCountMap[s.id] && (
+                        <div style={{
+                          fontFamily: "DM Mono,monospace", fontSize: 9, fontWeight: 700,
+                          color: "#94a3b8", letterSpacing: "0.03em", marginBottom: 2, whiteSpace: "nowrap"
+                        }}>{fyCountMap[s.id]}</div>
+                      )}
                       <span style={{ fontFamily: "DM Mono,monospace", fontWeight: 700, fontSize: 12, color: accent }}>
                         {s.id}
                       </span>
