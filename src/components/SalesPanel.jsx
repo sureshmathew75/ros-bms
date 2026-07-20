@@ -929,7 +929,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                     Full View
                   </button>
                   <button onClick={()=>{
-                    const quick={...COL_DEFAULTS,Refund:false,Payment:false,Tags:false,"Pur. Amount":false,Informed:false,From:false};
+                    const quick={...COL_DEFAULTS,Verified:true,Refund:false,Payment:false,Tags:false,"Pur. Amount":false,Informed:false,From:false};
                     setColVis(quick);try{localStorage.setItem("ros_col_vis",JSON.stringify(quick));}catch{}
                   }} style={{flex:1,padding:"4px 0",borderRadius:6,border:"1px solid #e2e8f0",
                     background:"#f8fafc",color:"#374151",fontSize:11,fontWeight:600,cursor:"pointer"}}>
@@ -937,7 +937,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                   </button>
                 </div>
                 {/* Column toggles */}
-                {["Invoice","Date","Customer","Item","Amount","Refund","Payment","Status","Tags","Pur. Amount","Tracking","Delivered","Informed","From"].map(col=>(
+                {["Invoice","Date","Customer","Item","Amount",...(shopId==="ros-india"?["Verified"]:[]),"Refund","Payment","Status","Tags","Pur. Amount","Tracking","Delivered","Informed","From"].map(col=>(
                   <label key={col} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 4px",
                     cursor:"pointer",borderRadius:6,fontSize:12,color:"#374151"}}
                     onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
@@ -1408,8 +1408,8 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                         }}>{fyCountMap[s.id]}</div>
                       )}
                       <span style={{ fontFamily: "DM Mono,monospace", fontWeight: 700, fontSize: 12,
-                        color: (shopId!=="ros-india" || /^IND\d{6}$/.test(String(s.id||""))) ? accent : "#cbd5e1" }}>
-                        {(shopId!=="ros-india" || /^IND\d{6}$/.test(String(s.id||""))) ? s.id : "\u2014"}
+                        color: (shopId!=="ros-india" || !String(s.id||"").includes("-")) ? accent : "#cbd5e1" }}>
+                        {(shopId!=="ros-india" || !String(s.id||"").includes("-")) ? s.id : "\u2014"}
                       </span>
                       {isInstalment && (
                         <div style={{ marginTop: 2 }}>
