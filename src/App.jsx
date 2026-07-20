@@ -5107,7 +5107,8 @@ const addSale = async (form) => {
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
 
   const setSalesPeriod=(p)=>{
-    if(user?.role==="staff"&&(p==="year"||p==="lifetime"))return;
+    // ros-india staff may view Year and Lifetime; UK staff remain restricted
+    if(user?.role==="staff"&&shopId!=="ros-india"&&(p==="year"||p==="lifetime"))return;
     setSalesPeriodRaw(p);
   };
   const showPdf=(inv)=>{setPdfInv(inv);setPdfMode(true);};
