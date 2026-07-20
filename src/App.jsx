@@ -2115,7 +2115,7 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
   );
 };
 
-const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,onSyncSaleStatus,salesData={}})=>{
+const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,onSyncSaleStatus,salesData={},pushDeleted})=>{
   const [filter,setFilter]=React.useState("ACTIVE");
 
   // Flatten all sales for delivery date lookup
@@ -2608,6 +2608,7 @@ Thank you for shopping with ROS.`,
                   color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
               <button onClick={async()=>{
                 const ids=[...selected];
+                if(pushDeleted)ids.forEach(id=>{const r=returns.find(x=>x.id===id);if(r)pushDeleted("return",{...r});});
                 await Promise.all(ids.map(id=>dbDeleteReturn(id)));
                 setReturns(prev=>prev.filter(r=>!ids.includes(r.id)));
                 setSelected(new Set());
@@ -2645,6 +2646,7 @@ Thank you for shopping with ROS.`,
               </button>
               <button onClick={async()=>{
                 const id=confirmDelete.id;
+                if(pushDeleted)pushDeleted("return",{...confirmDelete});
                 setConfirmDelete(null);
                 await dbDeleteReturn(id);
                 setReturns(prev=>prev.filter(r=>r.id!==id));
@@ -3614,7 +3616,7 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
 /* ═══════════════════════════════════════════════════════════
    EXPENSES TAB PANEL
    ═══════════════════════════════════════════════════════════ */
-const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCats})=>{
+const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCats,pushDeleted})=>{
   const [showForm,setShowForm]=React.useState(false);
   const [editExp,setEditExp]=React.useState(null);
   const [search,setSearch]=React.useState("");
@@ -3656,6 +3658,7 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
   };
 
   const handleDelete=async(e)=>{
+    if(pushDeleted)pushDeleted("expense",{...e});
     await dbDeleteExpense(e.uuid||e.id,shopId);
     setExpData(prev=>prev.filter(x=>(x.uuid||x.id)!==(e.uuid||e.id)));
     setConfirmDelete(null);
@@ -4936,6 +4939,47 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [returns,setReturns]=useState([]);
   const [returnsLoaded,setReturnsLoaded]=useState(false);
 
+  // ── Undo Delete: session-only stack of recently deleted records ──
+  const [deletedStack,setDeletedStack]=useState([]);
+  const pushDeleted=(type,record)=>{
+    if(!record)return;
+    setDeletedStack(prev=>[{type,record,ts:Date.now()},...prev].slice(0,20));
+  };
+  const [undoing,setUndoing]=useState(false);
+  const undoDelete=async()=>{
+    if(deletedStack.length===0||undoing)return;
+    const top=deletedStack[0];
+    setUndoing(true);
+    setDeletedStack(prev=>prev.slice(1));
+    try{
+      const {type,record}=top;
+      if(type==="sale"){
+        await dbSaveSale(shopId,record);
+        setSalesData(prev=>({...prev,[shopId]:[record,...(prev[shopId]||[]).filter(x=>x.id!==record.id)]}));
+      }else if(type==="customer"){
+        await dbSaveCustomer(shopId,record);
+        setCustomers(prev=>[record,...prev.filter(x=>x.id!==record.id)]);
+      }else if(type==="purchase"){
+        await dbSavePurchase(shopId,record);
+        setPurchData(prev=>[record,...prev.filter(x=>(x.uuid||x.id)!==(record.uuid||record.id))]);
+      }else if(type==="expense"){
+        await dbSaveExpense(shopId,record);
+        setExpData(prev=>[record,...prev.filter(x=>(x.uuid||x.id)!==(record.uuid||record.id))]);
+      }else if(type==="logistic"){
+        await dbSaveLogistic(shopId,record);
+        setLogData(prev=>[record,...prev.filter(x=>(x.uuid||x.id)!==(record.uuid||record.id))]);
+      }else if(type==="return"){
+        await dbSaveReturn(record);
+        setReturns(prev=>[record,...prev.filter(x=>x.id!==record.id)]);
+      }
+    }catch(e){
+      console.error("Undo failed:",e);
+      alert("Undo failed — the item may not have been restored. Please check and try again.");
+      setDeletedStack(prev=>[top,...prev]);
+    }
+    setUndoing(false);
+  };
+
   // Load messages + returns on tab open or dashboard
   React.useEffect(()=>{
     if((tab==="fulfilment"||tab==="dashboard")&&!messagesLoaded){
@@ -5524,6 +5568,21 @@ return(
                 onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.color="white";e.currentTarget.style.borderColor=shop.accent;}}
                 onMouseLeave={e=>{e.currentTarget.style.background=shop.accentBg;e.currentTarget.style.color=shop.accentText;e.currentTarget.style.borderColor=shop.accent+"44";}}>
                 🏪<span className="mob-hide"> All Shops</span>
+              </button>
+            )}
+            {/* Undo Delete — visible only when something was recently deleted this session */}
+            {deletedStack.length>0&&(
+              <button onClick={undoDelete} disabled={undoing}
+                title={"Undo last delete ("+deletedStack.length+" available)"}
+                style={{display:"flex",alignItems:"center",gap:6,
+                  padding:"7px 14px",borderRadius:10,
+                  border:"1px solid #fca5a5",
+                  background:"#fef2f2",
+                  color:"#b91c1c",fontSize:12,fontWeight:700,
+                  cursor:undoing?"default":"pointer",fontFamily:"inherit",
+                  opacity:undoing?0.6:1,
+                  transition:"all 0.15s",whiteSpace:"nowrap"}}>
+                ↩️<span className="mob-hide"> Undo Delete ({deletedStack.length})</span>
               </button>
             )}
             {/* Notification bell */}
@@ -6443,6 +6502,7 @@ return(
               onDelete={async(p)=>{
                 if(!window.confirm("Delete purchase "+(p.id||p.purchase_ref||"")+"? This cannot be undone."))return;
                 const uuid=p.uuid||p.id;
+                pushDeleted("purchase",{...p});
                 await dbDeletePurchase(uuid,shopId);
                 setPurchData(prev=>prev.filter(x=>(x.uuid||x.id)!==uuid));
               }}
@@ -6457,7 +6517,7 @@ return(
 
           {/* ─── CUSTOMERS ─── */}
           {tab==="customers"&&(
-            <CustomersPanel Badge={Badge} customers={customers} search={search} shop={shop} setCustomers={setCustomers} user={user} dbDeleteCustomer={dbDeleteCustomer} sales={sales}/>
+            <CustomersPanel Badge={Badge} customers={customers} search={search} shop={shop} setCustomers={setCustomers} user={user} dbDeleteCustomer={dbDeleteCustomer} sales={sales} pushDeleted={pushDeleted}/>
           )}
 
           {/* ─── SUPPLIERS ─── */}
@@ -6487,6 +6547,7 @@ return(
               onDelete={async(l)=>{
                 if(!window.confirm("Delete shipment "+(l.id||"")+"? This cannot be undone."))return;
                 const uuid=l.uuid||l.id;
+                pushDeleted("logistic",{...l});
                 await dbDeleteLogistic(uuid,shopId);
                 setLogData(prev=>prev.filter(x=>(x.uuid||x.id)!==uuid));
               }}
@@ -6513,6 +6574,7 @@ return(
               setExpData={setExpData}
               expCats={expCats}
               setExpCats={setExpCats}
+              pushDeleted={pushDeleted}
             />
           )}
 
@@ -6564,6 +6626,7 @@ return(
               messages={messages}
               setMessages={setMessages}
               salesData={salesData}
+              pushDeleted={pushDeleted}
               onSyncSaleStatus={async (saleId, newStatus) => {
                 const allSales = Object.values(salesData).flat();
                 const sale = allSales.find(s => s.id === saleId);
@@ -8084,6 +8147,7 @@ return(
                     </button>
                     <button onClick={()=>{
                         const id=selRow.id;
+                        pushDeleted("sale",{...selRow});
                         setSalesData(prev=>({
                           ...prev,
                           [shopId]:(prev[shopId]||[]).filter(x=>x.id!==id)
@@ -9165,11 +9229,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
 
       </div>{/* end padding wrapper */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...form,id: (form.invAssigned && form.invoiceNo)
-  ? form.invoiceNo
-  : ( (shopId==="ros-india" && new Date(form.date||sale.date||0) >= new Date(2026,3,1) && !String(sale.id||"").includes("-"))
-      ? `IN-${Date.now().toString().slice(-6)}`
-      : sale.id ),ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:parseFloat(form.discount)||0,otherCharges:parseFloat(form.otherCharges)||0,otherChargesLabel:form.otherChargesLabel||"Other Charges",contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""})}
+        <button onClick={()=>onSave({...form,id:(form.invAssigned&&form.invoiceNo)?form.invoiceNo:((shopId==="ros-india"&&new Date(form.date||sale.date||0)>=new Date(2026,3,1)&&!String(sale.id||"").includes("-"))?`IN-${Date.now().toString().slice(-6)}`:sale.id),ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:parseFloat(form.discount)||0,otherCharges:parseFloat(form.otherCharges)||0,otherChargesLabel:form.otherChargesLabel||"Other Charges",contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""})}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
@@ -10346,7 +10406,7 @@ const CustomerEditModal=({customer,shop,onSave,onClose})=>{
 };
 
 /* ── CustomersPanel ── */
-const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCustomer,sales=[]})=>{
+const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCustomer,sales=[],pushDeleted})=>{
   const [viewCust,setViewCust]=useState(null);
   const [editCust,setEditCust]=useState(null);
   const [delCust,setDelCust]=useState(null);   // customer staged for deletion
@@ -10521,6 +10581,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                   ← Cancel
                 </button>
                 <button onClick={()=>{
+                    if(pushDeleted)pushDeleted("customer",{...delCust});
                     setCustomers(prev=>prev.filter(x=>x.id!==delCust.id));
                     if(dbDeleteCustomer) dbDeleteCustomer(delCust.id);
                     setDelCust(null);
