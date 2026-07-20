@@ -362,6 +362,9 @@ export default function SalesPanel({
   const [showReport,     setShowReport]     = useState(false);
   const [showColMenu,    setShowColMenu]    = useState(false);
 
+  // ROS India: staff sessions receive shopId "ros-india-staff", so match both
+  const isIndiaShop = shopId === "ros-india" || shopId === "ros-india-staff";
+
   // Column visibility — persisted in localStorage globally
   const COL_DEFAULTS = {
     "Invoice":true,"Date":true,"Customer":true,"Item":true,
@@ -540,7 +543,7 @@ export default function SalesPanel({
   /* ── Carrier config ─────────────────────────────────────────────────── */
   const UK_CARRIERS = ["Royal Mail","Evri","DPD","UPS","Parcelforce","Other"];
   const IN_CARRIERS = ["Speed Post","DTDC","Other"];
-  const CARRIERS = shopId === "ros-india" ? IN_CARRIERS : UK_CARRIERS;
+  const CARRIERS = isIndiaShop ? IN_CARRIERS : UK_CARRIERS;
 
   const trackingURL = (carrier, trackNo) => {
     switch((carrier||"").toLowerCase()){
@@ -937,7 +940,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                   </button>
                 </div>
                 {/* Column toggles */}
-                {["Invoice","Date","Customer","Item","Amount",...(shopId==="ros-india"?["Verified"]:[]),"Refund","Payment","Status","Tags","Pur. Amount","Tracking","Delivered","Informed","From"].map(col=>(
+                {["Invoice","Date","Customer","Item","Amount",...(isIndiaShop?["Verified"]:[]),"Refund","Payment","Status","Tags","Pur. Amount","Tracking","Delivered","Informed","From"].map(col=>(
                   <label key={col} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 4px",
                     cursor:"pointer",borderRadius:6,fontSize:12,color:"#374151"}}
                     onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
@@ -1218,8 +1221,8 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
           <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
             <thead>
               <tr style={{ background: "#f8fafc" }}>
-                {["Invoice", "Date", "Customer", "Item", "Amount", ...(shopId==="ros-india" ? ["Verified"] : []), "Refund", "Payment", "Status", "Tags",
-                  ...(shopId==="ros-india"&&!isStaff ? ["Pur. Amount"] : []),
+                {["Invoice", "Date", "Customer", "Item", "Amount", ...(isIndiaShop ? ["Verified"] : []), "Refund", "Payment", "Status", "Tags",
+                  ...(isIndiaShop&&!isStaff ? ["Pur. Amount"] : []),
                   "Tracking", "Delivered", "Informed", "From", "Actions"]
                   .filter(h => h==="Actions" || showCol(h))
                   .map((h, i) => (
@@ -1408,8 +1411,8 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                         }}>{fyCountMap[s.id]}</div>
                       )}
                       <span style={{ fontFamily: "DM Mono,monospace", fontWeight: 700, fontSize: 12,
-                        color: (shopId!=="ros-india" || !String(s.id||"").includes("-")) ? accent : "#cbd5e1" }}>
-                        {(shopId!=="ros-india" || !String(s.id||"").includes("-")) ? s.id : "\u2014"}
+                        color: (!isIndiaShop || !String(s.id||"").includes("-")) ? accent : "#cbd5e1" }}>
+                        {(!isIndiaShop || !String(s.id||"").includes("-")) ? s.id : "\u2014"}
                       </span>
                       {isInstalment && (
                         <div style={{ marginTop: 2 }}>
@@ -1557,7 +1560,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                       )}
                     </td>
 
-                    {shopId==="ros-india" && (
+                    {isIndiaShop && (
                     <td style={{ padding: "8px 6px", textAlign: "center" }} onClick={e => e.stopPropagation()}>
                       <span
                         onClick={() => {
@@ -1602,7 +1605,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                     )}
                     {showCol("Payment")&&(
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
-                      <Badge l={(shopId==="ros-india"&&(s.pay==="BANK"||s.pay==="SIB"))?"SIB":(s.pay||"SHOP")} />
+                      <Badge l={(isIndiaShop&&(s.pay==="BANK"||s.pay==="SIB"))?"SIB":(s.pay||"SHOP")} />
                       {(s.pay === "SHOP" || !s.pay) && s.shopInvoiceNo && (
                         <div style={{
                           fontSize: 10, fontFamily: "DM Mono,monospace",
@@ -1658,7 +1661,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                     </td>
                     )}
                     {/* Pur. Amount — ROS INDIA only */}
-                    {shopId==="ros-india"&&!isStaff&&showCol("Pur. Amount")&&(
+                    {isIndiaShop&&!isStaff&&showCol("Pur. Amount")&&(
                       <td style={{ padding: "12px 16px", textAlign: "right" }}>
                         {s.purInvNo ? (
                           <span style={{
@@ -1831,7 +1834,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                     )}
                     {/* Dispatch From */}
                     {(()=>{
-                      const defaultFrom = shopId === "ros-india" ? "India-Unit1" : "UK";
+                      const defaultFrom = isIndiaShop ? "India-Unit1" : "UK";
                       const current = s.dispatchFrom || defaultFrom;
                       const isIndia = current.startsWith("India");
                       const isDefaultIndia = defaultFrom.startsWith("India");
@@ -1848,7 +1851,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                               }
                               const changes = { dispatchFrom: newVal };
                               // ROS India Unit 2 → default status UNFULFILLED
-                              if (shopId === "ros-india" && newVal === "India-Unit2") {
+                              if (isIndiaShop && newVal === "India-Unit2") {
                                 changes.ful = "UNFULFILLED";
                                 changes.status = "UNFULFILLED";
                               }
@@ -1861,7 +1864,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                               background: isCross ? "#fff7ed" : "#f8fafc",
                               color: isCross ? "#c2410c" : "#64748b",
                             }}>
-                            {shopId === "ros-india" ? (<>
+                            {isIndiaShop ? (<>
                               <option value="India-Unit1">🇮🇳 India · Unit 1</option>
                               <option value="India-Unit2">🇮🇳 India · Unit 2</option>
                               <option value="UK">🇬🇧 UK</option>
@@ -1937,10 +1940,10 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
           PENDING REPORT MODAL
          ══════════════════════════════════════════════════════════ */}
       {showReport && (() => {
-        const UNFULFILLED = shopId === "ros-india"
+        const UNFULFILLED = isIndiaShop
           ? ["To Order","IN PROGRESS","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","Tracking Rqd","UNFULFILLED"]
           : ["PENDING"];
-        const ALL_STATUSES = shopId === "ros-india"
+        const ALL_STATUSES = isIndiaShop
           ? ["To Order","IN PROGRESS","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","Tracking Rqd","UNFULFILLED","PENDING"]
           : ["PENDING","PROCESSING","ON HOLD","AWAITING PAYMENT"];
 
@@ -1953,7 +1956,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
           return Math.floor((today - d) / 86400000);
         };
 
-        const defaultFrom = shopId === "ros-india" ? "India-Unit1" : "UK";
+        const defaultFrom = isIndiaShop ? "India-Unit1" : "UK";
 
         const INST_TAGS_R = ["Advance Sale", "Part Payment", "Final Payment Sale"];
         // Build instalment groups — split by each Advance Sale date per customer
@@ -2025,11 +2028,11 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
         });
 
         const unitLabel = rptUnit === "India-Unit1" ? "Unit 1" : rptUnit === "India-Unit2" ? "Unit 2" : null;
-        const reportTitle = shopId === "ros-india"
+        const reportTitle = isIndiaShop
           ? (unitLabel ? `ROS India — ${unitLabel} Dispatch Report` : "ROS India — Pending Dispatch Report")
           : "ROS UK — Pending Dispatch Report";
 
-        const shopLabel = shopId === "ros-india" ? "ROS India · INR" :
+        const shopLabel = isIndiaShop ? "ROS India · INR" :
           shopId === "ros-hairlines" ? "ROS Hairlines UK · GBP" : "ROS Selections UK · GBP";
 
         const fmtD = d => {
@@ -2160,7 +2163,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                   </button>
                 ))}
                 <div style={{width:1,height:20,background:"#e2e8f0"}}/>
-                {shopId==="ros-india"&&(<>
+                {isIndiaShop&&(<>
                   <div style={{width:1,height:20,background:"#e2e8f0"}}/>
                   <span style={{fontSize:11,color:"#64748b",fontWeight:600}}>Unit:</span>
                   {[["ALL","All Units"],["India-Unit1","Unit 1"],["India-Unit2","Unit 2"]].map(([val,lbl])=>(
