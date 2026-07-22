@@ -1163,15 +1163,15 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
               display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
               padding: "0 14px", border: "none", borderLeft: "1px solid #f1f5f9",
               borderRight: "1px solid #f1f5f9",
-              background: flaggedOnly ? "#fef3c7" : "#f8fafc",
-              color: flaggedOnly ? "#b45309" : "#92400e",
+              background: flaggedOnly ? "#fee2e2" : "#f8fafc",
+              color: "#b91c1c",
               cursor: "pointer", fontFamily: "inherit",
               fontWeight: flaggedOnly ? 800 : 600, fontSize: 12,
             }}>
             🚩 <span>Flagged</span>
             <span style={{
-              background: flaggedOnly ? "#d97706" : "#fde68a",
-              color: flaggedOnly ? "white" : "#92400e",
+              background: flaggedOnly ? "#dc2626" : "#fecaca",
+              color: flaggedOnly ? "white" : "#b91c1c",
               borderRadius: 999, padding: "1px 7px",
               fontSize: 10, fontWeight: 800, lineHeight: "16px",
             }}>{flaggedCount}</span>
@@ -1245,21 +1245,21 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
         <div style={{
           display: "flex", alignItems: "center", gap: 10,
           padding: "9px 14px", marginBottom: 12,
-          background: "#fffbeb", borderRadius: 11,
-          border: "1px solid #fde68a",
+          background: "#fef2f2", borderRadius: 11,
+          border: "1px solid #fecaca",
         }}>
-          <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#d97706", flexShrink: 0 }} />
-          <span style={{ fontSize: 12, fontWeight: 800, color: "#b45309", textTransform: "uppercase", letterSpacing: "0.07em" }}>
+          <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#dc2626", flexShrink: 0 }} />
+          <span style={{ fontSize: 12, fontWeight: 800, color: "#b91c1c", textTransform: "uppercase", letterSpacing: "0.07em" }}>
             🚩 Flagged for Recheck
           </span>
-          <span style={{ fontSize: 12, color: "#b45309", opacity: 0.65 }}>
+          <span style={{ fontSize: 12, color: "#b91c1c", opacity: 0.65 }}>
             — {sortedSales.length} record{sortedSales.length !== 1 ? "s" : ""}
           </span>
           <button onClick={() => setFlaggedOnly(false)}
             style={{
               marginLeft: "auto", fontSize: 11, fontWeight: 700,
-              color: "#b45309", background: "white",
-              border: "1px solid #fde68a",
+              color: "#b91c1c", background: "white",
+              border: "1px solid #fecaca",
               borderRadius: 7, padding: "3px 10px",
               cursor: "pointer", fontFamily: "inherit",
             }}>
@@ -1447,7 +1447,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                 const ful = s.ful || s.status || "PENDING";
                 const isH = hovR === s.id;
                 const mergedRowBg = { ...STATUS_ROW_BG, ...(statusRowBgProp || {}) };
-                const rowBg = isH ? `${accent}10` : (s.flagged ? "#fef3c7" : (isInstalment ? instBg : (mergedRowBg[ful] || "white")));
+                const rowBg = isH ? `${accent}10` : (s.flagged ? "#fef2f2" : (isInstalment ? instBg : (mergedRowBg[ful] || "white")));
 
                 return (
                   <tr key={s.id}
@@ -1458,7 +1458,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                       background: rowBg, cursor: "pointer",
                       borderBottom: "1px solid #e2e8f0",
                       transition: "background 0.12s",
-                      borderLeft: s.flagged ? "3px solid #d97706" : (isInstalment ? `3px solid ${instColor}` : "3px solid transparent"),
+                      borderLeft: s.flagged ? "3px solid #dc2626" : (isInstalment ? `3px solid ${instColor}` : "3px solid transparent"),
                     }}>
                     {/* Invoice */}
                     <td style={{ padding: "12px 16px" }}>
@@ -1479,9 +1479,9 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                             marginTop: 2, display: "inline-flex", alignItems: "center", gap: 3,
                             fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999,
                             cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.05em",
-                            background: s.flagged ? "#d97706" : "transparent",
-                            color: s.flagged ? "white" : "#cbd5e1",
-                            border: s.flagged ? "1px solid #b45309" : "1px dashed #cbd5e1",
+                            background: s.flagged ? "#dc2626" : "#16a34a",
+                            color: "white",
+                            border: s.flagged ? "1px solid #b91c1c" : "1px solid #15803d",
                           }}>
                           🚩{s.flagged ? " Recheck" : ""}
                         </div>
@@ -1489,7 +1489,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                         <div style={{
                           marginTop: 2, display: "inline-flex", alignItems: "center", gap: 3,
                           fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999,
-                          background: "#d97706", color: "white",
+                          background: "#dc2626", color: "white",
                           textTransform: "uppercase", letterSpacing: "0.05em",
                         }}>
                           🚩 Recheck
