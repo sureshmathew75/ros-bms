@@ -328,6 +328,7 @@ export default function SalesPanel({
   setEditRow,
   setInvoiceRow,
   setModal,
+  setExportRows,
   setOpenMenu,
   setSalesData,
   setSearch,
@@ -891,7 +892,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
             }}>
             ⬇ Import
           </button>
-          <button onClick={() => setModal("export-sales")}
+          <button onClick={() => { if (setExportRows) setExportRows(periodSales); setModal("export-sales"); }}
             style={{
               display: "flex", alignItems: "center", gap: 6,
               padding: "8px 14px", borderRadius: 9, border: "1px solid #e2e8f0",
@@ -1483,7 +1484,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                             color: "white",
                             border: s.flagged ? "1px solid #b91c1c" : "1px solid #15803d",
                           }}>
-                          🚩{s.flagged ? " Recheck" : ""}
+                          {s.flagged ? "Recheck" : "Verified"}
                         </div>
                       ) : (s.flagged && (
                         <div style={{
@@ -1492,7 +1493,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                           background: "#dc2626", color: "white",
                           textTransform: "uppercase", letterSpacing: "0.05em",
                         }}>
-                          🚩 Recheck
+                          Recheck
                         </div>
                       ))}
                       {isInstalment && (

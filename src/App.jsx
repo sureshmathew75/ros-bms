@@ -4899,6 +4899,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [modal,setModal]=useState(null);
   const [selRow,setSelRow]=useState(null);
   const [confirmDelete,setConfirmDelete]=useState(false);
+  const [exportRows,setExportRows]=useState(null);
   const [editRow,setEditRow]=useState(null);
   const [selCustomer,setSelCustomer]=useState(null);
   const [openMenu,setOpenMenu]=useState(null);
@@ -6414,6 +6415,7 @@ return(
                 openMenu={openMenu}
                 onImport={()=>setModal("import-sales")}
                 onExport={()=>setModal("export-sales")}
+                setExportRows={setExportRows}
                 onReload={handleReloadSales}
                 search={search}
                 sales={sales}
@@ -6860,8 +6862,8 @@ return(
 
       {/* ── EXPORT MODAL — SALES ── */}
       {modal==="export-sales"&&user?.role!=="staff"&&(
-        <Modal title="⬆ Export Sales" onClose={()=>setModal(null)} accent={shop.accent}>
-          <ImportExportPanel type="export" entity="Sales" shop={shop} shopId={shopId} data={sales} onClose={()=>setModal(null)}/>
+        <Modal title="⬆ Export Sales" onClose={()=>{setModal(null);setExportRows(null);}} accent={shop.accent}>
+          <ImportExportPanel type="export" entity="Sales" shop={shop} shopId={shopId} data={exportRows||sales} onClose={()=>{setModal(null);setExportRows(null);}}/>
         </Modal>
       )}
 
