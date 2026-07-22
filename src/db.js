@@ -76,6 +76,9 @@ export const dbSaveSale = async (shopId, sale) => {
     other_charges_label: String(sale.otherChargesLabel || 'Other Charges'),
     re:                  String(sale.re || ''),
     tag:                 String(sale.tag || ''),
+    flagged:             sale.flagged ? true : false,
+    checked:             sale.checked ? true : false,
+    sortpos:             sale.sortpos !== undefined && sale.sortpos !== null ? Number(sale.sortpos) : null,
   };
 
   const payload = { ...core, ...extended, verified: sale.verified || false };
@@ -185,6 +188,9 @@ export const dbLoadSales = async (shopId) => {
     deliveryInformed:  r.delivery_informed || false,
     deliveryTime:  r.delivery_time || '',
     verified:      r.verified || false,
+    flagged:       r.flagged || false,
+    checked:       r.checked || false,
+    sortpos:       r.sortpos !== undefined && r.sortpos !== null ? Number(r.sortpos) : null,
   }));
   return mapped.sort((a, b) => parseDateMs(b.date) - parseDateMs(a.date));
 };
