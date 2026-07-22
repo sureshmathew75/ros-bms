@@ -351,6 +351,21 @@ export default function SalesPanel({
   onMarkDeliveryInformed,
 }) {
   const [hovR,    setHovR]    = useState(null);
+  /* Drag-to-reorder (month view only) */
+  const [dragId, setDragId] = useState(null);
+  const [dragOverId, setDragOverId] = useState(null);
+  const handleReorderDrop = async (targetId) => {
+    const fromId = dragId;
+    setDragId(null); setDragOverId(null);
+    if (!fromId || fromId === targetId || !onInlineEdit) return;
+    const list = [...sortedSales];
+    const fromIdx = list.findIndex(x => x.id === fromId);
+    const toIdx = list.findIndex(x => x.id === targetId);
+    if (fromIdx === -1 || toIdx === -1) return;
+    const [moved] = list.splice(fromIdx, 1);
+    list.splice(toIdx, 0, moved);
+    await Promise.all(list.map((sale, idx) => onInlineEdit(sale.id, { sortpos: idx + 1 })));
+  };
   const [hovCard, setHovCard] = useState(null);
   const [hovTab,  setHovTab]  = useState(null);
   const [reloading, setReloading] = useState(false);
@@ -400,6 +415,8 @@ export default function SalesPanel({
   }, [showColMenu]);
   /* Month picker state */
   const [pickedMonth, setPickedMonth] = useState(null);   // "YYYY-MM" or null
+  /* Drag-to-reorder only makes sense once a single month is selected */
+  const reorderEnabled = isSuperadmin && !!pickedMonth;
   const [pickerOpen,  setPickerOpen]  = useState(false);
   const [pickerYear,  setPickerYear]  = useState(() => {
     // Default to FY start year — most historical sales live there
@@ -533,6 +550,13 @@ export default function SalesPanel({
   /* ── Sort: FY descending → date descending → invoice number descending ── */
   const sortedSales = useMemo(
     () => [...statusFiltered].sort((a, b) => {
+      // When viewing a single picked month, manual drag order (sortpos) wins
+      if (pickedMonth) {
+        const spA = a.sortpos, spB = b.sortpos;
+        if (spA != null && spB != null && spA !== spB) return spA - spB;
+        if (spA != null && spB == null) return -1;
+        if (spA == null && spB != null) return 1;
+      }
       // Primary: FY group (use fyStartYear which reads invoice suffix)
       const fyA = fyStartYear(a) ?? 0;
       const fyB = fyStartYear(b) ?? 0;
@@ -545,7 +569,7 @@ export default function SalesPanel({
       const numB = parseInt((b.id||"0").replace(/[^0-9]/g,""))||0;
       return numB - numA;
     }),
-    [statusFiltered]
+    [statusFiltered, pickedMonth]
   );
 
   /* ── Carrier config ─────────────────────────────────────────────────── */
@@ -694,6 +718,16 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
         const da = safeParseDate(a.date), db = safeParseDate(b.date);
         const ta = da && !isNaN(da.getTime()) ? da.getTime() : 0;
         const tb = db && !isNaN(db.getTime()) ? db.getTime() : 0;
+        // Group by calendar month first so reordering within a month never
+        // shuffles sales into a different month's bucket.
+        const ma = da && !isNaN(da.getTime()) ? da.getFullYear() * 12 + da.getMonth() : -1;
+        const mb = db && !isNaN(db.getTime()) ? db.getFullYear() * 12 + db.getMonth() : -1;
+        if (ma !== mb) return ma - mb;
+        // Within the same month: manual drag order (sortpos) wins if set
+        const spA = a.sortpos, spB = b.sortpos;
+        if (spA != null && spB != null && spA !== spB) return spA - spB;
+        if (spA != null && spB == null) return -1;
+        if (spA == null && spB != null) return 1;
         if (ta !== tb) return ta - tb;
         return String(a.invoiceNo || a.id || "").localeCompare(String(b.invoiceNo || b.id || ""));
       });
@@ -1447,22 +1481,34 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                 const isActuallyFullyPaid = balance !== null && balance <= 0 && hasFinalPayment;
                 const ful = s.ful || s.status || "PENDING";
                 const isH = hovR === s.id;
+                const isDragging = dragId === s.id;
+                const isDragOver = dragOverId === s.id && dragId && dragId !== s.id;
                 const mergedRowBg = { ...STATUS_ROW_BG, ...(statusRowBgProp || {}) };
                 const rowBg = isH ? `${accent}10` : (s.flagged ? "#fef2f2" : (isInstalment ? instBg : (mergedRowBg[ful] || "white")));
 
                 return (
                   <tr key={s.id}
+                    draggable={reorderEnabled}
+                    onDragStart={(e) => { if (!reorderEnabled) return; setDragId(s.id); e.dataTransfer.effectAllowed = "move"; }}
+                    onDragOver={(e) => { if (!reorderEnabled || !dragId) return; e.preventDefault(); if (dragOverId !== s.id) setDragOverId(s.id); }}
+                    onDragLeave={() => { if (dragOverId === s.id) setDragOverId(null); }}
+                    onDrop={(e) => { if (!reorderEnabled) return; e.preventDefault(); handleReorderDrop(s.id); }}
+                    onDragEnd={() => { setDragId(null); setDragOverId(null); }}
                     onClick={() => setSelRow(s)}
                     onMouseEnter={() => setHovR(s.id)}
                     onMouseLeave={() => setHovR(null)}
                     style={{
-                      background: rowBg, cursor: "pointer",
-                      borderBottom: "1px solid #e2e8f0",
+                      background: rowBg, cursor: reorderEnabled ? "grab" : "pointer",
+                      opacity: isDragging ? 0.4 : 1,
+                      borderBottom: isDragOver ? "2px dashed " + accent : "1px solid #e2e8f0",
                       transition: "background 0.12s",
                       borderLeft: s.flagged ? "3px solid #dc2626" : (isInstalment ? `3px solid ${instColor}` : "3px solid transparent"),
                     }}>
                     {/* Invoice */}
                     <td style={{ padding: "12px 16px" }}>
+                      {reorderEnabled && (
+                        <span title="Drag to reorder" style={{ marginRight: 6, color: "#cbd5e1", fontSize: 12, cursor: "grab" }}>⠿</span>
+                      )}
                       {fyCountMap[s.id] && (
                         <div style={{
                           fontFamily: "DM Mono,monospace", fontSize: 9, fontWeight: 700,
