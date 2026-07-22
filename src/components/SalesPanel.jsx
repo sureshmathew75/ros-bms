@@ -723,11 +723,14 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
         const ma = da && !isNaN(da.getTime()) ? da.getFullYear() * 12 + da.getMonth() : -1;
         const mb = db && !isNaN(db.getTime()) ? db.getFullYear() * 12 + db.getMonth() : -1;
         if (ma !== mb) return ma - mb;
-        // Within the same month: manual drag order (sortpos) wins if set
+        // Within the same month: manual drag order (sortpos) wins if set.
+        // Counting must run bottom-to-top of the on-screen (top-to-bottom
+        // ascending sortpos) order, so the LAST displayed row of the month
+        // is numbered 01 — same convention as the date-descending display.
         const spA = a.sortpos, spB = b.sortpos;
-        if (spA != null && spB != null && spA !== spB) return spA - spB;
-        if (spA != null && spB == null) return -1;
-        if (spA == null && spB != null) return 1;
+        if (spA != null && spB != null && spA !== spB) return spB - spA;
+        if (spA != null && spB == null) return 1;
+        if (spA == null && spB != null) return -1;
         if (ta !== tb) return ta - tb;
         return String(a.invoiceNo || a.id || "").localeCompare(String(b.invoiceNo || b.id || ""));
       });
