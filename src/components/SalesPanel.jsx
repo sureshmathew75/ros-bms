@@ -1169,7 +1169,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
               cursor: "pointer", fontFamily: "inherit",
               fontWeight: flaggedOnly ? 800 : 600, fontSize: 12,
             }}>
-            🚩 <span>Flagged</span>
+            🚩 <span>Recheck</span>
             <span style={{
               background: flaggedOnly ? "#dc2626" : "#fecaca",
               color: flaggedOnly ? "white" : "#b91c1c",
@@ -1251,7 +1251,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
         }}>
           <div style={{ width: 8, height: 8, borderRadius: "50%", background: "#dc2626", flexShrink: 0 }} />
           <span style={{ fontSize: 12, fontWeight: 800, color: "#b91c1c", textTransform: "uppercase", letterSpacing: "0.07em" }}>
-            🚩 Flagged for Recheck
+            🚩 Recheck
           </span>
           <span style={{ fontSize: 12, color: "#b91c1c", opacity: 0.65 }}>
             — {sortedSales.length} record{sortedSales.length !== 1 ? "s" : ""}
@@ -1473,29 +1473,44 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                         color: (!isIndiaShop || !String(s.id||"").includes("-")) ? accent : "#cbd5e1" }}>
                         {(!isIndiaShop || !String(s.id||"").includes("-")) ? s.id : "\u2014"}
                       </span>
-                      {isSuperadmin && onInlineEdit ? (
-                        <div onClick={(e) => { e.stopPropagation(); onInlineEdit(s.id, { flagged: !s.flagged }); }}
-                          title={s.flagged ? "Click to unflag" : "Flag for recheck"}
-                          style={{
+                      {(() => {
+                        const vState = s.flagged ? "recheck" : (s.checked ? "verified" : "pending");
+                        const vStyle = {
+                          pending:  { bg: "#6b7280", border: "#4b5563", label: "To Verify" },
+                          verified: { bg: "#16a34a", border: "#15803d", label: "Verified" },
+                          recheck:  { bg: "#dc2626", border: "#b91c1c", label: "Recheck" },
+                        }[vState];
+                        if (isSuperadmin && onInlineEdit) {
+                          const cycleNext = () => {
+                            if (vState === "pending")       onInlineEdit(s.id, { checked: true,  flagged: false });
+                            else if (vState === "verified") onInlineEdit(s.id, { checked: false, flagged: true  });
+                            else                             onInlineEdit(s.id, { checked: false, flagged: false });
+                          };
+                          return (
+                            <div onClick={(e) => { e.stopPropagation(); cycleNext(); }}
+                              title="Click to change verification status"
+                              style={{
+                                marginTop: 2, display: "inline-flex", alignItems: "center", gap: 3,
+                                fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999,
+                                cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.05em",
+                                background: vStyle.bg, color: "white",
+                                border: `1px solid ${vStyle.border}`,
+                              }}>
+                              {vStyle.label}
+                            </div>
+                          );
+                        }
+                        return vState !== "pending" && (
+                          <div style={{
                             marginTop: 2, display: "inline-flex", alignItems: "center", gap: 3,
                             fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999,
-                            cursor: "pointer", textTransform: "uppercase", letterSpacing: "0.05em",
-                            background: s.flagged ? "#dc2626" : "#16a34a",
-                            color: "white",
-                            border: s.flagged ? "1px solid #b91c1c" : "1px solid #15803d",
+                            background: vStyle.bg, color: "white",
+                            textTransform: "uppercase", letterSpacing: "0.05em",
                           }}>
-                          {s.flagged ? "Recheck" : "Verified"}
-                        </div>
-                      ) : (s.flagged && (
-                        <div style={{
-                          marginTop: 2, display: "inline-flex", alignItems: "center", gap: 3,
-                          fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999,
-                          background: "#dc2626", color: "white",
-                          textTransform: "uppercase", letterSpacing: "0.05em",
-                        }}>
-                          Recheck
-                        </div>
-                      ))}
+                            {vStyle.label}
+                          </div>
+                        );
+                      })()}
                       {isInstalment && (
                         <div style={{ marginTop: 2 }}>
                           <span style={{
