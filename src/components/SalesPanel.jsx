@@ -1999,11 +1999,6 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                                 if (!window.confirm("Change dispatch unit from '" + (currentVal==="India-Unit1"?"Unit 1":currentVal==="India-Unit2"?"Unit 2":currentVal) + "' to '" + (newVal==="India-Unit1"?"Unit 1":newVal==="India-Unit2"?"Unit 2":newVal) + "'?\n\nMake sure this is intentional.")) return;
                               }
                               const changes = { dispatchFrom: newVal };
-                              // ROS India Unit 2 → default status UNFULFILLED
-                              if (isIndiaShop && newVal === "India-Unit2") {
-                                changes.ful = "UNFULFILLED";
-                                changes.status = "UNFULFILLED";
-                              }
                               if (onInlineEdit) onInlineEdit(s.id, changes);
                             }}
                             style={{
@@ -2090,10 +2085,10 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
          ══════════════════════════════════════════════════════════ */}
       {showReport && (() => {
         const UNFULFILLED = isIndiaShop
-          ? ["To Order","IN PROGRESS","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","Tracking Rqd","UNFULFILLED"]
+          ? ["PENDING","IN PROGRESS"]
           : ["PENDING"];
         const ALL_STATUSES = isIndiaShop
-          ? ["To Order","IN PROGRESS","WORK IN PROGRESS","PHOTO GIVEN TO CUSTOMER","Tracking Rqd","UNFULFILLED","PENDING"]
+          ? ["PENDING","IN PROGRESS","FULFILLED","RETURN RQSTD","RETURN RCVD","EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]
           : ["PENDING","PROCESSING","ON HOLD","AWAITING PAYMENT"];
 
         // Use top-level state; init defaults on open

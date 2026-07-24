@@ -153,15 +153,12 @@ const BSTYLE={
   "RETRN RCVD":               {bg:"#fee2e2",c:"#991b1b",b:"#fca5a5"},
   "EXCHANGED":                {bg:"#e0e7ff",c:"#4338ca",b:"#c7d2fe"},
   "REFUNDED":                 {bg:"#f3e4ff",c:"#7e22ce",b:"#d8b4fe"},
-  // ── India-specific delivery statuses ──
-  "To Order":         {bg:"#fef9c3",c:"#a16207",b:"#fde047"},
-  "IN PROGRESS":         {bg:"#dbeafe",c:"#1d4ed8",b:"#bfdbfe"},
-  "PHOTO GIVEN TO CUSTOMER":  {bg:"#e0f2fe",c:"#0369a1",b:"#bae6fd"},
-  "Tracking Rqd":  {bg:"#fef3c7",c:"#92400e",b:"#fcd34d"},
-  "RETURN REQUESTED":         {bg:"#ffedd5",c:"#c2410c",b:"#fed7aa"},
-  "RETURN RECEIVED":          {bg:"#fee2e2",c:"#991b1b",b:"#fca5a5"},
-  "GOOD FEEDBACK RECEIVED":   {bg:"#d1fae5",c:"#065f46",b:"#6ee7b7"},
-  "NEGATIVE FEEDBACK RECEIVED":{bg:"#ffe4e6",c:"#9f1239",b:"#fda4af"},
+  // ── India-specific delivery statuses (simplified 9-status system) ──
+  "IN PROGRESS":              {bg:"#dbeafe",c:"#1d4ed8",b:"#bfdbfe"},
+  "RETURN RQSTD":             {bg:"#ffedd5",c:"#c2410c",b:"#fed7aa"},
+  "RETURN RCVD":              {bg:"#fee2e2",c:"#991b1b",b:"#fca5a5"},
+  "GOOD FEEDBACK RCVD":       {bg:"#d1fae5",c:"#065f46",b:"#6ee7b7"},
+  "NEGATIVE FEEDBACK RCVD":   {bg:"#ffe4e6",c:"#9f1239",b:"#fda4af"},
   // ── Legacy support ──
   "DISPATCHED":     {bg:"#e0e7ff",c:"#4338ca",b:"#c7d2fe"},
   "DELIVERED":      {bg:"#dcfce7",c:"#15803d",b:"#bbf7d0"},
@@ -191,14 +188,11 @@ const STATUS_ROW_BG={
   "EXCHANGED":                 "#eef2ff",
   "REFUNDED":                  "#faf5ff",
   // India-specific
-  "To Order":          "#fffbeb",
   "IN PROGRESS":          "#eff6ff",
-  "PHOTO GIVEN TO CUSTOMER":   "#f0f9ff",
-  "Tracking Rqd":   "#fffbeb",
-  "RETURN REQUESTED":          "#fff7ed",
-  "RETURN RECEIVED":           "#fef2f2",
-  "GOOD FEEDBACK RECEIVED":    "#ecfdf5",
-  "NEGATIVE FEEDBACK RECEIVED":"#fff1f2",
+  "RETURN RQSTD":          "#fff7ed",
+  "RETURN RCVD":           "#fef2f2",
+  "GOOD FEEDBACK RCVD":    "#ecfdf5",
+  "NEGATIVE FEEDBACK RCVD":"#fff1f2",
 };
 const Badge=({l})=>{
   const b=BSTYLE[l]||{bg:"#f1f5f9",c:"#475569",b:"#e2e8f0"};
@@ -264,8 +258,8 @@ const ShopLogo = ({ shopId, size = "card" }) => {
 /* ── Single source of truth for all shop stat figures ─────────────────────
    Defined BEFORE ShopSelector and ShopDashboard so both can call it.
 ────────────────────────────────────────────────────────────────────────── */
-const STAT_FULFILLED=new Set(["FULFILLED","EXCHANGED","REFUNDED","GOOD FEEDBACK","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]);
-const STAT_RETURNS  =new Set(["RTRN REQSTD","RETRN RCVD","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED"]);
+const STAT_FULFILLED=new Set(["FULFILLED","EXCHANGED","REFUNDED","GOOD FEEDBACK","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]);
+const STAT_RETURNS  =new Set(["RTRN REQSTD","RETRN RCVD","RETURN RQSTD","RETURN RCVD","EXCHANGED"]);
 
 /* ── getSaleFY: returns FY start year for a sale using invoice suffix as ground truth ── */
 const getSaleFY=(sale)=>{
@@ -3978,8 +3972,8 @@ const FulfilmentPanel=({salesData,shopId,shop,messages,setMessages,returns,setRe
     allSales.forEach(s=>{
       const status=(s.ful||s.status||"").toUpperCase();
       const isFulfilled=["FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD",
-        "EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED",
-        "RETURN REQUESTED","RETURN RECEIVED"].includes(status);
+        "EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD",
+        "RETURN RQSTD","RETURN RCVD"].includes(status);
       if(!isFulfilled)return;
 
       const hasDelivery=!!s.deliveryDate;
@@ -6380,18 +6374,15 @@ return(
           {tab==="sales"&&(()=>{
             const indiaStatuses=[
               {key:"ALL",                        label:"All",         emoji:"🗂️"},
-              {key:"To Order",           label:"To Order",  emoji:"🕐"},
-              {key:"UNFULFILLED",         label:"Unfulfilled",emoji:"⏳"},
-              {key:"IN PROGRESS",           label:"In Progress", emoji:"🔧"},
-              {key:"PHOTO GIVEN TO CUSTOMER",    label:"Photo Sent",  emoji:"📸"},
-              {key:"Tracking Rqd",    label:"Awaiting",    emoji:"📦"},
+              {key:"PENDING",                    label:"Pending",     emoji:"⏳"},
+              {key:"IN PROGRESS",                label:"In Progress", emoji:"🔧"},
               {key:"FULFILLED",                  label:"Fulfilled",   emoji:"✅"},
-              {key:"RETURN REQUESTED",           label:"Rtn Req",     emoji:"↩️"},
-              {key:"RETURN RECEIVED",            label:"Rtn Rcvd",    emoji:"📬"},
+              {key:"RETURN RQSTD",               label:"Rtn Rqstd",   emoji:"↩️"},
+              {key:"RETURN RCVD",                label:"Rtn Rcvd",    emoji:"📬"},
               {key:"EXCHANGED",                  label:"Exchanged",   emoji:"🔄"},
-              {key:"REFUNDED",                   label:"Refunded",    emoji:"💸"},
-              {key:"GOOD FEEDBACK RECEIVED",     label:"👍 Positive", emoji:"🌟"},
-              {key:"NEGATIVE FEEDBACK RECEIVED", label:"👎 Negative", emoji:"⚠️"},
+              {key:"REFUNDED",                    label:"Refunded",    emoji:"💸"},
+              {key:"GOOD FEEDBACK RCVD",         label:"👍 Positive", emoji:"🌟"},
+              {key:"NEGATIVE FEEDBACK RCVD",     label:"👎 Negative", emoji:"⚠️"},
             ];
             const otherStatuses=[
               {key:"ALL",           label:"All",       emoji:"🗂️"},
@@ -6446,8 +6437,8 @@ return(
                   const today = new Date().toISOString().slice(0,10);
                   const currentStatus = sale.ful || sale.status || "";
                   const isFulfilled = ["FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD",
-                    "EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED",
-                    "RETURN REQUESTED","RETURN RECEIVED"].includes(currentStatus);
+                    "EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD",
+                    "RETURN RQSTD","RETURN RCVD"].includes(currentStatus);
                   const updated = {
                     ...sale,
                     trackingNo,
@@ -8288,7 +8279,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
           const id=get(row,idxId)||("IMP-"+Date.now()+"-"+i);
           const amount=cleanNum(get(row,idxTotal))||cleanNum(get(row,idxPrice));
           const statusRaw=get(row,idxStatus);
-          const ful=statusRaw||(shopId==="ros-india"?"To Order":"PENDING");
+          const ful=statusRaw||"PENDING";
           imported.push({
             id, customer,
             date:        get(row,idxDate)||new Date().toISOString().slice(0,10),
@@ -8763,11 +8754,11 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
     </div>
   );
 
-  const isReturnRequested=["RETURN REQUESTED","RTRN REQSTD"].includes(form.status);
-  const isReturnReceived=["RETURN RECEIVED","RETRN RCVD"].includes(form.status);
+  const isReturnRequested=["RETURN RQSTD","RTRN REQSTD"].includes(form.status);
+  const isReturnReceived=["RETURN RCVD","RETRN RCVD"].includes(form.status);
   const isExchanged=form.status==="EXCHANGED";
   const isRefunded=form.status==="REFUNDED";
-  const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","To Order":"#a16207","IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","Tracking Rqd":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
+  const statusColor={"PENDING":"#a16207","IN PROGRESS":"#1d4ed8","FULFILLED":"#15803d","RETURN RQSTD":"#c2410c","RETURN RCVD":"#991b1b","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","GOOD FEEDBACK RCVD":"#065f46","NEGATIVE FEEDBACK RCVD":"#9f1239"};
   const PAY_OPTS = shopId==="ros-india" ? ["SIB","HDFC","SHOP"] : ["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
   const [editCustOpen,setEditCustOpen]=useState(false);
@@ -9055,7 +9046,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
           <select value={form.status} onChange={e=>set("status",e.target.value)}
             style={{...inp,fontWeight:700,color:statusColor[form.status]||"#374151"}}>
             {(shopId==="ros-india"
-              ? ["To Order","IN PROGRESS","PHOTO GIVEN TO CUSTOMER","Tracking Rqd","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED","GOOD FEEDBACK RECEIVED","NEGATIVE FEEDBACK RECEIVED"]
+              ? ["PENDING","IN PROGRESS","FULFILLED","RETURN RQSTD","RETURN RCVD","EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]
               : ["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]
             ).map(o=>(
               <option key={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>
@@ -10047,7 +10038,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     paidBy:      "",
     trackingNo:  "",
     dispatchFrom: shopId==="ros-india" ? "India-Unit1" : "",
-    status:      shopId==="ros-india" ? "To Order" : "PENDING",
+    status:      "PENDING",
     sentDate:    "",
     returnReqDate: "",
     returnRcvd:  "",
@@ -10072,10 +10063,10 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
   const Divider=({title})=>(<div style={{display:"flex",alignItems:"center",gap:8,margin:"6px 0 12px"}}><div style={{height:1,flex:1,background:"#f1f5f9"}}/><span style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap"}}>{title}</span><div style={{height:1,flex:1,background:"#f1f5f9"}}/></div>);
 
-  const isReturnRequested=["RETURN REQUESTED","RTRN REQSTD"].includes(form.status);
-  const isReturnReceived=["RETURN RECEIVED","RETRN RCVD"].includes(form.status);
+  const isReturnRequested=["RETURN RQSTD","RTRN REQSTD"].includes(form.status);
+  const isReturnReceived=["RETURN RCVD","RETRN RCVD"].includes(form.status);
   const isRefundOnly=["EXCHANGED","REFUNDED"].includes(form.status);
-  const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN REQUESTED":"#c2410c","RETURNED":"#9a3412","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","To Order":"#a16207","IN PROGRESS":"#1d4ed8","PHOTO GIVEN TO CUSTOMER":"#0369a1","Tracking Rqd":"#92400e","RETURN RECEIVED":"#991b1b","GOOD FEEDBACK RECEIVED":"#065f46","NEGATIVE FEEDBACK RECEIVED":"#9f1239"};
+  const statusColor={"PENDING":"#a16207","IN PROGRESS":"#1d4ed8","FULFILLED":"#15803d","RETURN RQSTD":"#c2410c","RETURN RCVD":"#991b1b","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","GOOD FEEDBACK RCVD":"#065f46","NEGATIVE FEEDBACK RCVD":"#9f1239"};
 
   const handleAddCustomer=(newCust)=>{setCustomerList(l=>[newCust,...l]);set("customer",newCust.name);set("contact",newCust.phone);setShowNewCust(false);};
   const updateLine=(id,key,val)=>setLines(ls=>ls.map(l=>l.id===id?{...l,[key]:val}:l));
@@ -10230,18 +10221,14 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 {shopId==="ros-india"&&(
                   <div><label style={lbl}>Dispatch Unit</label>
                     <select value={form.dispatchFrom} onChange={e=>{
-                      const v=e.target.value;
-                      set("dispatchFrom",v);
-                      // Auto-set status based on unit
-                      if(v==="India-Unit2") set("status","UNFULFILLED");
-                      else if(form.status==="UNFULFILLED") set("status","To Order");
+                      set("dispatchFrom",e.target.value);
                     }} style={inp}>
                       <option value="India-Unit1">🇮🇳 Unit 1 (Default)</option>
                       <option value="India-Unit2">🇮🇳 Unit 2</option>
                     </select>
                   </div>
                 )}
-                <div><label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["To Order","IN PROGRESS","FULFILLED","RETURN REQUESTED","RETURN RECEIVED","EXCHANGED","REFUNDED"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select></div>
+                <div><label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["PENDING","IN PROGRESS","FULFILLED","RETURN RQSTD","RETURN RCVD","EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select></div>
               </div>
               {form.payBy==="SHOP"&&(
                 <div style={{marginBottom:7}}><label style={lbl}>Shop Invoice No.</label><input value={form.shopInvoiceNo} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/></div>
@@ -10438,7 +10425,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
     (sales||[]).forEach(s=>{
       const phone=(s.phone||s.contact||"").replace(/\D/g,"").slice(-10);
       const status=(s.ful||s.status||"").toUpperCase();
-      const isRefund=status==="REFUNDED"||status==="RETRN RCVD"||status==="RETURN RECEIVED";
+      const isRefund=status==="REFUNDED"||status==="RETRN RCVD"||status==="RETURN RCVD";
       if(!phone)return;
       if(!map[phone])map[phone]={count:0,amount:0};
       if(isRefund){
