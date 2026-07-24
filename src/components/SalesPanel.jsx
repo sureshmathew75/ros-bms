@@ -1490,7 +1490,7 @@ Thank you for shopping with ROS. If you have any questions, feel free to contact
                 const isDragging = dragId === s.id;
                 const isDragOver = dragOverId === s.id && dragId && dragId !== s.id;
                 const mergedRowBg = { ...STATUS_ROW_BG, ...(statusRowBgProp || {}) };
-                const rowBg = isH ? `${accent}10` : (s.flagged ? "#fef2f2" : (isInstalment ? instBg : (mergedRowBg[ful] || "white")));
+                const rowBg = isH ? "#fde047" : (s.flagged ? "#fef2f2" : (isInstalment ? instBg : (mergedRowBg[ful] || "white")));
 
                 return (
                   <tr key={s.id}
