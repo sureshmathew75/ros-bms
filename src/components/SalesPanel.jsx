@@ -415,8 +415,10 @@ export default function SalesPanel({
   }, [showColMenu]);
   /* Month picker state */
   const [pickedMonth, setPickedMonth] = useState(null);   // "YYYY-MM" or null
-  /* Drag-to-reorder only makes sense once a single month is selected */
-  const reorderEnabled = isSuperadmin && !!pickedMonth;
+  /* Drag-to-reorder only makes sense when viewing a single month —
+     either the default "Month" tab (current month) or an explicitly
+     picked past month via the date picker. */
+  const reorderEnabled = isSuperadmin && (!!pickedMonth || salesPeriod === "month");
   const [pickerOpen,  setPickerOpen]  = useState(false);
   const [pickerYear,  setPickerYear]  = useState(() => {
     // Default to FY start year — most historical sales live there
@@ -550,8 +552,9 @@ export default function SalesPanel({
   /* ── Sort: FY descending → date descending → invoice number descending ── */
   const sortedSales = useMemo(
     () => [...statusFiltered].sort((a, b) => {
-      // When viewing a single picked month, manual drag order (sortpos) wins
-      if (pickedMonth) {
+      // Single-month view (current-month tab or an explicitly picked month):
+      // manual drag order (sortpos) wins
+      if (pickedMonth || salesPeriod === "month") {
         const spA = a.sortpos, spB = b.sortpos;
         if (spA != null && spB != null && spA !== spB) return spA - spB;
         if (spA != null && spB == null) return -1;
@@ -569,7 +572,7 @@ export default function SalesPanel({
       const numB = parseInt((b.id||"0").replace(/[^0-9]/g,""))||0;
       return numB - numA;
     }),
-    [statusFiltered, pickedMonth]
+    [statusFiltered, pickedMonth, salesPeriod]
   );
 
   /* ── Carrier config ─────────────────────────────────────────────────── */
