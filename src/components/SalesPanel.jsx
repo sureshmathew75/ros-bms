@@ -597,9 +597,10 @@ export default function SalesPanel({
     const url = trackingURL(carrier, trackNo);
     const carrierName = carrier || "our courier";
     const trackLine = url
-      ? `You can track your delivery here:
-🔗 ${url}`
+      ? `You can track your parcel here:
+${url}`
       : `Your tracking number is: ${trackNo}`;
+    const signOff = shop?.short ? `ROS ${shop.short}` : "ROS";
     return `Dear ${sale.customer||"Customer"},
 
 Your order has been dispatched! 📦
@@ -608,7 +609,14 @@ Carrier: ${carrierName}
 Tracking Number: ${trackNo}
 ${trackLine}
 
-Thank you for shopping with ROS. If you have any questions, feel free to contact us 😊`;
+Your order is expected to arrive within 1–3 working days. If you experience any unexpected delay, please contact us as soon as possible.
+
+Once your parcel arrives, kindly inspect the item(s) promptly. If your order has arrived damaged, is incorrect, or you are not completely satisfied for any reason, please contact us via WhatsApp within 2 days of delivery. We are committed to resolving any genuine concerns quickly and fairly, with your satisfaction as our priority.
+
+Please note that requests made after this notification period may not be eligible for immediate resolution and, where applicable, return or handling charges may apply in accordance with our return policy.
+
+Thank you for your trust and cooperation. We truly appreciate your support and hope you enjoy your purchase.
+${signOff} 💜`;
   };
 
   const openTrackingWA = (sale, carrier, trackNo) => {
