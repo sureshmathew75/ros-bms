@@ -1961,7 +1961,22 @@ ${signOff} 💜`;
                               const phone = (s.phone || s.contact || "").replace(/[^0-9]/g, "");
                               const e164 = phone.startsWith("0") ? "44" + phone.slice(1) : phone;
                               const retLink=`https://ros-bms.vercel.app/returns?shop=${shopId}`;
-                            window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent("Hi " + (s.customer||"") + ",\n\nWe noticed your recent order might have an issue. Please use this link to submit a return request:\n" + retLink + "\n\nWe will get back to you shortly. Thank you!"), "_blank", "noopener,noreferrer");
+                              const signOff = shop?.short ? `ROS ${shop.short}` : "ROS";
+                              const msg = `Dear ${s.customer||"Customer"},
+
+We noticed that you may wish to return your recent order.
+
+To help us process your request as quickly as possible, please submit your return request using the link below:
+${retLink}
+
+As outlined in our Returns Policy, the item must be received back by us within 14 days of the delivery date to be eligible for a refund or exchange. Returns received after this period may be declined or may incur additional return or handling charges, where applicable.
+
+To avoid any delays or inconvenience, we kindly recommend submitting your return request as soon as possible. Early submission helps us provide you with return instructions promptly and ensures there is sufficient time for the item to reach us within the required timeframe.
+
+Once we receive your request, our team will review it and get back to you as soon as possible.
+
+Thank you for your cooperation and for shopping with ${signOff}.`;
+                            window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent(msg), "_blank", "noopener,noreferrer");
                             }}
                               style={{ padding: "3px 8px", borderRadius: 7, border: "1px solid #e2e8f0",
                                 background: "white", color: "#374151", fontSize: 10, fontWeight: 600,
