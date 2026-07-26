@@ -301,13 +301,20 @@ const findInstalmentGroupIds=(sale,allSales)=>{
   let currentGroup=[];
   let found=null;
   let dealClosed=true;
-  sorted.forEach(s=>{
+  let i=0;
+  while(i<sorted.length){
+    const dayDate=sorted[i].date||"";
+    const dayBatch=[];
+    while(i<sorted.length&&(sorted[i].date||"")===dayDate){ dayBatch.push(sorted[i]); i++; }
     if(dealClosed){ currentGroup=[]; dealClosed=false; }
-    currentGroup.push(s);
-    if(s.id===sale.id) found=currentGroup;
-    const st=(s.ful||s.status||"").toUpperCase();
-    if(DEAL_CLOSING_STATUSES.includes(st)) dealClosed=true;
-  });
+    dayBatch.forEach(s=>{
+      currentGroup.push(s);
+      if(s.id===sale.id) found=currentGroup;
+    });
+    if(dayBatch.some(s=>DEAL_CLOSING_STATUSES.includes((s.ful||s.status||"").toUpperCase()))){
+      dealClosed=true;
+    }
+  }
   if(!found) return [sale.id];
   const hasTag=found.some(s=>{
     const tags=(s.tag||"").split(",").map(t=>t.trim());

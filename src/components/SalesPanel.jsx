@@ -679,17 +679,29 @@ ${signOff} 💜`;
       let groupIdx = 0;
       let currentKey = null;
       let dealClosed = true;
-      sorted.forEach(s => {
+      let i = 0;
+      while (i < sorted.length) {
+        // Collect every transaction sharing this exact date as one batch,
+        // so a same-day Fulfilled entry can never split same-day payments.
+        const dayDate = sorted[i].date || "";
+        const dayBatch = [];
+        while (i < sorted.length && (sorted[i].date || "") === dayDate) {
+          dayBatch.push(sorted[i]);
+          i++;
+        }
         if (dealClosed) {
           groupIdx++;
           currentKey = `${custKey}__grp${groupIdx}`;
           result[currentKey] = [];
           dealClosed = false;
         }
-        result[currentKey].push(s);
-        const st = (s.ful || s.status || "").toUpperCase();
-        if (DEAL_CLOSING_STATUSES.includes(st)) dealClosed = true;
-      });
+        dayBatch.forEach(s => result[currentKey].push(s));
+        // Only after the whole day's batch is in, check whether any of
+        // today's transactions closed the deal for whatever comes next.
+        if (dayBatch.some(s => DEAL_CLOSING_STATUSES.includes((s.ful || s.status || "").toUpperCase()))) {
+          dealClosed = true;
+        }
+      }
       // Drop chains that never had an instalment tag on any transaction —
       // these are just an ordinary customer's unrelated purchases.
       for (let i = 1; i <= groupIdx; i++) {
