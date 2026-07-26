@@ -695,7 +695,7 @@ ${signOff} 💜`;
           result[currentKey] = [];
           dealClosed = false;
         }
-        dayBatch.forEach(s => result[currentKey].push(s));
+        for (let j = 0; j < dayBatch.length; j++) { result[currentKey].push(dayBatch[j]); }
         // Only after the whole day's batch is in, check whether any of
         // today's transactions closed the deal for whatever comes next.
         if (dayBatch.some(s => DEAL_CLOSING_STATUSES.includes((s.ful || s.status || "").toUpperCase()))) {

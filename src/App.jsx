@@ -307,10 +307,11 @@ const findInstalmentGroupIds=(sale,allSales)=>{
     const dayBatch=[];
     while(i<sorted.length&&(sorted[i].date||"")===dayDate){ dayBatch.push(sorted[i]); i++; }
     if(dealClosed){ currentGroup=[]; dealClosed=false; }
-    dayBatch.forEach(s=>{
+    for(let j=0;j<dayBatch.length;j++){
+      const s=dayBatch[j];
       currentGroup.push(s);
       if(s.id===sale.id) found=currentGroup;
-    });
+    }
     if(dayBatch.some(s=>DEAL_CLOSING_STATUSES.includes((s.ful||s.status||"").toUpperCase()))){
       dealClosed=true;
     }
