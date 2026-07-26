@@ -1612,7 +1612,7 @@ ${signOff} 💜`;
                       {s.paidBy && String(s.paidBy).trim() !== "" && (
                         <div style={{ fontSize: 10, color: "#b6c0cd", marginTop: 1 }}>{s.paidBy}</div>
                       )}
-                      {isInstalment && instGroup.length > 1 && (
+                      {isInstalment && (
                         <div
                           onClick={(e) => {
                             e.stopPropagation();
@@ -1625,7 +1625,7 @@ ${signOff} 💜`;
                             background: instColor, color: "white", cursor: "pointer",
                             boxShadow: `0 1px 3px ${instColor}66`,
                           }}>
-                          🔗 Linked ({instGroup.length})
+                          {instGroup.length > 1 ? `🔗 Linked (${instGroup.length})` : "⏳ Awaiting Balance"}
                         </div>
                       )}
                     </td>
@@ -2540,6 +2540,37 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
             <div style={{ fontSize: 12, color: "#64748b", marginBottom: 14 }}>
               {linkedGroupView[0]?.customer || "Customer"}{linkedGroupView[0]?.phone ? ` · ${linkedGroupView[0].phone}` : ""}
             </div>
+            {(() => {
+              const advanceSale = linkedGroupView.find(x => (x.tag || "").includes("Advance Sale"));
+              const expectedTotal = Number(advanceSale?.expectedTotal) || 0;
+              if (!expectedTotal) return null;
+              const received = linkedGroupView.reduce((a, x) => a + (Number(x.amount) || 0), 0);
+              const balance = expectedTotal - received;
+              return (
+                <div style={{
+                  display: "flex", justifyContent: "space-between", gap: 10,
+                  padding: "12px 14px", marginBottom: 12,
+                  background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10,
+                }}>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em" }}>Advance Received</div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{fmt ? fmt(shopId, received) : received}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em" }}>Expected Total</div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{fmt ? fmt(shopId, expectedTotal) : expectedTotal}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: balance > 0 ? "#b91c1c" : "#15803d", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      {balance > 0 ? "Balance Due" : "Fully Paid"}
+                    </div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: balance > 0 ? "#b91c1c" : "#15803d" }}>
+                      {fmt ? fmt(shopId, Math.max(balance, 0)) : Math.max(balance, 0)}
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
             <div style={{ overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 10 }}>
               {linkedGroupView.map((gs, i) => {
                 const gTags = (gs.tag || "").split(",").map(t => t.trim());
