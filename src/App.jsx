@@ -1185,7 +1185,7 @@ const MessagesPanel=({shopId,shop,messages,setMessages,user,sales})=>{
    ═══════════════════════════════════════════════════════════ */
 const RETURN_ADDRESSES={
   v1:`ROS
-20 Heol pen y cae
+20 Heol Pen Y Cae
 Gorseinon
 SA4 4ZB`,
 };
@@ -1194,7 +1194,7 @@ const RETURN_APPROVAL_MESSAGE=(returnId,customer,addressVersion="v1")=>{
 const addr=RETURN_ADDRESSES[addressVersion]||RETURN_ADDRESSES.v1;
 return `Dear ${customer},
 
-Thank you for contacting us. Your return request has been approved and we are happy to assist you further.
+Thank you for contacting us. Your return request has been approved, and we are happy to assist you further.
 
 *Return ID: ${returnId}*
 
@@ -1204,16 +1204,16 @@ Please return your item to the following address:
 
 ${addr}
 
-*Important — Please read before returning:*
+*Important – Please read before returning:*
 
-• Your item must be returned in the same condition as received — unused, unworn, and in its original packaging.
-• Returns must be dispatched within 7 days of receiving these instructions.
+• Your item must be be returned in the same condition as received – unused, unworn, and in its original packaging.
+• We must physically receive your returned item within 7 days of you receiving these return instructions, or within 14 days of the original delivery date of your order, whichever comes first. Returns received after this deadline may be refused or may incur additional handling or return charges in accordance with our Returns Policy.
 • Please include your own return address on the parcel so we can contact you if needed.
-• Once we receive your item, we will notify you and proceed with your refund or exchange as requested.
+• Once we receive your item, we will notify you and process your refund or exchange as requested.
 
 Please note that these conditions do not affect your statutory rights under UK consumer legislation.
 
-You can review our full returns policy here:
+You can review our full Returns Policy here:
 https://rosselections.com/policies/refund-policy
 
 If you have any questions or require further assistance, please do not hesitate to contact us.
