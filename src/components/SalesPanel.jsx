@@ -646,6 +646,16 @@ ${signOff} 💜`;
     "FULFILLED","RTRN REQSTD","RETRN RCVD","RETURN RQSTD","RETURN RCVD",
     "EXCHANGED","REFUNDED","GOOD FEEDBACK","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD",
   ];
+  /* Same-day transactions must sort by payment role, not invoice number —
+     invoice numbers reflect save order, not necessarily the logical
+     Advance -> Part -> Final sequence, so a same-day Final Payment could
+     otherwise "jump ahead" of a Part Payment and prematurely close a deal. */
+  const tagPriority = (s) => {
+    const tags = (s.tag || "").split(",").map(t => t.trim());
+    if (tags.includes("Advance Sale")) return 0;
+    if (tags.includes("Final Payment Sale")) return 2;
+    return 1; // Part Payment, or untagged
+  };
   const instalmentGroups = useMemo(() => {
     const rawGroups = {};
     sales.forEach(s => {
@@ -662,6 +672,8 @@ ${signOff} 💜`;
       const sorted = [...custSales].sort((a,b)=>{
         const d=(a.date||"").localeCompare(b.date||"");
         if(d!==0)return d;
+        const p=tagPriority(a)-tagPriority(b);
+        if(p!==0)return p;
         return (a.invoiceNo||a.id||"").localeCompare(b.invoiceNo||b.id||"");
       });
       let groupIdx = 0;

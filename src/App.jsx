@@ -273,6 +273,15 @@ const DEAL_CLOSING_STATUSES=[
   "FULFILLED","RTRN REQSTD","RETRN RCVD","RETURN RQSTD","RETURN RCVD",
   "EXCHANGED","REFUNDED","GOOD FEEDBACK","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD",
 ];
+/* Same-day transactions must sort by payment role, not invoice number —
+   invoice numbers reflect save order, not necessarily the logical
+   Advance -> Part -> Final sequence. */
+const tagPriorityG=(s)=>{
+  const tags=(s.tag||"").split(",").map(t=>t.trim());
+  if(tags.includes("Advance Sale")) return 0;
+  if(tags.includes("Final Payment Sale")) return 2;
+  return 1; // Part Payment, or untagged
+};
 const findInstalmentGroupIds=(sale,allSales)=>{
   const phone=(sale.phone||sale.contact||"").replace(/\D/g,"").slice(-10);
   const name=(sale.customer||"").toLowerCase().trim();
@@ -285,6 +294,8 @@ const findInstalmentGroupIds=(sale,allSales)=>{
   const sorted=[...custSales].sort((a,b)=>{
     const d=(a.date||"").localeCompare(b.date||"");
     if(d!==0) return d;
+    const p=tagPriorityG(a)-tagPriorityG(b);
+    if(p!==0) return p;
     return (a.invoiceNo||a.id||"").localeCompare(b.invoiceNo||b.id||"");
   });
   let currentGroup=[];
