@@ -632,17 +632,23 @@ ${signOff} 💜`;
     window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent(msg), "_blank", "noopener,noreferrer");
   };
 
-  /* ── Instalment groups ──────────────────────────────────────────────── */
+  /* ── Instalment / linked-deal groups ─────────────────────────────────
+     Groups a customer's sales (by name+phone) together automatically —
+     tags are no longer required on every transaction. A "deal" stays open
+     and keeps absorbing that customer's sales until one of them reaches a
+     closing status (Fulfilled or later in the lifecycle); the next sale
+     after that starts a brand new deal. A chain is only surfaced as a
+     real group if at least one sale in it carries an Advance/Part/Final
+     Payment tag — otherwise an ordinary repeat customer with an unrelated
+     pending order would get grouped for no reason. ───────────────────── */
   const INSTALMENT_TAGS = ["Advance Sale", "Part Payment", "Final Payment Sale"];
+  const DEAL_CLOSING_STATUSES = [
+    "FULFILLED","RTRN REQSTD","RETRN RCVD","RETURN RQSTD","RETURN RCVD",
+    "EXCHANGED","REFUNDED","GOOD FEEDBACK","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD",
+  ];
   const instalmentGroups = useMemo(() => {
-    // Group sales by phone+name+advanceDate — each Advance Sale starts a new group
-    // Once a Final Payment is in a group, that group is closed
     const rawGroups = {};
-    // First pass: collect all instalment sales by customer
     sales.forEach(s => {
-      const tags = (s.tag || "").split(",").map(t => t.trim());
-      const isInstalment = tags.some(t => INSTALMENT_TAGS.includes(t));
-      if (!isInstalment) return;
       const phone = (s.phone || s.contact || "").replace(/\D/g, "").slice(-10);
       const name = (s.customer || "").toLowerCase().trim();
       if (!phone && !name) return;
@@ -651,44 +657,48 @@ ${signOff} 💜`;
       rawGroups[key].push(s);
     });
 
-    // Second pass: split each customer's sales into separate order groups
-    // Each Advance Sale starts a new group; payments after it belong to it
-    // until the next Advance Sale
     const result = {};
     Object.entries(rawGroups).forEach(([custKey, custSales]) => {
-      // Sort by date ascending
       const sorted = [...custSales].sort((a,b)=>{
         const d=(a.date||"").localeCompare(b.date||"");
         if(d!==0)return d;
         return (a.invoiceNo||a.id||"").localeCompare(b.invoiceNo||b.id||"");
       });
-      let currentGroup = null;
       let groupIdx = 0;
+      let currentKey = null;
+      let dealClosed = true;
       sorted.forEach(s => {
-        const tags = (s.tag||"").split(",").map(t=>t.trim());
-        const isAdv = tags.includes("Advance Sale");
-        if (isAdv) {
-          // Start a new group
+        if (dealClosed) {
           groupIdx++;
-          currentGroup = `${custKey}__grp${groupIdx}`;
-          result[currentGroup] = [];
+          currentKey = `${custKey}__grp${groupIdx}`;
+          result[currentKey] = [];
+          dealClosed = false;
         }
-        if (currentGroup) {
-          result[currentGroup].push(s);
-        }
+        result[currentKey].push(s);
+        const st = (s.ful || s.status || "").toUpperCase();
+        if (DEAL_CLOSING_STATUSES.includes(st)) dealClosed = true;
       });
+      // Drop chains that never had an instalment tag on any transaction —
+      // these are just an ordinary customer's unrelated purchases.
+      for (let i = 1; i <= groupIdx; i++) {
+        const k = `${custKey}__grp${i}`;
+        const grp = result[k];
+        if (!grp) continue;
+        const hasTag = grp.some(s => {
+          const tags = (s.tag || "").split(",").map(t => t.trim());
+          return tags.some(t => INSTALMENT_TAGS.includes(t));
+        });
+        if (!hasTag) delete result[k];
+      }
     });
     return result;
   }, [sales]);
 
   const getInstalmentKey = (s) => {
-    const tags = (s.tag || "").split(",").map(t => t.trim());
-    const isInstalment = tags.some(t => INSTALMENT_TAGS.includes(t));
-    if (!isInstalment) return null;
     const phone = (s.phone || s.contact || "").replace(/\D/g, "").slice(-10);
     const name = (s.customer || "").toLowerCase().trim();
+    if (!phone && !name) return null;
     const custKey = `${name}__${phone}`;
-    // Find which group this sale belongs to
     const groupKeys = Object.keys(instalmentGroups).filter(k => k.startsWith(custKey+"__grp"));
     for (const gk of groupKeys) {
       if (instalmentGroups[gk].some(x => x.id === s.id)) return gk;
@@ -696,14 +706,24 @@ ${signOff} 💜`;
     return null;
   };
 
-
-
   const instalmentTagType = (s) => {
     const tags = (s.tag || "").split(",").map(t => t.trim());
     if (tags.includes("Advance Sale")) return "advance";
     if (tags.includes("Final Payment Sale")) return "final";
     if (tags.includes("Part Payment")) return "part";
     return null;
+  };
+
+  /* A group's colour follows whichever tagged role appears first within
+     it (advance leads, then part, then final), so every row in the deal —
+     tagged or not — shares one consistent colour. */
+  const groupColor = (group) => {
+    const order = ["advance","part","final"];
+    for (const want of order) {
+      const hit = (group||[]).find(x => instalmentTagType(x) === want);
+      if (hit) return want === "advance" ? "#f59e0b" : want === "part" ? "#7c3aed" : "#059669";
+    }
+    return "#0891b2";
   };
 
   /* Apply a status change to every sale in the same instalment group,
@@ -1494,11 +1514,11 @@ ${signOff} 💜`;
                 const s   = row;
                 const instKey   = getInstalmentKey(s);
                 const instGroup = instKey ? (instalmentGroups[instKey] || []) : [];
-                const instType  = instalmentTagType(s);
-                const isInstalment = !!instType;
-                // Colour per instalment type
-                const instColor = instType==="advance"?"#f59e0b":instType==="final"?"#059669":instType==="part"?"#7c3aed":"transparent";
-                const instBg    = instType==="advance"?"#fffbeb":instType==="final"?"#f0fdf4":instType==="part"?"#f5f3ff":"transparent";
+                const instType  = instalmentTagType(s); // this row's own tag, if any (for the small type badge)
+                const isInstalment = !!instKey; // true if this row is part of a recognised deal, tagged or not
+                // Colour is shared across the whole group, not just this row's own tag
+                const instColor = isInstalment ? groupColor(instGroup) : "transparent";
+                const instBg    = isInstalment ? instColor + "0d" : "transparent";
                 // Show instalment summary row only on the advance sale
                 const showInstalmentSummary = instType === "advance" && instGroup.length >= 1;
                 const totalPaid = instGroup.reduce((a,x) => a + (Number(x.amount)||0), 0);
@@ -1586,7 +1606,7 @@ ${signOff} 💜`;
                           </div>
                         );
                       })()}
-                      {isInstalment && (
+                      {instType && (
                         <div style={{ marginTop: 2 }}>
                           <span style={{
                             fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999,
@@ -1676,44 +1696,20 @@ ${signOff} 💜`;
                             const isFinal   = tags.includes("Final Payment Sale");
                             const isPart    = tags.includes("Part Payment");
 
-                            // For advance sale: calculate balance from all sales with same phone+name
+                            // For advance sale: use the group-level totals already computed
+                            // above (instGroup/totalPaid/balance), which correctly include
+                            // any untagged transactions swept into this deal.
                             let balanceBlock = null;
-                            if (isAdvance) {
-                              const expTotal = Number(s.expectedTotal)||0;
-                              if (expTotal > 0) {
-                                // Sum all instalments for this customer
-                                const phone = (s.phone||s.contact||"").replace(/[^0-9]/g,"").slice(-10);
-                                const name  = (s.customer||"").toLowerCase().trim();
-                                const advDate = s.date || s.createdAt || "";
-                                const advInv = s.invoiceNo || s.id || "";
-                                const grpSales = (sales||[]).filter(x => {
-                                  const xp=(x.phone||x.contact||"").replace(/[^0-9]/g,"").slice(-10);
-                                  const xn=(x.customer||"").toLowerCase().trim();
-                                  const xtags=(x.tag||"").split(",").map(t=>t.trim());
-                                  const isInst=xtags.some(t=>["Advance Sale","Part Payment","Final Payment Sale"].includes(t));
-                                  // Only count payments on or after this advance sale date
-                                  const xDate = x.date || x.createdAt || "";
-                                  const afterAdv = !advDate || !xDate || xDate >= advDate;
-                                  // If same date, also require invoice >= advance invoice (to exclude older orders on same day)
-                                  const xInv = x.invoiceNo || x.id || "";
-                                  const sameDay = xDate === advDate;
-                                  const invOk = !sameDay || !advInv || !xInv || xInv >= advInv;
-                                  return xp===phone && xn===name && isInst && afterAdv && invOk;
-                                });
-                                const totalPaid = grpSales.reduce((a,x)=>a+(Number(x.amount)||0),0);
-                                const balance   = expTotal - totalPaid;
-                                // Only show Fully Paid if there's an explicit Final Payment Sale in the group
-                                const hasFinal = grpSales.some(x=>(x.tag||"").includes("Final Payment Sale"));
-                                const isFullyPaid = balance <= 0 && hasFinal;
-
+                            if (showInstalmentSummary) {
+                              if (expectedTotal > 0) {
                                 balanceBlock = (
                                   <div style={{marginTop:2,textAlign:"right"}}>
-                                    <div style={{fontSize:9,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.04em"}}>of {fmtVal(expTotal)}</div>
-                                    {isFullyPaid ? (
+                                    <div style={{fontSize:9,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.04em"}}>of {fmtVal(expectedTotal)}</div>
+                                    {isActuallyFullyPaid ? (
                                       <div style={{fontSize:10,fontWeight:800,color:"#059669",whiteSpace:"nowrap"}}>✅ Fully Paid</div>
                                     ) : (
                                       <div style={{fontSize:11,fontWeight:800,color:"#dc2626",whiteSpace:"nowrap"}}>
-                                        Bal: {fmtVal(balance)}
+                                        Bal: {fmtVal(Math.max(balance,0))}
                                       </div>
                                     )}
                                   </div>

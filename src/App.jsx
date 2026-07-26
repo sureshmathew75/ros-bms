@@ -261,19 +261,23 @@ const ShopLogo = ({ shopId, size = "card" }) => {
 const STAT_FULFILLED=new Set(["FULFILLED","EXCHANGED","REFUNDED","GOOD FEEDBACK","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]);
 const STAT_RETURNS  =new Set(["RTRN REQSTD","RETRN RCVD","RETURN RQSTD","RETURN RCVD","EXCHANGED"]);
 
-/* ── Instalment groups: finds all sales linked to the same Advance/Part/
-   Final Payment order as `sale`, across the FULL sales history (not just
-   whatever's currently filtered/visible) ───────────────────────────── */
+/* ── Instalment / linked-deal groups: finds all sales linked to the same
+   deal as `sale`, across the FULL sales history. A customer's sales
+   (matched by name+phone) chain together automatically — tags are not
+   required on every transaction — until one of them reaches a closing
+   status (Fulfilled or later); the next sale after that starts a new
+   deal. The chain only counts as a real group if at least one sale in it
+   carries an Advance/Part/Final Payment tag. ─────────────────────────── */
 const INSTALMENT_TAGS=["Advance Sale","Part Payment","Final Payment Sale"];
+const DEAL_CLOSING_STATUSES=[
+  "FULFILLED","RTRN REQSTD","RETRN RCVD","RETURN RQSTD","RETURN RCVD",
+  "EXCHANGED","REFUNDED","GOOD FEEDBACK","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD",
+];
 const findInstalmentGroupIds=(sale,allSales)=>{
-  const tags=(sale.tag||"").split(",").map(t=>t.trim());
-  if(!tags.some(t=>INSTALMENT_TAGS.includes(t))) return [sale.id];
   const phone=(sale.phone||sale.contact||"").replace(/\D/g,"").slice(-10);
   const name=(sale.customer||"").toLowerCase().trim();
   if(!phone&&!name) return [sale.id];
   const custSales=(allSales||[]).filter(s=>{
-    const sTags=(s.tag||"").split(",").map(t=>t.trim());
-    if(!sTags.some(t=>INSTALMENT_TAGS.includes(t))) return false;
     const sPhone=(s.phone||s.contact||"").replace(/\D/g,"").slice(-10);
     const sName=(s.customer||"").toLowerCase().trim();
     return sName===name&&sPhone===phone;
@@ -285,13 +289,20 @@ const findInstalmentGroupIds=(sale,allSales)=>{
   });
   let currentGroup=[];
   let found=null;
+  let dealClosed=true;
   sorted.forEach(s=>{
-    const sTags=(s.tag||"").split(",").map(t=>t.trim());
-    if(sTags.includes("Advance Sale")){ currentGroup=[]; }
+    if(dealClosed){ currentGroup=[]; dealClosed=false; }
     currentGroup.push(s);
     if(s.id===sale.id) found=currentGroup;
+    const st=(s.ful||s.status||"").toUpperCase();
+    if(DEAL_CLOSING_STATUSES.includes(st)) dealClosed=true;
   });
-  return found ? found.map(s=>s.id) : [sale.id];
+  if(!found) return [sale.id];
+  const hasTag=found.some(s=>{
+    const tags=(s.tag||"").split(",").map(t=>t.trim());
+    return tags.some(t=>INSTALMENT_TAGS.includes(t));
+  });
+  return hasTag ? found.map(s=>s.id) : [sale.id];
 };
 
 /* ── getSaleFY: returns FY start year for a sale using invoice suffix as ground truth ── */
