@@ -2561,16 +2561,16 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                   background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10,
                 }}>
                   <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em" }}>Advance Received</div>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{fmt ? fmt(shopId, received) : received}</div>
-                  </div>
-                  <div>
                     <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em" }}>Expected Total</div>
                     <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{fmt ? fmt(shopId, expectedTotal) : expectedTotal}</div>
                   </div>
                   <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Amount Received</div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{fmt ? fmt(shopId, received) : received}</div>
+                  </div>
+                  <div>
                     <div style={{ fontSize: 10, fontWeight: 700, color: balance > 0 ? "#b91c1c" : "#15803d", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                      {balance > 0 ? "Balance Due" : "Fully Paid"}
+                      Balance to Receive
                     </div>
                     <div style={{ fontSize: 15, fontWeight: 800, color: balance > 0 ? "#b91c1c" : "#15803d" }}>
                       {fmt ? fmt(shopId, Math.max(balance, 0)) : Math.max(balance, 0)}
