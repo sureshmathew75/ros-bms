@@ -261,6 +261,39 @@ const ShopLogo = ({ shopId, size = "card" }) => {
 const STAT_FULFILLED=new Set(["FULFILLED","EXCHANGED","REFUNDED","GOOD FEEDBACK","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]);
 const STAT_RETURNS  =new Set(["RTRN REQSTD","RETRN RCVD","RETURN RQSTD","RETURN RCVD","EXCHANGED"]);
 
+/* ── Instalment groups: finds all sales linked to the same Advance/Part/
+   Final Payment order as `sale`, across the FULL sales history (not just
+   whatever's currently filtered/visible) ───────────────────────────── */
+const INSTALMENT_TAGS=["Advance Sale","Part Payment","Final Payment Sale"];
+const findInstalmentGroupIds=(sale,allSales)=>{
+  const tags=(sale.tag||"").split(",").map(t=>t.trim());
+  if(!tags.some(t=>INSTALMENT_TAGS.includes(t))) return [sale.id];
+  const phone=(sale.phone||sale.contact||"").replace(/\D/g,"").slice(-10);
+  const name=(sale.customer||"").toLowerCase().trim();
+  if(!phone&&!name) return [sale.id];
+  const custSales=(allSales||[]).filter(s=>{
+    const sTags=(s.tag||"").split(",").map(t=>t.trim());
+    if(!sTags.some(t=>INSTALMENT_TAGS.includes(t))) return false;
+    const sPhone=(s.phone||s.contact||"").replace(/\D/g,"").slice(-10);
+    const sName=(s.customer||"").toLowerCase().trim();
+    return sName===name&&sPhone===phone;
+  });
+  const sorted=[...custSales].sort((a,b)=>{
+    const d=(a.date||"").localeCompare(b.date||"");
+    if(d!==0) return d;
+    return (a.invoiceNo||a.id||"").localeCompare(b.invoiceNo||b.id||"");
+  });
+  let currentGroup=[];
+  let found=null;
+  sorted.forEach(s=>{
+    const sTags=(s.tag||"").split(",").map(t=>t.trim());
+    if(sTags.includes("Advance Sale")){ currentGroup=[]; }
+    currentGroup.push(s);
+    if(s.id===sale.id) found=currentGroup;
+  });
+  return found ? found.map(s=>s.id) : [sale.id];
+};
+
 /* ── getSaleFY: returns FY start year for a sale using invoice suffix as ground truth ── */
 const getSaleFY=(sale)=>{
   const id=String(sale.id||"");
@@ -4936,6 +4969,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
 
   // ── Undo Delete: session-only stack of recently deleted records ──
   const [deletedStack,setDeletedStack]=useState([]);
+  const [editCascadeConfirm,setEditCascadeConfirm]=useState(null); // {merged, existingSale, groupIds} | null
   const pushDeleted=(type,record)=>{
     if(!record)return;
     setDeletedStack(prev=>[{type,record,ts:Date.now()},...prev].slice(0,20));
@@ -4973,6 +5007,54 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
       setDeletedStack(prev=>[top,...prev]);
     }
     setUndoing(false);
+  };
+
+  /* Re-fetches sales from Supabase and re-applies the standard field
+     mapping (line-item decoding, tax/discount fallbacks, etc). Shared by
+     the plain edit-save path and the instalment-cascade edit-save path. */
+  const reloadSalesData=()=>{
+    dbLoadSales(shopId).then(data=>{
+      if(data) setSalesData(prev=>({...prev,[shopId]:data.map(s=>{
+        if(!s) return s;
+        let rawItem=s.item||"",decodedLines=null,displayItem=rawItem;
+        if(rawItem.startsWith("__LINES__:")){const nl=rawItem.indexOf("\n");const jp=nl>=0?rawItem.slice(10,nl):rawItem.slice(10);displayItem=nl>=0?rawItem.slice(nl+1):"";try{decodedLines=JSON.parse(jp);}catch{decodedLines=null;}}
+        const tr=Number(s.taxRate!==undefined?s.taxRate:s.tax_rate!==undefined?s.tax_rate:0)||0;
+        const ti=tr===0?true:(s.taxInclusive!==undefined?s.taxInclusive!==false:true);
+        let sl=decodedLines||s.saleLines||s.sale_lines||null;
+        if(typeof sl==="string"){try{sl=JSON.parse(sl);}catch{sl=null;}}
+        return {...s,item:displayItem,taxRate:tr,taxInclusive:ti,saleLines:Array.isArray(sl)?sl:null,discount:Number(s.discount||s.discount_amt)||0,otherCharges:Number(s.otherCharges||s.other_charges)||0,adjAmt:Number(s.adjAmt||s.adj_amt)||0,adjType:s.adjType||s.adj_type||"",adjDate:s.adjDate||s.adj_date||"",adjNote:s.adjNote||s.adj_note||"",shopInvoiceNo:s.shopInvoiceNo||s.shop_invoice_no||"",refundDate:s.refundDate||s.refund_date||"",exchangeDate:s.exchangeDate||s.exchange_date||""};
+      })}));
+    }).catch(()=>{});
+  };
+
+  const commitEditSave=(merged)=>{
+    // Update UI instantly so sales list reflects new status immediately
+    setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>x.id===merged.id?{...x,...merged}:x)}));
+    setModal(null);setEditRow(null);
+    // Persist to Supabase then reload to confirm sync
+    dbSaveSale(shopId,merged).then(reloadSalesData).catch(err=>console.error("❌ Edit save failed:",err));
+  };
+
+  const [cascadeFlashIds,setCascadeFlashIds]=useState(new Set());
+  const commitEditCascade=async(merged,groupIds)=>{
+    setModal(null);setEditRow(null);
+    const statusVal=merged.status||merged.ful;
+    const others=groupIds.filter(id=>id!==merged.id);
+    // Update UI instantly: full merge on the edited sale, status-only on the rest
+    setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>{
+      if(x.id===merged.id) return {...x,...merged};
+      if(others.includes(x.id)) return {...x,status:statusVal,ful:statusVal};
+      return x;
+    })}));
+    setCascadeFlashIds(new Set(groupIds));
+    setTimeout(()=>setCascadeFlashIds(new Set()),1500);
+    await dbSaveSale(shopId,merged).catch(err=>console.error("❌ Edit save failed:",err));
+    await Promise.all(others.map(id=>{
+      const s=(sales||[]).find(x=>x.id===id);
+      if(!s) return Promise.resolve();
+      return dbSaveSale(shopId,{...s,status:statusVal,ful:statusVal}).catch(err=>console.error("❌ Cascade save failed:",id,err));
+    }));
+    reloadSalesData();
   };
 
   // Load messages + returns on tab open or dashboard
@@ -6407,6 +6489,7 @@ return(
                 onImport={()=>setModal("import-sales")}
                 onExport={()=>setModal("export-sales")}
                 setExportRows={setExportRows}
+                externalFlashIds={cascadeFlashIds}
                 onReload={handleReloadSales}
                 search={search}
                 sales={sales}
@@ -6936,28 +7019,42 @@ return(
               // (e.g. verified) are preserved on save
               const existingSale=(sales||[]).find(x=>x.id===updated.id);
               const merged={...(existingSale||{}),...updated};
-              // Update UI instantly so sales list reflects new status immediately
-              setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>x.id===updated.id?{...x,...updated}:x)}));
-              setModal(null);setEditRow(null);
-              // Persist to Supabase then reload to confirm sync
-              dbSaveSale(shopId,merged).then(()=>{
-                dbLoadSales(shopId).then(data=>{
-                  if(data) setSalesData(prev=>({...prev,[shopId]:data.map(s=>{
-                    if(!s) return s;
-                    let rawItem=s.item||"",decodedLines=null,displayItem=rawItem;
-                    if(rawItem.startsWith("__LINES__:")){const nl=rawItem.indexOf("\n");const jp=nl>=0?rawItem.slice(10,nl):rawItem.slice(10);displayItem=nl>=0?rawItem.slice(nl+1):"";try{decodedLines=JSON.parse(jp);}catch{decodedLines=null;}}
-                    const tr=Number(s.taxRate!==undefined?s.taxRate:s.tax_rate!==undefined?s.tax_rate:0)||0;
-                    const ti=tr===0?true:(s.taxInclusive!==undefined?s.taxInclusive!==false:true);
-                    let sl=decodedLines||s.saleLines||s.sale_lines||null;
-                    if(typeof sl==="string"){try{sl=JSON.parse(sl);}catch{sl=null;}}
-                    return {...s,item:displayItem,taxRate:tr,taxInclusive:ti,saleLines:Array.isArray(sl)?sl:null,discount:Number(s.discount||s.discount_amt)||0,otherCharges:Number(s.otherCharges||s.other_charges)||0,adjAmt:Number(s.adjAmt||s.adj_amt)||0,adjType:s.adjType||s.adj_type||"",adjDate:s.adjDate||s.adj_date||"",adjNote:s.adjNote||s.adj_note||"",shopInvoiceNo:s.shopInvoiceNo||s.shop_invoice_no||"",refundDate:s.refundDate||s.refund_date||"",exchangeDate:s.exchangeDate||s.exchange_date||""};
-                  })}));
-                }).catch(()=>{});
-              }).catch(err=>console.error("❌ Edit save failed:",err));
+              const statusChanged=existingSale && (existingSale.status||existingSale.ful)!==(merged.status||merged.ful);
+              const groupIds=statusChanged?findInstalmentGroupIds(merged,sales):[merged.id];
+              if(statusChanged && groupIds.length>1){
+                setEditCascadeConfirm({merged,existingSale,groupIds});
+                return;
+              }
+              commitEditSave(merged);
             }}
             onClose={()=>{setModal(null);setEditRow(null);}}
           />
         </Modal>
+      )}
+
+      {/* ── STATUS CASCADE CONFIRMATION (Edit Sale) ── */}
+      {editCascadeConfirm&&(
+        <div style={{position:"fixed",inset:0,zIndex:200,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center"}}
+          onClick={()=>setEditCascadeConfirm(null)}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:16,padding:"24px 26px",maxWidth:400,width:"90%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
+            <div style={{fontSize:15,fontWeight:800,color:"#0f172a",marginBottom:8}}>Update linked transactions?</div>
+            <div style={{fontSize:13,color:"#475569",lineHeight:1.5,marginBottom:18}}>
+              This sale is part of an instalment group (Advance / Part / Final Payment).
+              Changing the status will update all <strong>{editCascadeConfirm.groupIds.length}</strong> linked
+              transaction{editCascadeConfirm.groupIds.length!==1?"s":""} to <strong>{editCascadeConfirm.merged.status||editCascadeConfirm.merged.ful}</strong>.
+            </div>
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
+              <button onClick={()=>{commitEditSave(editCascadeConfirm.merged);setEditCascadeConfirm(null);}}
+                style={{padding:"9px 16px",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                Just This One
+              </button>
+              <button onClick={()=>{const c=editCascadeConfirm;setEditCascadeConfirm(null);commitEditCascade(c.merged,c.groupIds);}}
+                style={{padding:"9px 18px",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                Update All
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── NEW SHIPMENT MODAL ── */}

@@ -329,6 +329,7 @@ export default function SalesPanel({
   setInvoiceRow,
   setModal,
   setExportRows,
+  externalFlashIds,
   setOpenMenu,
   setSalesData,
   setSearch,
@@ -353,6 +354,9 @@ export default function SalesPanel({
   const [hovR,    setHovR]    = useState(null);
   /* Drag-to-reorder (month view only) */
   const [dragId, setDragId] = useState(null);
+  /* Status cascade across instalment groups (Advance/Part/Final payment) */
+  const [cascadeConfirm, setCascadeConfirm] = useState(null); // {saleId, newStatus, groupIds} | null
+  const [flashIds, setFlashIds] = useState(new Set());
   const [dragOverId, setDragOverId] = useState(null);
   const handleReorderDrop = async (targetId) => {
     const fromId = dragId;
@@ -634,7 +638,7 @@ ${signOff} 💜`;
     // Once a Final Payment is in a group, that group is closed
     const rawGroups = {};
     // First pass: collect all instalment sales by customer
-    sortedSales.forEach(s => {
+    sales.forEach(s => {
       const tags = (s.tag || "").split(",").map(t => t.trim());
       const isInstalment = tags.some(t => INSTALMENT_TAGS.includes(t));
       if (!isInstalment) return;
@@ -674,7 +678,7 @@ ${signOff} 💜`;
       });
     });
     return result;
-  }, [sortedSales]);
+  }, [sales]);
 
   const getInstalmentKey = (s) => {
     const tags = (s.tag || "").split(",").map(t => t.trim());
@@ -699,6 +703,15 @@ ${signOff} 💜`;
     if (tags.includes("Final Payment Sale")) return "final";
     if (tags.includes("Part Payment")) return "part";
     return null;
+  };
+
+  /* Apply a status change to every sale in the same instalment group,
+     then briefly flash those rows so it's obvious the cascade ran. */
+  const applyCascade = async (saleId, newStatus, groupIds) => {
+    if (!onInlineEdit) return;
+    await Promise.all(groupIds.map(id => onInlineEdit(id, { ful: newStatus, status: newStatus })));
+    setFlashIds(new Set(groupIds));
+    setTimeout(() => setFlashIds(new Set()), 1500);
   };
 
   /* ── Rows with month / FY separators ────────────────────────────────── */
@@ -1498,7 +1511,8 @@ ${signOff} 💜`;
                 const isDragging = dragId === s.id;
                 const isDragOver = dragOverId === s.id && dragId && dragId !== s.id;
                 const mergedRowBg = { ...STATUS_ROW_BG, ...(statusRowBgProp || {}) };
-                const rowBg = isH ? "#fde047" : (s.flagged ? "#fef2f2" : (isInstalment ? instBg : (mergedRowBg[ful] || "white")));
+                const isFlashing = flashIds.has(s.id) || (externalFlashIds && externalFlashIds.has(s.id));
+                const rowBg = isH ? "#fde047" : (isFlashing ? "#86efac" : (s.flagged ? "#fef2f2" : (isInstalment ? instBg : (mergedRowBg[ful] || "white"))));
 
                 return (
                   <tr key={s.id}
@@ -1780,8 +1794,15 @@ ${signOff} 💜`;
                           autoFocus
                           value={ful}
                           onChange={e => {
-                            if (onInlineEdit) onInlineEdit(s.id, { ful: e.target.value, status: e.target.value });
+                            const newStatus = e.target.value;
                             setEditStatusId(null);
+                            const gKey = getInstalmentKey(s);
+                            const groupIds = gKey ? (instalmentGroups[gKey] || []).map(x => x.id) : [];
+                            if (groupIds.length > 1) {
+                              setCascadeConfirm({ saleId: s.id, newStatus, groupIds });
+                            } else if (onInlineEdit) {
+                              onInlineEdit(s.id, { ful: newStatus, status: newStatus });
+                            }
                           }}
                           onBlur={() => setEditStatusId(null)}
                           style={{ padding: "5px 8px", borderRadius: 8, border: "1.5px solid #7dd3fc",
@@ -2477,6 +2498,65 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
           </div>
         );
       })()}
+
+      {/* Status cascade confirmation — shown when changing status on a sale
+          that's part of an Advance/Part/Final Payment group */}
+      {cascadeConfirm && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 200,
+          background: "rgba(15,23,42,0.55)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }} onClick={() => setCascadeConfirm(null)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: "white", borderRadius: 16, padding: "24px 26px",
+            maxWidth: 400, width: "90%", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+          }}>
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>
+              Update linked transactions?
+            </div>
+            <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.5, marginBottom: 18 }}>
+              This sale is part of an instalment group (Advance / Part / Final Payment).
+              Changing the status will update all <strong>{cascadeConfirm.groupIds.length}</strong> linked
+              transaction{cascadeConfirm.groupIds.length !== 1 ? "s" : ""} to{" "}
+              <strong>{(STATUS_TABS.find(t => t.key === cascadeConfirm.newStatus) || {}).label || cascadeConfirm.newStatus}</strong>.
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button onClick={() => setCascadeConfirm(null)}
+                style={{
+                  padding: "9px 16px", borderRadius: 9, border: "1px solid #e2e8f0",
+                  background: "white", color: "#374151", fontWeight: 700, fontSize: 13,
+                  cursor: "pointer", fontFamily: "inherit",
+                }}>
+                Cancel
+              </button>
+              <button onClick={() => {
+                  const { saleId, newStatus } = cascadeConfirm;
+                  setCascadeConfirm(null);
+                  if (onInlineEdit) onInlineEdit(saleId, { ful: newStatus, status: newStatus });
+                }}
+                style={{
+                  padding: "9px 16px", borderRadius: 9, border: "1px solid #e2e8f0",
+                  background: "white", color: "#374151", fontWeight: 700, fontSize: 13,
+                  cursor: "pointer", fontFamily: "inherit",
+                }}>
+                Just This One
+              </button>
+              <button onClick={async () => {
+                  const { newStatus, groupIds } = cascadeConfirm;
+                  setCascadeConfirm(null);
+                  await applyCascade(cascadeConfirm.saleId, newStatus, groupIds);
+                }}
+                style={{
+                  padding: "9px 18px", borderRadius: 9, border: "none",
+                  background: accent, color: "white", fontWeight: 700, fontSize: 13,
+                  cursor: "pointer", fontFamily: "inherit",
+                }}>
+                Update All
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
