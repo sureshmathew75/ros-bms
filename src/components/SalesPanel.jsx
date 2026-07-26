@@ -633,32 +633,40 @@ ${signOff} 💜`;
   };
 
   /* ── Instalment / linked-deal groups ─────────────────────────────────
-     Groups a customer's sales (by name+phone) together automatically —
-     tags are no longer required on EVERY transaction, only on the ones
-     that open/close the deal. An "Advance Sale" tag always starts a
-     fresh deal (even resetting one that was never formally closed); a
-     "Final Payment Sale" tag always closes the deal right after it's
-     added. Untagged or Part Payment sales just join whatever deal is
-     currently open. Status (Fulfilled etc.) is intentionally NOT used to
-     decide grouping — in practice the advance portion often gets marked
-     Fulfilled on its own, long before the final payment is even
-     recorded, which made status an unreliable signal. A chain is only
-     surfaced as a real group if it contains at least one instalment tag —
-     otherwise an ordinary repeat customer's unrelated purchases would get
-     grouped for no reason. ─────────────────────────────────────────── */
-  const INSTALMENT_TAGS = ["Advance Sale", "Part Payment", "Final Payment Sale"];
+     Groups a customer's sales (by name+phone) together automatically
+     based on the dedicated Payment Type field (Full/Advance/Part/Final)
+     chosen when the sale was saved. An ADVANCE always starts a fresh
+     deal (even resetting one never formally closed); a FINAL always
+     closes the deal right after it's added. PART just joins whatever
+     deal is open. FULL never joins anything — always its own standalone
+     sale, so it never even enters the grouping below. Status (Fulfilled
+     etc.) is intentionally NOT used to decide grouping — in practice the
+     advance portion often gets marked Fulfilled on its own, long before
+     the final payment is even recorded, which made status an unreliable
+     signal. ─────────────────────────────────────────────────────────── */
+  /* Reads the new dedicated paymentType field; falls back to the old
+     free-text tags for any sale not yet covered by the migration. */
+  const inferPaymentType = (sale) => {
+    if (sale.paymentType) return sale.paymentType;
+    const tags = (sale.tag || "").split(",").map(t => t.trim());
+    if (tags.includes("Advance Sale")) return "ADVANCE";
+    if (tags.includes("Final Payment Sale")) return "FINAL";
+    if (tags.includes("Part Payment")) return "PART";
+    return "FULL";
+  };
   /* Same-day transactions must sort by payment role, not invoice number —
      invoice numbers reflect save order, not necessarily the logical
      Advance -> Part -> Final sequence. */
   const tagPriority = (s) => {
-    const tags = (s.tag || "").split(",").map(t => t.trim());
-    if (tags.includes("Advance Sale")) return 0;
-    if (tags.includes("Final Payment Sale")) return 2;
-    return 1; // Part Payment, or untagged
+    const pt = inferPaymentType(s);
+    if (pt === "ADVANCE") return 0;
+    if (pt === "FINAL") return 2;
+    return 1; // Part, or Full
   };
   const instalmentGroups = useMemo(() => {
     const rawGroups = {};
     sales.forEach(s => {
+      if (inferPaymentType(s) === "FULL") return; // never grouped
       const phone = (s.phone || s.contact || "").replace(/\D/g, "").slice(-10);
       const name = (s.customer || "").toLowerCase().trim();
       if (!phone && !name) return;
@@ -681,35 +689,24 @@ ${signOff} 💜`;
       let dealOpen = false;
       for (let i = 0; i < sorted.length; i++) {
         const s = sorted[i];
-        const tags = (s.tag || "").split(",").map(t => t.trim());
-        const isAdvanceTag = tags.includes("Advance Sale");
-        const isFinalTag = tags.includes("Final Payment Sale");
-        if (!dealOpen || isAdvanceTag) {
+        const pt = inferPaymentType(s);
+        const isAdvance = pt === "ADVANCE";
+        const isFinal = pt === "FINAL";
+        if (!dealOpen || isAdvance) {
           groupIdx++;
           currentKey = `${custKey}__grp${groupIdx}`;
           result[currentKey] = [];
           dealOpen = true;
         }
         result[currentKey].push(s);
-        if (isFinalTag) dealOpen = false;
-      }
-      // Drop chains that never had an instalment tag on any transaction —
-      // these are just an ordinary customer's unrelated purchases.
-      for (let i = 1; i <= groupIdx; i++) {
-        const k = `${custKey}__grp${i}`;
-        const grp = result[k];
-        if (!grp) continue;
-        const hasTag = grp.some(s => {
-          const tags = (s.tag || "").split(",").map(t => t.trim());
-          return tags.some(t => INSTALMENT_TAGS.includes(t));
-        });
-        if (!hasTag) delete result[k];
+        if (isFinal) dealOpen = false;
       }
     });
     return result;
   }, [sales]);
 
   const getInstalmentKey = (s) => {
+    if (inferPaymentType(s) === "FULL") return null;
     const phone = (s.phone || s.contact || "").replace(/\D/g, "").slice(-10);
     const name = (s.customer || "").toLowerCase().trim();
     if (!phone && !name) return null;
@@ -722,10 +719,10 @@ ${signOff} 💜`;
   };
 
   const instalmentTagType = (s) => {
-    const tags = (s.tag || "").split(",").map(t => t.trim());
-    if (tags.includes("Advance Sale")) return "advance";
-    if (tags.includes("Final Payment Sale")) return "final";
-    if (tags.includes("Part Payment")) return "part";
+    const pt = inferPaymentType(s);
+    if (pt === "ADVANCE") return "advance";
+    if (pt === "FINAL") return "final";
+    if (pt === "PART") return "part";
     return null;
   };
 
@@ -1540,7 +1537,7 @@ ${signOff} 💜`;
                 const expectedTotal = Number(s.expectedTotal) || 0;
                 const balance = expectedTotal > 0 ? expectedTotal - totalPaid : null;
                 // Only mark fully paid if group contains an explicit Final Payment Sale
-                const hasFinalPayment = instGroup.some(x => (x.tag||"").includes("Final Payment Sale"));
+                const hasFinalPayment = instGroup.some(x => instalmentTagType(x) === "final");
                 const isActuallyFullyPaid = balance !== null && balance <= 0 && hasFinalPayment;
                 const ful = s.ful || s.status || "PENDING";
                 const isH = hovR === s.id;
@@ -1647,7 +1644,7 @@ ${signOff} 💜`;
                       {s.paidBy && String(s.paidBy).trim() !== "" && (
                         <div style={{ fontSize: 10, color: "#b6c0cd", marginTop: 1 }}>{s.paidBy}</div>
                       )}
-                      {isInstalment && (instGroup.length > 1 || instType !== "final") && (
+                      {isInstalment && instGroup.length > 1 && (
                         <div
                           onClick={(e) => {
                             e.stopPropagation();
@@ -1660,7 +1657,34 @@ ${signOff} 💜`;
                             background: instColor, color: "white", cursor: "pointer",
                             boxShadow: `0 1px 3px ${instColor}66`,
                           }}>
-                          {instGroup.length > 1 ? `🔗 Linked (${instGroup.length})` : "⏳ Awaiting Balance"}
+                          🔗 Linked ({instGroup.length})
+                        </div>
+                      )}
+                      {isInstalment && instGroup.length === 1 && instType !== "final" && (
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setLinkedGroupView(instGroup);
+                          }}
+                          title="Click to view all linked transactions"
+                          style={{
+                            marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4,
+                            fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999,
+                            background: instColor, color: "white", cursor: "pointer",
+                            boxShadow: `0 1px 3px ${instColor}66`,
+                          }}>
+                          ⏳ Awaiting Balance
+                        </div>
+                      )}
+                      {isInstalment && instGroup.length === 1 && instType === "final" && (
+                        <div
+                          title="This Final Payment has no matching Advance/Part payment for this customer — check the Payment Type on this and related sales"
+                          style={{
+                            marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4,
+                            fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999,
+                            background: "#dc2626", color: "white",
+                          }}>
+                          ⚠️ No advance found
                         </div>
                       )}
                     </td>
@@ -1704,12 +1728,6 @@ ${signOff} 💜`;
                             const net = (Number(s.amount)||0) - (Number(s.adjAmt)||0);
                             const orig = Number(s.amount)||0;
                             const fmtVal = (v) => fmt ? fmt(shopId, v) : sym + v.toLocaleString("en-GB", {minimumFractionDigits:2,maximumFractionDigits:2});
-
-                            // Instalment logic
-                            const tags = (s.tag||"").split(",").map(t=>t.trim());
-                            const isAdvance = tags.includes("Advance Sale");
-                            const isFinal   = tags.includes("Final Payment Sale");
-                            const isPart    = tags.includes("Part Payment");
 
                             // For advance sale: use the group-level totals already computed
                             // above (instGroup/totalPaid/balance), which correctly include
@@ -2552,7 +2570,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
               {linkedGroupView[0]?.customer || "Customer"}{linkedGroupView[0]?.phone ? ` · ${linkedGroupView[0].phone}` : ""}
             </div>
             {(() => {
-              const advanceSale = linkedGroupView.find(x => (x.tag || "").includes("Advance Sale"));
+              const advanceSale = linkedGroupView.find(x => instalmentTagType(x) === "advance");
               const expectedTotal = Number(advanceSale?.expectedTotal) || 0;
               if (!expectedTotal) return null;
               const received = linkedGroupView.reduce((a, x) => a + (Number(x.amount) || 0), 0);
@@ -2584,8 +2602,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
             })()}
             <div style={{ overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 10 }}>
               {linkedGroupView.map((gs, i) => {
-                const gTags = (gs.tag || "").split(",").map(t => t.trim());
-                const gType = gTags.includes("Advance Sale") ? "advance" : gTags.includes("Final Payment Sale") ? "final" : gTags.includes("Part Payment") ? "part" : null;
+                const gType = instalmentTagType(gs);
                 const gColor = gType === "advance" ? "#f59e0b" : gType === "final" ? "#059669" : gType === "part" ? "#7c3aed" : "#94a3b8";
                 const gLabel = gType === "advance" ? "💰 Advance" : gType === "final" ? "✅ Final" : gType === "part" ? "🔄 Part" : "";
                 return (

@@ -263,33 +263,43 @@ const STAT_RETURNS  =new Set(["RTRN REQSTD","RETRN RCVD","RETURN RQSTD","RETURN 
 
 /* ── Instalment / linked-deal groups: finds all sales linked to the same
    deal as `sale`, across the FULL sales history. A customer's sales
-   (matched by name+phone) chain together automatically. An "Advance Sale"
-   tag always starts a fresh deal (even resetting one never formally
-   closed); a "Final Payment Sale" tag always closes the deal right after
-   it's added. Untagged/Part Payment sales just join whatever deal is
-   open. Status is NOT used to decide grouping — the advance portion is
-   often marked Fulfilled independently, long before the final payment is
-   even recorded, which made status an unreliable signal. The chain only
-   counts as a real group if at least one sale in it carries an
-   Advance/Part/Final Payment tag. ─────────────────────────────────────── */
-const INSTALMENT_TAGS=["Advance Sale","Part Payment","Final Payment Sale"];
+   (matched by name+phone) chain together automatically based on the
+   dedicated Payment Type field (Full/Advance/Part/Final) chosen when the
+   sale was saved. An ADVANCE always starts a fresh deal (even resetting
+   one never formally closed); a FINAL always closes the deal right after
+   it's added. PART just joins whatever deal is open. FULL never joins
+   anything — always its own standalone sale. Status is NOT used to
+   decide grouping — the advance portion is often marked Fulfilled
+   independently, long before the final payment is even recorded, which
+   made status an unreliable signal. ───────────────────────────────────── */
+/* Reads the new dedicated paymentType field; falls back to the old
+   free-text tags for any sale not yet covered by the migration. */
+const inferPaymentType=(sale)=>{
+  if(sale.paymentType) return sale.paymentType;
+  const tags=(sale.tag||"").split(",").map(t=>t.trim());
+  if(tags.includes("Advance Sale")) return "ADVANCE";
+  if(tags.includes("Final Payment Sale")) return "FINAL";
+  if(tags.includes("Part Payment")) return "PART";
+  return "FULL";
+};
 /* Same-day transactions must sort by payment role, not invoice number —
    invoice numbers reflect save order, not necessarily the logical
    Advance -> Part -> Final sequence. */
 const tagPriorityG=(s)=>{
-  const tags=(s.tag||"").split(",").map(t=>t.trim());
-  if(tags.includes("Advance Sale")) return 0;
-  if(tags.includes("Final Payment Sale")) return 2;
-  return 1; // Part Payment, or untagged
+  const pt=inferPaymentType(s);
+  if(pt==="ADVANCE") return 0;
+  if(pt==="FINAL") return 2;
+  return 1; // Part, or Full
 };
 const findInstalmentGroupIds=(sale,allSales)=>{
+  if(inferPaymentType(sale)==="FULL") return [sale.id];
   const phone=(sale.phone||sale.contact||"").replace(/\D/g,"").slice(-10);
   const name=(sale.customer||"").toLowerCase().trim();
   if(!phone&&!name) return [sale.id];
   const custSales=(allSales||[]).filter(s=>{
     const sPhone=(s.phone||s.contact||"").replace(/\D/g,"").slice(-10);
     const sName=(s.customer||"").toLowerCase().trim();
-    return sName===name&&sPhone===phone;
+    return sName===name&&sPhone===phone&&inferPaymentType(s)!=="FULL";
   });
   const sorted=[...custSales].sort((a,b)=>{
     const d=(a.date||"").localeCompare(b.date||"");
@@ -303,20 +313,16 @@ const findInstalmentGroupIds=(sale,allSales)=>{
   let dealOpen=false;
   for(let i=0;i<sorted.length;i++){
     const s=sorted[i];
-    const tags=(s.tag||"").split(",").map(t=>t.trim());
-    const isAdvanceTag=tags.includes("Advance Sale");
-    const isFinalTag=tags.includes("Final Payment Sale");
-    if(!dealOpen||isAdvanceTag){ currentGroup=[]; dealOpen=true; }
+    const pt=inferPaymentType(s);
+    const isAdvance=pt==="ADVANCE";
+    const isFinal=pt==="FINAL";
+    if(!dealOpen||isAdvance){ currentGroup=[]; dealOpen=true; }
     currentGroup.push(s);
     if(s.id===sale.id) found=currentGroup;
-    if(isFinalTag) dealOpen=false;
+    if(isFinal) dealOpen=false;
   }
-  if(!found) return [sale.id];
-  const hasTag=found.some(s=>{
-    const tags=(s.tag||"").split(",").map(t=>t.trim());
-    return tags.some(t=>INSTALMENT_TAGS.includes(t));
-  });
-  return hasTag ? found.map(s=>s.id) : [sale.id];
+  if(!found||found.length<2) return [sale.id];
+  return found.map(s=>s.id);
 };
 
 /* ── getSaleFY: returns FY start year for a sale using invoice suffix as ground truth ── */
@@ -8763,9 +8769,52 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
    NEW PURCHASE FORM
 ══════════════════════════════════════════════════════ */
 /* ── TagPicker: multi-tag chip selector used in EditSaleForm & NewSaleForm ── */
-const SALE_TAG_PRESETS=["Advance Sale","Part Payment","Final Payment Sale","Budget Friendly","Bulk Sale","Discounted Sale","Exchange Sale","Normal Sale"];
+const SALE_TAG_PRESETS=["Budget Friendly","Bulk Sale","Discounted Sale","Exchange Sale","Normal Sale"];
 const parseTags=str=>str?str.split(",").map(t=>t.trim()).filter(Boolean):[];
 const joinTags=arr=>arr.join(", ");
+
+/* ── PaymentTypeControl: required, single-choice payment classification.
+   Replaces the old free-text Advance/Part/Final tags — those could
+   contradict each other or be applied inconsistently, which broke
+   automatic instalment grouping. This is a dedicated, always-answered
+   field instead. Defaults to FULL. ───────────────────────────────────── */
+const PAYMENT_TYPES=[
+  {key:"FULL",    label:"Full",     emoji:"✅", color:"#059669"},
+  {key:"ADVANCE", label:"Advance",  emoji:"💰", color:"#f59e0b"},
+  {key:"PART",    label:"Part",     emoji:"🔄", color:"#7c3aed"},
+  {key:"FINAL",   label:"Final",    emoji:"🏁", color:"#2563eb"},
+];
+const PaymentTypeControl=({value,onChange})=>{
+  const current=value||"FULL";
+  return (
+    <div style={{marginBottom:14}}>
+      <label style={{display:"block",fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:6}}>
+        Payment Type <span style={{color:"#dc2626"}}>*</span>
+      </label>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6}}>
+        {PAYMENT_TYPES.map(pt=>{
+          const active=current===pt.key;
+          return (
+            <button key={pt.key} type="button" onClick={()=>onChange(pt.key)}
+              style={{
+                padding:"9px 4px",borderRadius:9,cursor:"pointer",fontFamily:"inherit",
+                border:active?`2px solid ${pt.color}`:"1.5px solid #e2e8f0",
+                background:active?pt.color+"18":"white",
+                color:active?pt.color:"#64748b",
+                fontWeight:active?800:600,fontSize:12,
+                display:"flex",flexDirection:"column",alignItems:"center",gap:2,
+                transition:"all 0.12s",
+              }}>
+              <span style={{fontSize:15}}>{pt.emoji}</span>
+              {pt.label}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+};
+
 const TagPicker=({value,onChange,accent,accentBg,inp,fo,bl,lbl})=>{
   const tags=parseTags(value);
   const [custom,setCustom]=React.useState("");
@@ -8856,6 +8905,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
     deliveryDate: sale.deliveryDate||"",
     deliveryTime: sale.deliveryTime||"",
     expectedTotal: sale.expectedTotal||"",
+    paymentType: inferPaymentType(sale),
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -9320,8 +9370,10 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
 
       <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
 
-      {/* Expected Total — only shown for Advance Sale */}
-      {parseTags(form.tag||"").includes("Advance Sale")&&(
+      <PaymentTypeControl value={form.paymentType} onChange={v=>set("paymentType",v)} accent={shop.accent}/>
+
+      {/* Expected Total — only shown for Advance payment type */}
+      {form.paymentType==="ADVANCE"&&(
         <div style={{marginBottom:12,padding:"12px 14px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10}}>
           <label style={{...lbl,color:"#92400e"}}>💰 Expected Total ({shop.symbol})</label>
           <input type="number" value={form.expectedTotal||""} onChange={e=>set("expectedTotal",e.target.value)}
@@ -10186,6 +10238,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     returnRcvd:  "",
     refundAmt:   "",
     tag:         "",
+    paymentType: "FULL",
     remarks:     "",
     address:     "",
     purInvNo:    "",
@@ -10384,8 +10437,10 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🏷️ Tags & Notes</p>
               <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
 
-      {/* Expected Total — only shown for Advance Sale */}
-      {parseTags(form.tag||"").includes("Advance Sale")&&(
+      <PaymentTypeControl value={form.paymentType} onChange={v=>set("paymentType",v)} accent={shop.accent}/>
+
+      {/* Expected Total — only shown for Advance payment type */}
+      {form.paymentType==="ADVANCE"&&(
         <div style={{marginBottom:12,padding:"12px 14px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10}}>
           <label style={{...lbl,color:"#92400e"}}>💰 Expected Total ({shop.symbol})</label>
           <input type="number" value={form.expectedTotal||""} onChange={e=>set("expectedTotal",e.target.value)}

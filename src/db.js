@@ -79,6 +79,7 @@ export const dbSaveSale = async (shopId, sale) => {
     flagged:             sale.flagged ? true : false,
     checked:             sale.checked ? true : false,
     sortpos:             sale.sortpos !== undefined && sale.sortpos !== null ? Number(sale.sortpos) : null,
+    payment_type:        sale.paymentType || 'FULL',
   };
 
   const payload = { ...core, ...extended, verified: sale.verified || false };
@@ -191,6 +192,7 @@ export const dbLoadSales = async (shopId) => {
     flagged:       r.flagged || false,
     checked:       r.checked || false,
     sortpos:       r.sortpos !== undefined && r.sortpos !== null ? Number(r.sortpos) : null,
+    paymentType:   r.payment_type || 'FULL',
   }));
   return mapped.sort((a, b) => parseDateMs(b.date) - parseDateMs(a.date));
 };
