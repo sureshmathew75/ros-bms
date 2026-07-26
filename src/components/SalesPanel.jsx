@@ -1612,7 +1612,7 @@ ${signOff} 💜`;
                       {s.paidBy && String(s.paidBy).trim() !== "" && (
                         <div style={{ fontSize: 10, color: "#b6c0cd", marginTop: 1 }}>{s.paidBy}</div>
                       )}
-                      {isInstalment && (
+                      {isInstalment && (instGroup.length > 1 || instType !== "final") && (
                         <div
                           onClick={(e) => {
                             e.stopPropagation();
