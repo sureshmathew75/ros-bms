@@ -1618,17 +1618,22 @@ ${signOff} 💜`;
                           </div>
                         );
                       })()}
-                      {instType && (
-                        <div style={{ marginTop: 2 }}>
-                          <span style={{
-                            fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999,
-                            background: instColor + "20", color: instColor,
-                            border: `1px solid ${instColor}44`, textTransform: "uppercase", letterSpacing: "0.05em"
-                          }}>
-                            {instType === "advance" ? "💰 Advance" : instType === "final" ? "✅ Final" : "🔄 Part"}
-                          </span>
-                        </div>
-                      )}
+                      {(() => {
+                        const pt = inferPaymentType(s);
+                        const badgeColor = pt === "ADVANCE" ? "#f59e0b" : pt === "PART" ? "#7c3aed" : pt === "FINAL" ? "#2563eb" : "#059669";
+                        const badgeLabel = pt === "ADVANCE" ? "💰 Advance" : pt === "PART" ? "🔄 Part" : pt === "FINAL" ? "🏁 Final" : "✅ Full";
+                        return (
+                          <div style={{ marginTop: 2 }}>
+                            <span style={{
+                              fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999,
+                              background: badgeColor + "20", color: badgeColor,
+                              border: `1px solid ${badgeColor}44`, textTransform: "uppercase", letterSpacing: "0.05em"
+                            }}>
+                              {badgeLabel}
+                            </span>
+                          </div>
+                        );
+                      })()}
                     </td>
                     {showCol("Date")&&(
                     <td style={{ padding: "12px 16px" }}>
