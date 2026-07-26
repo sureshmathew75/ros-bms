@@ -263,16 +263,16 @@ const STAT_RETURNS  =new Set(["RTRN REQSTD","RETRN RCVD","RETURN RQSTD","RETURN 
 
 /* ── Instalment / linked-deal groups: finds all sales linked to the same
    deal as `sale`, across the FULL sales history. A customer's sales
-   (matched by name+phone) chain together automatically — tags are not
-   required on every transaction — until one of them reaches a closing
-   status (Fulfilled or later); the next sale after that starts a new
-   deal. The chain only counts as a real group if at least one sale in it
-   carries an Advance/Part/Final Payment tag. ─────────────────────────── */
+   (matched by name+phone) chain together automatically. An "Advance Sale"
+   tag always starts a fresh deal (even resetting one never formally
+   closed); a "Final Payment Sale" tag always closes the deal right after
+   it's added. Untagged/Part Payment sales just join whatever deal is
+   open. Status is NOT used to decide grouping — the advance portion is
+   often marked Fulfilled independently, long before the final payment is
+   even recorded, which made status an unreliable signal. The chain only
+   counts as a real group if at least one sale in it carries an
+   Advance/Part/Final Payment tag. ─────────────────────────────────────── */
 const INSTALMENT_TAGS=["Advance Sale","Part Payment","Final Payment Sale"];
-const DEAL_CLOSING_STATUSES=[
-  "FULFILLED","RTRN REQSTD","RETRN RCVD","RETURN RQSTD","RETURN RCVD",
-  "EXCHANGED","REFUNDED","GOOD FEEDBACK","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD",
-];
 /* Same-day transactions must sort by payment role, not invoice number —
    invoice numbers reflect save order, not necessarily the logical
    Advance -> Part -> Final sequence. */
@@ -300,21 +300,16 @@ const findInstalmentGroupIds=(sale,allSales)=>{
   });
   let currentGroup=[];
   let found=null;
-  let dealClosed=true;
-  let i=0;
-  while(i<sorted.length){
-    const dayDate=sorted[i].date||"";
-    const dayBatch=[];
-    while(i<sorted.length&&(sorted[i].date||"")===dayDate){ dayBatch.push(sorted[i]); i++; }
-    if(dealClosed){ currentGroup=[]; dealClosed=false; }
-    for(let j=0;j<dayBatch.length;j++){
-      const s=dayBatch[j];
-      currentGroup.push(s);
-      if(s.id===sale.id) found=currentGroup;
-    }
-    if(dayBatch.some(s=>DEAL_CLOSING_STATUSES.includes((s.ful||s.status||"").toUpperCase()))){
-      dealClosed=true;
-    }
+  let dealOpen=false;
+  for(let i=0;i<sorted.length;i++){
+    const s=sorted[i];
+    const tags=(s.tag||"").split(",").map(t=>t.trim());
+    const isAdvanceTag=tags.includes("Advance Sale");
+    const isFinalTag=tags.includes("Final Payment Sale");
+    if(!dealOpen||isAdvanceTag){ currentGroup=[]; dealOpen=true; }
+    currentGroup.push(s);
+    if(s.id===sale.id) found=currentGroup;
+    if(isFinalTag) dealOpen=false;
   }
   if(!found) return [sale.id];
   const hasTag=found.some(s=>{

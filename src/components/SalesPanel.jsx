@@ -634,22 +634,22 @@ ${signOff} 💜`;
 
   /* ── Instalment / linked-deal groups ─────────────────────────────────
      Groups a customer's sales (by name+phone) together automatically —
-     tags are no longer required on every transaction. A "deal" stays open
-     and keeps absorbing that customer's sales until one of them reaches a
-     closing status (Fulfilled or later in the lifecycle); the next sale
-     after that starts a brand new deal. A chain is only surfaced as a
-     real group if at least one sale in it carries an Advance/Part/Final
-     Payment tag — otherwise an ordinary repeat customer with an unrelated
-     pending order would get grouped for no reason. ───────────────────── */
+     tags are no longer required on EVERY transaction, only on the ones
+     that open/close the deal. An "Advance Sale" tag always starts a
+     fresh deal (even resetting one that was never formally closed); a
+     "Final Payment Sale" tag always closes the deal right after it's
+     added. Untagged or Part Payment sales just join whatever deal is
+     currently open. Status (Fulfilled etc.) is intentionally NOT used to
+     decide grouping — in practice the advance portion often gets marked
+     Fulfilled on its own, long before the final payment is even
+     recorded, which made status an unreliable signal. A chain is only
+     surfaced as a real group if it contains at least one instalment tag —
+     otherwise an ordinary repeat customer's unrelated purchases would get
+     grouped for no reason. ─────────────────────────────────────────── */
   const INSTALMENT_TAGS = ["Advance Sale", "Part Payment", "Final Payment Sale"];
-  const DEAL_CLOSING_STATUSES = [
-    "FULFILLED","RTRN REQSTD","RETRN RCVD","RETURN RQSTD","RETURN RCVD",
-    "EXCHANGED","REFUNDED","GOOD FEEDBACK","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD",
-  ];
   /* Same-day transactions must sort by payment role, not invoice number —
      invoice numbers reflect save order, not necessarily the logical
-     Advance -> Part -> Final sequence, so a same-day Final Payment could
-     otherwise "jump ahead" of a Part Payment and prematurely close a deal. */
+     Advance -> Part -> Final sequence. */
   const tagPriority = (s) => {
     const tags = (s.tag || "").split(",").map(t => t.trim());
     if (tags.includes("Advance Sale")) return 0;
@@ -678,29 +678,20 @@ ${signOff} 💜`;
       });
       let groupIdx = 0;
       let currentKey = null;
-      let dealClosed = true;
-      let i = 0;
-      while (i < sorted.length) {
-        // Collect every transaction sharing this exact date as one batch,
-        // so a same-day Fulfilled entry can never split same-day payments.
-        const dayDate = sorted[i].date || "";
-        const dayBatch = [];
-        while (i < sorted.length && (sorted[i].date || "") === dayDate) {
-          dayBatch.push(sorted[i]);
-          i++;
-        }
-        if (dealClosed) {
+      let dealOpen = false;
+      for (let i = 0; i < sorted.length; i++) {
+        const s = sorted[i];
+        const tags = (s.tag || "").split(",").map(t => t.trim());
+        const isAdvanceTag = tags.includes("Advance Sale");
+        const isFinalTag = tags.includes("Final Payment Sale");
+        if (!dealOpen || isAdvanceTag) {
           groupIdx++;
           currentKey = `${custKey}__grp${groupIdx}`;
           result[currentKey] = [];
-          dealClosed = false;
+          dealOpen = true;
         }
-        for (let j = 0; j < dayBatch.length; j++) { result[currentKey].push(dayBatch[j]); }
-        // Only after the whole day's batch is in, check whether any of
-        // today's transactions closed the deal for whatever comes next.
-        if (dayBatch.some(s => DEAL_CLOSING_STATUSES.includes((s.ful || s.status || "").toUpperCase()))) {
-          dealClosed = true;
-        }
+        result[currentKey].push(s);
+        if (isFinalTag) dealOpen = false;
       }
       // Drop chains that never had an instalment tag on any transaction —
       // these are just an ordinary customer's unrelated purchases.
