@@ -357,6 +357,7 @@ export default function SalesPanel({
   /* Status cascade across instalment groups (Advance/Part/Final payment) */
   const [cascadeConfirm, setCascadeConfirm] = useState(null); // {saleId, newStatus, groupIds} | null
   const [flashIds, setFlashIds] = useState(new Set());
+  const [linkedGroupView, setLinkedGroupView] = useState(null); // array of sales in the group | null
   const [dragOverId, setDragOverId] = useState(null);
   const handleReorderDrop = async (targetId) => {
     const fromId = dragId;
@@ -1615,11 +1616,9 @@ ${signOff} 💜`;
                         <div
                           onClick={(e) => {
                             e.stopPropagation();
-                            const otherIds = instGroup.filter(x => x.id !== s.id).map(x => x.id);
-                            setFlashIds(new Set(otherIds));
-                            setTimeout(() => setFlashIds(new Set()), 1500);
+                            setLinkedGroupView(instGroup);
                           }}
-                          title="Click to highlight the other linked transactions"
+                          title="Click to view all linked transactions"
                           style={{
                             marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4,
                             fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999,
@@ -2516,6 +2515,76 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
           </div>
         );
       })()}
+
+      {/* Linked Transactions detail popup — shown when clicking a "🔗 Linked" chip */}
+      {linkedGroupView && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 200,
+          background: "rgba(15,23,42,0.55)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }} onClick={() => setLinkedGroupView(null)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: "white", borderRadius: 16, padding: "22px 24px",
+            maxWidth: 620, width: "92%", maxHeight: "80vh", display: "flex", flexDirection: "column",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>
+                🔗 Linked Transactions ({linkedGroupView.length})
+              </div>
+              <button onClick={() => setLinkedGroupView(null)}
+                style={{ border: "none", background: "transparent", fontSize: 18, cursor: "pointer", color: "#94a3b8", lineHeight: 1 }}>
+                ✕
+              </button>
+            </div>
+            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 14 }}>
+              {linkedGroupView[0]?.customer || "Customer"}{linkedGroupView[0]?.phone ? ` · ${linkedGroupView[0].phone}` : ""}
+            </div>
+            <div style={{ overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 10 }}>
+              {linkedGroupView.map((gs, i) => {
+                const gTags = (gs.tag || "").split(",").map(t => t.trim());
+                const gType = gTags.includes("Advance Sale") ? "advance" : gTags.includes("Final Payment Sale") ? "final" : gTags.includes("Part Payment") ? "part" : null;
+                const gColor = gType === "advance" ? "#f59e0b" : gType === "final" ? "#059669" : gType === "part" ? "#7c3aed" : "#94a3b8";
+                const gLabel = gType === "advance" ? "💰 Advance" : gType === "final" ? "✅ Final" : gType === "part" ? "🔄 Part" : "";
+                return (
+                  <div key={gs.id} style={{
+                    padding: "10px 14px", borderTop: i === 0 ? "none" : "1px solid #f1f5f9",
+                    display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12,
+                  }}>
+                    <div style={{ minWidth: 0, flex: 1 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 3 }}>
+                        <span style={{
+                          fontSize: 9, fontWeight: 800, padding: "1px 7px", borderRadius: 999,
+                          background: gColor + "20", color: gColor, border: `1px solid ${gColor}44`,
+                          textTransform: "uppercase", letterSpacing: "0.05em",
+                        }}>{gLabel}</span>
+                        <span style={{ fontFamily: "DM Mono,monospace", fontWeight: 700, fontSize: 12, color: accent }}>{gs.id}</span>
+                        <span style={{ fontSize: 11, color: "#94a3b8" }}>{gs.date || ""}</span>
+                      </div>
+                      <div style={{ fontSize: 12, color: "#374151" }}>{gs.item || "—"}</div>
+                      <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
+                        {gs.pay || "—"} · {gs.ful || gs.status || "—"}
+                      </div>
+                    </div>
+                    <div style={{ fontWeight: 800, fontSize: 14, color: "#0f172a", whiteSpace: "nowrap" }}>
+                      {fmt ? fmt(shopId, Number(gs.amount) || 0) : gs.amount}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              marginTop: 14, paddingTop: 14, borderTop: "1px solid #f1f5f9",
+            }}>
+              <span style={{ fontSize: 12, color: "#64748b" }}>Total across {linkedGroupView.length} transactions</span>
+              <span style={{ fontSize: 16, fontWeight: 800, color: "#0f172a" }}>
+                {fmt ? fmt(shopId, linkedGroupView.reduce((a, x) => a + (Number(x.amount) || 0), 0)) : ""}
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Status cascade confirmation — shown when changing status on a sale
           that's part of an Advance/Part/Final Payment group */}
