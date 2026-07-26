@@ -1530,7 +1530,7 @@ ${signOff} 💜`;
                       opacity: isDragging ? 0.4 : 1,
                       borderBottom: isDragOver ? "2px dashed " + accent : "1px solid #e2e8f0",
                       transition: "background 0.12s",
-                      borderLeft: s.flagged ? "3px solid #dc2626" : (isInstalment ? `3px solid ${instColor}` : "3px solid transparent"),
+                      borderLeft: s.flagged ? "3px solid #dc2626" : (isInstalment ? `5px solid ${instColor}` : "3px solid transparent"),
                     }}>
                     {/* Invoice */}
                     <td style={{ padding: "12px 16px" }}>
@@ -1610,6 +1610,24 @@ ${signOff} 💜`;
                       {s.phone && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>{s.phone}</div>}
                       {s.paidBy && String(s.paidBy).trim() !== "" && (
                         <div style={{ fontSize: 10, color: "#b6c0cd", marginTop: 1 }}>{s.paidBy}</div>
+                      )}
+                      {isInstalment && instGroup.length > 1 && (
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const otherIds = instGroup.filter(x => x.id !== s.id).map(x => x.id);
+                            setFlashIds(new Set(otherIds));
+                            setTimeout(() => setFlashIds(new Set()), 1500);
+                          }}
+                          title="Click to highlight the other linked transactions"
+                          style={{
+                            marginTop: 4, display: "inline-flex", alignItems: "center", gap: 4,
+                            fontSize: 10, fontWeight: 800, padding: "2px 8px", borderRadius: 999,
+                            background: instColor, color: "white", cursor: "pointer",
+                            boxShadow: `0 1px 3px ${instColor}66`,
+                          }}>
+                          🔗 Linked ({instGroup.length})
+                        </div>
                       )}
                     </td>
                     {/* Item */}
