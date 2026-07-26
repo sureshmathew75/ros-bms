@@ -7036,12 +7036,32 @@ return(
       {editCascadeConfirm&&(
         <div style={{position:"fixed",inset:0,zIndex:200,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center"}}
           onClick={()=>setEditCascadeConfirm(null)}>
-          <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:16,padding:"24px 26px",maxWidth:400,width:"90%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:16,padding:"24px 26px",maxWidth:460,width:"90%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
             <div style={{fontSize:15,fontWeight:800,color:"#0f172a",marginBottom:8}}>Update linked transactions?</div>
-            <div style={{fontSize:13,color:"#475569",lineHeight:1.5,marginBottom:18}}>
+            <div style={{fontSize:13,color:"#475569",lineHeight:1.5,marginBottom:14}}>
               This sale is part of an instalment group (Advance / Part / Final Payment).
               Changing the status will update all <strong>{editCascadeConfirm.groupIds.length}</strong> linked
               transaction{editCascadeConfirm.groupIds.length!==1?"s":""} to <strong>{editCascadeConfirm.merged.status||editCascadeConfirm.merged.ful}</strong>.
+            </div>
+            <div style={{border:"1px solid #e2e8f0",borderRadius:10,marginBottom:18,maxHeight:220,overflowY:"auto"}}>
+              {editCascadeConfirm.groupIds.map((id,i)=>{
+                const gs=id===editCascadeConfirm.merged.id?editCascadeConfirm.merged:(sales||[]).find(x=>x.id===id);
+                if(!gs) return null;
+                return (
+                  <div key={id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"8px 12px",fontSize:12,
+                    borderTop:i===0?"none":"1px solid #f1f5f9",background:id===editCascadeConfirm.merged.id?"#f8fafc":"white"}}>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontWeight:700,color:"#0f172a"}}>{gs.customer||"Customer"}</div>
+                      <div style={{color:"#64748b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:220}}>
+                        {gs.date||""} · {gs.item||""}
+                      </div>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0,fontWeight:700,color:"#0f172a",whiteSpace:"nowrap"}}>
+                      {fmt(shopId,Number(gs.amount)||0)}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
             <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
               <button onClick={()=>{commitEditSave(editCascadeConfirm.merged);setEditCascadeConfirm(null);}}
