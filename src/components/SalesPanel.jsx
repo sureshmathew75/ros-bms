@@ -558,12 +558,13 @@ export default function SalesPanel({
   const sortedSales = useMemo(
     () => [...statusFiltered].sort((a, b) => {
       // Single-month view (current-month tab or an explicitly picked month):
-      // manual drag order (sortpos) wins
+      // manual drag order (sortpos) wins, but ONLY between two sales that
+      // both already have one. A sale with no sortpos yet (e.g. one just
+      // added after the month was reordered) falls through to normal date
+      // order instead of always being pushed to the bottom.
       if (pickedMonth || salesPeriod === "month") {
         const spA = a.sortpos, spB = b.sortpos;
         if (spA != null && spB != null && spA !== spB) return spA - spB;
-        if (spA != null && spB == null) return -1;
-        if (spA == null && spB != null) return 1;
       }
       // Primary: FY group (use fyStartYear which reads invoice suffix)
       const fyA = fyStartYear(a) ?? 0;
@@ -780,14 +781,14 @@ ${signOff} 💜`;
         const ma = da && !isNaN(da.getTime()) ? da.getFullYear() * 12 + da.getMonth() : -1;
         const mb = db && !isNaN(db.getTime()) ? db.getFullYear() * 12 + db.getMonth() : -1;
         if (ma !== mb) return ma - mb;
-        // Within the same month: manual drag order (sortpos) wins if set.
-        // Counting must run bottom-to-top of the on-screen (top-to-bottom
-        // ascending sortpos) order, so the LAST displayed row of the month
-        // is numbered 01 — same convention as the date-descending display.
+        // Within the same month: manual drag order (sortpos) wins, but only
+        // between two sales that both already have one. Counting runs
+        // bottom-to-top of the on-screen order for those, so the LAST
+        // displayed row of the month is numbered 01. A sale without a
+        // sortpos yet (e.g. newly added) falls through to normal date
+        // order instead of always being counted first.
         const spA = a.sortpos, spB = b.sortpos;
         if (spA != null && spB != null && spA !== spB) return spB - spA;
-        if (spA != null && spB == null) return 1;
-        if (spA == null && spB != null) return -1;
         if (ta !== tb) return ta - tb;
         return String(a.invoiceNo || a.id || "").localeCompare(String(b.invoiceNo || b.id || ""));
       });
