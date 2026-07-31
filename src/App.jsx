@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
+import ReactDOM from "react-dom";
 import CommandPalette from "./components/CommandPalette";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import DocumentsPanel from "./components/DocumentsPanel";
@@ -9075,8 +9076,8 @@ const FlyingRosie = ({ getTargets, activeIndex = 0, loop = false, mood = "happy"
 
   if (!pos) return null;
 
-  return (
-    <div style={{ position:"fixed", top:pos.top, left:pos.left, zIndex:260, transition:"top 1s cubic-bezier(.4,0,.2,1), left 1s cubic-bezier(.4,0,.2,1)", pointerEvents:"none" }}>
+  return ReactDOM.createPortal(
+    <div style={{ position:"fixed", top:pos.top, left:pos.left, zIndex:9999, transition:"top 1s cubic-bezier(.4,0,.2,1), left 1s cubic-bezier(.4,0,.2,1)", pointerEvents:"none" }}>
       <style>{PET_CSS}</style>
       <Rosie mood={mood} size={size} pose={phase==="flying" ? "fly" : "idle"} />
       {label && phase==="landed" && (
@@ -9084,7 +9085,8 @@ const FlyingRosie = ({ getTargets, activeIndex = 0, loop = false, mood = "happy"
           {label}
         </div>
       )}
-    </div>
+    </div>,
+    document.body
   );
 };
 
