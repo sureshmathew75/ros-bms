@@ -8930,9 +8930,22 @@ const Rosie = ({ mood = "happy", size = 56, pose = "idle" }) => {
   const walking = pose === "walk";
   const pointing = pose === "point";
   const flying = pose === "fly";
+  const sitting = pose === "sit";
+  const lying = pose === "lie";
+  const crying = mood === "crying";
+  const sleepy = sitting || lying;
   return (
-    <svg width={size} height={size * 1.5} viewBox="0 0 100 150" style={{ animation: (walking||flying) ? "none" : "petBob 2.2s ease-in-out infinite", overflow: "visible" }}>
-      <ellipse cx="50" cy="140" rx="18" ry="4" fill={flying ? "transparent" : "#00000015"} />
+    <svg width={size} height={size * 1.5} viewBox="0 0 100 150" style={{
+      animation: (walking||flying||lying) ? "none" : "petBob 2.2s ease-in-out infinite",
+      overflow: "visible",
+      transform: lying ? "rotate(90deg)" : "none",
+      transformOrigin: "50px 90px",
+    }}>
+      <ellipse cx="50" cy="140" rx="18" ry="4" fill={(flying||lying) ? "transparent" : "#00000015"} />
+
+      {lying && (
+        <text x="78" y="20" fontSize="16" fill="#94a3b8" style={{ transform: "rotate(-90deg)", transformOrigin: "78px 20px" }}>Zzz</text>
+      )}
 
       {/* Wings - only while flying (not part of her normal look) */}
       {flying && (<>
@@ -8944,16 +8957,16 @@ const Rosie = ({ mood = "happy", size = 56, pose = "idle" }) => {
         </g>
       </>)}
 
-      {/* Legs - white socks + pink sneakers */}
+      {/* Legs - white socks + pink sneakers. Bent when sitting. */}
       <g style={{ transformOrigin: "42px 116px", animation: walking ? "petLegSwingL 0.45s ease-in-out infinite" : "none", opacity: flying?0.6:1 }}>
-        <line x1="42" y1="116" x2={flying?43:40} y2={flying?130:130} stroke={skinColor} strokeWidth="7" strokeLinecap="round" />
-        <line x1={flying?43:40} y1={flying?122:122} x2={flying?43:40} y2={flying?132:132} stroke="white" strokeWidth="8" strokeLinecap="round" />
-        <ellipse cx={flying?44:41} cy={flying?134:135} rx="7" ry="4" fill={shoeColor} />
+        <line x1="42" y1="116" x2={sitting?30:(flying?43:40)} y2={sitting?122:(flying?130:130)} stroke={skinColor} strokeWidth="7" strokeLinecap="round" />
+        <line x1={sitting?30:(flying?43:40)} y1={sitting?116:(flying?122:122)} x2={sitting?30:(flying?43:40)} y2={sitting?126:(flying?132:132)} stroke="white" strokeWidth="8" strokeLinecap="round" />
+        <ellipse cx={sitting?28:(flying?44:41)} cy={sitting?128:(flying?134:135)} rx="7" ry="4" fill={shoeColor} />
       </g>
       <g style={{ transformOrigin: "58px 116px", animation: walking ? "petLegSwingR 0.45s ease-in-out infinite" : "none", opacity: flying?0.6:1 }}>
-        <line x1="58" y1="116" x2={flying?57:60} y2={flying?130:130} stroke={skinColor} strokeWidth="7" strokeLinecap="round" />
-        <line x1={flying?57:60} y1={flying?122:122} x2={flying?57:60} y2={flying?132:132} stroke="white" strokeWidth="8" strokeLinecap="round" />
-        <ellipse cx={flying?56:59} cy={flying?134:135} rx="7" ry="4" fill={shoeColor} />
+        <line x1="58" y1="116" x2={sitting?70:(flying?57:60)} y2={sitting?122:(flying?130:130)} stroke={skinColor} strokeWidth="7" strokeLinecap="round" />
+        <line x1={sitting?70:(flying?57:60)} y1={sitting?116:(flying?122:122)} x2={sitting?70:(flying?57:60)} y2={sitting?126:(flying?132:132)} stroke="white" strokeWidth="8" strokeLinecap="round" />
+        <ellipse cx={sitting?72:(flying?56:59)} cy={sitting?128:(flying?134:135)} rx="7" ry="4" fill={shoeColor} />
       </g>
 
       {/* White t-shirt (shoulders peeking above dress) */}
@@ -9006,24 +9019,43 @@ const Rosie = ({ mood = "happy", size = 56, pose = "idle" }) => {
       <path d="M77 30 Q81 24 77 16 Q74 25 74 33 Z" fill={hairColor} />
       <path d="M70 20 Q60 17 50 18 Q62 15 72 22 Z" fill={hairColor} opacity="0.9" />
 
-      {/* Eyes - big and sparkly, with lashes */}
-      <g style={{ transformOrigin: "50px 36px", animation: "petBlink 4.2s ease-in-out infinite" }}>
-        <ellipse cx="38" cy="37" rx="5.5" ry="6.5" fill="#3b2a20" />
-        <ellipse cx="62" cy="37" rx="5.5" ry="6.5" fill="#3b2a20" />
-        <circle cx="40.5" cy="33.5" r="2.1" fill="white" />
-        <circle cx="64.5" cy="33.5" r="2.1" fill="white" />
-        <circle cx="36" cy="40" r="1" fill="white" opacity="0.8" />
-        <circle cx="60" cy="40" r="1" fill="white" opacity="0.8" />
-        <path d="M32 31 L27 27" stroke="#3b2a20" strokeWidth="1.6" strokeLinecap="round" />
-        <path d="M68 31 L73 27" stroke="#3b2a20" strokeWidth="1.6" strokeLinecap="round" />
-      </g>
+      {/* Eyes - big and sparkly, with lashes. Closed/sleepy when sitting/lying. */}
+      {sleepy ? (
+        <g>
+          <path d="M32 37 Q38 40 44 37" stroke="#3b2a20" strokeWidth="2" fill="none" strokeLinecap="round" />
+          <path d="M56 37 Q62 40 68 37" stroke="#3b2a20" strokeWidth="2" fill="none" strokeLinecap="round" />
+        </g>
+      ) : (
+        <g style={{ transformOrigin: "50px 36px", animation: "petBlink 4.2s ease-in-out infinite" }}>
+          <ellipse cx="38" cy="37" rx="5.5" ry="6.5" fill="#3b2a20" />
+          <ellipse cx="62" cy="37" rx="5.5" ry="6.5" fill="#3b2a20" />
+          <circle cx="40.5" cy="33.5" r="2.1" fill="white" />
+          <circle cx="64.5" cy="33.5" r="2.1" fill="white" />
+          <circle cx="36" cy="40" r="1" fill="white" opacity="0.8" />
+          <circle cx="60" cy="40" r="1" fill="white" opacity="0.8" />
+          <path d="M32 31 L27 27" stroke="#3b2a20" strokeWidth="1.6" strokeLinecap="round" />
+          <path d="M68 31 L73 27" stroke="#3b2a20" strokeWidth="1.6" strokeLinecap="round" />
+        </g>
+      )}
 
-      {/* Mouth - sweet smile, shape follows mood */}
-      {mood === "worried"
-        ? <path d="M42 56 Q50 52 58 56" stroke="#c2410c" strokeWidth="2.2" fill="none" strokeLinecap="round" />
-        : mood === "neutral"
-          ? <path d="M43 55 Q50 57 57 55" stroke="#c2410c" strokeWidth="2.2" fill="none" strokeLinecap="round" />
-          : <path d="M41 53 Q50 61 59 53" stroke="#c2410c" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+      {/* Tears - only when crying */}
+      {crying && !sleepy && (
+        <g style={{ animation: "petBob 1s ease-in-out infinite" }}>
+          <path d="M36 44 Q33 52 36 58 Q39 52 36 44 Z" fill="#60a5fa" opacity="0.85" />
+          <path d="M64 44 Q61 52 64 58 Q67 52 64 44 Z" fill="#60a5fa" opacity="0.85" />
+        </g>
+      )}
+
+      {/* Mouth - shape follows mood (or sleepy calm line) */}
+      {sleepy
+        ? <path d="M44 56 Q50 58 56 56" stroke="#c2410c" strokeWidth="2" fill="none" strokeLinecap="round" />
+        : crying
+          ? <path d="M40 58 Q50 50 60 58" stroke="#c2410c" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+          : mood === "worried"
+            ? <path d="M42 56 Q50 52 58 56" stroke="#c2410c" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+            : mood === "neutral"
+              ? <path d="M43 55 Q50 57 57 55" stroke="#c2410c" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+              : <path d="M41 53 Q50 61 59 53" stroke="#c2410c" strokeWidth="2.2" fill="none" strokeLinecap="round" />
       }
 
       {/* Bow in hair */}
@@ -9115,10 +9147,32 @@ const FlyingRosie = ({ getTargets, activeIndex = 0, loop = false, mood = "happy"
 
 const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMarkTaskDone, isAdmin=false, onManageTasks, nagDays=14, cutoffDate="", onTalkToRosie, showGreeting=false, timeGreeting="Hello", userName="", onDismissGreeting }) => {
   const [open, setOpen] = React.useState(false);
+  const [idleState, setIdleState] = React.useState("active"); // "active" | "sitting" | "lying"
+  const lastActivityRef = React.useRef(Date.now());
 
   React.useEffect(() => {
     if (showGreeting) setOpen(true);
   }, [showGreeting]);
+
+  // Idle detection: sits after 3 minutes of no activity, lies down after 10.
+  // Wakes up instantly the moment there's any activity again.
+  React.useEffect(() => {
+    const markActive = () => {
+      lastActivityRef.current = Date.now();
+      setIdleState(prev => (prev !== "active" ? "active" : prev));
+    };
+    const events = ["mousemove","keydown","mousedown","scroll","touchstart"];
+    events.forEach(ev => window.addEventListener(ev, markActive, { passive: true }));
+    const checkInterval = setInterval(() => {
+      const idleMin = (Date.now() - lastActivityRef.current) / 60000;
+      if (idleMin >= 10) setIdleState("lying");
+      else if (idleMin >= 3) setIdleState("sitting");
+    }, 15000);
+    return () => {
+      events.forEach(ev => window.removeEventListener(ev, markActive));
+      clearInterval(checkInterval);
+    };
+  }, []);
 
   const overdue = React.useMemo(() => {
     const nagMs = Date.now() - (nagDays ?? 14)*24*60*60*1000;
@@ -9136,7 +9190,7 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
   }, [sales, nagDays, cutoffDate]);
 
   const totalBadge = overdue.length + myTasks.length;
-  const mood = totalBadge===0 ? "happy" : totalBadge<=3 ? "neutral" : "worried";
+  const mood = overdue.length > 10 ? "crying" : totalBadge===0 ? "happy" : totalBadge<=3 ? "neutral" : "worried";
 
   if (!enabled) return null;
 
@@ -9213,9 +9267,9 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
           )}
         </div>
       )}
-      <div style={{ animation: open ? "none" : "petRoam 16s ease-in-out infinite" }}>
+      <div style={{ animation: (open || idleState!=="active") ? "none" : "petRoam 16s ease-in-out infinite" }}>
         <button onClick={()=>setOpen(o=>!o)} title="Rosie" style={{position:"relative",border:"none",background:"transparent",cursor:"pointer",padding:0,lineHeight:0}}>
-          <Rosie mood={mood} pose={open?"idle":"walk"} />
+          <Rosie mood={mood} pose={idleState==="lying" ? "lie" : idleState==="sitting" ? "sit" : (open?"idle":"walk")} />
           {totalBadge>0 && (
             <span style={{position:"absolute",top:-2,right:-2,background:"#dc2626",color:"white",fontSize:10,fontWeight:800,borderRadius:999,minWidth:18,height:18,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px",animation:"petPop 0.3s ease"}}>
               {totalBadge}
