@@ -648,7 +648,7 @@ export default function SalesPanel({
       case "ups":          return `https://www.ups.com/track?tracknum=${trackNo}`;
       case "parcelforce":  return `https://www.parcelforce.com/track-trace?trackNumber=${trackNo}`;
       case "speed post":   return `https://www.indiapost.gov.in/_layouts/15/dop.portal.tracking/trackconsignment.aspx`;
-      case "dtdc":         return `https://tracking.dtdc.com/ctbs-tracking/customerInterface.tr?submitName=showCITrack&cnno=${trackNo}`;
+      case "dtdc":         return `https://www.dtdc.com/track-your-shipment/`;
       default: return null;
     }
   };
@@ -656,8 +656,14 @@ export default function SalesPanel({
   const buildTrackingMsg = (sale, carrier, trackNo) => {
     const url = trackingURL(carrier, trackNo);
     const carrierName = carrier || "our courier";
+    const isDtdc = (carrier||"").toLowerCase() === "dtdc";
     const trackLine = url
-      ? `You can track your parcel here:
+      ? isDtdc
+        ? `You can track your parcel here:
+${url}
+
+Please enter your tracking number (${trackNo}) and the security code shown on the page to see your delivery status.`
+        : `You can track your parcel here:
 ${url}`
       : `Your tracking number is: ${trackNo}`;
     const signOff = shop?.short ? `ROS ${shop.short}` : "ROS";
