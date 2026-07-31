@@ -4978,10 +4978,21 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [rosieTasksModal,setRosieTasksModal]=useState(false);
   const [rosieSettings,setRosieSettings]=useState({cutoffDate:"",nagDays:14});
   const [rosieTalkModal,setRosieTalkModal]=useState(false);
+  const [showGreeting,setShowGreeting]=useState(false);
   useEffect(()=>{
     dbLoadRosieTasks(shopId).then(setRosieTasks).catch(()=>{});
     dbLoadRosieSettings(shopId).then(setRosieSettings).catch(()=>{});
+    try{
+      const key=`rosie_greeted_${user?.id||"u"}_${shopId}_${localTodayISO()}`;
+      if(!localStorage.getItem(key)){ setShowGreeting(true); localStorage.setItem(key,"1"); }
+    }catch{}
   },[shopId]);
+  const timeGreeting=(()=>{
+    const h=new Date().getHours();
+    if(h<12) return "Good morning";
+    if(h<17) return "Good afternoon";
+    return "Good evening";
+  })();
   const reloadRosieTasks=()=>{ dbLoadRosieTasks(shopId).then(setRosieTasks).catch(()=>{}); };
   /* Is this task currently "due" (should Rosie mention it)? One-off tasks
      stay due until marked done; recurring ones reset each cycle. */
@@ -8385,6 +8396,12 @@ return(
         nagDays={rosieSettings.nagDays}
         cutoffDate={rosieSettings.cutoffDate}
         onTalkToRosie={()=>setRosieTalkModal(true)}
+        showGreeting={showGreeting}
+        timeGreeting={timeGreeting}
+        userName={user?.name||""}
+        onDismissGreeting={()=>setShowGreeting(false)}
+        fmt={fmt}
+        shopId={shopId}
       />
       {rosieTasksModal && (
         <RosieTasksModal
@@ -9065,8 +9082,13 @@ const FlyingRosie = ({ getTargets, activeIndex = 0, loop = false, mood = "happy"
   );
 };
 
-const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMarkTaskDone, isAdmin=false, onManageTasks, nagDays=14, cutoffDate="", onTalkToRosie }) => {
+const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMarkTaskDone, isAdmin=false, onManageTasks, nagDays=14, cutoffDate="", onTalkToRosie, showGreeting=false, timeGreeting="Hello", userName="", onDismissGreeting, fmt, shopId }) => {
   const [open, setOpen] = React.useState(false);
+  const [custQuery, setCustQuery] = React.useState("");
+
+  React.useEffect(() => {
+    if (showGreeting) setOpen(true);
+  }, [showGreeting]);
 
   const overdue = React.useMemo(() => {
     const nagMs = Date.now() - (nagDays ?? 14)*24*60*60*1000;
@@ -9083,6 +9105,41 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
     }).sort((a,b)=>(a.date||"").localeCompare(b.date||""));
   }, [sales, nagDays, cutoffDate]);
 
+  /* "Ask Rosie about a customer" — deterministic lookup, not free-text AI.
+     Finds the customer's most recent transaction and, if it's part of an
+     open Advance/Part/Final deal, the balance still owed. */
+  const custResult = React.useMemo(() => {
+    const q = custQuery.trim().toLowerCase();
+    if (!q) return null;
+    const matches = (sales||[]).filter(s => (s.customer||"").toLowerCase().includes(q));
+    if (!matches.length) return { found: false };
+    const byCust = {};
+    matches.forEach(s => {
+      const key = `${(s.customer||"").toLowerCase()}__${(s.phone||s.contact||"").replace(/\D/g,"")}`;
+      (byCust[key] ||= []).push(s);
+    });
+    let bestKey = null, bestDate = "";
+    Object.keys(byCust).forEach(k => {
+      const maxDate = byCust[k].reduce((m,s)=> (s.date||"")>m ? (s.date||"") : m, "");
+      if (maxDate >= bestDate) { bestDate = maxDate; bestKey = k; }
+    });
+    const custSales = byCust[bestKey].sort((a,b)=>(b.date||"").localeCompare(a.date||""));
+    const latest = custSales[0];
+    const groupIds = findInstalmentGroupIds(latest, sales);
+    let balanceInfo = null;
+    if (groupIds.length > 1) {
+      const group = (sales||[]).filter(s => groupIds.includes(s.id));
+      const advanceSale = group.find(s => inferPaymentType(s) === "ADVANCE");
+      const expectedTotal = advanceSale ? Number(advanceSale.expectedTotal)||0 : 0;
+      const received = group.reduce((a,x)=>a+(Number(x.amount)||0), 0);
+      const hasFinal = group.some(s => inferPaymentType(s) === "FINAL");
+      if (expectedTotal > 0) {
+        balanceInfo = { expectedTotal, received, balance: expectedTotal-received, fullyPaid: (expectedTotal-received)<=0 && hasFinal };
+      }
+    }
+    return { found: true, customer: latest.customer, phone: latest.phone||latest.contact||"", totalTransactions: custSales.length, latest, balanceInfo };
+  }, [custQuery, sales]);
+
   const totalBadge = overdue.length + myTasks.length;
   const mood = totalBadge===0 ? "happy" : totalBadge<=3 ? "neutral" : "worried";
 
@@ -9092,7 +9149,53 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
     <div style={{position:"fixed",bottom:20,right:20,zIndex:250,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
       <style>{PET_CSS}</style>
       {open && (
-        <div style={{background:"white",borderRadius:14,boxShadow:"0 12px 40px rgba(0,0,0,0.2)",padding:"14px 16px",width:290,marginBottom:4,maxHeight:400,overflowY:"auto"}}>
+        <div style={{background:"white",borderRadius:14,boxShadow:"0 12px 40px rgba(0,0,0,0.2)",padding:"14px 16px",width:300,marginBottom:4,maxHeight:440,overflowY:"auto"}}>
+          {showGreeting && (
+            <div style={{marginBottom:12,padding:"10px 12px",background:"#fdf4ff",border:"1px solid #f0abfc",borderRadius:10}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#86198f",marginBottom:4}}>
+                {timeGreeting}{userName?`, ${userName}`:""}! 👋
+              </div>
+              <div style={{fontSize:12,color:"#a21caf",lineHeight:1.4}}>
+                {overdue.length>0 || myTasks.length>0
+                  ? `You've got ${overdue.length>0?`${overdue.length} sale${overdue.length!==1?"s":""} waiting for tracking`:""}${overdue.length>0&&myTasks.length>0?" and ":""}${myTasks.length>0?`${myTasks.length} task${myTasks.length!==1?"s":""} from admin`:""} to look at today.`
+                  : "Everything's caught up — have a great day! 🎉"}
+              </div>
+              <button onClick={()=>{ if(onDismissGreeting) onDismissGreeting(); }}
+                style={{marginTop:6,fontSize:11,fontWeight:700,color:"#a21caf",background:"white",border:"1px solid #f0abfc",borderRadius:7,padding:"4px 10px",cursor:"pointer",fontFamily:"inherit"}}>
+                Got it!
+              </button>
+            </div>
+          )}
+          <div style={{marginBottom:12}}>
+            <div style={{fontWeight:800,fontSize:13,color:"#0f172a",marginBottom:6}}>🔍 Ask about a customer</div>
+            <input value={custQuery} onChange={e=>setCustQuery(e.target.value)} placeholder="Type a customer name…"
+              style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1.5px solid #e2e8f0",fontSize:12,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}/>
+            {custResult && (
+              custResult.found ? (
+                <div style={{marginTop:8,padding:"9px 10px",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:9,fontSize:12}}>
+                  <div style={{fontWeight:800,color:"#0f172a"}}>{custResult.customer}</div>
+                  <div style={{color:"#64748b",marginBottom:6}}>{custResult.phone} · {custResult.totalTransactions} transaction{custResult.totalTransactions!==1?"s":""}</div>
+                  <div style={{color:"#374151"}}>
+                    Last: {custResult.latest.item||"—"} — {fmt?fmt(shopId,Number(custResult.latest.amount)||0):custResult.latest.amount} ({custResult.latest.ful||custResult.latest.status||"—"})
+                  </div>
+                  {custResult.balanceInfo && (
+                    <div style={{marginTop:6,paddingTop:6,borderTop:"1px dashed #bfdbfe",display:"flex",justifyContent:"space-between"}}>
+                      <span style={{color:"#1e3a8a",fontWeight:700}}>
+                        {custResult.balanceInfo.fullyPaid ? "✅ Fully Paid" : "Balance to receive:"}
+                      </span>
+                      {!custResult.balanceInfo.fullyPaid && (
+                        <span style={{color:"#dc2626",fontWeight:800}}>
+                          {fmt?fmt(shopId,Math.max(custResult.balanceInfo.balance,0)):custResult.balanceInfo.balance}
+                        </span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div style={{marginTop:8,fontSize:12,color:"#94a3b8"}}>No customer found matching that name.</div>
+              )
+            )}
+          </div>
           {myTasks.length>0 && (
             <div style={{marginBottom:12}}>
               <div style={{fontWeight:800,fontSize:13,color:"#0f172a",marginBottom:6}}>📌 Your Tasks</div>
@@ -9971,7 +10074,9 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
 
       <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
 
+      <div ref={el=>{rosieFieldRefs.current.paymentType=el;}}>
       <PaymentTypeControl value={form.paymentType} onChange={v=>set("paymentType",v)} accent={shop.accent}/>
+      </div>
 
       {/* Expected Total — only shown for Advance payment type */}
       {form.paymentType==="ADVANCE"&&(
@@ -10791,6 +10896,7 @@ const AddTabInput=({onAdd,accent})=>{
 
 const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,onDeleteShopItem,customers=[],sales=[],isSuperadmin=false})=>{
   const rosieFieldRefs=useRef({});
+  const [paymentTypeAcked,setPaymentTypeAcked]=useState(false);
   const defaultPay = shopId === "ros-india" ? "SIB" : "SHOP";
   const PAY_OPTIONS = shopId === "ros-india" ? ["SIB","HDFC","SHOP"] : ["BANK","SHOP","EXCHANGE","GIFT","PROMOTION"];
   const _now=new Date();
@@ -10905,17 +11011,24 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
         {(() => {
           const filledLines = lines.filter(l=>l.name.trim());
           const hasPrice = lines.some(l=>parseFloat(l.price)>0);
-          const stepKeys = ["customer","contact","item","price","payBy"];
+          const stepKeys = ["customer","contact","item","price","payBy","paymentType"];
+          const ptExplain = {
+            FULL: "Marked as Full — the customer paid the whole amount today, nothing more to collect. 👍",
+            ADVANCE: "Marked as Advance — this is the first payment towards a bigger total. Don't forget to set the Expected Total below! 💰",
+            PART: "Marked as Part — another instalment, not the final one. I'll link it to the earlier payment automatically. 🔄",
+            FINAL: "Marked as Final — this completes the balance. I'll close out the deal once you save. 🏁",
+          };
           const steps = [
             { done: !!form.customer.trim(), label: "Let's start with the customer's name!" },
             { done: !!form.contact.trim(), label: "Don't forget the phone number 📱" },
             { done: filledLines.length>0, label: "What are they buying? Add an item below." },
             { done: hasPrice, label: "This item needs a price 💰" },
             { done: !!form.payBy, label: "Which payment method was used?" },
+            { done: paymentTypeAcked, label: ptExplain[form.paymentType] || ptExplain.FULL },
           ];
           const activeIdx = steps.findIndex(s=>!s.done);
           const allDone = activeIdx===-1;
-          const petNudge = allDone ? "Looking good! Review and hit Save Sale when ready. ✅" : steps[activeIdx].label;
+          const petNudge = allDone ? "All set! Review and hit Save Sale when ready. ✅" : steps[activeIdx].label;
           return (<>
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",margin:"0 0 10px",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10}}>
               <div style={{flexShrink:0,lineHeight:0}}><Rosie mood="happy" size={30} pose={allDone?"idle":"point"}/></div>
@@ -10927,6 +11040,12 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                   ))}
                 </div>
               </div>
+              {activeIdx===5 && (
+                <button onClick={()=>setPaymentTypeAcked(true)}
+                  style={{flexShrink:0,fontSize:11,fontWeight:800,padding:"6px 10px",borderRadius:8,border:"none",background:"#059669",color:"white",cursor:"pointer",fontFamily:"inherit"}}>
+                  Got it
+                </button>
+              )}
             </div>
             {!allDone && (
               <FlyingRosie
@@ -11087,7 +11206,9 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🏷️ Tags & Notes</p>
               <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
 
+      <div ref={el=>{rosieFieldRefs.current.paymentType=el;}}>
       <PaymentTypeControl value={form.paymentType} onChange={v=>set("paymentType",v)} accent={shop.accent}/>
+      </div>
 
       {/* Expected Total — only shown for Advance payment type */}
       {form.paymentType==="ADVANCE"&&(
