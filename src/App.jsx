@@ -8895,92 +8895,106 @@ const PET_CSS = `
 }
 `;
 const Rosie = ({ mood = "happy", size = 56, pose = "idle" }) => {
-  const bodyColor = mood === "worried" ? "#fca5a5" : mood === "neutral" ? "#fde68a" : "#86efac";
-  const cheekColor = mood === "worried" ? "#fecdd3" : mood === "neutral" ? "#fef9c3" : "#fbcfe8";
-  const bowColor   = mood === "worried" ? "#ef4444" : mood === "neutral" ? "#f59e0b" : "#f472b6";
+  const dressColor  = mood === "worried" ? "#fca5a5" : mood === "neutral" ? "#fde68a" : "#a78bfa";
+  const dressShade   = mood === "worried" ? "#f87171" : mood === "neutral" ? "#fbbf24" : "#8b5cf6";
+  const cheekColor  = mood === "worried" ? "#fecdd3" : mood === "neutral" ? "#fef08a" : "#fbcfe8";
+  const bowColor    = mood === "worried" ? "#ef4444" : mood === "neutral" ? "#f59e0b" : "#ec4899";
+  const skinColor   = "#ffe4c4";
+  const hairColor   = "#7c4a2d";
   const walking = pose === "walk";
   const pointing = pose === "point";
   const flying = pose === "fly";
   return (
     <svg width={size} height={size * 1.5} viewBox="0 0 100 150" style={{ animation: (walking||flying) ? "none" : "petBob 2.2s ease-in-out infinite", overflow: "visible" }}>
-      <ellipse cx="50" cy="140" rx="20" ry="4" fill={flying ? "transparent" : "#00000015"} />
+      <ellipse cx="50" cy="140" rx="18" ry="4" fill={flying ? "transparent" : "#00000015"} />
 
-      {/* Tail */}
-      <g style={{ transformOrigin: "78px 98px", animation: "petTailWag 1.6s ease-in-out infinite" }}>
-        <path d="M78 98 Q95 92 92 108 Q88 118 78 108 Z" fill={bodyColor} />
+      {/* Wings - small when idle/walking, spread wide when flying */}
+      <g style={{ transformOrigin: "24px 82px", animation: flying ? "petWingFlap 0.35s ease-in-out infinite" : "none" }}>
+        <ellipse cx={flying?6:22} cy={flying?78:84} rx={flying?18:9} ry={flying?11:14} fill="white" opacity="0.9" transform={`rotate(${flying?-22:-8} ${flying?6:22} ${flying?78:84})`} />
+        <ellipse cx={flying?6:22} cy={flying?78:84} rx={flying?12:6} ry={flying?7:9} fill="#f1f5f9" opacity="0.8" transform={`rotate(${flying?-22:-8} ${flying?6:22} ${flying?78:84})`} />
+      </g>
+      <g style={{ transformOrigin: "76px 82px", animation: flying ? "petWingFlap 0.35s ease-in-out infinite reverse" : "none" }}>
+        <ellipse cx={flying?94:78} cy={flying?78:84} rx={flying?18:9} ry={flying?11:14} fill="white" opacity="0.9" transform={`rotate(${flying?22:8} ${flying?94:78} ${flying?78:84})`} />
+        <ellipse cx={flying?94:78} cy={flying?78:84} rx={flying?12:6} ry={flying?7:9} fill="#f1f5f9" opacity="0.8" transform={`rotate(${flying?22:8} ${flying?94:78} ${flying?78:84})`} />
       </g>
 
       {/* Legs - tucked while flying */}
-      <g style={{ transformOrigin: "40px 106px", animation: walking ? "petLegSwingL 0.45s ease-in-out infinite" : "none", opacity: flying?0.7:1 }}>
-        <line x1="40" y1="106" x2={flying?42:36} y2={flying?122:132} stroke="#78716c" strokeWidth="7" strokeLinecap="round" />
+      <g style={{ transformOrigin: "42px 118px", animation: walking ? "petLegSwingL 0.45s ease-in-out infinite" : "none", opacity: flying?0.6:1 }}>
+        <line x1="42" y1="118" x2={flying?43:39} y2={flying?134:136} stroke={skinColor} strokeWidth="6" strokeLinecap="round" />
+        <ellipse cx={flying?43:39} cy={flying?136:138} rx="6" ry="3.5" fill={bowColor} />
       </g>
-      <g style={{ transformOrigin: "60px 106px", animation: walking ? "petLegSwingR 0.45s ease-in-out infinite" : "none", opacity: flying?0.7:1 }}>
-        <line x1="60" y1="106" x2={flying?58:64} y2={flying?122:132} stroke="#78716c" strokeWidth="7" strokeLinecap="round" />
+      <g style={{ transformOrigin: "58px 118px", animation: walking ? "petLegSwingR 0.45s ease-in-out infinite" : "none", opacity: flying?0.6:1 }}>
+        <line x1="58" y1="118" x2={flying?57:61} y2={flying?134:136} stroke={skinColor} strokeWidth="6" strokeLinecap="round" />
+        <ellipse cx={flying?57:61} cy={flying?136:138} rx="6" ry="3.5" fill={bowColor} />
       </g>
 
-      {/* Wings (flying only) */}
-      {flying && (<>
-        <g style={{ transformOrigin: "22px 84px", animation: "petWingFlap 0.35s ease-in-out infinite" }}>
-          <ellipse cx="8" cy="80" rx="16" ry="9" fill="white" opacity="0.85" transform="rotate(-20 8 80)" />
-        </g>
-        <g style={{ transformOrigin: "78px 84px", animation: "petWingFlap 0.35s ease-in-out infinite reverse" }}>
-          <ellipse cx="92" cy="80" rx="16" ry="9" fill="white" opacity="0.85" transform="rotate(20 92 80)" />
-        </g>
-      </>)}
+      {/* Dress - bell shaped, tapered at waist */}
+      <path d="M38 66 Q50 60 62 66 L74 122 Q50 134 26 122 Z" fill={dressColor} />
+      <path d="M38 66 Q50 60 62 66 L66 90 Q50 96 34 90 Z" fill={dressShade} opacity="0.55" />
+      <ellipse cx="50" cy="123" rx="24" ry="7" fill={dressShade} opacity="0.5" />
+      {/* waist ribbon */}
+      <ellipse cx="50" cy="80" rx="9" ry="5" fill={bowColor} />
+      <circle cx="50" cy="80" r="2.5" fill="white" opacity="0.8" />
 
-      {/* Torso - soft rounded belly */}
-      <ellipse cx="50" cy="88" rx="27" ry="25" fill={bodyColor} />
-      <ellipse cx="50" cy="94" rx="15" ry="12" fill="white" opacity="0.35" />
-
-      {/* Arms - hidden while flying (wings take over) */}
+      {/* Arms - dainty, hidden while flying */}
       {!flying && (
-      <g style={{ transformOrigin: "27px 74px", animation: walking ? "petArmSwing 0.45s ease-in-out infinite" : "none" }}>
-        <line x1="27" y1="74" x2="13" y2="96" stroke={bodyColor} strokeWidth="8" strokeLinecap="round" />
+      <g style={{ transformOrigin: "34px 70px", animation: walking ? "petArmSwing 0.45s ease-in-out infinite" : "none" }}>
+        <line x1="34" y1="70" x2="20" y2="90" stroke={skinColor} strokeWidth="6" strokeLinecap="round" />
+        <circle cx="20" cy="90" r="4.5" fill={skinColor} />
       </g>
       )}
-      {!flying && (pointing ? (
-        <line x1="73" y1="74" x2="96" y2="50" stroke={bodyColor} strokeWidth="8" strokeLinecap="round" />
-      ) : (
-        <g style={{ transformOrigin: "73px 74px", animation: walking ? "petArmSwing 0.45s ease-in-out infinite reverse" : "none" }}>
-          <line x1="73" y1="74" x2="87" y2="96" stroke={bodyColor} strokeWidth="8" strokeLinecap="round" />
+      {!flying && (pointing ? (<>
+        <line x1="66" y1="70" x2="88" y2="48" stroke={skinColor} strokeWidth="6" strokeLinecap="round" />
+        <circle cx="88" cy="48" r="4.5" fill={skinColor} />
+      </>) : (
+        <g style={{ transformOrigin: "66px 70px", animation: walking ? "petArmSwing 0.45s ease-in-out infinite reverse" : "none" }}>
+          <line x1="66" y1="70" x2="80" y2="90" stroke={skinColor} strokeWidth="6" strokeLinecap="round" />
+          <circle cx="80" cy="90" r="4.5" fill={skinColor} />
         </g>
       ))}
 
-      {/* Ears */}
-      <ellipse cx="20" cy="24" rx="9" ry="13" fill={bodyColor} transform="rotate(-18 20 24)" />
-      <ellipse cx="80" cy="24" rx="9" ry="13" fill={bodyColor} transform="rotate(18 80 24)" />
-      <ellipse cx="20" cy="26" rx="4" ry="7" fill={cheekColor} transform="rotate(-18 20 26)" />
-      <ellipse cx="80" cy="26" rx="4" ry="7" fill={cheekColor} transform="rotate(18 80 26)" />
+      {/* Halo */}
+      <ellipse cx="50" cy="2" rx="15" ry="5" fill="none" stroke="#fde047" strokeWidth="3" opacity="0.9" />
+      <ellipse cx="50" cy="2" rx="15" ry="5" fill="#fef9c3" opacity="0.35" />
 
-      {/* Antenna + bow */}
-      <path d="M50 8 Q54 -2 60 -6" stroke={bodyColor} strokeWidth="3" fill="none" strokeLinecap="round" />
-      <path d="M56 -9 Q60 -13 64 -9 Q60 -6 60 -6 Q60 -6 56 -9 Z" fill={bowColor} />
-      <path d="M64 -9 Q60 -13 56 -9 Q60 -6 60 -6 Q60 -6 64 -9 Z" fill={bowColor} opacity="0.85" />
-      <circle cx="60" cy="-6" r="2" fill={bowColor} />
+      {/* Hair - back layer (behind head) */}
+      <path d="M18 40 Q14 68 22 82 Q28 66 26 40 Z" fill={hairColor} />
+      <path d="M82 40 Q86 68 78 82 Q72 66 74 40 Z" fill={hairColor} />
 
       {/* Head */}
-      <circle cx="50" cy="42" r="32" fill={bodyColor} />
-      <circle cx="30" cy="52" r="7.5" fill={cheekColor} opacity="0.9" />
-      <circle cx="70" cy="52" r="7.5" fill={cheekColor} opacity="0.9" />
+      <circle cx="50" cy="38" r="26" fill={skinColor} />
+      <circle cx="33" cy="46" r="6.5" fill={cheekColor} opacity="0.85" />
+      <circle cx="67" cy="46" r="6.5" fill={cheekColor} opacity="0.85" />
+
+      {/* Hair - front fringe */}
+      <path d="M24 30 Q50 6 76 30 Q76 16 50 12 Q24 16 24 30 Z" fill={hairColor} />
+      <path d="M22 32 Q20 22 28 16 Q22 24 24 34 Z" fill={hairColor} />
+      <path d="M78 32 Q80 22 72 16 Q78 24 76 34 Z" fill={hairColor} />
 
       {/* Eyes - big and sparkly, with lashes */}
-      <g style={{ transformOrigin: "50px 38px", animation: "petBlink 4.2s ease-in-out infinite" }}>
-        <circle cx="37" cy="38" r="7" fill="#292524" />
-        <circle cx="63" cy="38" r="7" fill="#292524" />
-        <circle cx="40" cy="35" r="2.3" fill="white" />
-        <circle cx="66" cy="35" r="2.3" fill="white" />
-        <circle cx="35" cy="41" r="1" fill="white" opacity="0.8" />
-        <circle cx="61" cy="41" r="1" fill="white" opacity="0.8" />
-        <path d="M31 32 L27 29" stroke="#292524" strokeWidth="1.6" strokeLinecap="round" />
-        <path d="M69 32 L73 29" stroke="#292524" strokeWidth="1.6" strokeLinecap="round" />
+      <g style={{ transformOrigin: "50px 36px", animation: "petBlink 4.2s ease-in-out infinite" }}>
+        <ellipse cx="38" cy="37" rx="5.5" ry="6.5" fill="#4b2e1f" />
+        <ellipse cx="62" cy="37" rx="5.5" ry="6.5" fill="#4b2e1f" />
+        <circle cx="40.5" cy="33.5" r="2.1" fill="white" />
+        <circle cx="64.5" cy="33.5" r="2.1" fill="white" />
+        <circle cx="36" cy="40" r="1" fill="white" opacity="0.8" />
+        <circle cx="60" cy="40" r="1" fill="white" opacity="0.8" />
+        <path d="M32 31 L27 27" stroke="#4b2e1f" strokeWidth="1.6" strokeLinecap="round" />
+        <path d="M68 31 L73 27" stroke="#4b2e1f" strokeWidth="1.6" strokeLinecap="round" />
       </g>
 
+      {/* Mouth - sweet smile, shape follows mood */}
       {mood === "worried"
-        ? <path d="M41 60 Q50 55 59 60" stroke="#292524" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+        ? <path d="M42 56 Q50 52 58 56" stroke="#c2410c" strokeWidth="2.2" fill="none" strokeLinecap="round" />
         : mood === "neutral"
-          ? <line x1="42" y1="59" x2="58" y2="59" stroke="#292524" strokeWidth="2.5" strokeLinecap="round" />
-          : <path d="M40 56 Q50 65 60 56" stroke="#292524" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+          ? <path d="M43 55 Q50 57 57 55" stroke="#c2410c" strokeWidth="2.2" fill="none" strokeLinecap="round" />
+          : <path d="M41 53 Q50 61 59 53" stroke="#c2410c" strokeWidth="2.2" fill="none" strokeLinecap="round" />
       }
+
+      {/* Bow in hair */}
+      <path d="M14 26 Q9 21 14 17 Q17 21 14 21 Q17 21 14 26 Z" fill={bowColor} />
+      <path d="M14 26 Q19 21 14 17 Q11 21 14 21 Q11 21 14 26 Z" fill={bowColor} opacity="0.85" />
+      <circle cx="14" cy="21" r="1.6" fill="white" opacity="0.7" />
     </svg>
   );
 };
