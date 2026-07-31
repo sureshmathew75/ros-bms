@@ -8400,8 +8400,6 @@ return(
         timeGreeting={timeGreeting}
         userName={user?.name||""}
         onDismissGreeting={()=>setShowGreeting(false)}
-        fmt={fmt}
-        shopId={shopId}
       />
       {rosieTasksModal && (
         <RosieTasksModal
@@ -8911,6 +8909,14 @@ const PET_CSS = `
   94%, 100%{ transform: translateX(0); }
 }
 `;
+const NEW_SALE_STEP_KEYS = ["customer","contact","item","price","payBy","paymentType"];
+const EDIT_SALE_STEP_KEYS = ["customer","contact","item","price","payBy"];
+const NEW_SALE_STEP_EXPLAIN = {
+  FULL: "Marked as Full — the customer paid the whole amount today, nothing more to collect. 👍",
+  ADVANCE: "Marked as Advance — this is the first payment towards a bigger total. Don't forget to set the Expected Total below! 💰",
+  PART: "Marked as Part — another instalment, not the final one. I'll link it to the earlier payment automatically. 🔄",
+  FINAL: "Marked as Final — this completes the balance. I'll close out the deal once you save. 🏁",
+};
 const Rosie = ({ mood = "happy", size = 56, pose = "idle" }) => {
   const skinColor    = "#ffdfc0";
   const hairColor    = "#3b2a20";
@@ -9044,7 +9050,7 @@ const FlyingRosie = ({ getTargets, activeIndex = 0, loop = false, mood = "happy"
     const el = targets[idx % targets.length];
     if (!el) return null;
     const rect = el.getBoundingClientRect();
-    return { top: rect.top + rect.height/2 - size*0.75, left: rect.left + rect.width/2 - size/2 };
+    return { top: rect.top - size*1.3, left: rect.left + rect.width/2 - size/2 };
   }, [getTargets, size]);
 
   React.useEffect(() => {
@@ -9074,7 +9080,7 @@ const FlyingRosie = ({ getTargets, activeIndex = 0, loop = false, mood = "happy"
       <style>{PET_CSS}</style>
       <Rosie mood={mood} size={size} pose={phase==="flying" ? "fly" : "idle"} />
       {label && phase==="landed" && (
-        <div style={{ position:"absolute", top:size*1.55, left:"50%", transform:"translateX(-50%)", background:"white", borderRadius:8, padding:"4px 9px", fontSize:11, fontWeight:700, color:"#166534", whiteSpace:"nowrap", boxShadow:"0 4px 12px rgba(0,0,0,0.18)" }}>
+        <div style={{ position:"absolute", bottom:size*1.15, left:"50%", transform:"translateX(-50%)", background:"white", borderRadius:8, padding:"5px 10px", fontSize:11, fontWeight:700, color:"#166534", whiteSpace:"normal", maxWidth:170, textAlign:"center", boxShadow:"0 4px 12px rgba(0,0,0,0.18)" }}>
           {label}
         </div>
       )}
@@ -9082,9 +9088,8 @@ const FlyingRosie = ({ getTargets, activeIndex = 0, loop = false, mood = "happy"
   );
 };
 
-const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMarkTaskDone, isAdmin=false, onManageTasks, nagDays=14, cutoffDate="", onTalkToRosie, showGreeting=false, timeGreeting="Hello", userName="", onDismissGreeting, fmt, shopId }) => {
+const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMarkTaskDone, isAdmin=false, onManageTasks, nagDays=14, cutoffDate="", onTalkToRosie, showGreeting=false, timeGreeting="Hello", userName="", onDismissGreeting }) => {
   const [open, setOpen] = React.useState(false);
-  const [custQuery, setCustQuery] = React.useState("");
 
   React.useEffect(() => {
     if (showGreeting) setOpen(true);
@@ -9104,41 +9109,6 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
       return d.getTime() < nagMs;
     }).sort((a,b)=>(a.date||"").localeCompare(b.date||""));
   }, [sales, nagDays, cutoffDate]);
-
-  /* "Ask Rosie about a customer" — deterministic lookup, not free-text AI.
-     Finds the customer's most recent transaction and, if it's part of an
-     open Advance/Part/Final deal, the balance still owed. */
-  const custResult = React.useMemo(() => {
-    const q = custQuery.trim().toLowerCase();
-    if (!q) return null;
-    const matches = (sales||[]).filter(s => (s.customer||"").toLowerCase().includes(q));
-    if (!matches.length) return { found: false };
-    const byCust = {};
-    matches.forEach(s => {
-      const key = `${(s.customer||"").toLowerCase()}__${(s.phone||s.contact||"").replace(/\D/g,"")}`;
-      (byCust[key] ||= []).push(s);
-    });
-    let bestKey = null, bestDate = "";
-    Object.keys(byCust).forEach(k => {
-      const maxDate = byCust[k].reduce((m,s)=> (s.date||"")>m ? (s.date||"") : m, "");
-      if (maxDate >= bestDate) { bestDate = maxDate; bestKey = k; }
-    });
-    const custSales = byCust[bestKey].sort((a,b)=>(b.date||"").localeCompare(a.date||""));
-    const latest = custSales[0];
-    const groupIds = findInstalmentGroupIds(latest, sales);
-    let balanceInfo = null;
-    if (groupIds.length > 1) {
-      const group = (sales||[]).filter(s => groupIds.includes(s.id));
-      const advanceSale = group.find(s => inferPaymentType(s) === "ADVANCE");
-      const expectedTotal = advanceSale ? Number(advanceSale.expectedTotal)||0 : 0;
-      const received = group.reduce((a,x)=>a+(Number(x.amount)||0), 0);
-      const hasFinal = group.some(s => inferPaymentType(s) === "FINAL");
-      if (expectedTotal > 0) {
-        balanceInfo = { expectedTotal, received, balance: expectedTotal-received, fullyPaid: (expectedTotal-received)<=0 && hasFinal };
-      }
-    }
-    return { found: true, customer: latest.customer, phone: latest.phone||latest.contact||"", totalTransactions: custSales.length, latest, balanceInfo };
-  }, [custQuery, sales]);
 
   const totalBadge = overdue.length + myTasks.length;
   const mood = totalBadge===0 ? "happy" : totalBadge<=3 ? "neutral" : "worried";
@@ -9166,36 +9136,6 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
               </button>
             </div>
           )}
-          <div style={{marginBottom:12}}>
-            <div style={{fontWeight:800,fontSize:13,color:"#0f172a",marginBottom:6}}>🔍 Ask about a customer</div>
-            <input value={custQuery} onChange={e=>setCustQuery(e.target.value)} placeholder="Type a customer name…"
-              style={{width:"100%",padding:"7px 10px",borderRadius:8,border:"1.5px solid #e2e8f0",fontSize:12,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}/>
-            {custResult && (
-              custResult.found ? (
-                <div style={{marginTop:8,padding:"9px 10px",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:9,fontSize:12}}>
-                  <div style={{fontWeight:800,color:"#0f172a"}}>{custResult.customer}</div>
-                  <div style={{color:"#64748b",marginBottom:6}}>{custResult.phone} · {custResult.totalTransactions} transaction{custResult.totalTransactions!==1?"s":""}</div>
-                  <div style={{color:"#374151"}}>
-                    Last: {custResult.latest.item||"—"} — {fmt?fmt(shopId,Number(custResult.latest.amount)||0):custResult.latest.amount} ({custResult.latest.ful||custResult.latest.status||"—"})
-                  </div>
-                  {custResult.balanceInfo && (
-                    <div style={{marginTop:6,paddingTop:6,borderTop:"1px dashed #bfdbfe",display:"flex",justifyContent:"space-between"}}>
-                      <span style={{color:"#1e3a8a",fontWeight:700}}>
-                        {custResult.balanceInfo.fullyPaid ? "✅ Fully Paid" : "Balance to receive:"}
-                      </span>
-                      {!custResult.balanceInfo.fullyPaid && (
-                        <span style={{color:"#dc2626",fontWeight:800}}>
-                          {fmt?fmt(shopId,Math.max(custResult.balanceInfo.balance,0)):custResult.balanceInfo.balance}
-                        </span>
-                      )}
-                    </div>
-                  )}
-                </div>
-              ) : (
-                <div style={{marginTop:8,fontSize:12,color:"#94a3b8"}}>No customer found matching that name.</div>
-              )
-            )}
-          </div>
           {myTasks.length>0 && (
             <div style={{marginBottom:12}}>
               <div style={{fontWeight:800,fontSize:13,color:"#0f172a",marginBottom:6}}>📌 Your Tasks</div>
@@ -9641,6 +9581,18 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
   const [editCustMatches,setEditCustMatches]=useState([]);
   const [editAddrOpen,setEditAddrOpen]=useState(false);
   const [editAddrMatches,setEditAddrMatches]=useState([]);
+  const rosieEditSteps = [
+    { done: !!form.customer.trim(), label: "Customer name looks empty" },
+    { done: !!form.contact.trim(), label: "Phone number is missing 📱" },
+    { done: (editLines||[]).some(l=>l.name.trim()), label: "No item added yet" },
+    { done: (editLines||[]).some(l=>parseFloat(l.price)>0), label: "This item needs a price 💰" },
+    { done: !!form.payBy, label: "Payment method not set" },
+  ];
+  const rosieEditActiveIdx = rosieEditSteps.findIndex(s=>!s.done);
+  const getRosieEditTargets = useCallback(
+    () => [rosieFieldRefs.current[EDIT_SALE_STEP_KEYS[rosieEditActiveIdx]]],
+    [rosieEditActiveIdx]
+  );
   return(
     <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",padding:"4px 20px 20px"}}>
       <div style={{padding:"0 20px"}}>
@@ -9656,27 +9608,15 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
         <div><p style={{margin:0,fontWeight:800,fontSize:13,color:shop.accentText}}>Editing Sale {form.invoiceNo}</p>
           <p style={{margin:0,fontSize:11,color:shop.accent}}>All changes will update the sales record immediately on save</p></div>
       </div>
-      {!isStaff && (() => {
-        const stepKeys = ["customer","contact","item","price","payBy"];
-        const steps = [
-          { done: !!form.customer.trim(), label: "Customer name looks empty" },
-          { done: !!form.contact.trim(), label: "Phone number is missing 📱" },
-          { done: (editLines||[]).some(l=>l.name.trim()), label: "No item added yet" },
-          { done: (editLines||[]).some(l=>parseFloat(l.price)>0), label: "This item needs a price 💰" },
-          { done: !!form.payBy, label: "Payment method not set" },
-        ];
-        const activeIdx = steps.findIndex(s=>!s.done);
-        if (activeIdx===-1) return null;
-        return (
-          <FlyingRosie
-            getTargets={()=>[rosieFieldRefs.current[stepKeys[activeIdx]]]}
-            activeIndex={0}
-            mood="neutral"
-            size={34}
-            label={steps[activeIdx].label}
-          />
-        );
-      })()}
+      {!isStaff && rosieEditActiveIdx!==-1 && (
+        <FlyingRosie
+          getTargets={getRosieEditTargets}
+          activeIndex={0}
+          mood="neutral"
+          size={34}
+          label={rosieEditSteps[rosieEditActiveIdx].label}
+        />
+      )}
       <Divider title="Basic Info"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         <div><label style={lbl}>Date</label><input type="date" value={form.date} max={localTodayISO()} readOnly={isStaff} onChange={isStaff?undefined:e=>set("date",e.target.value)} style={{...inp,background:isStaff?"#f8fafc":"white",cursor:isStaff?"default":"auto"}} onFocus={fo} onBlur={bl}/></div>
@@ -11002,62 +10942,55 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||"",dispatchFrom:form.dispatchFrom||""});
   };
 
+  const rosieFilledLines = lines.filter(l=>l.name.trim());
+  const rosieHasPrice = lines.some(l=>parseFloat(l.price)>0);
+  const rosieSteps = [
+    { done: !!form.customer.trim(), label: "Let's start with the customer's name!" },
+    { done: !!form.contact.trim(), label: "Don't forget the phone number 📱" },
+    { done: rosieFilledLines.length>0, label: "What are they buying? Add an item below." },
+    { done: rosieHasPrice, label: "This item needs a price 💰" },
+    { done: !!form.payBy, label: "Which payment method was used?" },
+    { done: paymentTypeAcked, label: NEW_SALE_STEP_EXPLAIN[form.paymentType] || NEW_SALE_STEP_EXPLAIN.FULL },
+  ];
+  const rosieActiveIdx = rosieSteps.findIndex(s=>!s.done);
+  const rosieAllDone = rosieActiveIdx===-1;
+  const rosieNudge = rosieAllDone ? "All set! Review and hit Save Sale when ready. ✅" : rosieSteps[rosieActiveIdx].label;
+  const getRosieTargets = useCallback(
+    () => [rosieFieldRefs.current[NEW_SALE_STEP_KEYS[rosieActiveIdx]]],
+    [rosieActiveIdx]
+  );
+
   return(<>
     {showNewCust&&(<div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setShowNewCust(false)}><div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.50)",backdropFilter:"blur(4px)"}}/><div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.25)",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",zIndex:81}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 22px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"12",borderRadius:"20px 20px 0 0"}}><h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>➕ New Customer</h3><button onClick={()=>setShowNewCust(false)} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button></div><div style={{padding:22}}><NewCustomerForm shop={shop} onSave={handleAddCustomer} onClose={()=>setShowNewCust(false)} customers={customerList}/></div></div></div>)}
 
     {/* ── Single column layout ── */}
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <div style={{flex:1,overflowY:"auto",padding:"12px 16px",WebkitOverflowScrolling:"touch"}}>
-        {(() => {
-          const filledLines = lines.filter(l=>l.name.trim());
-          const hasPrice = lines.some(l=>parseFloat(l.price)>0);
-          const stepKeys = ["customer","contact","item","price","payBy","paymentType"];
-          const ptExplain = {
-            FULL: "Marked as Full — the customer paid the whole amount today, nothing more to collect. 👍",
-            ADVANCE: "Marked as Advance — this is the first payment towards a bigger total. Don't forget to set the Expected Total below! 💰",
-            PART: "Marked as Part — another instalment, not the final one. I'll link it to the earlier payment automatically. 🔄",
-            FINAL: "Marked as Final — this completes the balance. I'll close out the deal once you save. 🏁",
-          };
-          const steps = [
-            { done: !!form.customer.trim(), label: "Let's start with the customer's name!" },
-            { done: !!form.contact.trim(), label: "Don't forget the phone number 📱" },
-            { done: filledLines.length>0, label: "What are they buying? Add an item below." },
-            { done: hasPrice, label: "This item needs a price 💰" },
-            { done: !!form.payBy, label: "Which payment method was used?" },
-            { done: paymentTypeAcked, label: ptExplain[form.paymentType] || ptExplain.FULL },
-          ];
-          const activeIdx = steps.findIndex(s=>!s.done);
-          const allDone = activeIdx===-1;
-          const petNudge = allDone ? "All set! Review and hit Save Sale when ready. ✅" : steps[activeIdx].label;
-          return (<>
-            <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",margin:"0 0 10px",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10}}>
-              <div style={{flexShrink:0,lineHeight:0}}><Rosie mood="happy" size={30} pose={allDone?"idle":"point"}/></div>
-              <div style={{flex:1}}>
-                <div style={{fontSize:12,color:"#166534",fontWeight:600}}>{petNudge}</div>
-                <div style={{display:"flex",gap:4,marginTop:5}}>
-                  {steps.map((s,i)=>(
-                    <div key={i} style={{width:16,height:4,borderRadius:2,background:s.done?"#4ade80":(i===activeIdx?"#fbbf24":"#e2e8f0")}}/>
-                  ))}
-                </div>
-              </div>
-              {activeIdx===5 && (
-                <button onClick={()=>setPaymentTypeAcked(true)}
-                  style={{flexShrink:0,fontSize:11,fontWeight:800,padding:"6px 10px",borderRadius:8,border:"none",background:"#059669",color:"white",cursor:"pointer",fontFamily:"inherit"}}>
-                  Got it
-                </button>
-              )}
+        <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",margin:"0 0 10px",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10}}>
+          <div style={{flex:1}}>
+            <div style={{fontSize:12,color:"#166534",fontWeight:600}}>{rosieNudge}</div>
+            <div style={{display:"flex",gap:4,marginTop:5}}>
+              {rosieSteps.map((s,i)=>(
+                <div key={i} style={{width:16,height:4,borderRadius:2,background:s.done?"#4ade80":(i===rosieActiveIdx?"#fbbf24":"#e2e8f0")}}/>
+              ))}
             </div>
-            {!allDone && (
-              <FlyingRosie
-                getTargets={()=>[rosieFieldRefs.current[stepKeys[activeIdx]]]}
-                activeIndex={0}
-                mood="happy"
-                size={36}
-                label={steps[activeIdx].label}
-              />
-            )}
-          </>);
-        })()}
+          </div>
+          {rosieActiveIdx===5 && (
+            <button onClick={()=>setPaymentTypeAcked(true)}
+              style={{flexShrink:0,fontSize:11,fontWeight:800,padding:"6px 10px",borderRadius:8,border:"none",background:"#059669",color:"white",cursor:"pointer",fontFamily:"inherit"}}>
+              Got it
+            </button>
+          )}
+        </div>
+        {!rosieAllDone && (
+          <FlyingRosie
+            getTargets={getRosieTargets}
+            activeIndex={0}
+            mood="happy"
+            size={36}
+            label={rosieSteps[rosieActiveIdx].label}
+          />
+        )}
 
             {/* Basic Info */}
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
