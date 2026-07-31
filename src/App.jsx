@@ -8964,21 +8964,23 @@ const Rosie = ({ mood = "happy", size = 56, pose = "idle" }) => {
         </g>
       ))}
 
-      {/* Hair - back of ponytail (behind head) */}
-      <path d="M50 10 Q66 8 68 26 Q70 44 58 50 Q66 30 58 16 Q54 10 50 10 Z" fill={hairColor} />
-      <ellipse cx="63" cy="14" rx="7" ry="5" fill={bowColor} transform="rotate(20 63 14)" />
-      <ellipse cx="69" cy="18" rx="7" ry="5" fill={bowColor} transform="rotate(-15 69 18)" />
-      <circle cx="65" cy="16" r="2.2" fill="white" opacity="0.7" />
+      {/* Hair - back of ponytail (behind head), wavy and voluminous */}
+      <path d="M54 8 Q70 6 74 22 Q78 36 68 46 Q72 34 66 24 Q74 30 70 42 Q62 30 60 14 Q58 10 54 8 Z" fill={hairColor} />
+      {/* bow at the base of the ponytail */}
+      <path d="M56 10 Q49 4 44 9 Q49 12 52 11 Q49 12 44 17 Q51 16 56 10 Z" fill={bowColor} />
+      <path d="M56 10 Q63 4 68 9 Q63 12 60 11 Q63 12 68 17 Q61 16 56 10 Z" fill={bowColor} opacity="0.9" />
+      <circle cx="56" cy="11" r="2.4" fill="white" opacity="0.75" />
 
       {/* Head */}
       <circle cx="50" cy="38" r="26" fill={skinColor} />
       <circle cx="33" cy="46" r="6.5" fill={cheekColor} opacity="0.85" />
       <circle cx="67" cy="46" r="6.5" fill={cheekColor} opacity="0.85" />
 
-      {/* Hair - fringe/bangs, side-swept */}
-      <path d="M24 34 Q22 12 50 10 Q78 12 76 34 Q68 16 50 16 Q32 16 24 34 Z" fill={hairColor} />
-      <path d="M24 34 Q20 26 26 18 Q21 28 25 37 Z" fill={hairColor} />
-      <path d="M76 34 Q80 26 74 18 Q79 28 75 37 Z" fill={hairColor} />
+      {/* Hair - bangs swept diagonally to one side, plus loose face-framing strands */}
+      <path d="M23 36 Q19 14 44 9 Q68 7 77 24 Q79 30 76 36 Q70 18 52 15 Q34 14 26 30 Q24 33 23 36 Z" fill={hairColor} />
+      <path d="M23 36 Q18 28 22 19 Q17 29 21 39 Z" fill={hairColor} />
+      <path d="M77 30 Q81 24 77 16 Q74 25 74 33 Z" fill={hairColor} />
+      <path d="M70 20 Q60 17 50 18 Q62 15 72 22 Z" fill={hairColor} opacity="0.9" />
 
       {/* Eyes - big and sparkly, with lashes */}
       <g style={{ transformOrigin: "50px 36px", animation: "petBlink 4.2s ease-in-out infinite" }}>
