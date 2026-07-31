@@ -8910,8 +8910,6 @@ const PET_CSS = `
   94%, 100%{ transform: translateX(0); }
 }
 `;
-const NEW_SALE_STEP_KEYS = ["customer","contact","item","price","payBy","paymentType"];
-const EDIT_SALE_STEP_KEYS = ["customer","contact","item","price","payBy"];
 const NEW_SALE_STEP_EXPLAIN = {
   FULL: "Marked as Full — the customer paid the whole amount today, nothing more to collect. 👍",
   ADVANCE: "Marked as Advance — this is the first payment towards a bigger total. Don't forget to set the Expected Total below! 💰",
@@ -9606,10 +9604,6 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
     { done: !!form.payBy, label: "Payment method not set" },
   ];
   const rosieEditActiveIdx = rosieEditSteps.findIndex(s=>!s.done);
-  const getRosieEditTargets = useCallback(
-    () => [rosieFieldRefs.current[EDIT_SALE_STEP_KEYS[rosieEditActiveIdx]]],
-    [rosieEditActiveIdx]
-  );
   return(
     <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",padding:"4px 20px 20px"}}>
       <div style={{padding:"0 20px"}}>
@@ -9626,13 +9620,10 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
           <p style={{margin:0,fontSize:11,color:shop.accent}}>All changes will update the sales record immediately on save</p></div>
       </div>
       {!isStaff && rosieEditActiveIdx!==-1 && (
-        <FlyingRosie
-          getTargets={getRosieEditTargets}
-          activeIndex={0}
-          mood="neutral"
-          size={34}
-          label={rosieEditSteps[rosieEditActiveIdx].label}
-        />
+        <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",marginBottom:16,background:"#fffbeb",border:"1px solid #fde68a",borderRadius:12}}>
+          <div style={{flexShrink:0,lineHeight:0}}><Rosie mood="neutral" size={38} pose="point"/></div>
+          <div style={{fontSize:13,color:"#92400e",fontWeight:700,lineHeight:1.4}}>{rosieEditSteps[rosieEditActiveIdx].label}</div>
+        </div>
       )}
       <Divider title="Basic Info"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
@@ -10972,10 +10963,6 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const rosieActiveIdx = rosieSteps.findIndex(s=>!s.done);
   const rosieAllDone = rosieActiveIdx===-1;
   const rosieNudge = rosieAllDone ? "All set! Review and hit Save Sale when ready. ✅" : rosieSteps[rosieActiveIdx].label;
-  const getRosieTargets = useCallback(
-    () => [rosieFieldRefs.current[NEW_SALE_STEP_KEYS[rosieActiveIdx]]],
-    [rosieActiveIdx]
-  );
 
   return(<>
     {showNewCust&&(<div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setShowNewCust(false)}><div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.50)",backdropFilter:"blur(4px)"}}/><div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.25)",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",zIndex:81}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 22px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"12",borderRadius:"20px 20px 0 0"}}><h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>➕ New Customer</h3><button onClick={()=>setShowNewCust(false)} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button></div><div style={{padding:22}}><NewCustomerForm shop={shop} onSave={handleAddCustomer} onClose={()=>setShowNewCust(false)} customers={customerList}/></div></div></div>)}
@@ -10983,31 +10970,23 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     {/* ── Single column layout ── */}
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <div style={{flex:1,overflowY:"auto",padding:"12px 16px",WebkitOverflowScrolling:"touch"}}>
-        <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",margin:"0 0 10px",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10}}>
-          <div style={{flex:1}}>
-            <div style={{fontSize:12,color:"#166534",fontWeight:600}}>{rosieNudge}</div>
-            <div style={{display:"flex",gap:4,marginTop:5}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",margin:"0 0 12px",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12}}>
+          <div style={{flexShrink:0,lineHeight:0}}><Rosie mood="happy" size={42} pose={rosieAllDone?"idle":"point"}/></div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:13.5,color:"#166534",fontWeight:700,lineHeight:1.4}}>{rosieNudge}</div>
+            <div style={{display:"flex",gap:4,marginTop:6}}>
               {rosieSteps.map((s,i)=>(
-                <div key={i} style={{width:16,height:4,borderRadius:2,background:s.done?"#4ade80":(i===rosieActiveIdx?"#fbbf24":"#e2e8f0")}}/>
+                <div key={i} style={{width:20,height:5,borderRadius:3,background:s.done?"#4ade80":(i===rosieActiveIdx?"#fbbf24":"#e2e8f0")}}/>
               ))}
             </div>
           </div>
           {rosieActiveIdx===5 && (
             <button onClick={()=>setPaymentTypeAcked(true)}
-              style={{flexShrink:0,fontSize:11,fontWeight:800,padding:"6px 10px",borderRadius:8,border:"none",background:"#059669",color:"white",cursor:"pointer",fontFamily:"inherit"}}>
+              style={{flexShrink:0,fontSize:12,fontWeight:800,padding:"8px 14px",borderRadius:9,border:"none",background:"#059669",color:"white",cursor:"pointer",fontFamily:"inherit"}}>
               Got it
             </button>
           )}
         </div>
-        {!rosieAllDone && (
-          <FlyingRosie
-            getTargets={getRosieTargets}
-            activeIndex={0}
-            mood="happy"
-            size={36}
-            label={rosieSteps[rosieActiveIdx].label}
-          />
-        )}
 
             {/* Basic Info */}
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
