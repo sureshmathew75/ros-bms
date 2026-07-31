@@ -9055,12 +9055,27 @@ const FlyingRosie = ({ getTargets, activeIndex = 0, loop = false, mood = "happy"
   }, [getTargets, size]);
 
   React.useEffect(() => {
-    let landTimer, loopTimer;
+    let landTimer, loopTimer, settleTimer;
     const flyTo = (idx) => {
-      const p = computePos(idx);
-      if (p) setPos(p);
+      // Best-effort initial position so she's visible right away
+      const initial = computePos(idx);
+      if (initial) setPos(initial);
       setPhase("flying");
-      landTimer = setTimeout(() => setPhase("landed"), 1100);
+      // Scroll the target into view in case it's below the current fold of
+      // a scrollable form — otherwise her landing position could compute
+      // to somewhere below the visible screen.
+      const targets = (getTargets() || []).filter(Boolean);
+      const el = targets[idx % targets.length];
+      if (el && el.scrollIntoView) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
+      // Recompute after the scroll settles, so her final landing spot
+      // reflects the new scroll position, not the old one.
+      settleTimer = setTimeout(() => {
+        const p = computePos(idx);
+        if (p) setPos(p);
+      }, 400);
+      landTimer = setTimeout(() => setPhase("landed"), 700);
     };
     if (loop) {
       flyTo(loopIdxRef.current);
@@ -9071,8 +9086,8 @@ const FlyingRosie = ({ getTargets, activeIndex = 0, loop = false, mood = "happy"
     } else {
       flyTo(activeIndex);
     }
-    return () => { clearTimeout(landTimer); clearInterval(loopTimer); };
-  }, [loop, activeIndex, computePos]);
+    return () => { clearTimeout(landTimer); clearTimeout(settleTimer); clearInterval(loopTimer); };
+  }, [loop, activeIndex, computePos, getTargets]);
 
   if (!pos) return null;
 
