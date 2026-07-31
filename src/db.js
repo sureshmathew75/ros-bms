@@ -1040,3 +1040,51 @@ export const dbImportHistoricalCSV = async (rows) => {
   if (error) { console.error('Import historical error:', error); return { error: error.message }; }
   return { error: null };
 };
+
+/* ── Rosie Tasks: admin-set reminders assigned to a specific staff member,
+   one-off or recurring (daily/weekly/monthly) ─────────────────────────── */
+export const dbLoadRosieTasks = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('rosie_tasks').select('*')
+    .eq('shop_id', shopId).order('created_at', { ascending: false });
+  if (error) { console.error('Load Rosie tasks error:', error); return []; }
+  return (data||[]).map(r => ({
+    id: r.id, shopId: r.shop_id, assignedTo: r.assigned_to, message: r.message||'',
+    recurrence: r.recurrence||'once', dueDate: r.due_date||'',
+    lastDoneAt: r.last_done_at||null, doneAt: r.done_at||null,
+    createdBy: r.created_by||'', createdAt: r.created_at,
+  }));
+};
+
+export const dbSaveRosieTask = async (task) => {
+  if (!sb) return null;
+  const payload = {
+    shop_id: task.shopId, assigned_to: task.assignedTo, message: task.message||'',
+    recurrence: task.recurrence||'once', due_date: task.dueDate||null,
+    last_done_at: task.lastDoneAt||null, done_at: task.doneAt||null,
+    created_by: task.createdBy||'',
+  };
+  if (task.id) {
+    const { error } = await sb.from('rosie_tasks').update(payload).eq('id', task.id);
+    if (error) { console.error('Save Rosie task error:', error); throw error; }
+    return task.id;
+  }
+  const { data, error } = await sb.from('rosie_tasks').insert(payload).select().single();
+  if (error) { console.error('Save Rosie task error:', error); throw error; }
+  return data.id;
+};
+
+export const dbDeleteRosieTask = async (id) => {
+  if (!sb) return;
+  const { error } = await sb.from('rosie_tasks').delete().eq('id', id);
+  if (error) console.error('Delete Rosie task error:', error);
+};
+
+export const dbMarkRosieTaskDone = async (task) => {
+  if (!sb) return;
+  const payload = task.recurrence === 'once'
+    ? { done_at: new Date().toISOString() }
+    : { last_done_at: new Date().toISOString() };
+  const { error } = await sb.from('rosie_tasks').update(payload).eq('id', task.id);
+  if (error) console.error('Mark Rosie task done error:', error);
+};

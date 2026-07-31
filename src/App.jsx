@@ -25,7 +25,8 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbUploadDoc, dbDeleteDoc, dbSavePurchaseDocs, dbSaveLogisticDocs,
   dbSaveAgent, dbLoadAgents, dbDeleteAgent,
   dbLoadExpenseCategories, dbSaveExpenseCategory, dbDeleteExpenseCategory,
-  dbLoadHistoricalData, dbSaveHistoricalRecord, dbDeleteHistoricalRecord, dbImportHistoricalCSV } from "./db";
+  dbLoadHistoricalData, dbSaveHistoricalRecord, dbDeleteHistoricalRecord, dbImportHistoricalCSV,
+  dbLoadRosieTasks, dbSaveRosieTask, dbDeleteRosieTask, dbMarkRosieTaskDone } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -4959,11 +4960,28 @@ const HistoricalDataPanel=({shop,shopId,histData=[],setHistData,fmt})=>{
 };
 /* ── End HistoricalDataPanel ─────────────────────────────────────────────── */
 
-const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,initialTab="sales"})=>{
+const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,initialTab="sales",users=[]})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":(initialTab||"sales"));
   const [petEnabled,setPetEnabled]=useState(()=>{
     try{ return localStorage.getItem("rosie_enabled")!=="false"; }catch{ return true; }
   });
+  const [rosieTasks,setRosieTasks]=useState([]);
+  const [rosieTasksModal,setRosieTasksModal]=useState(false);
+  useEffect(()=>{
+    dbLoadRosieTasks(shopId).then(setRosieTasks).catch(()=>{});
+  },[shopId]);
+  const reloadRosieTasks=()=>{ dbLoadRosieTasks(shopId).then(setRosieTasks).catch(()=>{}); };
+  /* Is this task currently "due" (should Rosie mention it)? One-off tasks
+     stay due until marked done; recurring ones reset each cycle. */
+  const isRosieTaskDue=(task)=>{
+    if(task.recurrence==="once") return !task.doneAt;
+    if(!task.lastDoneAt) return true;
+    const last=new Date(task.lastDoneAt), now=new Date();
+    if(task.recurrence==="daily") return last.toDateString()!==now.toDateString();
+    if(task.recurrence==="weekly") return Math.floor((now-last)/86400000)>=7;
+    if(task.recurrence==="monthly") return last.getMonth()!==now.getMonth()||last.getFullYear()!==now.getFullYear();
+    return true;
+  };
   const [hov,setHov]=useState(null);
   const [search,setSearch]=useState("");
   const [modal,setModal]=useState(null);
@@ -8343,7 +8361,26 @@ return(
         </div>
       )}
 
-      <PetWidget sales={sales} onOpenSales={()=>setTab("sales")} shopAccent={shop.accent} enabled={petEnabled}/>
+      <PetWidget
+        sales={sales}
+        onOpenSales={()=>setTab("sales")}
+        shopAccent={shop.accent}
+        enabled={petEnabled}
+        myTasks={rosieTasks.filter(t=>t.assignedTo===user?.id && isRosieTaskDue(t))}
+        onMarkTaskDone={async(t)=>{ await dbMarkRosieTaskDone(t); reloadRosieTasks(); }}
+        isAdmin={user?.role==="admin"||user?.role==="superadmin"}
+        onManageTasks={()=>setRosieTasksModal(true)}
+      />
+      {rosieTasksModal && (
+        <RosieTasksModal
+          tasks={rosieTasks}
+          users={users}
+          currentUser={user}
+          onClose={()=>setRosieTasksModal(false)}
+          onSave={async(task)=>{ await dbSaveRosieTask({...task,shopId}); reloadRosieTasks(); }}
+          onDelete={async(id)=>{ await dbDeleteRosieTask(id); reloadRosieTasks(); }}
+        />
+      )}
     </div>
   );
 };
@@ -8817,40 +8854,72 @@ const PAYMENT_TYPES=[
    open WhatsApp directly. Renders as <WaModal data={x} onClose={...}/>;
    pass data=null to keep it hidden. ─────────────────────────────────── */
 /* ── Rosie: the floating app pet. Pure CSS/SVG, no external assets, so
-   it stays lightweight. Mood reflects overdue-dispatch backlog. ─────── */
+   it stays lightweight. Mood reflects overdue-dispatch backlog. Full
+   figure (head/torso/arms/legs) so she can point and "walk" between
+   fields in the form-guide mode. ─────────────────────────────────────── */
 const PET_CSS = `
-@keyframes petBob { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-6px);} }
+@keyframes petBob { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-5px);} }
 @keyframes petBlink { 0%,90%,100%{transform:scaleY(1);} 95%{transform:scaleY(0.1);} }
 @keyframes petPop { 0%{transform:scale(0);} 70%{transform:scale(1.15);} 100%{transform:scale(1);} }
+@keyframes petArmSwing { 0%,100%{transform:rotate(-6deg);} 50%{transform:rotate(6deg);} }
+@keyframes petLegSwingL { 0%,100%{transform:rotate(-14deg);} 50%{transform:rotate(14deg);} }
+@keyframes petLegSwingR { 0%,100%{transform:rotate(14deg);} 50%{transform:rotate(-14deg);} }
 `;
-const Rosie = ({ mood = "happy", size = 56 }) => {
+const Rosie = ({ mood = "happy", size = 56, pose = "idle" }) => {
   const bodyColor = mood === "worried" ? "#f87171" : mood === "neutral" ? "#fbbf24" : "#4ade80";
   const cheekColor = mood === "worried" ? "#fecaca" : mood === "neutral" ? "#fef3c7" : "#bbf7d0";
+  const walking = pose === "walk";
+  const pointing = pose === "point";
   return (
-    <svg width={size} height={size} viewBox="0 0 100 100" style={{ animation: "petBob 2.2s ease-in-out infinite" }}>
-      <ellipse cx="50" cy="88" rx="22" ry="5" fill="#00000018" />
-      <circle cx="50" cy="52" r="38" fill={bodyColor} />
-      <circle cx="30" cy="60" r="8" fill={cheekColor} opacity="0.8" />
-      <circle cx="70" cy="60" r="8" fill={cheekColor} opacity="0.8" />
-      <g style={{ transformOrigin: "50px 45px", animation: "petBlink 4s ease-in-out infinite" }}>
-        <circle cx="37" cy="45" r="6" fill="#1f2937" />
-        <circle cx="63" cy="45" r="6" fill="#1f2937" />
-        <circle cx="39" cy="43" r="2" fill="white" />
-        <circle cx="65" cy="43" r="2" fill="white" />
+    <svg width={size} height={size * 1.4} viewBox="0 0 100 140" style={{ animation: walking ? "none" : "petBob 2.2s ease-in-out infinite", overflow: "visible" }}>
+      <ellipse cx="50" cy="132" rx="20" ry="4" fill="#00000018" />
+
+      {/* Legs */}
+      <g style={{ transformOrigin: "40px 100px", animation: walking ? "petLegSwingL 0.5s ease-in-out infinite" : "none" }}>
+        <line x1="40" y1="100" x2="36" y2="126" stroke="#334155" strokeWidth="7" strokeLinecap="round" />
+      </g>
+      <g style={{ transformOrigin: "60px 100px", animation: walking ? "petLegSwingR 0.5s ease-in-out infinite" : "none" }}>
+        <line x1="60" y1="100" x2="64" y2="126" stroke="#334155" strokeWidth="7" strokeLinecap="round" />
+      </g>
+
+      {/* Torso */}
+      <ellipse cx="50" cy="82" rx="26" ry="24" fill={bodyColor} />
+
+      {/* Arms */}
+      <g style={{ transformOrigin: "28px 68px", animation: walking ? "petArmSwing 0.5s ease-in-out infinite" : "none" }}>
+        <line x1="28" y1="68" x2="14" y2="90" stroke={bodyColor} strokeWidth="8" strokeLinecap="round" />
+      </g>
+      {pointing ? (
+        <line x1="72" y1="68" x2="94" y2="46" stroke={bodyColor} strokeWidth="8" strokeLinecap="round" />
+      ) : (
+        <g style={{ transformOrigin: "72px 68px", animation: walking ? "petArmSwing 0.5s ease-in-out infinite reverse" : "none" }}>
+          <line x1="72" y1="68" x2="86" y2="90" stroke={bodyColor} strokeWidth="8" strokeLinecap="round" />
+        </g>
+      )}
+
+      {/* Head */}
+      <circle cx="50" cy="38" r="30" fill={bodyColor} />
+      <circle cx="32" cy="46" r="6" fill={cheekColor} opacity="0.8" />
+      <circle cx="68" cy="46" r="6" fill={cheekColor} opacity="0.8" />
+      <g style={{ transformOrigin: "50px 32px", animation: "petBlink 4s ease-in-out infinite" }}>
+        <circle cx="39" cy="32" r="5" fill="#1f2937" />
+        <circle cx="61" cy="32" r="5" fill="#1f2937" />
+        <circle cx="41" cy="30" r="1.7" fill="white" />
+        <circle cx="63" cy="30" r="1.7" fill="white" />
       </g>
       {mood === "worried"
-        ? <path d="M40 68 Q50 62 60 68" stroke="#1f2937" strokeWidth="3" fill="none" strokeLinecap="round" />
+        ? <path d="M41 54 Q50 49 59 54" stroke="#1f2937" strokeWidth="2.5" fill="none" strokeLinecap="round" />
         : mood === "neutral"
-          ? <line x1="42" y1="67" x2="58" y2="67" stroke="#1f2937" strokeWidth="3" strokeLinecap="round" />
-          : <path d="M40 64 Q50 74 60 64" stroke="#1f2937" strokeWidth="3" fill="none" strokeLinecap="round" />
+          ? <line x1="42" y1="53" x2="58" y2="53" stroke="#1f2937" strokeWidth="2.5" strokeLinecap="round" />
+          : <path d="M41 50 Q50 58 59 50" stroke="#1f2937" strokeWidth="2.5" fill="none" strokeLinecap="round" />
       }
-      <circle cx="18" cy="30" r="5" fill={bodyColor} />
-      <circle cx="82" cy="30" r="5" fill={bodyColor} />
+      <circle cx="22" cy="20" r="4" fill={bodyColor} />
+      <circle cx="78" cy="20" r="4" fill={bodyColor} />
     </svg>
   );
 };
 
-const PetWidget = ({ sales, onOpenSales, shopAccent, enabled }) => {
+const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMarkTaskDone, isAdmin=false, onManageTasks }) => {
   const [open, setOpen] = React.useState(false);
 
   const overdue = React.useMemo(() => {
@@ -8866,7 +8935,8 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled }) => {
     }).sort((a,b)=>(a.date||"").localeCompare(b.date||""));
   }, [sales]);
 
-  const mood = overdue.length===0 ? "happy" : overdue.length<=3 ? "neutral" : "worried";
+  const totalBadge = overdue.length + myTasks.length;
+  const mood = totalBadge===0 ? "happy" : totalBadge<=3 ? "neutral" : "worried";
 
   if (!enabled) return null;
 
@@ -8874,7 +8944,23 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled }) => {
     <div style={{position:"fixed",bottom:20,right:20,zIndex:250,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
       <style>{PET_CSS}</style>
       {open && (
-        <div style={{background:"white",borderRadius:14,boxShadow:"0 12px 40px rgba(0,0,0,0.2)",padding:"14px 16px",width:280,marginBottom:4}}>
+        <div style={{background:"white",borderRadius:14,boxShadow:"0 12px 40px rgba(0,0,0,0.2)",padding:"14px 16px",width:290,marginBottom:4,maxHeight:400,overflowY:"auto"}}>
+          {myTasks.length>0 && (
+            <div style={{marginBottom:12}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#0f172a",marginBottom:6}}>📌 Your Tasks</div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {myTasks.map(t=>(
+                  <div key={t.id} style={{fontSize:12,padding:"8px 9px",background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+                    <span style={{color:"#1e3a8a"}}>{t.message}</span>
+                    <button onClick={()=>onMarkTaskDone && onMarkTaskDone(t)}
+                      style={{flexShrink:0,fontSize:10,fontWeight:800,padding:"3px 8px",borderRadius:999,border:"none",background:"#2563eb",color:"white",cursor:"pointer",fontFamily:"inherit"}}>
+                      ✓ Done
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           <div style={{fontWeight:800,fontSize:13,color:"#0f172a",marginBottom:8}}>
             {overdue.length===0
               ? "🎉 All caught up! No overdue dispatches."
@@ -8897,16 +8983,113 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled }) => {
             style={{marginTop:10,width:"100%",padding:"8px 0",borderRadius:8,border:"none",background:shopAccent||"#059669",color:"white",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
             Go to Sales
           </button>
+          {isAdmin && (
+            <button onClick={()=>{setOpen(false); if(onManageTasks) onManageTasks();}}
+              style={{marginTop:6,width:"100%",padding:"8px 0",borderRadius:8,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+              ⚙️ Manage Rosie's Tasks
+            </button>
+          )}
         </div>
       )}
       <button onClick={()=>setOpen(o=>!o)} title="Rosie" style={{position:"relative",border:"none",background:"transparent",cursor:"pointer",padding:0,lineHeight:0}}>
         <Rosie mood={mood} />
-        {overdue.length>0 && (
+        {totalBadge>0 && (
           <span style={{position:"absolute",top:-2,right:-2,background:"#dc2626",color:"white",fontSize:10,fontWeight:800,borderRadius:999,minWidth:18,height:18,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px",animation:"petPop 0.3s ease"}}>
-            {overdue.length}
+            {totalBadge}
           </span>
         )}
       </button>
+    </div>
+  );
+};
+
+/* ── RosieTasksModal: admin UI to create, assign, and delete Rosie's
+   reminders. One-off tasks have a due date; recurring ones repeat daily/
+   weekly/monthly until manually removed. ─────────────────────────────── */
+const RosieTasksModal = ({ tasks, users, currentUser, onClose, onSave, onDelete }) => {
+  const [message, setMessage] = React.useState("");
+  const [assignedTo, setAssignedTo] = React.useState(users[0]?.id || "");
+  const [recurrence, setRecurrence] = React.useState("once");
+  const [dueDate, setDueDate] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+
+  const inp = { width:"100%", padding:"9px 12px", borderRadius:9, border:"1.5px solid #e2e8f0", fontSize:13, fontFamily:"inherit", outline:"none", boxSizing:"border-box" };
+  const lbl = { display:"block", fontSize:11, fontWeight:700, color:"#374151", marginBottom:4, textTransform:"uppercase", letterSpacing:"0.05em" };
+
+  const handleAdd = async () => {
+    if (!message.trim() || !assignedTo) return;
+    setSaving(true);
+    try {
+      await onSave({ shopId: undefined, assignedTo, message: message.trim(), recurrence, dueDate: recurrence==="once"?dueDate:"", createdBy: currentUser?.id||"" });
+      setMessage(""); setDueDate("");
+    } finally { setSaving(false); }
+  };
+
+  const userName = (id) => users.find(u=>u.id===id)?.name || id;
+
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:310, background:"rgba(15,23,42,0.55)", display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:"white", borderRadius:16, padding:"22px 24px", maxWidth:480, width:"92%", maxHeight:"85vh", display:"flex", flexDirection:"column", boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+          <div style={{ fontSize:15, fontWeight:800, color:"#0f172a" }}>🐾 Manage Rosie's Tasks</div>
+          <button onClick={onClose} style={{ border:"none", background:"transparent", fontSize:18, cursor:"pointer", color:"#94a3b8" }}>✕</button>
+        </div>
+
+        <div style={{ background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:10, padding:12, marginBottom:16 }}>
+          <div style={{ marginBottom:8 }}>
+            <label style={lbl}>Message</label>
+            <input value={message} onChange={e=>setMessage(e.target.value)} placeholder="e.g. Call the fabric supplier" style={inp}/>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8, marginBottom:8 }}>
+            <div>
+              <label style={lbl}>Assign To</label>
+              <select value={assignedTo} onChange={e=>setAssignedTo(e.target.value)} style={inp}>
+                {users.map(u=>(<option key={u.id} value={u.id}>{u.name}</option>))}
+              </select>
+            </div>
+            <div>
+              <label style={lbl}>Repeats</label>
+              <select value={recurrence} onChange={e=>setRecurrence(e.target.value)} style={inp}>
+                <option value="once">One-off</option>
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+                <option value="monthly">Monthly</option>
+              </select>
+            </div>
+          </div>
+          {recurrence==="once" && (
+            <div style={{ marginBottom:8 }}>
+              <label style={lbl}>Due Date (optional)</label>
+              <input type="date" value={dueDate} onChange={e=>setDueDate(e.target.value)} style={inp}/>
+            </div>
+          )}
+          <button disabled={saving||!message.trim()} onClick={handleAdd}
+            style={{ width:"100%", padding:"10px 0", borderRadius:9, border:"none", background:"#059669", color:"white", fontWeight:700, fontSize:13, cursor:saving?"default":"pointer", fontFamily:"inherit", opacity:saving||!message.trim()?0.6:1 }}>
+            ➕ Add Task
+          </button>
+        </div>
+
+        <div style={{ fontSize:11, fontWeight:700, color:"#64748b", textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:8 }}>
+          Existing Tasks ({tasks.length})
+        </div>
+        <div style={{ flex:1, overflowY:"auto", display:"flex", flexDirection:"column", gap:6 }}>
+          {tasks.length===0 && <div style={{ fontSize:12, color:"#94a3b8" }}>No tasks yet.</div>}
+          {tasks.map(t=>(
+            <div key={t.id} style={{ display:"flex", justifyContent:"space-between", alignItems:"center", gap:8, padding:"9px 10px", background:"#f8fafc", border:"1px solid #e2e8f0", borderRadius:9 }}>
+              <div style={{ minWidth:0 }}>
+                <div style={{ fontSize:12, fontWeight:700, color:"#0f172a", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{t.message}</div>
+                <div style={{ fontSize:11, color:"#64748b" }}>
+                  👤 {userName(t.assignedTo)} · {t.recurrence==="once"?"One-off":t.recurrence} {(t.recurrence==="once"&&t.doneAt)?"· ✓ Done":""}
+                </div>
+              </div>
+              <button onClick={()=>onDelete(t.id)}
+                style={{ flexShrink:0, border:"none", background:"transparent", color:"#dc2626", cursor:"pointer", fontSize:16 }}>
+                🗑️
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 };
@@ -10479,16 +10662,27 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
         {(() => {
           const filledLines = lines.filter(l=>l.name.trim());
           const hasPrice = lines.some(l=>parseFloat(l.price)>0);
-          const petNudge = !form.customer.trim() ? "Let's start with the customer's name!"
-            : !form.contact.trim() ? "Don't forget the phone number 📱"
-            : filledLines.length===0 ? "What are they buying? Add an item below."
-            : !hasPrice ? "This item needs a price 💰"
-            : !form.payBy ? "Which payment method was used?"
-            : "Looking good! Review and hit Save Sale when ready. ✅";
+          const steps = [
+            { done: !!form.customer.trim(), label: "Let's start with the customer's name!" },
+            { done: !!form.contact.trim(), label: "Don't forget the phone number 📱" },
+            { done: filledLines.length>0, label: "What are they buying? Add an item below." },
+            { done: hasPrice, label: "This item needs a price 💰" },
+            { done: !!form.payBy, label: "Which payment method was used?" },
+          ];
+          const activeIdx = steps.findIndex(s=>!s.done);
+          const allDone = activeIdx===-1;
+          const petNudge = allDone ? "Looking good! Review and hit Save Sale when ready. ✅" : steps[activeIdx].label;
           return (
-            <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",margin:"0 0 10px",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10}}>
-              <div style={{flexShrink:0,lineHeight:0}}><Rosie mood="happy" size={32}/></div>
-              <div style={{fontSize:12,color:"#166534",fontWeight:600}}>{petNudge}</div>
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",margin:"0 0 10px",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10}}>
+              <div style={{flexShrink:0,lineHeight:0}}><Rosie mood="happy" size={30} pose={allDone?"idle":"point"}/></div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:12,color:"#166534",fontWeight:600}}>{petNudge}</div>
+                <div style={{display:"flex",gap:4,marginTop:5}}>
+                  {steps.map((s,i)=>(
+                    <div key={i} style={{width:16,height:4,borderRadius:2,background:s.done?"#4ade80":(i===activeIdx?"#fbbf24":"#e2e8f0")}}/>
+                  ))}
+                </div>
+              </div>
             </div>
           );
         })()}
@@ -11987,7 +12181,7 @@ export default function App(){
   const activeShop = shop || (user.role==="staff" && allowedShops.length===1 ? allowedShops[0] : null);
 
   if(activeShop&&allowedShops.includes(activeShop))
-    return <ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);setInitialTab("sales");try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={updateSalesData} customers={customers} setCustomers={setCustomers} shopItems={shopItems} saveShopItems={saveShopItems} initialTab={initialTab}/>;
+    return <ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);setInitialTab("sales");try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={updateSalesData} customers={customers} setCustomers={setCustomers} shopItems={shopItems} saveShopItems={saveShopItems} initialTab={initialTab} users={users}/>;
 
   return(
     <>
