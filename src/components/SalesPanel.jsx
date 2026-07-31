@@ -641,12 +641,13 @@ export default function SalesPanel({
   const CARRIERS = isIndiaShop ? IN_CARRIERS : UK_CARRIERS;
 
   const trackingURL = (carrier, trackNo) => {
+    const cleanNo = (trackNo||"").replace(/\s+/g,"");
     switch((carrier||"").toLowerCase()){
-      case "royal mail":   return `https://www.royalmail.com/track-your-item#/tracking-results/${trackNo}`;
-      case "evri":         return `https://www.evri.com/track/${trackNo}`;
-      case "dpd":          return `https://track.dpd.co.uk/parcels/${trackNo}`;
-      case "ups":          return `https://www.ups.com/track?tracknum=${trackNo}`;
-      case "parcelforce":  return `https://www.parcelforce.com/track-trace?trackNumber=${trackNo}`;
+      case "royal mail":   return `https://www.royalmail.com/track-your-item#/tracking-results/${cleanNo}`;
+      case "evri":         return `https://www.evri.com/track/${cleanNo}`;
+      case "dpd":          return `https://track.dpd.co.uk/parcels/${cleanNo}`;
+      case "ups":          return `https://www.ups.com/track?tracknum=${cleanNo}`;
+      case "parcelforce":  return `https://www.parcelforce.com/track-trace?trackNumber=${cleanNo}`;
       case "speed post":   return `https://www.indiapost.gov.in/_layouts/15/dop.portal.tracking/trackconsignment.aspx`;
       case "dtdc":         return `https://www.dtdc.com/track-your-shipment/`;
       default: return null;
