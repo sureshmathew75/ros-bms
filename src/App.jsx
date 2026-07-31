@@ -4961,6 +4961,9 @@ const HistoricalDataPanel=({shop,shopId,histData=[],setHistData,fmt})=>{
 
 const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,initialTab="sales"})=>{
   const [tab,setTab]=useState(user?.role==="staff"?"sales":(initialTab||"sales"));
+  const [petEnabled,setPetEnabled]=useState(()=>{
+    try{ return localStorage.getItem("rosie_enabled")!=="false"; }catch{ return true; }
+  });
   const [hov,setHov]=useState(null);
   const [search,setSearch]=useState("");
   const [modal,setModal]=useState(null);
@@ -5702,6 +5705,19 @@ return(
                 ↩️<span className="mob-hide"> Undo Delete ({deletedStack.length})</span>
               </button>
             )}
+            {/* Rosie pet toggle */}
+            <button onClick={()=>{
+                const next=!petEnabled;
+                setPetEnabled(next);
+                try{ localStorage.setItem("rosie_enabled", next?"true":"false"); }catch{}
+              }}
+              title={petEnabled?"Hide Rosie":"Show Rosie"}
+              style={{width:38,height:38,borderRadius:11,border:"1px solid "+shop.accent+"33",
+                background:petEnabled?shop.accentBg:"#f1f5f9",cursor:"pointer",display:"flex",
+                alignItems:"center",justifyContent:"center",fontSize:16,transition:"all 0.15s",
+                opacity:petEnabled?1:0.5}}>
+              🐾
+            </button>
             {/* Notification bell */}
             <button style={{position:"relative",width:38,height:38,borderRadius:11,border:"1px solid "+shop.accent+"33",background:shop.accentBg,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,transition:"all 0.15s"}}
               onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.borderColor=shop.accent;}}
@@ -8327,6 +8343,7 @@ return(
         </div>
       )}
 
+      <PetWidget sales={sales} onOpenSales={()=>setTab("sales")} shopAccent={shop.accent} enabled={petEnabled}/>
     </div>
   );
 };
@@ -8799,6 +8816,101 @@ const PAYMENT_TYPES=[
    the wrong phone/account with no way for the app to detect that) or
    open WhatsApp directly. Renders as <WaModal data={x} onClose={...}/>;
    pass data=null to keep it hidden. ─────────────────────────────────── */
+/* ── Rosie: the floating app pet. Pure CSS/SVG, no external assets, so
+   it stays lightweight. Mood reflects overdue-dispatch backlog. ─────── */
+const PET_CSS = `
+@keyframes petBob { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-6px);} }
+@keyframes petBlink { 0%,90%,100%{transform:scaleY(1);} 95%{transform:scaleY(0.1);} }
+@keyframes petPop { 0%{transform:scale(0);} 70%{transform:scale(1.15);} 100%{transform:scale(1);} }
+`;
+const Rosie = ({ mood = "happy", size = 56 }) => {
+  const bodyColor = mood === "worried" ? "#f87171" : mood === "neutral" ? "#fbbf24" : "#4ade80";
+  const cheekColor = mood === "worried" ? "#fecaca" : mood === "neutral" ? "#fef3c7" : "#bbf7d0";
+  return (
+    <svg width={size} height={size} viewBox="0 0 100 100" style={{ animation: "petBob 2.2s ease-in-out infinite" }}>
+      <ellipse cx="50" cy="88" rx="22" ry="5" fill="#00000018" />
+      <circle cx="50" cy="52" r="38" fill={bodyColor} />
+      <circle cx="30" cy="60" r="8" fill={cheekColor} opacity="0.8" />
+      <circle cx="70" cy="60" r="8" fill={cheekColor} opacity="0.8" />
+      <g style={{ transformOrigin: "50px 45px", animation: "petBlink 4s ease-in-out infinite" }}>
+        <circle cx="37" cy="45" r="6" fill="#1f2937" />
+        <circle cx="63" cy="45" r="6" fill="#1f2937" />
+        <circle cx="39" cy="43" r="2" fill="white" />
+        <circle cx="65" cy="43" r="2" fill="white" />
+      </g>
+      {mood === "worried"
+        ? <path d="M40 68 Q50 62 60 68" stroke="#1f2937" strokeWidth="3" fill="none" strokeLinecap="round" />
+        : mood === "neutral"
+          ? <line x1="42" y1="67" x2="58" y2="67" stroke="#1f2937" strokeWidth="3" strokeLinecap="round" />
+          : <path d="M40 64 Q50 74 60 64" stroke="#1f2937" strokeWidth="3" fill="none" strokeLinecap="round" />
+      }
+      <circle cx="18" cy="30" r="5" fill={bodyColor} />
+      <circle cx="82" cy="30" r="5" fill={bodyColor} />
+    </svg>
+  );
+};
+
+const PetWidget = ({ sales, onOpenSales, shopAccent, enabled }) => {
+  const [open, setOpen] = React.useState(false);
+
+  const overdue = React.useMemo(() => {
+    const cutoffMs = Date.now() - 14*24*60*60*1000;
+    return (sales||[]).filter(s => {
+      const status = (s.ful||s.status||"").toUpperCase();
+      const isOpenStatus = ["PENDING","IN PROGRESS","TO ORDER","UNFULFILLED"].includes(status);
+      const hasTracking = !!(s.trackingNo && String(s.trackingNo).trim());
+      if (!isOpenStatus || hasTracking) return false;
+      const d = new Date(s.date);
+      if (isNaN(d.getTime())) return false;
+      return d.getTime() < cutoffMs;
+    }).sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+  }, [sales]);
+
+  const mood = overdue.length===0 ? "happy" : overdue.length<=3 ? "neutral" : "worried";
+
+  if (!enabled) return null;
+
+  return (
+    <div style={{position:"fixed",bottom:20,right:20,zIndex:250,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
+      <style>{PET_CSS}</style>
+      {open && (
+        <div style={{background:"white",borderRadius:14,boxShadow:"0 12px 40px rgba(0,0,0,0.2)",padding:"14px 16px",width:280,marginBottom:4}}>
+          <div style={{fontWeight:800,fontSize:13,color:"#0f172a",marginBottom:8}}>
+            {overdue.length===0
+              ? "🎉 All caught up! No overdue dispatches."
+              : `⏳ ${overdue.length} sale${overdue.length!==1?"s":""} waiting 14+ days for tracking`}
+          </div>
+          {overdue.length>0 && (
+            <div style={{maxHeight:220,overflowY:"auto",display:"flex",flexDirection:"column",gap:6}}>
+              {overdue.slice(0,10).map(s=>{
+                const days = Math.floor((Date.now()-new Date(s.date).getTime())/(24*60*60*1000));
+                return (
+                  <div key={s.id} style={{fontSize:12,padding:"6px 8px",background:"#f8fafc",borderRadius:8,display:"flex",justifyContent:"space-between",gap:8}}>
+                    <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.customer||"Customer"}</span>
+                    <span style={{color:"#dc2626",fontWeight:700,flexShrink:0}}>{days}d</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          <button onClick={()=>{setOpen(false); if(onOpenSales) onOpenSales();}}
+            style={{marginTop:10,width:"100%",padding:"8px 0",borderRadius:8,border:"none",background:shopAccent||"#059669",color:"white",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+            Go to Sales
+          </button>
+        </div>
+      )}
+      <button onClick={()=>setOpen(o=>!o)} title="Rosie" style={{position:"relative",border:"none",background:"transparent",cursor:"pointer",padding:0,lineHeight:0}}>
+        <Rosie mood={mood} />
+        {overdue.length>0 && (
+          <span style={{position:"absolute",top:-2,right:-2,background:"#dc2626",color:"white",fontSize:10,fontWeight:800,borderRadius:999,minWidth:18,height:18,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px",animation:"petPop 0.3s ease"}}>
+            {overdue.length}
+          </span>
+        )}
+      </button>
+    </div>
+  );
+};
+
 const WaModal=({data,onClose})=>{
   if(!data) return null;
   const {phone,customerName,message}=data;
@@ -10364,6 +10476,22 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     {/* ── Single column layout ── */}
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <div style={{flex:1,overflowY:"auto",padding:"12px 16px",WebkitOverflowScrolling:"touch"}}>
+        {(() => {
+          const filledLines = lines.filter(l=>l.name.trim());
+          const hasPrice = lines.some(l=>parseFloat(l.price)>0);
+          const petNudge = !form.customer.trim() ? "Let's start with the customer's name!"
+            : !form.contact.trim() ? "Don't forget the phone number 📱"
+            : filledLines.length===0 ? "What are they buying? Add an item below."
+            : !hasPrice ? "This item needs a price 💰"
+            : !form.payBy ? "Which payment method was used?"
+            : "Looking good! Review and hit Save Sale when ready. ✅";
+          return (
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",margin:"0 0 10px",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10}}>
+              <div style={{flexShrink:0,lineHeight:0}}><Rosie mood="happy" size={32}/></div>
+              <div style={{fontSize:12,color:"#166534",fontWeight:600}}>{petNudge}</div>
+            </div>
+          );
+        })()}
 
             {/* Basic Info */}
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
