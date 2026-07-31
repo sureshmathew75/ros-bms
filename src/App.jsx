@@ -8910,6 +8910,8 @@ const PET_CSS = `
   94%, 100%{ transform: translateX(0); }
 }
 `;
+const NEW_SALE_STEP_KEYS = ["customer","contact","item","price","payBy","paymentType"];
+const EDIT_SALE_STEP_KEYS = ["customer","contact","item","price","payBy"];
 const NEW_SALE_STEP_EXPLAIN = {
   FULL: "Marked as Full — the customer paid the whole amount today, nothing more to collect. 👍",
   ADVANCE: "Marked as Advance — this is the first payment towards a bigger total. Don't forget to set the Expected Total below! 💰",
@@ -9604,6 +9606,10 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
     { done: !!form.payBy, label: "Payment method not set" },
   ];
   const rosieEditActiveIdx = rosieEditSteps.findIndex(s=>!s.done);
+  const getRosieEditTargets = useCallback(
+    () => [rosieFieldRefs.current[EDIT_SALE_STEP_KEYS[rosieEditActiveIdx]]],
+    [rosieEditActiveIdx]
+  );
   return(
     <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",padding:"4px 20px 20px"}}>
       <div style={{padding:"0 20px"}}>
@@ -9624,6 +9630,15 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
           <div style={{flexShrink:0,lineHeight:0}}><Rosie mood="neutral" size={38} pose="point"/></div>
           <div style={{fontSize:13,color:"#92400e",fontWeight:700,lineHeight:1.4}}>{rosieEditSteps[rosieEditActiveIdx].label}</div>
         </div>
+      )}
+      {!isStaff && rosieEditActiveIdx!==-1 && (
+        <FlyingRosie
+          getTargets={getRosieEditTargets}
+          activeIndex={0}
+          mood="neutral"
+          size={34}
+          label={rosieEditSteps[rosieEditActiveIdx].label}
+        />
       )}
       <Divider title="Basic Info"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
@@ -10963,6 +10978,10 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const rosieActiveIdx = rosieSteps.findIndex(s=>!s.done);
   const rosieAllDone = rosieActiveIdx===-1;
   const rosieNudge = rosieAllDone ? "All set! Review and hit Save Sale when ready. ✅" : rosieSteps[rosieActiveIdx].label;
+  const getRosieTargets = useCallback(
+    () => [rosieFieldRefs.current[NEW_SALE_STEP_KEYS[rosieActiveIdx]]],
+    [rosieActiveIdx]
+  );
 
   return(<>
     {showNewCust&&(<div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setShowNewCust(false)}><div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.50)",backdropFilter:"blur(4px)"}}/><div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.25)",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",zIndex:81}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 22px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"12",borderRadius:"20px 20px 0 0"}}><h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>➕ New Customer</h3><button onClick={()=>setShowNewCust(false)} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button></div><div style={{padding:22}}><NewCustomerForm shop={shop} onSave={handleAddCustomer} onClose={()=>setShowNewCust(false)} customers={customerList}/></div></div></div>)}
@@ -10987,6 +11006,15 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             </button>
           )}
         </div>
+        {!rosieAllDone && (
+          <FlyingRosie
+            getTargets={getRosieTargets}
+            activeIndex={0}
+            mood="happy"
+            size={36}
+            label={rosieSteps[rosieActiveIdx].label}
+          />
+        )}
 
             {/* Basic Info */}
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
