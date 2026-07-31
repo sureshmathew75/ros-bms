@@ -9040,7 +9040,7 @@ const Rosie = ({ mood = "happy", size = 56, pose = "idle" }) => {
    she cycles through all of them forever (shop-selection cards); in
    controlled mode she flies to whichever index you give her (form
    field-by-field guide). ─────────────────────────────────────────────── */
-const FlyingRosie = ({ getTargets, activeIndex = 0, loop = false, mood = "happy", size = 44, label }) => {
+const FlyingRosie = ({ getTargets, activeIndex = 0, loop = false, mood = "happy", size = 44, label, actionLabel, onAction }) => {
   const [pos, setPos] = React.useState(null);
   const [phase, setPhase] = React.useState("flying"); // "flying" | "landed"
   const loopIdxRef = React.useRef(0);
@@ -9096,8 +9096,16 @@ const FlyingRosie = ({ getTargets, activeIndex = 0, loop = false, mood = "happy"
       <style>{PET_CSS}</style>
       <Rosie mood={mood} size={size} pose={phase==="flying" ? "fly" : "idle"} />
       {label && phase==="landed" && (
-        <div style={{ position:"absolute", bottom:size*1.15, left:"50%", transform:"translateX(-50%)", background:"white", borderRadius:8, padding:"5px 10px", fontSize:11, fontWeight:700, color:"#166534", whiteSpace:"normal", maxWidth:170, textAlign:"center", boxShadow:"0 4px 12px rgba(0,0,0,0.18)" }}>
+        <div style={{ position:"absolute", bottom:size*1.15, left:"50%", transform:"translateX(-50%)", background:"white", borderRadius:10, padding:"8px 14px", fontSize:12.5, fontWeight:700, color:"#166534", whiteSpace:"normal", maxWidth:260, minWidth:180, textAlign:"center", lineHeight:1.4, boxShadow:"0 4px 14px rgba(0,0,0,0.2)", pointerEvents:"auto" }}>
           {label}
+          {actionLabel && (
+            <div style={{marginTop:8}}>
+              <button onClick={onAction}
+                style={{fontSize:11.5,fontWeight:800,padding:"6px 14px",borderRadius:8,border:"none",background:"#059669",color:"white",cursor:"pointer",fontFamily:"inherit"}}>
+                {actionLabel}
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>,
@@ -9625,12 +9633,6 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
         <div><p style={{margin:0,fontWeight:800,fontSize:13,color:shop.accentText}}>Editing Sale {form.invoiceNo}</p>
           <p style={{margin:0,fontSize:11,color:shop.accent}}>All changes will update the sales record immediately on save</p></div>
       </div>
-      {!isStaff && rosieEditActiveIdx!==-1 && (
-        <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",marginBottom:16,background:"#fffbeb",border:"1px solid #fde68a",borderRadius:12}}>
-          <div style={{flexShrink:0,lineHeight:0}}><Rosie mood="neutral" size={38} pose="point"/></div>
-          <div style={{fontSize:13,color:"#92400e",fontWeight:700,lineHeight:1.4}}>{rosieEditSteps[rosieEditActiveIdx].label}</div>
-        </div>
-      )}
       {!isStaff && rosieEditActiveIdx!==-1 && (
         <FlyingRosie
           getTargets={getRosieEditTargets}
@@ -10977,7 +10979,6 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   ];
   const rosieActiveIdx = rosieSteps.findIndex(s=>!s.done);
   const rosieAllDone = rosieActiveIdx===-1;
-  const rosieNudge = rosieAllDone ? "All set! Review and hit Save Sale when ready. ✅" : rosieSteps[rosieActiveIdx].label;
   const getRosieTargets = useCallback(
     () => [rosieFieldRefs.current[NEW_SALE_STEP_KEYS[rosieActiveIdx]]],
     [rosieActiveIdx]
@@ -10989,23 +10990,6 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     {/* ── Single column layout ── */}
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <div style={{flex:1,overflowY:"auto",padding:"12px 16px",WebkitOverflowScrolling:"touch"}}>
-        <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",margin:"0 0 12px",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12}}>
-          <div style={{flexShrink:0,lineHeight:0}}><Rosie mood="happy" size={42} pose={rosieAllDone?"idle":"point"}/></div>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:13.5,color:"#166534",fontWeight:700,lineHeight:1.4}}>{rosieNudge}</div>
-            <div style={{display:"flex",gap:4,marginTop:6}}>
-              {rosieSteps.map((s,i)=>(
-                <div key={i} style={{width:20,height:5,borderRadius:3,background:s.done?"#4ade80":(i===rosieActiveIdx?"#fbbf24":"#e2e8f0")}}/>
-              ))}
-            </div>
-          </div>
-          {rosieActiveIdx===5 && (
-            <button onClick={()=>setPaymentTypeAcked(true)}
-              style={{flexShrink:0,fontSize:12,fontWeight:800,padding:"8px 14px",borderRadius:9,border:"none",background:"#059669",color:"white",cursor:"pointer",fontFamily:"inherit"}}>
-              Got it
-            </button>
-          )}
-        </div>
         {!rosieAllDone && (
           <FlyingRosie
             getTargets={getRosieTargets}
@@ -11013,6 +10997,8 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             mood="happy"
             size={36}
             label={rosieSteps[rosieActiveIdx].label}
+            actionLabel={rosieActiveIdx===5 ? "Got it" : null}
+            onAction={()=>setPaymentTypeAcked(true)}
           />
         )}
 
