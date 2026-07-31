@@ -915,6 +915,7 @@ const MessagesPanel=({shopId,shop,messages,setMessages,user,sales})=>{
   const [typeFilter,setTypeFilter]=React.useState("ALL");
   const [search,setSearch]=React.useState("");
   const [confirmDelete,setConfirmDelete]=React.useState(null); // {ids:[], label:""}
+  const [waModal,setWaModal]=React.useState(null); // {phone,customerName,message} | null
 
   // ── On-load scan: generate missing Day3 and Window-Closed messages ──
   // Only scan sales delivered within last 20 days to avoid mass generation
@@ -946,10 +947,8 @@ const MessagesPanel=({shopId,shop,messages,setMessages,user,sales})=>{
     scanMessages().catch(console.error);
   },[sales]);
 
-  const openWhatsApp=(phone,body)=>{
-    const clean=phone.replace(/\D/g,"");
-    const e164=clean.startsWith("0")?"44"+clean.slice(1):clean;
-    window.open("https://wa.me/"+e164+"?text="+encodeURIComponent(body),"_blank","noopener,noreferrer");
+  const openWhatsApp=(phone,body,customerName)=>{
+    setWaModal({phone,customerName,message:body});
   };
 
   const fmtDate=d=>{if(!d)return"—";try{const dt=new Date(d);return `${String(dt.getDate()).padStart(2,"0")}/${String(dt.getMonth()+1).padStart(2,"0")}/${String(dt.getFullYear()).slice(-2)}`;}catch{return d;}};
@@ -1161,7 +1160,7 @@ const MessagesPanel=({shopId,shop,messages,setMessages,user,sales})=>{
                             {isExpanded?"▲":"▼"}
                           </button>
                           {msg.status==="READY"&&(<>
-                            <button onClick={()=>openWhatsApp(msg.phone,msg.messageBody)}
+                            <button onClick={()=>openWhatsApp(msg.phone,msg.messageBody,msg.customer)}
                               style={{padding:"4px 9px",borderRadius:6,border:"none",background:"#25d366",
                                 color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
                               WhatsApp
@@ -1247,6 +1246,7 @@ const MessagesPanel=({shopId,shop,messages,setMessages,user,sales})=>{
           </div>
         </div>
       )}
+      <WaModal data={waModal} onClose={()=>setWaModal(null)}/>
     </div>
   );
 };
@@ -1904,6 +1904,7 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
     staffNotes:ret.staffNotes||"",
   });
   const [saving,setSaving]=React.useState(false);
+  const [waModal,setWaModal]=React.useState(null); // {phone,customerName,message} | null
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const days=daysRemaining(ret.returnDeadline);
   const isClosed=["REFUNDED","EXCHANGED"].includes(form.status);
@@ -1912,9 +1913,7 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
   const lbl={display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
 
   const openWA=(phone,msg)=>{
-    const clean=(phone||"").replace(/[^0-9]/g,"");
-    const e164=clean.startsWith("0")?"44"+clean.slice(1):clean;
-    window.open("https://wa.me/"+e164+"?text="+encodeURIComponent(msg),"_blank","noopener,noreferrer");
+    setWaModal({phone,customerName:ret.customer,message:msg});
   };
 
   const handleStatusChange=async(newStatus)=>{
@@ -2178,12 +2177,14 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
           </div>
         )}
       </div>
+      <WaModal data={waModal} onClose={()=>setWaModal(null)}/>
     </div>
   );
 };
 
 const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,onSyncSaleStatus,salesData={},pushDeleted})=>{
   const [filter,setFilter]=React.useState("ACTIVE");
+  const [waModal,setWaModal]=React.useState(null); // {phone,customerName,message} | null
 
   // Flatten all sales for delivery date lookup
   const allSales=React.useMemo(()=>{
@@ -2413,9 +2414,7 @@ Thank you for shopping with ROS.`,
               const isSelected=selected.has(ret.id);
 
               const openWA=(phone,msg)=>{
-                const clean=(phone||"").replace(/[^0-9]/g,"");
-                const e164=clean.startsWith("0")?"44"+clean.slice(1):clean;
-                window.open("https://wa.me/"+e164+"?text="+encodeURIComponent(msg),"_blank","noopener,noreferrer");
+                setWaModal({phone,customerName:ret.customer,message:msg});
               };
 
               const handleQuickAction=async(newStatus)=>{
@@ -2727,6 +2726,7 @@ Thank you for shopping with ROS.`,
           </div>
         </div>
       )}
+      <WaModal data={waModal} onClose={()=>setWaModal(null)}/>
     </div>
   );
 };
@@ -4007,6 +4007,7 @@ const FulfilmentPanel=({salesData,shopId,shop,messages,setMessages,returns,setRe
   const [stage,setStage]=React.useState("dispatched");
   const [shopFilter,setShopFilter]=React.useState("ALL");
   const [search,setSearch]=React.useState("");
+  const [waModal,setWaModal]=React.useState(null); // {phone,customerName,message} | null
 
   const SHOPS=[
     {id:"ALL",label:"All Shops"},
@@ -4097,10 +4098,8 @@ const FulfilmentPanel=({salesData,shopId,shop,messages,setMessages,returns,setRe
   // Messages sub-panel (reuses existing logic)
   const readyCount=messages.filter(m=>m.status==="READY").length;
 
-  const openWhatsApp=(phone,body)=>{
-    const clean=phone.replace(/\D/g,"");
-    const e164=clean.startsWith("0")?"44"+clean.slice(1):clean;
-    window.open("https://wa.me/"+e164+"?text="+encodeURIComponent(body),"_blank","noopener,noreferrer");
+  const openWhatsApp=(phone,body,customerName)=>{
+    setWaModal({phone,customerName,message:body});
   };
 
   const handleSent=async(id)=>{
@@ -4212,7 +4211,7 @@ const FulfilmentPanel=({salesData,shopId,shop,messages,setMessages,returns,setRe
                       <td style={{padding:"10px 16px"}}>
                         <div style={{display:"flex",gap:5}}>
                           {msg.status==="READY"&&<>
-                            <button onClick={()=>openWhatsApp(msg.phone,msg.messageBody)}
+                            <button onClick={()=>openWhatsApp(msg.phone,msg.messageBody,msg.customer)}
                               style={{padding:"4px 9px",borderRadius:6,border:"none",background:"#25d366",color:"white",fontSize:11,fontWeight:700,cursor:"pointer"}}>WhatsApp</button>
                             <button onClick={()=>handleSent(msg.id)}
                               style={{padding:"4px 9px",borderRadius:6,border:"1px solid #86efac",background:"#f0fdf4",color:"#166534",fontSize:11,fontWeight:700,cursor:"pointer"}}>✓ Sent</button>
@@ -4325,7 +4324,7 @@ const FulfilmentPanel=({salesData,shopId,shop,messages,setMessages,returns,setRe
                           {stage==="dispatched"&&s.phone&&(
                             <button onClick={()=>{
                               const msg=messages.find(m=>m.saleId===s.id&&m.messageType==="DELIVERY_CONFIRM"&&m.status==="READY");
-                              if(msg)openWhatsApp(msg.phone,msg.messageBody);
+                              if(msg)openWhatsApp(msg.phone,msg.messageBody,s.customer);
                               else alert("No delivery message queued yet. Mark as delivered first.");
                             }}
                               style={{padding:"4px 9px",borderRadius:7,border:"none",background:"#25d366",
@@ -4357,6 +4356,7 @@ const FulfilmentPanel=({salesData,shopId,shop,messages,setMessages,returns,setRe
           </div>
         )}
       </div>
+      <WaModal data={waModal} onClose={()=>setWaModal(null)}/>
     </div>
   );
 };
@@ -8793,6 +8793,61 @@ const PAYMENT_TYPES=[
   {key:"PART",    label:"Part",     emoji:"🔄", color:"#7c3aed"},
   {key:"FINAL",   label:"Final",    emoji:"🏁", color:"#2563eb"},
 ];
+/* ── WhatsAppSendModal: shown before every WhatsApp send across the app.
+   Lets staff copy the message (for pasting into the right device/chat
+   manually — useful since clicking straight through to WhatsApp can open
+   the wrong phone/account with no way for the app to detect that) or
+   open WhatsApp directly. Renders as <WaModal data={x} onClose={...}/>;
+   pass data=null to keep it hidden. ─────────────────────────────────── */
+const WaModal=({data,onClose})=>{
+  if(!data) return null;
+  const {phone,customerName,message}=data;
+  const clean=(phone||"").replace(/\D/g,"");
+  const e164=clean.startsWith("0")?"44"+clean.slice(1):clean;
+  const handleCopy=async()=>{
+    try{ await navigator.clipboard.writeText(message); }
+    catch{
+      const ta=document.createElement("textarea");
+      ta.value=message; document.body.appendChild(ta); ta.select();
+      try{document.execCommand("copy");}catch{}
+      document.body.removeChild(ta);
+    }
+    onClose(); // auto-close after copy
+  };
+  const handleOpen=()=>{
+    window.open("https://wa.me/"+e164+"?text="+encodeURIComponent(message),"_blank","noopener,noreferrer");
+    onClose();
+  };
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:300,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:16,padding:"22px 24px",maxWidth:460,width:"92%",maxHeight:"80vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+          <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>💬 Send WhatsApp Message</div>
+          <button onClick={onClose} style={{border:"none",background:"transparent",fontSize:18,cursor:"pointer",color:"#94a3b8",lineHeight:1}}>✕</button>
+        </div>
+        <div style={{marginBottom:12,padding:"10px 12px",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10}}>
+          <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{customerName||"Customer"}</div>
+          <div style={{fontSize:12,color:"#15803d",fontWeight:600}}>📱 {phone||"No phone on file"}</div>
+        </div>
+        <div style={{fontSize:11,color:"#64748b",marginBottom:6,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em"}}>Message</div>
+        <div style={{flex:1,overflowY:"auto",whiteSpace:"pre-wrap",fontSize:13,color:"#374151",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"12px 14px",marginBottom:16,lineHeight:1.5}}>
+          {message}
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={handleCopy}
+            style={{flex:1,padding:"11px 0",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            📋 Copy Message
+          </button>
+          <button onClick={handleOpen}
+            style={{flex:1,padding:"11px 0",borderRadius:10,border:"none",background:"#25D366",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            📱 Open WhatsApp
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const PaymentTypeControl=({value,onChange})=>{
   const current=value||"FULL";
   return (

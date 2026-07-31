@@ -301,6 +301,59 @@ const STATUS_TABS = [
   { key: "REFUNDED",      label: "Refunded",       color: "#7e22ce", bg: "#f3e8ff" },
 ];
 
+/* ── WaModal: shown before every WhatsApp send, mirrors the one in
+   App.jsx (files don't share components). Lets staff copy the message
+   (for pasting into the right device/chat manually) or open WhatsApp
+   directly. ────────────────────────────────────────────────────────── */
+const WaModal = ({ data, onClose }) => {
+  if (!data) return null;
+  const { phone, customerName, message } = data;
+  const clean = (phone || "").replace(/\D/g, "");
+  const e164 = clean.startsWith("0") ? "44" + clean.slice(1) : clean;
+  const handleCopy = async () => {
+    try { await navigator.clipboard.writeText(message); }
+    catch {
+      const ta = document.createElement("textarea");
+      ta.value = message; document.body.appendChild(ta); ta.select();
+      try { document.execCommand("copy"); } catch {}
+      document.body.removeChild(ta);
+    }
+    onClose();
+  };
+  const handleOpen = () => {
+    window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent(message), "_blank", "noopener,noreferrer");
+    onClose();
+  };
+  return (
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} style={{ background: "white", borderRadius: 16, padding: "22px 24px", maxWidth: 460, width: "92%", maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>💬 Send WhatsApp Message</div>
+          <button onClick={onClose} style={{ border: "none", background: "transparent", fontSize: 18, cursor: "pointer", color: "#94a3b8", lineHeight: 1 }}>✕</button>
+        </div>
+        <div style={{ marginBottom: 12, padding: "10px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, color: "#0f172a" }}>{customerName || "Customer"}</div>
+          <div style={{ fontSize: 12, color: "#15803d", fontWeight: 600 }}>📱 {phone || "No phone on file"}</div>
+        </div>
+        <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>Message</div>
+        <div style={{ flex: 1, overflowY: "auto", whiteSpace: "pre-wrap", fontSize: 13, color: "#374151", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "12px 14px", marginBottom: 16, lineHeight: 1.5 }}>
+          {message}
+        </div>
+        <div style={{ display: "flex", gap: 10 }}>
+          <button onClick={handleCopy}
+            style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "1px solid #e2e8f0", background: "white", color: "#374151", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+            📋 Copy Message
+          </button>
+          <button onClick={handleOpen}
+            style={{ flex: 1, padding: "11px 0", borderRadius: 10, border: "none", background: "#25D366", color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+            📱 Open WhatsApp
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const STATUS_ROW_BG = {
   "PENDING":       "#fffbeb",
   "FULFILLED":     "#f0fdf4",
@@ -354,6 +407,7 @@ export default function SalesPanel({
   const [hovR,    setHovR]    = useState(null);
   /* Drag-to-reorder (month view only) */
   const [dragId, setDragId] = useState(null);
+  const [waModal, setWaModal] = useState(null); // {phone,customerName,message} | null
   /* Status cascade across instalment groups (Advance/Part/Final payment) */
   const [cascadeConfirm, setCascadeConfirm] = useState(null); // {saleId, newStatus, groupIds} | null
   const [flashIds, setFlashIds] = useState(new Set());
@@ -627,10 +681,9 @@ ${signOff} 💜`;
 
   const openTrackingWA = (sale, carrier, trackNo) => {
     const phone = (sale.phone || sale.contact || "").replace(/[^0-9]/g,"");
-    const e164 = phone.startsWith("0") ? "44" + phone.slice(1) : phone;
-    if (!e164) { alert("No phone number for this customer."); return; }
+    if (!phone) { alert("No phone number for this customer."); return; }
     const msg = buildTrackingMsg(sale, carrier, trackNo);
-    window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent(msg), "_blank", "noopener,noreferrer");
+    setWaModal({ phone, customerName: sale.customer, message: msg });
   };
 
   /* ── Instalment / linked-deal groups ─────────────────────────────────
@@ -2032,7 +2085,6 @@ ${signOff} 💜`;
                             </div>
                             <button onClick={() => {
                               const phone = (s.phone || s.contact || "").replace(/[^0-9]/g, "");
-                              const e164 = phone.startsWith("0") ? "44" + phone.slice(1) : phone;
                               const retLink=`https://ros-bms.vercel.app/returns?shop=${shopId}`;
                               const signOff = shop?.short ? `ROS ${shop.short}` : "ROS";
                               const msg = `Dear ${s.customer||"Customer"},
@@ -2049,7 +2101,7 @@ To avoid any delays or inconvenience, we kindly recommend submitting your return
 Once we receive your request, our team will review it and get back to you as soon as possible.
 
 Thank you for your cooperation and for shopping with ${signOff}.`;
-                            window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent(msg), "_blank", "noopener,noreferrer");
+                            setWaModal({ phone, customerName: s.customer, message: msg });
                             }}
                               style={{ padding: "3px 8px", borderRadius: 7, border: "1px solid #e2e8f0",
                                 background: "white", color: "#374151", fontSize: 10, fontWeight: 600,
@@ -2060,8 +2112,8 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                         ) : (
                           <button onClick={async () => {
                             const phone = (s.phone || s.contact || "").replace(/[^0-9]/g, "");
-                            const e164 = phone.startsWith("0") ? "44" + phone.slice(1) : phone;
-                            window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent("Dear Customer,\nYour order has been marked as delivered according to the tracking update.\nPlease kindly check and inspect your item. If you have any issues or concerns, please contact us within 2 days of delivery so we can help you as quickly as possible.\nThank you for your purchase and for choosing ROS. We are always happy to assist you.\nThank you 😊"), "_blank", "noopener,noreferrer");
+                            const msg = "Dear Customer,\nYour order has been marked as delivered according to the tracking update.\nPlease kindly check and inspect your item. If you have any issues or concerns, please contact us within 2 days of delivery so we can help you as quickly as possible.\nThank you for your purchase and for choosing ROS. We are always happy to assist you.\nThank you 😊";
+                            setWaModal({ phone, customerName: s.customer, message: msg });
                             if (onMarkDeliveryInformed) await onMarkDeliveryInformed(s.id);
                           }}
                             style={{ padding: "4px 10px", borderRadius: 7, border: "1px dashed #25d366",
@@ -2736,6 +2788,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
           </div>
         </div>
       )}
+      <WaModal data={waModal} onClose={() => setWaModal(null)}/>
     </div>
   );
 }
