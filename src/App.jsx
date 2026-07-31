@@ -258,6 +258,15 @@ const ShopLogo = ({ shopId, size = "card" }) => {
 /* ── Single source of truth for all shop stat figures ─────────────────────
    Defined BEFORE ShopSelector and ShopDashboard so both can call it.
 ────────────────────────────────────────────────────────────────────────── */
+/* Today's date as "YYYY-MM-DD" using LOCAL date parts (no UTC shift) —
+   used to cap sale/purchase date inputs so future dates can't be entered. */
+const localTodayISO=()=>{
+  const d=new Date();
+  const y=d.getFullYear();
+  const mo=String(d.getMonth()+1).padStart(2,"0");
+  const da=String(d.getDate()).padStart(2,"0");
+  return `${y}-${mo}-${da}`;
+};
 const STAT_FULFILLED=new Set(["FULFILLED","EXCHANGED","REFUNDED","GOOD FEEDBACK","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]);
 const STAT_RETURNS  =new Set(["RTRN REQSTD","RETRN RCVD","RETURN RQSTD","RETURN RCVD","EXCHANGED"]);
 
@@ -943,7 +952,7 @@ const MessagesPanel=({shopId,shop,messages,setMessages,user,sales})=>{
     window.open("https://wa.me/"+e164+"?text="+encodeURIComponent(body),"_blank","noopener,noreferrer");
   };
 
-  const fmtDate=d=>{if(!d)return"—";try{return new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});}catch{return d;}};
+  const fmtDate=d=>{if(!d)return"—";try{const dt=new Date(d);return `${String(dt.getDate()).padStart(2,"0")}/${String(dt.getMonth()+1).padStart(2,"0")}/${String(dt.getFullYear()).slice(-2)}`;}catch{return d;}};
 
   // Filter messages
   const filtered=messages.filter(m=>{
@@ -1938,7 +1947,7 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
     onClose();
   };
 
-  const fmtDate=d=>{if(!d)return"—";try{return new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"});}catch{return d;}};
+  const fmtDate=d=>{if(!d)return"—";try{const dt=new Date(d);return `${String(dt.getDate()).padStart(2,"0")}/${String(dt.getMonth()+1).padStart(2,"0")}/${String(dt.getFullYear()).slice(-2)}`;}catch{return d;}};
   const statusStyle=RETURN_STATUS_STYLE[form.status]||{bg:"#f8fafc",border:"#e2e8f0",text:"#374151",label:form.status};
 
   return(
@@ -2299,7 +2308,7 @@ Thank you for shopping with ROS.`,
     REFUNDED:returns.filter(r=>r.status==="REFUNDED").length,
   };
 
-  const fmtDate=d=>{if(!d)return"—";try{return new Date(d).toLocaleDateString("en-GB",{day:"2-digit",month:"short"});}catch{return d;}};
+  const fmtDate=d=>{if(!d)return"—";try{const dt=new Date(d);return `${String(dt.getDate()).padStart(2,"0")}/${String(dt.getMonth()+1).padStart(2,"0")}/${String(dt.getFullYear()).slice(-2)}`;}catch{return d;}};
 
   return(
     <div style={{padding:"0 0 40px"}}>
@@ -5246,7 +5255,7 @@ const addSale = async (form) => {
       notes: existing?.notes||"",
       purchases: (existing?.purchases||0)+1,
       spend: (existing?.spend||0)+(Number(form.amount)||0),
-      last: new Date().toLocaleDateString("en-GB",{day:"2-digit",month:"short",year:"numeric"}),
+      last: (()=>{const dt=new Date();return `${String(dt.getDate()).padStart(2,"0")}/${String(dt.getMonth()+1).padStart(2,"0")}/${String(dt.getFullYear()).slice(-2)}`;})(),
     };
     setCustomers(prev=>{
       const idx=prev.findIndex(c=>c.name===form.customer);
@@ -7590,7 +7599,7 @@ return(
                 <div style={{textAlign:"right"}}>
                   <div style={{fontSize:26,fontWeight:900,color:"#0f172a",letterSpacing:"-0.03em"}}>INVOICE</div>
                   <div style={{fontSize:13,fontWeight:700,color:"#64748b"}}>#{inv.id}</div>
-                  <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>Date: {inv.date||new Date().toLocaleDateString("en-GB")}</div>
+                  <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>Date: {formatDate(inv.date)||formatDate(new Date().toISOString())}</div>
                   <div style={{marginTop:6,display:"inline-block",background:inc?"#f0fdf4":"#eff6ff",color:inc?"#15803d":"#1d4ed8",padding:"2px 10px",borderRadius:999,fontSize:10,fontWeight:700,border:"1px solid "+(inc?"#bbf7d0":"#bfdbfe")}}>
                     {inc?"Tax Inclusive":"Tax Exclusive"} · {rPct}%
                   </div>
@@ -8975,7 +8984,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
       </div>
       <Divider title="Basic Info"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
-        <div><label style={lbl}>Date</label><input type="date" value={form.date} readOnly={isStaff} onChange={isStaff?undefined:e=>set("date",e.target.value)} style={{...inp,background:isStaff?"#f8fafc":"white",cursor:isStaff?"default":"auto"}} onFocus={fo} onBlur={bl}/></div>
+        <div><label style={lbl}>Date</label><input type="date" value={form.date} max={localTodayISO()} readOnly={isStaff} onChange={isStaff?undefined:e=>set("date",e.target.value)} style={{...inp,background:isStaff?"#f8fafc":"white",cursor:isStaff?"default":"auto"}} onFocus={fo} onBlur={bl}/></div>
         <div>
           <label style={lbl}>Invoice Number</label>
           {shopId==="ros-india" && isSuperadmin && (
@@ -9416,7 +9425,13 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
 
       </div>{/* end padding wrapper */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>onSave({...form,id:(form.invAssigned&&form.invoiceNo)?form.invoiceNo:((shopId==="ros-india"&&new Date(form.date||sale.date||0)>=new Date(2026,3,1)&&!String(sale.id||"").includes("-"))?`IN-${Date.now().toString().slice(-6)}`:sale.id),ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:parseFloat(form.discount)||0,otherCharges:parseFloat(form.otherCharges)||0,otherChargesLabel:form.otherChargesLabel||"Other Charges",contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""})}
+        <button onClick={()=>{
+            if(form.date&&form.date>localTodayISO()){
+              alert("Sale date can't be in the future. Please pick today's date or an earlier one.");
+              return;
+            }
+            onSave({...form,id:(form.invAssigned&&form.invoiceNo)?form.invoiceNo:((shopId==="ros-india"&&new Date(form.date||sale.date||0)>=new Date(2026,3,1)&&!String(sale.id||"").includes("-"))?`IN-${Date.now().toString().slice(-6)}`:sale.id),ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:parseFloat(form.discount)||0,otherCharges:parseFloat(form.otherCharges)||0,otherChargesLabel:form.otherChargesLabel||"Other Charges",contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""});
+          }}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
@@ -9785,7 +9800,7 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         <div>
           <label style={lbl}>Date</label>
-          <input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
+          <input type="date" value={form.date} max={localTodayISO()} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
         </div>
         <div>
           <label style={lbl}>Purchase ID</label>
@@ -9928,6 +9943,7 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
           if(!form.supplier){setSaveErr("Please select a supplier.");return;}
           if(!(form.item||form.itemCustom)){setSaveErr("Please select or enter an item.");return;}
           if(!form.total){setSaveErr("Please enter the amount.");return;}
+          if(form.date&&form.date>localTodayISO()){setSaveErr("Purchase date can't be in the future.");return;}
           setSaving(true);
           const payload={
             id: form.purchaseId||form.id,
@@ -10277,6 +10293,10 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const grandTotal=parseFloat((preGstTotal+gstAmt).toFixed(2));
 
   const handleSave=()=>{
+    if(form.date && form.date>localTodayISO()){
+      alert("Sale date can't be in the future. Please pick today's date or an earlier one.");
+      return;
+    }
     const filledLines=lines.filter(l=>l.name.trim()||(parseFloat(l.price)>0));
     const combinedItem=filledLines.map(l=>`${l.name}(x${l.qty})`).join(", ")||"Sale";
     const combinedQty=filledLines.reduce((s,l)=>s+(parseFloat(l.qty)||0),0)||1;
@@ -10294,7 +10314,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>📋 Basic Info</p>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
-                <div><label style={lbl}>Date</label><input type="date" value={form.date} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
+                <div><label style={lbl}>Date</label><input type="date" value={form.date} max={localTodayISO()} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
                 <div><label style={lbl}>Invoice No.</label>
                   {shopId==="ros-india" && !isSuperadmin ? (
                     <div style={{...inp,background:"#f8fafc",color:"#94a3b8",fontFamily:"DM Mono,monospace",fontSize:10,display:"flex",alignItems:"center"}}>{form.invAssigned&&form.invoiceNo?form.invoiceNo:"\u2014"}</div>
