@@ -396,6 +396,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
   const [cmd,setCmd]=useState(false);
   const [statHov,setStatHov]=useState(null);
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
+  const shopCardRefs=useRef({});
   // shopStats computed directly from salesData prop
 
   const shopStats={};
@@ -526,6 +527,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
             const staffLocked=isStaff&&!(user?.shops||[]).includes(shop.id);
             return(
               <div key={shop.id}
+                ref={el=>{shopCardRefs.current[shop.id]=el;}}
                 onClick={()=>!staffLocked&&onSelect(shop.id)}
                 onMouseEnter={()=>!staffLocked&&setHov(shop.id)}
                 onMouseLeave={()=>setHov(null)}
@@ -628,6 +630,12 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
             );
           })}
         </div>
+
+        <FlyingRosie
+          getTargets={()=>SHOPS.filter(sh=>user?.role==="superadmin"||user?.role==="admin"||(user?.shops||[]).includes(sh.id)).map(sh=>shopCardRefs.current[sh.id])}
+          loop={true}
+          mood="happy"
+        />
 
         {/* ── LIFETIME STATS — admin only ── */}
         {user?.role!=="staff"&&(()=>{
@@ -8861,61 +8869,160 @@ const PET_CSS = `
 @keyframes petBob { 0%,100%{transform:translateY(0);} 50%{transform:translateY(-5px);} }
 @keyframes petBlink { 0%,90%,100%{transform:scaleY(1);} 95%{transform:scaleY(0.1);} }
 @keyframes petPop { 0%{transform:scale(0);} 70%{transform:scale(1.15);} 100%{transform:scale(1);} }
-@keyframes petArmSwing { 0%,100%{transform:rotate(-6deg);} 50%{transform:rotate(6deg);} }
-@keyframes petLegSwingL { 0%,100%{transform:rotate(-14deg);} 50%{transform:rotate(14deg);} }
-@keyframes petLegSwingR { 0%,100%{transform:rotate(14deg);} 50%{transform:rotate(-14deg);} }
+@keyframes petArmSwing { 0%,100%{transform:rotate(-10deg);} 50%{transform:rotate(10deg);} }
+@keyframes petLegSwingL { 0%,100%{transform:rotate(-16deg);} 50%{transform:rotate(16deg);} }
+@keyframes petLegSwingR { 0%,100%{transform:rotate(16deg);} 50%{transform:rotate(-16deg);} }
+@keyframes petTailWag { 0%,100%{transform:rotate(-10deg);} 50%{transform:rotate(14deg);} }
+@keyframes petWingFlap { 0%,100%{transform:rotate(-25deg) scaleY(1);} 50%{transform:rotate(10deg) scaleY(0.8);} }
+@keyframes petRoam {
+  0%, 6%   { transform: translateX(0); }
+  46%, 54% { transform: translateX(-220px); }
+  94%, 100%{ transform: translateX(0); }
+}
 `;
 const Rosie = ({ mood = "happy", size = 56, pose = "idle" }) => {
-  const bodyColor = mood === "worried" ? "#f87171" : mood === "neutral" ? "#fbbf24" : "#4ade80";
-  const cheekColor = mood === "worried" ? "#fecaca" : mood === "neutral" ? "#fef3c7" : "#bbf7d0";
+  const bodyColor = mood === "worried" ? "#fca5a5" : mood === "neutral" ? "#fde68a" : "#86efac";
+  const cheekColor = mood === "worried" ? "#fecdd3" : mood === "neutral" ? "#fef9c3" : "#fbcfe8";
+  const bowColor   = mood === "worried" ? "#ef4444" : mood === "neutral" ? "#f59e0b" : "#f472b6";
   const walking = pose === "walk";
   const pointing = pose === "point";
+  const flying = pose === "fly";
   return (
-    <svg width={size} height={size * 1.4} viewBox="0 0 100 140" style={{ animation: walking ? "none" : "petBob 2.2s ease-in-out infinite", overflow: "visible" }}>
-      <ellipse cx="50" cy="132" rx="20" ry="4" fill="#00000018" />
+    <svg width={size} height={size * 1.5} viewBox="0 0 100 150" style={{ animation: (walking||flying) ? "none" : "petBob 2.2s ease-in-out infinite", overflow: "visible" }}>
+      <ellipse cx="50" cy="140" rx="20" ry="4" fill={flying ? "transparent" : "#00000015"} />
 
-      {/* Legs */}
-      <g style={{ transformOrigin: "40px 100px", animation: walking ? "petLegSwingL 0.5s ease-in-out infinite" : "none" }}>
-        <line x1="40" y1="100" x2="36" y2="126" stroke="#334155" strokeWidth="7" strokeLinecap="round" />
-      </g>
-      <g style={{ transformOrigin: "60px 100px", animation: walking ? "petLegSwingR 0.5s ease-in-out infinite" : "none" }}>
-        <line x1="60" y1="100" x2="64" y2="126" stroke="#334155" strokeWidth="7" strokeLinecap="round" />
+      {/* Tail */}
+      <g style={{ transformOrigin: "78px 98px", animation: "petTailWag 1.6s ease-in-out infinite" }}>
+        <path d="M78 98 Q95 92 92 108 Q88 118 78 108 Z" fill={bodyColor} />
       </g>
 
-      {/* Torso */}
-      <ellipse cx="50" cy="82" rx="26" ry="24" fill={bodyColor} />
-
-      {/* Arms */}
-      <g style={{ transformOrigin: "28px 68px", animation: walking ? "petArmSwing 0.5s ease-in-out infinite" : "none" }}>
-        <line x1="28" y1="68" x2="14" y2="90" stroke={bodyColor} strokeWidth="8" strokeLinecap="round" />
+      {/* Legs - tucked while flying */}
+      <g style={{ transformOrigin: "40px 106px", animation: walking ? "petLegSwingL 0.45s ease-in-out infinite" : "none", opacity: flying?0.7:1 }}>
+        <line x1="40" y1="106" x2={flying?42:36} y2={flying?122:132} stroke="#78716c" strokeWidth="7" strokeLinecap="round" />
       </g>
-      {pointing ? (
-        <line x1="72" y1="68" x2="94" y2="46" stroke={bodyColor} strokeWidth="8" strokeLinecap="round" />
-      ) : (
-        <g style={{ transformOrigin: "72px 68px", animation: walking ? "petArmSwing 0.5s ease-in-out infinite reverse" : "none" }}>
-          <line x1="72" y1="68" x2="86" y2="90" stroke={bodyColor} strokeWidth="8" strokeLinecap="round" />
+      <g style={{ transformOrigin: "60px 106px", animation: walking ? "petLegSwingR 0.45s ease-in-out infinite" : "none", opacity: flying?0.7:1 }}>
+        <line x1="60" y1="106" x2={flying?58:64} y2={flying?122:132} stroke="#78716c" strokeWidth="7" strokeLinecap="round" />
+      </g>
+
+      {/* Wings (flying only) */}
+      {flying && (<>
+        <g style={{ transformOrigin: "22px 84px", animation: "petWingFlap 0.35s ease-in-out infinite" }}>
+          <ellipse cx="8" cy="80" rx="16" ry="9" fill="white" opacity="0.85" transform="rotate(-20 8 80)" />
         </g>
+        <g style={{ transformOrigin: "78px 84px", animation: "petWingFlap 0.35s ease-in-out infinite reverse" }}>
+          <ellipse cx="92" cy="80" rx="16" ry="9" fill="white" opacity="0.85" transform="rotate(20 92 80)" />
+        </g>
+      </>)}
+
+      {/* Torso - soft rounded belly */}
+      <ellipse cx="50" cy="88" rx="27" ry="25" fill={bodyColor} />
+      <ellipse cx="50" cy="94" rx="15" ry="12" fill="white" opacity="0.35" />
+
+      {/* Arms - hidden while flying (wings take over) */}
+      {!flying && (
+      <g style={{ transformOrigin: "27px 74px", animation: walking ? "petArmSwing 0.45s ease-in-out infinite" : "none" }}>
+        <line x1="27" y1="74" x2="13" y2="96" stroke={bodyColor} strokeWidth="8" strokeLinecap="round" />
+      </g>
       )}
+      {!flying && (pointing ? (
+        <line x1="73" y1="74" x2="96" y2="50" stroke={bodyColor} strokeWidth="8" strokeLinecap="round" />
+      ) : (
+        <g style={{ transformOrigin: "73px 74px", animation: walking ? "petArmSwing 0.45s ease-in-out infinite reverse" : "none" }}>
+          <line x1="73" y1="74" x2="87" y2="96" stroke={bodyColor} strokeWidth="8" strokeLinecap="round" />
+        </g>
+      ))}
+
+      {/* Ears */}
+      <ellipse cx="20" cy="24" rx="9" ry="13" fill={bodyColor} transform="rotate(-18 20 24)" />
+      <ellipse cx="80" cy="24" rx="9" ry="13" fill={bodyColor} transform="rotate(18 80 24)" />
+      <ellipse cx="20" cy="26" rx="4" ry="7" fill={cheekColor} transform="rotate(-18 20 26)" />
+      <ellipse cx="80" cy="26" rx="4" ry="7" fill={cheekColor} transform="rotate(18 80 26)" />
+
+      {/* Antenna + bow */}
+      <path d="M50 8 Q54 -2 60 -6" stroke={bodyColor} strokeWidth="3" fill="none" strokeLinecap="round" />
+      <path d="M56 -9 Q60 -13 64 -9 Q60 -6 60 -6 Q60 -6 56 -9 Z" fill={bowColor} />
+      <path d="M64 -9 Q60 -13 56 -9 Q60 -6 60 -6 Q60 -6 64 -9 Z" fill={bowColor} opacity="0.85" />
+      <circle cx="60" cy="-6" r="2" fill={bowColor} />
 
       {/* Head */}
-      <circle cx="50" cy="38" r="30" fill={bodyColor} />
-      <circle cx="32" cy="46" r="6" fill={cheekColor} opacity="0.8" />
-      <circle cx="68" cy="46" r="6" fill={cheekColor} opacity="0.8" />
-      <g style={{ transformOrigin: "50px 32px", animation: "petBlink 4s ease-in-out infinite" }}>
-        <circle cx="39" cy="32" r="5" fill="#1f2937" />
-        <circle cx="61" cy="32" r="5" fill="#1f2937" />
-        <circle cx="41" cy="30" r="1.7" fill="white" />
-        <circle cx="63" cy="30" r="1.7" fill="white" />
+      <circle cx="50" cy="42" r="32" fill={bodyColor} />
+      <circle cx="30" cy="52" r="7.5" fill={cheekColor} opacity="0.9" />
+      <circle cx="70" cy="52" r="7.5" fill={cheekColor} opacity="0.9" />
+
+      {/* Eyes - big and sparkly, with lashes */}
+      <g style={{ transformOrigin: "50px 38px", animation: "petBlink 4.2s ease-in-out infinite" }}>
+        <circle cx="37" cy="38" r="7" fill="#292524" />
+        <circle cx="63" cy="38" r="7" fill="#292524" />
+        <circle cx="40" cy="35" r="2.3" fill="white" />
+        <circle cx="66" cy="35" r="2.3" fill="white" />
+        <circle cx="35" cy="41" r="1" fill="white" opacity="0.8" />
+        <circle cx="61" cy="41" r="1" fill="white" opacity="0.8" />
+        <path d="M31 32 L27 29" stroke="#292524" strokeWidth="1.6" strokeLinecap="round" />
+        <path d="M69 32 L73 29" stroke="#292524" strokeWidth="1.6" strokeLinecap="round" />
       </g>
+
       {mood === "worried"
-        ? <path d="M41 54 Q50 49 59 54" stroke="#1f2937" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+        ? <path d="M41 60 Q50 55 59 60" stroke="#292524" strokeWidth="2.5" fill="none" strokeLinecap="round" />
         : mood === "neutral"
-          ? <line x1="42" y1="53" x2="58" y2="53" stroke="#1f2937" strokeWidth="2.5" strokeLinecap="round" />
-          : <path d="M41 50 Q50 58 59 50" stroke="#1f2937" strokeWidth="2.5" fill="none" strokeLinecap="round" />
+          ? <line x1="42" y1="59" x2="58" y2="59" stroke="#292524" strokeWidth="2.5" strokeLinecap="round" />
+          : <path d="M40 56 Q50 65 60 56" stroke="#292524" strokeWidth="2.5" fill="none" strokeLinecap="round" />
       }
-      <circle cx="22" cy="20" r="4" fill={bodyColor} />
-      <circle cx="78" cy="20" r="4" fill={bodyColor} />
     </svg>
+  );
+};
+
+/* ── FlyingRosie: flies to and lands on a specific target element.
+   getTargets() returns the current list of DOM elements to visit — called
+   fresh each time so it's safe even if targets mount/shift. In loop mode
+   she cycles through all of them forever (shop-selection cards); in
+   controlled mode she flies to whichever index you give her (form
+   field-by-field guide). ─────────────────────────────────────────────── */
+const FlyingRosie = ({ getTargets, activeIndex = 0, loop = false, mood = "happy", size = 44, label }) => {
+  const [pos, setPos] = React.useState(null);
+  const [phase, setPhase] = React.useState("flying"); // "flying" | "landed"
+  const loopIdxRef = React.useRef(0);
+
+  const computePos = React.useCallback((idx) => {
+    const targets = (getTargets() || []).filter(Boolean);
+    if (!targets.length) return null;
+    const el = targets[idx % targets.length];
+    if (!el) return null;
+    const rect = el.getBoundingClientRect();
+    return { top: rect.top + rect.height/2 - size*0.75, left: rect.left + rect.width/2 - size/2 };
+  }, [getTargets, size]);
+
+  React.useEffect(() => {
+    let landTimer, loopTimer;
+    const flyTo = (idx) => {
+      const p = computePos(idx);
+      if (p) setPos(p);
+      setPhase("flying");
+      landTimer = setTimeout(() => setPhase("landed"), 1100);
+    };
+    if (loop) {
+      flyTo(loopIdxRef.current);
+      loopTimer = setInterval(() => {
+        loopIdxRef.current += 1;
+        flyTo(loopIdxRef.current);
+      }, 3200);
+    } else {
+      flyTo(activeIndex);
+    }
+    return () => { clearTimeout(landTimer); clearInterval(loopTimer); };
+  }, [loop, activeIndex, computePos]);
+
+  if (!pos) return null;
+
+  return (
+    <div style={{ position:"fixed", top:pos.top, left:pos.left, zIndex:260, transition:"top 1s cubic-bezier(.4,0,.2,1), left 1s cubic-bezier(.4,0,.2,1)", pointerEvents:"none" }}>
+      <style>{PET_CSS}</style>
+      <Rosie mood={mood} size={size} pose={phase==="flying" ? "fly" : "idle"} />
+      {label && phase==="landed" && (
+        <div style={{ position:"absolute", top:size*1.55, left:"50%", transform:"translateX(-50%)", background:"white", borderRadius:8, padding:"4px 9px", fontSize:11, fontWeight:700, color:"#166534", whiteSpace:"nowrap", boxShadow:"0 4px 12px rgba(0,0,0,0.18)" }}>
+          {label}
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -8991,14 +9098,16 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
           )}
         </div>
       )}
-      <button onClick={()=>setOpen(o=>!o)} title="Rosie" style={{position:"relative",border:"none",background:"transparent",cursor:"pointer",padding:0,lineHeight:0}}>
-        <Rosie mood={mood} />
-        {totalBadge>0 && (
-          <span style={{position:"absolute",top:-2,right:-2,background:"#dc2626",color:"white",fontSize:10,fontWeight:800,borderRadius:999,minWidth:18,height:18,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px",animation:"petPop 0.3s ease"}}>
-            {totalBadge}
-          </span>
-        )}
-      </button>
+      <div style={{ animation: open ? "none" : "petRoam 16s ease-in-out infinite" }}>
+        <button onClick={()=>setOpen(o=>!o)} title="Rosie" style={{position:"relative",border:"none",background:"transparent",cursor:"pointer",padding:0,lineHeight:0}}>
+          <Rosie mood={mood} pose={open?"idle":"walk"} />
+          {totalBadge>0 && (
+            <span style={{position:"absolute",top:-2,right:-2,background:"#dc2626",color:"white",fontSize:10,fontWeight:800,borderRadius:999,minWidth:18,height:18,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px",animation:"petPop 0.3s ease"}}>
+              {totalBadge}
+            </span>
+          )}
+        </button>
+      </div>
     </div>
   );
 };
@@ -9222,6 +9331,7 @@ const TagPicker=({value,onChange,accent,accentBg,inp,fo,bl,lbl})=>{
 };
 
 const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,isSuperadmin=false})=>{
+  const rosieFieldRefs=useRef({});
   // ros-india: an id only counts as an assigned invoice number when it matches IND######
   const _hasRealInv = shopId!=="ros-india" || /^IND\d{6}$/.test(String(sale.id||""));
   const [form,setForm]=useState({
@@ -9332,6 +9442,27 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
         <div><p style={{margin:0,fontWeight:800,fontSize:13,color:shop.accentText}}>Editing Sale {form.invoiceNo}</p>
           <p style={{margin:0,fontSize:11,color:shop.accent}}>All changes will update the sales record immediately on save</p></div>
       </div>
+      {!isStaff && (() => {
+        const stepKeys = ["customer","contact","item","price","payBy"];
+        const steps = [
+          { done: !!form.customer.trim(), label: "Customer name looks empty" },
+          { done: !!form.contact.trim(), label: "Phone number is missing 📱" },
+          { done: (editLines||[]).some(l=>l.name.trim()), label: "No item added yet" },
+          { done: (editLines||[]).some(l=>parseFloat(l.price)>0), label: "This item needs a price 💰" },
+          { done: !!form.payBy, label: "Payment method not set" },
+        ];
+        const activeIdx = steps.findIndex(s=>!s.done);
+        if (activeIdx===-1) return null;
+        return (
+          <FlyingRosie
+            getTargets={()=>[rosieFieldRefs.current[stepKeys[activeIdx]]]}
+            activeIndex={0}
+            mood="neutral"
+            size={34}
+            label={steps[activeIdx].label}
+          />
+        );
+      })()}
       <Divider title="Basic Info"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         <div><label style={lbl}>Date</label><input type="date" value={form.date} max={localTodayISO()} readOnly={isStaff} onChange={isStaff?undefined:e=>set("date",e.target.value)} style={{...inp,background:isStaff?"#f8fafc":"white",cursor:isStaff?"default":"auto"}} onFocus={fo} onBlur={bl}/></div>
@@ -9393,7 +9524,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:12}}>
           <div style={{position:"relative"}}>
             <label style={lbl}>Customer Name</label>
-            <input value={form.customer}
+            <input ref={el=>{rosieFieldRefs.current.customer=el;}} value={form.customer}
               onChange={e=>{set("customer",e.target.value);const q=e.target.value.trim().toLowerCase();if(q.length>=1){const m=customers.filter(c=>c.name.toLowerCase().includes(q)).slice(0,6);setEditCustMatches(m);setEditCustOpen(m.length>0);}else{setEditCustOpen(false);setEditCustMatches([]);}}}
               onBlur={()=>setTimeout(()=>setEditCustOpen(false),180)}
               placeholder="Type or search…" style={inp} onFocus={fo} autoComplete="off"/>
@@ -9409,7 +9540,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
                   </div>))}
               </div>)}
           </div>
-          <div><label style={lbl}>Phone Number</label><input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/></div>
+          <div><label style={lbl}>Phone Number</label><input ref={el=>{rosieFieldRefs.current.contact=el;}} value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/></div>
           <div><label style={lbl}>Saved On</label><select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>{["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}</select></div>
         </div>
         {shopId==="ros-india"&&(
@@ -9461,12 +9592,12 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
             const lineTotal=parseFloat(((parseFloat(l.qty)||1)*(parseFloat(l.price)||0)).toFixed(2));
             return(
               <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 60px 90px 70px 28px",gap:4,marginBottom:6,alignItems:"center"}}>
-                <input value={l.name} onChange={e=>setLine(i,"name",e.target.value)}
+                <input ref={el=>{if(i===0)rosieFieldRefs.current.item=el;}} value={l.name} onChange={e=>setLine(i,"name",e.target.value)}
                   placeholder="Item name"
                   style={{...inp,fontSize:12,padding:"6px 9px"}} onFocus={fo} onBlur={bl}/>
                 <input type="number" onWheel={e=>e.target.blur()} min="1" value={l.qty} onChange={e=>setLine(i,"qty",e.target.value)}
                   style={{...inp,fontSize:12,padding:"6px 6px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
-                <input type="number" onWheel={e=>e.target.blur()} min="0" step="0.01" value={l.price} onChange={e=>setLine(i,"price",e.target.value)}
+                <input ref={el=>{if(i===0)rosieFieldRefs.current.price=el;}} type="number" onWheel={e=>e.target.blur()} min="0" step="0.01" value={l.price} onChange={e=>setLine(i,"price",e.target.value)}
                   placeholder="0.00"
                   style={{...inp,fontSize:12,padding:"6px 6px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
                 <span style={{fontSize:12,fontWeight:700,color:shop.accent,textAlign:"right",paddingRight:4}}>
@@ -9582,7 +9713,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
       <Divider title="Payment"/>
       <div style={{display:"grid",gridTemplateColumns:form.payBy==="SHOP"?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
         <div><label style={lbl}>Payment By</label>
-          <select value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
+          <select ref={el=>{rosieFieldRefs.current.payBy=el;}} value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
             {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
           </select></div>
         {form.payBy==="SHOP"&&(<div><label style={lbl}>Shop Invoice No.</label>
@@ -10548,6 +10679,7 @@ const AddTabInput=({onAdd,accent})=>{
 };
 
 const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,onDeleteShopItem,customers=[],sales=[],isSuperadmin=false})=>{
+  const rosieFieldRefs=useRef({});
   const defaultPay = shopId === "ros-india" ? "SIB" : "SHOP";
   const PAY_OPTIONS = shopId === "ros-india" ? ["SIB","HDFC","SHOP"] : ["BANK","SHOP","EXCHANGE","GIFT","PROMOTION"];
   const _now=new Date();
@@ -10662,6 +10794,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
         {(() => {
           const filledLines = lines.filter(l=>l.name.trim());
           const hasPrice = lines.some(l=>parseFloat(l.price)>0);
+          const stepKeys = ["customer","contact","item","price","payBy"];
           const steps = [
             { done: !!form.customer.trim(), label: "Let's start with the customer's name!" },
             { done: !!form.contact.trim(), label: "Don't forget the phone number 📱" },
@@ -10672,7 +10805,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
           const activeIdx = steps.findIndex(s=>!s.done);
           const allDone = activeIdx===-1;
           const petNudge = allDone ? "Looking good! Review and hit Save Sale when ready. ✅" : steps[activeIdx].label;
-          return (
+          return (<>
             <div style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",margin:"0 0 10px",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10}}>
               <div style={{flexShrink:0,lineHeight:0}}><Rosie mood="happy" size={30} pose={allDone?"idle":"point"}/></div>
               <div style={{flex:1}}>
@@ -10684,7 +10817,16 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 </div>
               </div>
             </div>
-          );
+            {!allDone && (
+              <FlyingRosie
+                getTargets={()=>[rosieFieldRefs.current[stepKeys[activeIdx]]]}
+                activeIndex={0}
+                mood="happy"
+                size={36}
+                label={steps[activeIdx].label}
+              />
+            )}
+          </>);
         })()}
 
             {/* Basic Info */}
@@ -10729,7 +10871,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               <div style={{marginBottom:7,position:"relative"}}>
                 <label style={lbl}>Name</label>
                 <div style={{display:"flex",gap:5}}>
-                  <input value={form.customer} onChange={e=>{set("customer",e.target.value);const q=e.target.value.trim().toLowerCase();if(q.length>=1){const m=customerList.filter(c=>c.name.toLowerCase().includes(q)).slice(0,6);setCustAcMatches(m);setCustAcOpen(m.length>0);}else{setCustAcOpen(false);setCustAcMatches([]);}}} onBlur={()=>setTimeout(()=>setCustAcOpen(false),180)} placeholder="Type name…" style={{...inp,flex:1}} onFocus={fo} autoComplete="off"/>
+                  <input ref={el=>{rosieFieldRefs.current.customer=el;}} value={form.customer} onChange={e=>{set("customer",e.target.value);const q=e.target.value.trim().toLowerCase();if(q.length>=1){const m=customerList.filter(c=>c.name.toLowerCase().includes(q)).slice(0,6);setCustAcMatches(m);setCustAcOpen(m.length>0);}else{setCustAcOpen(false);setCustAcMatches([]);}}} onBlur={()=>setTimeout(()=>setCustAcOpen(false),180)} placeholder="Type name…" style={{...inp,flex:1}} onFocus={fo} autoComplete="off"/>
                   <button type="button" onClick={()=>setShowNewCust(true)} style={{width:32,height:34,borderRadius:8,cursor:"pointer",border:"1px solid "+shop.accent+"55",background:shop.accentBg,color:shop.accent,fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
                 </div>
                 {custAcOpen&&custAcMatches.length>0&&(<div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:200,background:"white",border:"1px solid "+shop.accent+"44",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,0.15)",maxHeight:180,overflowY:"auto",marginTop:3}}>
@@ -10737,7 +10879,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 </div>)}
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
-                <div><label style={lbl}>Contact</label><input value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/></div>
+                <div><label style={lbl}>Contact</label><input ref={el=>{rosieFieldRefs.current.contact=el;}} value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/></div>
                 <div><label style={lbl}>Address</label><input value={form.address||""} onChange={e=>set("address",e.target.value)} placeholder="Address" style={inp} onFocus={fo} onBlur={bl}/></div>
               </div>
             </div>
@@ -10786,9 +10928,9 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               </div>
               {lines.map((line,idx)=>(
                 <div key={line.id} style={{display:"grid",gridTemplateColumns:"1fr 52px 76px 26px",gap:5,marginBottom:5,alignItems:"center"}}>
-                  <input value={line.name} onChange={e=>updateLine(line.id,"name",e.target.value)} placeholder={"Item "+(idx+1)} style={{...inp,padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
+                  <input ref={el=>{if(idx===0)rosieFieldRefs.current.item=el;}} value={line.name} onChange={e=>updateLine(line.id,"name",e.target.value)} placeholder={"Item "+(idx+1)} style={{...inp,padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
                   <input type="number" onWheel={e=>e.target.blur()} value={line.qty} onChange={e=>updateLine(line.id,"qty",e.target.value)} style={{...inp,textAlign:"center",padding:"7px 5px"}} onFocus={fo} onBlur={bl}/>
-                  <input type="number" onWheel={e=>e.target.blur()} value={line.price} onChange={e=>updateLine(line.id,"price",e.target.value)} placeholder="0.00" style={{...inp,textAlign:"right",padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
+                  <input ref={el=>{if(idx===0)rosieFieldRefs.current.price=el;}} type="number" onWheel={e=>e.target.blur()} value={line.price} onChange={e=>updateLine(line.id,"price",e.target.value)} placeholder="0.00" style={{...inp,textAlign:"right",padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
                   <button type="button" onClick={()=>removeLine(line.id)} style={{width:26,height:32,borderRadius:7,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
                 </div>
               ))}
@@ -10809,7 +10951,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🚚 Payment & Delivery</p>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
-                <div><label style={lbl}>Payment By</label><select value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{PAY_OPTIONS.map(o=><option key={o}>{o}</option>)}</select></div>
+                <div><label style={lbl}>Payment By</label><select ref={el=>{rosieFieldRefs.current.payBy=el;}} value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{PAY_OPTIONS.map(o=><option key={o}>{o}</option>)}</select></div>
                 {shopId==="ros-india"&&(
                   <div><label style={lbl}>Dispatch Unit</label>
                     <select value={form.dispatchFrom} onChange={e=>{
