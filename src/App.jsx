@@ -26,7 +26,8 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbSaveAgent, dbLoadAgents, dbDeleteAgent,
   dbLoadExpenseCategories, dbSaveExpenseCategory, dbDeleteExpenseCategory,
   dbLoadHistoricalData, dbSaveHistoricalRecord, dbDeleteHistoricalRecord, dbImportHistoricalCSV,
-  dbLoadRosieTasks, dbSaveRosieTask, dbDeleteRosieTask, dbMarkRosieTaskDone } from "./db";
+  dbLoadRosieTasks, dbSaveRosieTask, dbDeleteRosieTask, dbMarkRosieTaskDone,
+  dbLoadRosieSettings, dbSaveRosieSettings } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -4975,8 +4976,11 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   });
   const [rosieTasks,setRosieTasks]=useState([]);
   const [rosieTasksModal,setRosieTasksModal]=useState(false);
+  const [rosieSettings,setRosieSettings]=useState({cutoffDate:"",nagDays:14});
+  const [rosieTalkModal,setRosieTalkModal]=useState(false);
   useEffect(()=>{
     dbLoadRosieTasks(shopId).then(setRosieTasks).catch(()=>{});
+    dbLoadRosieSettings(shopId).then(setRosieSettings).catch(()=>{});
   },[shopId]);
   const reloadRosieTasks=()=>{ dbLoadRosieTasks(shopId).then(setRosieTasks).catch(()=>{}); };
   /* Is this task currently "due" (should Rosie mention it)? One-off tasks
@@ -8378,6 +8382,9 @@ return(
         onMarkTaskDone={async(t)=>{ await dbMarkRosieTaskDone(t); reloadRosieTasks(); }}
         isAdmin={user?.role==="admin"||user?.role==="superadmin"}
         onManageTasks={()=>setRosieTasksModal(true)}
+        nagDays={rosieSettings.nagDays}
+        cutoffDate={rosieSettings.cutoffDate}
+        onTalkToRosie={()=>setRosieTalkModal(true)}
       />
       {rosieTasksModal && (
         <RosieTasksModal
@@ -8387,6 +8394,13 @@ return(
           onClose={()=>setRosieTasksModal(false)}
           onSave={async(task)=>{ await dbSaveRosieTask({...task,shopId}); reloadRosieTasks(); }}
           onDelete={async(id)=>{ await dbDeleteRosieTask(id); reloadRosieTasks(); }}
+        />
+      )}
+      {rosieTalkModal && (
+        <TalkToRosieModal
+          settings={rosieSettings}
+          onClose={()=>setRosieTalkModal(false)}
+          onSave={async(newSettings)=>{ await dbSaveRosieSettings(shopId,newSettings); setRosieSettings(newSettings); }}
         />
       )}
     </div>
@@ -9026,11 +9040,12 @@ const FlyingRosie = ({ getTargets, activeIndex = 0, loop = false, mood = "happy"
   );
 };
 
-const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMarkTaskDone, isAdmin=false, onManageTasks }) => {
+const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMarkTaskDone, isAdmin=false, onManageTasks, nagDays=14, cutoffDate="", onTalkToRosie }) => {
   const [open, setOpen] = React.useState(false);
 
   const overdue = React.useMemo(() => {
-    const cutoffMs = Date.now() - 14*24*60*60*1000;
+    const nagMs = Date.now() - (nagDays ?? 14)*24*60*60*1000;
+    const cutoffTime = cutoffDate ? new Date(cutoffDate).getTime() : null;
     return (sales||[]).filter(s => {
       const status = (s.ful||s.status||"").toUpperCase();
       const isOpenStatus = ["PENDING","IN PROGRESS","TO ORDER","UNFULFILLED"].includes(status);
@@ -9038,9 +9053,10 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
       if (!isOpenStatus || hasTracking) return false;
       const d = new Date(s.date);
       if (isNaN(d.getTime())) return false;
-      return d.getTime() < cutoffMs;
+      if (cutoffTime!==null && d.getTime() < cutoffTime) return false; // ignore anything before the chosen cutoff
+      return d.getTime() < nagMs;
     }).sort((a,b)=>(a.date||"").localeCompare(b.date||""));
-  }, [sales]);
+  }, [sales, nagDays, cutoffDate]);
 
   const totalBadge = overdue.length + myTasks.length;
   const mood = totalBadge===0 ? "happy" : totalBadge<=3 ? "neutral" : "worried";
@@ -9096,6 +9112,12 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
               ⚙️ Manage Rosie's Tasks
             </button>
           )}
+          {isAdmin && (
+            <button onClick={()=>{setOpen(false); if(onTalkToRosie) onTalkToRosie();}}
+              style={{marginTop:6,width:"100%",padding:"8px 0",borderRadius:8,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+              💬 Talk to Rosie
+            </button>
+          )}
         </div>
       )}
       <div style={{ animation: open ? "none" : "petRoam 16s ease-in-out infinite" }}>
@@ -9115,6 +9137,70 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
 /* ── RosieTasksModal: admin UI to create, assign, and delete Rosie's
    reminders. One-off tasks have a due date; recurring ones repeat daily/
    weekly/monthly until manually removed. ─────────────────────────────── */
+/* ── TalkToRosieModal: a conversational settings panel. Not free-text
+   chat (that would need a real AI backend) — instead she "explains" her
+   current rule in plain words, with simple controls underneath to adjust
+   it. Covers exactly the "ignore old cases, only from today" request. ── */
+const TalkToRosieModal = ({ settings, onClose, onSave }) => {
+  const [cutoffDate, setCutoffDate] = React.useState(settings.cutoffDate || "");
+  const [nagDays, setNagDays] = React.useState(settings.nagDays ?? 14);
+  const [saving, setSaving] = React.useState(false);
+
+  const inp = { width:"100%", padding:"9px 12px", borderRadius:9, border:"1.5px solid #e2e8f0", fontSize:13, fontFamily:"inherit", outline:"none", boxSizing:"border-box" };
+  const lbl = { display:"block", fontSize:11, fontWeight:700, color:"#374151", marginBottom:4, textTransform:"uppercase", letterSpacing:"0.05em" };
+
+  const summary = cutoffDate
+    ? `Right now, I'm checking your sales from ${cutoffDate} onward, and flagging anything with no tracking after ${nagDays} day${nagDays!==1?"s":""}.`
+    : `Right now, I'm checking your entire sales history, and flagging anything with no tracking after ${nagDays} day${nagDays!==1?"s":""}.`;
+
+  const handleSave = async () => {
+    setSaving(true);
+    try { await onSave({ cutoffDate, nagDays: Number(nagDays)||14 }); onClose(); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:310, background:"rgba(15,23,42,0.55)", display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:"white", borderRadius:16, padding:"22px 24px", maxWidth:420, width:"92%", boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+          <div style={{ fontSize:15, fontWeight:800, color:"#0f172a" }}>💬 Talk to Rosie</div>
+          <button onClick={onClose} style={{ border:"none", background:"transparent", fontSize:18, cursor:"pointer", color:"#94a3b8" }}>✕</button>
+        </div>
+
+        <div style={{ display:"flex", gap:10, alignItems:"flex-start", marginBottom:16 }}>
+          <div style={{ flexShrink:0 }}><Rosie mood="happy" size={40} pose="idle"/></div>
+          <div style={{ flex:1, background:"#f0fdf4", border:"1px solid #bbf7d0", borderRadius:12, borderTopLeftRadius:2, padding:"10px 12px", fontSize:13, color:"#166534", lineHeight:1.5 }}>
+            {summary}
+          </div>
+        </div>
+
+        <div style={{ marginBottom:12 }}>
+          <label style={lbl}>Only consider sales from</label>
+          <input type="date" value={cutoffDate} onChange={e=>setCutoffDate(e.target.value)} style={inp}/>
+          <p style={{ margin:"4px 0 0", fontSize:11, color:"#94a3b8" }}>Leave blank to consider your entire sales history. Set a date to have her ignore anything before it — e.g. "leave the old cases."</p>
+        </div>
+        <div style={{ marginBottom:18 }}>
+          <label style={lbl}>Remind me after</label>
+          <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+            <input type="number" min="1" value={nagDays} onChange={e=>setNagDays(e.target.value)} style={{...inp,width:90}}/>
+            <span style={{ fontSize:13, color:"#374151" }}>days with no tracking</span>
+          </div>
+        </div>
+
+        <div style={{ display:"flex", gap:10 }}>
+          <button onClick={onClose} style={{ flex:1, padding:"10px 0", borderRadius:9, border:"1px solid #e2e8f0", background:"white", color:"#374151", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+            Cancel
+          </button>
+          <button disabled={saving} onClick={handleSave}
+            style={{ flex:1, padding:"10px 0", borderRadius:9, border:"none", background:"#059669", color:"white", fontWeight:700, fontSize:13, cursor:saving?"default":"pointer", fontFamily:"inherit", opacity:saving?0.6:1 }}>
+            {saving?"Saving…":"Got it, Rosie!"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const RosieTasksModal = ({ tasks, users, currentUser, onClose, onSave, onDelete }) => {
   const [message, setMessage] = React.useState("");
   const [assignedTo, setAssignedTo] = React.useState(users[0]?.id || "");

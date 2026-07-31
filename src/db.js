@@ -1088,3 +1088,25 @@ export const dbMarkRosieTaskDone = async (task) => {
   const { error } = await sb.from('rosie_tasks').update(payload).eq('id', task.id);
   if (error) console.error('Mark Rosie task done error:', error);
 };
+
+/* ── Rosie Settings: per-shop config for her dispatch-tracking nag
+   (cutoff date to ignore old sales, how many days before she flags one) ── */
+export const dbLoadRosieSettings = async (shopId) => {
+  if (!sb) return { cutoffDate: '', nagDays: 14 };
+  const { data, error } = await sb.from('rosie_settings').select('*').eq('shop_id', shopId).maybeSingle();
+  if (error) { console.error('Load Rosie settings error:', error); return { cutoffDate: '', nagDays: 14 }; }
+  if (!data) return { cutoffDate: '', nagDays: 14 };
+  return { cutoffDate: data.cutoff_date || '', nagDays: data.nag_days ?? 14 };
+};
+
+export const dbSaveRosieSettings = async (shopId, settings) => {
+  if (!sb) return;
+  const payload = {
+    shop_id: shopId,
+    cutoff_date: settings.cutoffDate || null,
+    nag_days: settings.nagDays ?? 14,
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await sb.from('rosie_settings').upsert(payload, { onConflict: 'shop_id' });
+  if (error) console.error('Save Rosie settings error:', error);
+};
