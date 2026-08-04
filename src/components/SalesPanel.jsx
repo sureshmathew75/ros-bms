@@ -2523,7 +2523,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                   + `<div style="margin-top:4px">` + (s._grp||[]).map(x=>`<div style="font-size:11px;margin-bottom:2px">• ${x.item||"—"}</div>`).join("") + `</div>`
                   + (()=>{
                       const addrs = Array.from(new Set((s._grp||[]).map(x=>(x.address||"").trim()).filter(Boolean)));
-                      const rmks = Array.from(new Set((s._grp||[]).map(x=>(x.remarks||"").trim()).filter(Boolean)));
+                      const rmks = Array.from(new Set((s._grp||[]).map(x=>(x.rem||x.remarks||"").trim()).filter(Boolean)));
                       return addrs.map(a=>`<div style="font-size:10px;color:#94a3b8;margin-top:3px">📍 ${a}</div>`).join("")
                         + rmks.map(r=>`<div style="font-size:10px;color:#94a3b8;margin-top:2px;font-style:italic">📝 ${r}</div>`).join("");
                     })()
@@ -2686,7 +2686,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                               </div>
                               {(() => {
                                 const addrs = Array.from(new Set((s._grp||[]).map(x=>(x.address||"").trim()).filter(Boolean)));
-                                const rmks = Array.from(new Set((s._grp||[]).map(x=>(x.remarks||"").trim()).filter(Boolean)));
+                                const rmks = Array.from(new Set((s._grp||[]).map(x=>(x.rem||x.remarks||"").trim()).filter(Boolean)));
                                 return (<>
                                   {addrs.map((a,ai)=>(
                                     <div key={"a"+ai} style={{fontSize:10,color:"#94a3b8",marginTop:3}}>📍 {a}</div>
@@ -2858,8 +2858,8 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                       {gs.address && gs.address.trim() && (
                         <div style={{ fontSize: 11, color: "#64748b", marginTop: 3 }}><strong>📍 Address:</strong> {gs.address}</div>
                       )}
-                      {gs.remarks && gs.remarks.trim() && (
-                        <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}><strong>📝 Remarks:</strong> <span style={{fontStyle:"italic"}}>{gs.remarks}</span></div>
+                      {(gs.rem||gs.remarks) && (gs.rem||gs.remarks).trim() && (
+                        <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}><strong>📝 Remarks:</strong> <span style={{fontStyle:"italic"}}>{gs.rem||gs.remarks}</span></div>
                       )}
                     </div>
                     <div style={{ fontWeight: 800, fontSize: 14, color: "#0f172a", whiteSpace: "nowrap" }}>
