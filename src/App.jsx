@@ -349,6 +349,28 @@ const findInstalmentGroupIds=(sale,allSales)=>{
 /* Outstanding balance for a group of sale IDs, based on the Expected
    Total set on whichever sale in the group is tagged Advance. Returns
    null if no Expected Total is set (nothing to check against). */
+/* ── Status chain: mirrors the one in SalesPanel.jsx (files don't share
+   code). Given the CURRENT status, returns which statuses are allowed to
+   be selected next, keeping the workflow logically sequential. ────────── */
+const getAllowedStatuses=(currentStatus,shopId)=>{
+  const isIndia=shopId==="ros-india";
+  const cur=(currentStatus||"PENDING").toUpperCase();
+  const RETURN_RQSTD=isIndia?"RETURN RQSTD":"RTRN REQSTD";
+  const RETURN_RCVD=isIndia?"RETURN RCVD":"RETRN RCVD";
+  const FEEDBACK=isIndia?["GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]:["GOOD FEEDBACK"];
+  switch(cur){
+    case "PENDING": return ["PENDING","FULFILLED"];
+    case "FULFILLED": return ["FULFILLED",RETURN_RQSTD,RETURN_RCVD,...FEEDBACK];
+    case RETURN_RQSTD: return [RETURN_RQSTD,RETURN_RCVD];
+    case RETURN_RCVD: return [RETURN_RCVD,"REFUNDED","EXCHANGED"];
+    case "REFUNDED": return ["REFUNDED",...FEEDBACK];
+    case "EXCHANGED": return ["EXCHANGED",...FEEDBACK];
+    default:
+      if(FEEDBACK.includes(cur)) return [cur,RETURN_RQSTD];
+      return null;
+  }
+};
+
 const getGroupBalanceInfo=(groupIds,allSales)=>{
   const group=(allSales||[]).filter(s=>groupIds.includes(s.id));
   const advanceSale=group.find(s=>inferPaymentType(s)==="ADVANCE");
@@ -9613,6 +9635,7 @@ const TagPicker=({value,onChange,accent,accentBg,inp,fo,bl,lbl})=>{
 
 const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,isSuperadmin=false})=>{
   const rosieFieldRefs=useRef({});
+  const [statusOverride,setStatusOverride]=useState(false); // admin-only: bypass the status chain
   // ros-india: an id only counts as an assigned invoice number when it matches IND######
   const _hasRealInv = shopId!=="ros-india" || /^IND\d{6}$/.test(String(sale.id||""));
   const [form,setForm]=useState({
@@ -10005,7 +10028,15 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
       <Divider title="Delivery"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#f8fafc",borderRadius:12,padding:"14px",border:"1px solid #e2e8f0"}}>
         <div>
-          <label style={lbl}>Delivery Status</label>
+          <label style={lbl}>
+            Delivery Status
+            {!isStaff && (
+              <label style={{marginLeft:10,fontSize:10,fontWeight:700,color:statusOverride?"#92400e":"#94a3b8",cursor:"pointer",textTransform:"none",letterSpacing:0}}>
+                <input type="checkbox" checked={statusOverride} onChange={e=>setStatusOverride(e.target.checked)} style={{marginRight:4,verticalAlign:"middle"}}/>
+                {statusOverride?"🔓 Override on":"🔒 Override off"}
+              </label>
+            )}
+          </label>
           <select value={form.status} onChange={e=>set("status",e.target.value)}
             style={{...inp,fontWeight:700,color:statusColor[form.status]||"#374151"}}>
             {(() => {
@@ -10013,9 +10044,9 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
                 ? ["PENDING","FULFILLED","RETURN RQSTD","RETURN RCVD","EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]
                 : ["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"];
               const savedStatus = (sale.status||sale.ful||"PENDING").toUpperCase();
-              const dispatched = savedStatus !== "PENDING";
-              const canOverride = !isStaff;
-              const opts = (dispatched && !canOverride) ? allOpts.filter(o=>o!=="PENDING") : allOpts;
+              const allowed = getAllowedStatuses(savedStatus,shopId);
+              const useAll = (!isStaff && statusOverride) || !allowed;
+              const opts = useAll ? allOpts : allOpts.filter(o=>allowed.includes(o));
               return opts.map(o=>(
                 <option key={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>
               ));

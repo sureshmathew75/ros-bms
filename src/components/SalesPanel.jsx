@@ -290,6 +290,37 @@ const PERIOD_META = {
   lifetime: { label: "Lifetime", desc: "All Time" },
 };
 
+/* ── Status chain: given the CURRENT status, returns which statuses are
+   allowed to be selected next. Keeps the workflow logically sequential
+   (can't skip from Pending straight to Refunded, etc.) and controls when
+   feedback options are relevant (only right at Fulfilled, and again once
+   a return resolves into Refunded/Exchanged — not during the return
+   process itself, since a customer won't be leaving feedback then). ──── */
+const getAllowedStatuses = (currentStatus, shopId) => {
+  const isIndia = shopId === "ros-india";
+  const cur = (currentStatus || "PENDING").toUpperCase();
+  const RETURN_RQSTD = isIndia ? "RETURN RQSTD" : "RTRN REQSTD";
+  const RETURN_RCVD  = isIndia ? "RETURN RCVD" : "RETRN RCVD";
+  const FEEDBACK = isIndia ? ["GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"] : ["GOOD FEEDBACK"];
+  switch (cur) {
+    case "PENDING":
+      return ["PENDING","FULFILLED"];
+    case "FULFILLED":
+      return ["FULFILLED",RETURN_RQSTD,RETURN_RCVD,...FEEDBACK];
+    case RETURN_RQSTD:
+      return [RETURN_RQSTD,RETURN_RCVD];
+    case RETURN_RCVD:
+      return [RETURN_RCVD,"REFUNDED","EXCHANGED"];
+    case "REFUNDED":
+      return ["REFUNDED",...FEEDBACK];
+    case "EXCHANGED":
+      return ["EXCHANGED",...FEEDBACK];
+    default:
+      if (FEEDBACK.includes(cur)) return [cur,RETURN_RQSTD]; // allow initiating a return even after feedback
+      return null; // unrecognised legacy status — fail open, don't restrict
+  }
+};
+
 const STATUS_TABS = [
   { key: "ALL",           label: "All",           color: "#475569", bg: "#f1f5f9" },
   { key: "PENDING",       label: "Pending",        color: "#d97706", bg: "#fef3c7" },
@@ -481,6 +512,7 @@ export default function SalesPanel({
      either the default "Month" tab (current month) or an explicitly
      picked past month via the date picker. */
   const reorderEnabled = isSuperadmin && (!!pickedMonth || salesPeriod === "month");
+  const [statusOverride, setStatusOverride] = useState(false); // admin-only: bypass the status chain
   const [pickerOpen,  setPickerOpen]  = useState(false);
   const [pickerYear,  setPickerYear]  = useState(() => {
     // Default to FY start year — most historical sales live there
@@ -1384,6 +1416,22 @@ ${signOff} 💜`;
           </div>
         </div>
 
+        {!isStaff && (
+          <button onClick={() => setStatusOverride(v => !v)}
+            title="When on, you can pick any status directly, bypassing the normal Pending → Fulfilled → Return → Refund/Exchange order. Use with care."
+            style={{
+              display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
+              padding: "0 14px", border: "none", borderLeft: "1px solid #f1f5f9",
+              borderRight: "1px solid #f1f5f9",
+              background: statusOverride ? "#fef3c7" : "#f8fafc",
+              color: "#92400e",
+              cursor: "pointer", fontFamily: "inherit",
+              fontWeight: statusOverride ? 800 : 600, fontSize: 12,
+            }}>
+            {statusOverride ? "🔓" : "🔒"} <span>Status Override</span>
+          </button>
+        )}
+
         {/* Flagged-for-recheck filter toggle */}
         {flaggedCount > 0 && (
           <button onClick={() => setFlaggedOnly(v => !v)}
@@ -2027,10 +2075,10 @@ ${signOff} 💜`;
                             background: "white", minWidth: 130 }}>
                           {(statusTabs || STATUS_TABS).filter(t => {
                             if (t.key === "ALL") return false;
-                            const dispatched = (ful || "PENDING").toUpperCase() !== "PENDING";
-                            const canOverride = !isStaff;
-                            if (dispatched && !canOverride && t.key === "PENDING") return false;
-                            return true;
+                            if (!isStaff && statusOverride) return true; // admin override active
+                            const allowed = getAllowedStatuses(ful, shopId);
+                            if (!allowed) return true; // unrecognised legacy status — fail open
+                            return allowed.includes(t.key);
                           }).map(t => (
                             <option key={t.key} value={t.key}>{t.label}</option>
                           ))}
