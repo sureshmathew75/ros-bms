@@ -412,6 +412,8 @@ export default function SalesPanel({
   const [cascadeConfirm, setCascadeConfirm] = useState(null); // {saleId, newStatus, groupIds} | null
   const [flashIds, setFlashIds] = useState(new Set());
   const [linkedGroupView, setLinkedGroupView] = useState(null); // array of sales in the group | null
+  const [manualLinkSale, setManualLinkSale] = useState(null); // sale being manually linked | null
+  const [manualLinkQuery, setManualLinkQuery] = useState("");
   const [dragOverId, setDragOverId] = useState(null);
   const handleReorderDrop = async (targetId) => {
     const fromId = dragId;
@@ -763,10 +765,39 @@ ${signOff} 💜`;
         if (isFinal) dealOpen = false;
       }
     });
+
+    // ── Manual link merge pass: sales sharing a manualLinkGroup value are
+    // unified into one group, even if automatic Advance/Part/Final
+    // detection put them in different groups (or skipped them entirely,
+    // e.g. a payment mistakenly tagged Full instead of Final). ──────────
+    const byManualLink = {};
+    sales.forEach(s => {
+      if (s.manualLinkGroup) (byManualLink[s.manualLinkGroup] ||= []).push(s);
+    });
+    Object.values(byManualLink).forEach(linkedSales => {
+      if (linkedSales.length < 2) return;
+      const linkedIds = new Set(linkedSales.map(s => s.id));
+      const touchedKeys = Object.keys(result).filter(k => result[k].some(s => linkedIds.has(s.id)));
+      const unionMap = {};
+      touchedKeys.forEach(k => result[k].forEach(s => { unionMap[s.id] = s; }));
+      linkedSales.forEach(s => { unionMap[s.id] = s; });
+      touchedKeys.forEach(k => delete result[k]);
+      const mergedKey = `manual__${Array.from(linkedIds).sort().join("_")}`;
+      result[mergedKey] = Object.values(unionMap);
+    });
+
     return result;
   }, [sales]);
 
   const getInstalmentKey = (s) => {
+    if (s.manualLinkGroup) {
+      // Manually-linked sales may end up in a merged group regardless of
+      // payment type or customer key — search all groups for membership.
+      for (const gk of Object.keys(instalmentGroups)) {
+        if (instalmentGroups[gk].some(x => x.id === s.id)) return gk;
+      }
+      return null;
+    }
     if (inferPaymentType(s) === "FULL") return null;
     const phone = (s.phone || s.contact || "").replace(/\D/g, "").slice(-10);
     const name = (s.customer || "").toLowerCase().trim();
@@ -806,6 +837,36 @@ ${signOff} 💜`;
     await Promise.all(groupIds.map(id => onInlineEdit(id, { ful: newStatus, status: newStatus })));
     setFlashIds(new Set(groupIds));
     setTimeout(() => setFlashIds(new Set()), 1500);
+  };
+
+  /* Manually links two transactions together, merging their existing
+     manual-link groups if either already has one (so linking into an
+     existing multi-way link works correctly, not just pairs). */
+  const handleManualLink = async (saleA, saleB) => {
+    if (!onInlineEdit || saleA.id === saleB.id) return;
+    const groupA = saleA.manualLinkGroup;
+    const groupB = saleB.manualLinkGroup;
+    if (groupA && groupB && groupA === groupB) return; // already linked together
+    const targetGroup = groupA || groupB || `link_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
+    const updates = [];
+    if (saleA.manualLinkGroup !== targetGroup) updates.push(onInlineEdit(saleA.id, { manualLinkGroup: targetGroup }));
+    if (saleB.manualLinkGroup !== targetGroup) updates.push(onInlineEdit(saleB.id, { manualLinkGroup: targetGroup }));
+    // If B belonged to a different existing manual group, migrate every
+    // other sale in that old group over to the merged target group too.
+    if (groupB && groupB !== targetGroup) {
+      sales.filter(s => s.manualLinkGroup === groupB && s.id !== saleB.id)
+        .forEach(s => updates.push(onInlineEdit(s.id, { manualLinkGroup: targetGroup })));
+    }
+    if (groupA && groupA !== targetGroup) {
+      sales.filter(s => s.manualLinkGroup === groupA && s.id !== saleA.id)
+        .forEach(s => updates.push(onInlineEdit(s.id, { manualLinkGroup: targetGroup })));
+    }
+    await Promise.all(updates);
+  };
+
+  const handleManualUnlink = async (sale) => {
+    if (!onInlineEdit) return;
+    await onInlineEdit(sale.id, { manualLinkGroup: null });
   };
 
   /* ── Rows with month / FY separators ────────────────────────────────── */
@@ -1751,6 +1812,18 @@ ${signOff} 💜`;
                             background: "#dc2626", color: "white",
                           }}>
                           ⚠️ No advance found
+                        </div>
+                      )}
+                      {isSuperadmin && (
+                        <div
+                          onClick={(e) => { e.stopPropagation(); setManualLinkSale(s); setManualLinkQuery(""); }}
+                          title="Manually link this to another transaction"
+                          style={{
+                            marginTop: 4, display: "inline-flex", alignItems: "center", gap: 3,
+                            fontSize: 9, fontWeight: 700, padding: "1px 7px", borderRadius: 999,
+                            color: "#64748b", border: "1px dashed #cbd5e1", cursor: "pointer",
+                          }}>
+                          🔗+ Link
                         </div>
                       )}
                     </td>
@@ -2796,6 +2869,78 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
         </div>
       )}
       <WaModal data={waModal} onClose={() => setWaModal(null)}/>
+      {manualLinkSale && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 300,
+          background: "rgba(15,23,42,0.55)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }} onClick={() => setManualLinkSale(null)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: "white", borderRadius: 16, padding: "22px 24px",
+            maxWidth: 480, width: "92%", maxHeight: "80vh", display: "flex", flexDirection: "column",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+          }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>🔗 Link Transactions Manually</div>
+              <button onClick={() => setManualLinkSale(null)}
+                style={{ border: "none", background: "transparent", fontSize: 18, cursor: "pointer", color: "#94a3b8" }}>✕</button>
+            </div>
+            <div style={{ fontSize: 12, color: "#64748b", marginBottom: 14, lineHeight: 1.4 }}>
+              For when automatic grouping misses a pairing — e.g. a payment tagged wrong. Search below and pick the other transaction to link with <strong>{manualLinkSale.customer||"this sale"} — {fmt?fmt(shopId,Number(manualLinkSale.amount)||0):manualLinkSale.amount}</strong>.
+            </div>
+            <input value={manualLinkQuery} onChange={e=>setManualLinkQuery(e.target.value)}
+              placeholder="Search by customer name or invoice…"
+              style={{ width:"100%", padding:"9px 12px", borderRadius:9, border:"1.5px solid #e2e8f0", fontSize:13, fontFamily:"inherit", outline:"none", boxSizing:"border-box", marginBottom:12 }}/>
+            <div style={{ flex:1, overflowY:"auto", display:"flex", flexDirection:"column", gap:6 }}>
+              {manualLinkQuery.trim().length>0 && sales
+                .filter(s => s.id!==manualLinkSale.id &&
+                  ((s.customer||"").toLowerCase().includes(manualLinkQuery.trim().toLowerCase()) ||
+                   String(s.id||"").toLowerCase().includes(manualLinkQuery.trim().toLowerCase()) ||
+                   String(s.invoiceNo||"").toLowerCase().includes(manualLinkQuery.trim().toLowerCase())))
+                .slice(0,20)
+                .map(s => {
+                  const alreadyLinked = manualLinkSale.manualLinkGroup && s.manualLinkGroup===manualLinkSale.manualLinkGroup;
+                  return (
+                    <div key={s.id} onClick={async()=>{
+                        if(alreadyLinked) return;
+                        await handleManualLink(manualLinkSale, s);
+                        setManualLinkSale(null);
+                      }}
+                      style={{
+                        display:"flex", justifyContent:"space-between", alignItems:"center", gap:10,
+                        padding:"9px 11px", borderRadius:9, border:"1px solid #e2e8f0",
+                        cursor: alreadyLinked?"default":"pointer",
+                        background: alreadyLinked?"#f0fdf4":"white",
+                      }}>
+                      <div style={{ minWidth:0 }}>
+                        <div style={{ fontWeight:700, fontSize:12.5, color:"#0f172a" }}>{s.customer||"Customer"}</div>
+                        <div style={{ fontSize:11, color:"#64748b" }}>{s.date} · {s.item||"—"}</div>
+                      </div>
+                      <div style={{ textAlign:"right", flexShrink:0 }}>
+                        <div style={{ fontWeight:800, fontSize:13, color:"#0f172a" }}>{fmt?fmt(shopId,Number(s.amount)||0):s.amount}</div>
+                        {alreadyLinked
+                          ? <div style={{ fontSize:10, color:"#15803d", fontWeight:700 }}>✓ Linked</div>
+                          : <div style={{ fontSize:10, color:"#2563eb", fontWeight:700 }}>Link →</div>}
+                      </div>
+                    </div>
+                  );
+                })}
+              {manualLinkQuery.trim().length>0 && sales.filter(s => s.id!==manualLinkSale.id &&
+                  ((s.customer||"").toLowerCase().includes(manualLinkQuery.trim().toLowerCase()) ||
+                   String(s.id||"").toLowerCase().includes(manualLinkQuery.trim().toLowerCase()) ||
+                   String(s.invoiceNo||"").toLowerCase().includes(manualLinkQuery.trim().toLowerCase()))).length===0 && (
+                <div style={{ fontSize:12, color:"#94a3b8", textAlign:"center", padding:"12px 0" }}>No matching transactions found.</div>
+              )}
+            </div>
+            {manualLinkSale.manualLinkGroup && (
+              <button onClick={async()=>{ await handleManualUnlink(manualLinkSale); setManualLinkSale(null); }}
+                style={{ marginTop:12, padding:"9px 0", borderRadius:9, border:"1px solid #fca5a5", background:"#fef2f2", color:"#dc2626", fontWeight:700, fontSize:12.5, cursor:"pointer", fontFamily:"inherit" }}>
+                ✕ Remove this from its current manual link
+              </button>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

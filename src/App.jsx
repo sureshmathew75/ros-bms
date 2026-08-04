@@ -304,10 +304,19 @@ const tagPriorityG=(s)=>{
   return 1; // Part, or Full
 };
 const findInstalmentGroupIds=(sale,allSales)=>{
-  if(inferPaymentType(sale)==="FULL") return [sale.id];
+  // Manual link always wins, regardless of payment type — this is the
+  // fallback for when automatic Advance/Part/Final detection misses a
+  // pairing (e.g. a payment mistakenly tagged Full instead of Final).
+  let manualIds=[];
+  if(sale.manualLinkGroup){
+    manualIds=(allSales||[]).filter(s=>s.manualLinkGroup===sale.manualLinkGroup).map(s=>s.id);
+  }
+  if(inferPaymentType(sale)==="FULL"){
+    return manualIds.length>1 ? manualIds : [sale.id];
+  }
   const phone=(sale.phone||sale.contact||"").replace(/\D/g,"").slice(-10);
   const name=(sale.customer||"").toLowerCase().trim();
-  if(!phone&&!name) return [sale.id];
+  if(!phone&&!name) return manualIds.length>1 ? manualIds : [sale.id];
   const custSales=(allSales||[]).filter(s=>{
     const sPhone=(s.phone||s.contact||"").replace(/\D/g,"").slice(-10);
     const sName=(s.customer||"").toLowerCase().trim();
@@ -333,8 +342,10 @@ const findInstalmentGroupIds=(sale,allSales)=>{
     if(s.id===sale.id) found=currentGroup;
     if(isFinal) dealOpen=false;
   }
-  if(!found||found.length<2) return [sale.id];
-  return found.map(s=>s.id);
+  const autoIds = (found&&found.length>=2) ? found.map(s=>s.id) : [sale.id];
+  if(manualIds.length<2) return autoIds;
+  // Merge auto-detected group with manually-linked sales
+  return Array.from(new Set([...autoIds, ...manualIds]));
 };
 
 /* ── getSaleFY: returns FY start year for a sale using invoice suffix as ground truth ── */
