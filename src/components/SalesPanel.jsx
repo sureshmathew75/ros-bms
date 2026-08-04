@@ -1814,7 +1814,7 @@ ${signOff} 💜`;
                           ⚠️ No advance found
                         </div>
                       )}
-                      {isSuperadmin && (
+                      {user?.id==="suresh" && (
                         <div
                           onClick={(e) => { e.stopPropagation(); setManualLinkSale(s); setManualLinkQuery(""); }}
                           title="Manually link this to another transaction"
