@@ -7154,7 +7154,7 @@ return(
       {modal==="edit-sale"&&editRow&&(
         <Modal title={"✏️ Edit Sale — "+editRow.id} onClose={()=>{setModal(null);setEditRow(null);}} accent={shop.accent}>
           <EditSaleForm
-            shopId={shopId} shop={shop} sale={editRow} customers={customers} isStaff={user?.role==="staff"} isSuperadmin={user?.role==="superadmin"}
+            shopId={shopId} shop={shop} sale={editRow} customers={customers} isStaff={user?.role==="staff"} isSuperadmin={user?.role==="superadmin"} isSuresh={user?.id==="suresh"}
             onSave={(updated)=>{
               // Merge over the existing sale so fields the form does not track
               // (e.g. verified) are preserved on save
@@ -9633,7 +9633,7 @@ const TagPicker=({value,onChange,accent,accentBg,inp,fo,bl,lbl})=>{
   );
 };
 
-const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,isSuperadmin=false})=>{
+const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,isSuperadmin=false,isSuresh=false})=>{
   const rosieFieldRefs=useRef({});
   const [statusOverride,setStatusOverride]=useState(false); // admin-only: bypass the status chain
   // ros-india: an id only counts as an assigned invoice number when it matches IND######
@@ -10030,7 +10030,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
         <div>
           <label style={lbl}>
             Delivery Status
-            {!isStaff && (
+            {isSuresh && (
               <label style={{marginLeft:10,fontSize:10,fontWeight:700,color:statusOverride?"#92400e":"#94a3b8",cursor:"pointer",textTransform:"none",letterSpacing:0}}>
                 <input type="checkbox" checked={statusOverride} onChange={e=>setStatusOverride(e.target.checked)} style={{marginRight:4,verticalAlign:"middle"}}/>
                 {statusOverride?"🔓 Override on":"🔒 Override off"}
@@ -10045,7 +10045,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
                 : ["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"];
               const savedStatus = (sale.status||sale.ful||"PENDING").toUpperCase();
               const allowed = getAllowedStatuses(savedStatus,shopId);
-              const useAll = (!isStaff && statusOverride) || !allowed;
+              const useAll = (isSuresh && statusOverride) || !allowed;
               const opts = useAll ? allOpts : allOpts.filter(o=>allowed.includes(o));
               return opts.map(o=>(
                 <option key={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>

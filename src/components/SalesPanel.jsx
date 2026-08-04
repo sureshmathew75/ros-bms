@@ -1416,7 +1416,7 @@ ${signOff} 💜`;
           </div>
         </div>
 
-        {!isStaff && (
+        {user?.id==="suresh" && (
           <button onClick={() => setStatusOverride(v => !v)}
             title="When on, you can pick any status directly, bypassing the normal Pending → Fulfilled → Return → Refund/Exchange order. Use with care."
             style={{
@@ -2075,7 +2075,7 @@ ${signOff} 💜`;
                             background: "white", minWidth: 130 }}>
                           {(statusTabs || STATUS_TABS).filter(t => {
                             if (t.key === "ALL") return false;
-                            if (!isStaff && statusOverride) return true; // admin override active
+                            if (user?.id==="suresh" && statusOverride) return true; // Suresh override active
                             const allowed = getAllowedStatuses(ful, shopId);
                             if (!allowed) return true; // unrecognised legacy status — fail open
                             return allowed.includes(t.key);
