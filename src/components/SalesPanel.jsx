@@ -2025,7 +2025,13 @@ ${signOff} 💜`;
                           style={{ padding: "5px 8px", borderRadius: 8, border: "1.5px solid #7dd3fc",
                             fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer",
                             background: "white", minWidth: 130 }}>
-                          {(statusTabs || STATUS_TABS).map(t => (
+                          {(statusTabs || STATUS_TABS).filter(t => {
+                            if (t.key === "ALL") return false;
+                            const dispatched = (ful || "PENDING").toUpperCase() !== "PENDING";
+                            const canOverride = !isStaff;
+                            if (dispatched && !canOverride && t.key === "PENDING") return false;
+                            return true;
+                          }).map(t => (
                             <option key={t.key} value={t.key}>{t.label}</option>
                           ))}
                         </select>
@@ -2345,10 +2351,10 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
          ══════════════════════════════════════════════════════════ */}
       {showReport && (() => {
         const UNFULFILLED = isIndiaShop
-          ? ["PENDING","IN PROGRESS"]
+          ? ["PENDING"]
           : ["PENDING"];
         const ALL_STATUSES = isIndiaShop
-          ? ["PENDING","IN PROGRESS","FULFILLED","RETURN RQSTD","RETURN RCVD","EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]
+          ? ["PENDING","FULFILLED","RETURN RQSTD","RETURN RCVD","EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]
           : ["PENDING","PROCESSING","ON HOLD","AWAITING PAYMENT"];
 
         // Use top-level state; init defaults on open

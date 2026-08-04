@@ -156,8 +156,7 @@ const BSTYLE={
   "RETRN RCVD":               {bg:"#fee2e2",c:"#991b1b",b:"#fca5a5"},
   "EXCHANGED":                {bg:"#e0e7ff",c:"#4338ca",b:"#c7d2fe"},
   "REFUNDED":                 {bg:"#f3e4ff",c:"#7e22ce",b:"#d8b4fe"},
-  // ── India-specific delivery statuses (simplified 9-status system) ──
-  "IN PROGRESS":              {bg:"#dbeafe",c:"#1d4ed8",b:"#bfdbfe"},
+  // ── India-specific delivery statuses (simplified 8-status system) ──
   "RETURN RQSTD":             {bg:"#ffedd5",c:"#c2410c",b:"#fed7aa"},
   "RETURN RCVD":              {bg:"#fee2e2",c:"#991b1b",b:"#fca5a5"},
   "GOOD FEEDBACK RCVD":       {bg:"#d1fae5",c:"#065f46",b:"#6ee7b7"},
@@ -191,7 +190,6 @@ const STATUS_ROW_BG={
   "EXCHANGED":                 "#eef2ff",
   "REFUNDED":                  "#faf5ff",
   // India-specific
-  "IN PROGRESS":          "#eff6ff",
   "RETURN RQSTD":          "#fff7ed",
   "RETURN RCVD":           "#fef2f2",
   "GOOD FEEDBACK RCVD":    "#ecfdf5",
@@ -6579,7 +6577,6 @@ return(
             const indiaStatuses=[
               {key:"ALL",                        label:"All",         emoji:"🗂️"},
               {key:"PENDING",                    label:"Pending",     emoji:"⏳"},
-              {key:"IN PROGRESS",                label:"In Progress", emoji:"🔧"},
               {key:"FULFILLED",                  label:"Fulfilled",   emoji:"✅"},
               {key:"RETURN RQSTD",               label:"Rtn Rqstd",   emoji:"↩️"},
               {key:"RETURN RCVD",                label:"Rtn Rcvd",    emoji:"📬"},
@@ -9230,7 +9227,7 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
     const cutoffTime = cutoffDate ? new Date(cutoffDate).getTime() : null;
     return (sales||[]).filter(s => {
       const status = (s.ful||s.status||"").toUpperCase();
-      const isOpenStatus = ["PENDING","IN PROGRESS","TO ORDER","UNFULFILLED"].includes(status);
+      const isOpenStatus = ["PENDING","TO ORDER","UNFULFILLED"].includes(status);
       const hasTracking = !!(s.trackingNo && String(s.trackingNo).trim());
       if (!isOpenStatus || hasTracking) return false;
       const d = new Date(s.date);
@@ -9703,7 +9700,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
   const isReturnReceived=["RETURN RCVD","RETRN RCVD"].includes(form.status);
   const isExchanged=form.status==="EXCHANGED";
   const isRefunded=form.status==="REFUNDED";
-  const statusColor={"PENDING":"#a16207","IN PROGRESS":"#1d4ed8","FULFILLED":"#15803d","RETURN RQSTD":"#c2410c","RETURN RCVD":"#991b1b","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","GOOD FEEDBACK RCVD":"#065f46","NEGATIVE FEEDBACK RCVD":"#9f1239"};
+  const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN RQSTD":"#c2410c","RETURN RCVD":"#991b1b","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","GOOD FEEDBACK RCVD":"#065f46","NEGATIVE FEEDBACK RCVD":"#9f1239"};
   const PAY_OPTS = shopId==="ros-india" ? ["SIB","HDFC","SHOP"] : ["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
 
   const [editCustOpen,setEditCustOpen]=useState(false);
@@ -10011,12 +10008,18 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
           <label style={lbl}>Delivery Status</label>
           <select value={form.status} onChange={e=>set("status",e.target.value)}
             style={{...inp,fontWeight:700,color:statusColor[form.status]||"#374151"}}>
-            {(shopId==="ros-india"
-              ? ["PENDING","IN PROGRESS","FULFILLED","RETURN RQSTD","RETURN RCVD","EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]
-              : ["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]
-            ).map(o=>(
-              <option key={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>
-            ))}
+            {(() => {
+              const allOpts = shopId==="ros-india"
+                ? ["PENDING","FULFILLED","RETURN RQSTD","RETURN RCVD","EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]
+                : ["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"];
+              const savedStatus = (sale.status||sale.ful||"PENDING").toUpperCase();
+              const dispatched = savedStatus !== "PENDING";
+              const canOverride = !isStaff;
+              const opts = (dispatched && !canOverride) ? allOpts.filter(o=>o!=="PENDING") : allOpts;
+              return opts.map(o=>(
+                <option key={o} style={{color:statusColor[o]||"#374151"}}>{o}</option>
+              ));
+            })()}
           </select>
         </div>
         <div>
@@ -11046,7 +11049,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const isReturnRequested=["RETURN RQSTD","RTRN REQSTD"].includes(form.status);
   const isReturnReceived=["RETURN RCVD","RETRN RCVD"].includes(form.status);
   const isRefundOnly=["EXCHANGED","REFUNDED"].includes(form.status);
-  const statusColor={"PENDING":"#a16207","IN PROGRESS":"#1d4ed8","FULFILLED":"#15803d","RETURN RQSTD":"#c2410c","RETURN RCVD":"#991b1b","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","GOOD FEEDBACK RCVD":"#065f46","NEGATIVE FEEDBACK RCVD":"#9f1239"};
+  const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN RQSTD":"#c2410c","RETURN RCVD":"#991b1b","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","GOOD FEEDBACK RCVD":"#065f46","NEGATIVE FEEDBACK RCVD":"#9f1239"};
 
   const handleAddCustomer=(newCust)=>{setCustomerList(l=>[newCust,...l]);set("customer",newCust.name);set("contact",newCust.phone);setShowNewCust(false);};
   const updateLine=(id,key,val)=>setLines(ls=>ls.map(l=>l.id===id?{...l,[key]:val}:l));
@@ -11245,7 +11248,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 ) : <div/>}
               </div>
               <div style={{display:"grid",gridTemplateColumns:(shopId==="ros-india"&&form.payBy==="SHOP")?"1fr 1fr":"1fr",gap:7,marginBottom:7}}>
-                <div><label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["PENDING","IN PROGRESS","FULFILLED","RETURN RQSTD","RETURN RCVD","EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select></div>
+                <div><label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["PENDING","FULFILLED","RETURN RQSTD","RETURN RCVD","EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select></div>
                 {shopId==="ros-india"&&form.payBy==="SHOP"&&(
                   <div><label style={lbl}>Dispatch Unit</label>
                     <select value={form.dispatchFrom} onChange={e=>set("dispatchFrom",e.target.value)} style={inp}>
