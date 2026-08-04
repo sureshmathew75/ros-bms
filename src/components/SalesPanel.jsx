@@ -2524,8 +2524,8 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                   + (()=>{
                       const addrs = Array.from(new Set((s._grp||[]).map(x=>(x.address||"").trim()).filter(Boolean)));
                       const rmks = Array.from(new Set((s._grp||[]).map(x=>(x.remarks||"").trim()).filter(Boolean)));
-                      return (addrs.length>0?`<div style="font-size:10px;color:#94a3b8;margin-top:3px">📍 ${addrs.join(" / ")}</div>`:"")
-                        + (rmks.length>0?`<div style="font-size:10px;color:#94a3b8;margin-top:2px;font-style:italic">📝 ${rmks.join(" / ")}</div>`:"");
+                      return addrs.map(a=>`<div style="font-size:10px;color:#94a3b8;margin-top:3px">📍 ${a}</div>`).join("")
+                        + rmks.map(r=>`<div style="font-size:10px;color:#94a3b8;margin-top:2px;font-style:italic">📝 ${r}</div>`).join("");
                     })()
                 : (s.item||"—")
               }</td>
@@ -2688,8 +2688,12 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                                 const addrs = Array.from(new Set((s._grp||[]).map(x=>(x.address||"").trim()).filter(Boolean)));
                                 const rmks = Array.from(new Set((s._grp||[]).map(x=>(x.remarks||"").trim()).filter(Boolean)));
                                 return (<>
-                                  {addrs.length>0 && <div style={{fontSize:10,color:"#94a3b8",marginTop:3}}>📍 {addrs.join(" / ")}</div>}
-                                  {rmks.length>0 && <div style={{fontSize:10,color:"#94a3b8",marginTop:2,fontStyle:"italic"}}>📝 {rmks.join(" / ")}</div>}
+                                  {addrs.map((a,ai)=>(
+                                    <div key={"a"+ai} style={{fontSize:10,color:"#94a3b8",marginTop:3}}>📍 {a}</div>
+                                  ))}
+                                  {rmks.map((r,ri)=>(
+                                    <div key={"r"+ri} style={{fontSize:10,color:"#94a3b8",marginTop:2,fontStyle:"italic"}}>📝 {r}</div>
+                                  ))}
                                 </>);
                               })()}
                             </div>
@@ -2852,10 +2856,10 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                         {gs.pay || "—"} · {gs.ful || gs.status || "—"}
                       </div>
                       {gs.address && gs.address.trim() && (
-                        <div style={{ fontSize: 11, color: "#64748b", marginTop: 3 }}>📍 {gs.address}</div>
+                        <div style={{ fontSize: 11, color: "#64748b", marginTop: 3 }}><strong>📍 Address:</strong> {gs.address}</div>
                       )}
                       {gs.remarks && gs.remarks.trim() && (
-                        <div style={{ fontSize: 11, color: "#64748b", marginTop: 2, fontStyle: "italic" }}>📝 {gs.remarks}</div>
+                        <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}><strong>📝 Remarks:</strong> <span style={{fontStyle:"italic"}}>{gs.remarks}</span></div>
                       )}
                     </div>
                     <div style={{ fontWeight: 800, fontSize: 14, color: "#0f172a", whiteSpace: "nowrap" }}>
