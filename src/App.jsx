@@ -348,6 +348,18 @@ const findInstalmentGroupIds=(sale,allSales)=>{
   return Array.from(new Set([...autoIds, ...manualIds]));
 };
 
+/* Outstanding balance for a group of sale IDs, based on the Expected
+   Total set on whichever sale in the group is tagged Advance. Returns
+   null if no Expected Total is set (nothing to check against). */
+const getGroupBalanceInfo=(groupIds,allSales)=>{
+  const group=(allSales||[]).filter(s=>groupIds.includes(s.id));
+  const advanceSale=group.find(s=>inferPaymentType(s)==="ADVANCE");
+  const expectedTotal=advanceSale?Number(advanceSale.expectedTotal)||0:0;
+  if(expectedTotal<=0) return null;
+  const received=group.reduce((a,x)=>a+(Number(x.amount)||0),0);
+  return {expectedTotal,received,balance:expectedTotal-received};
+};
+
 /* ── getSaleFY: returns FY start year for a sale using invoice suffix as ground truth ── */
 const getSaleFY=(sale)=>{
   const id=String(sale.id||"");
@@ -5066,6 +5078,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   // ── Undo Delete: session-only stack of recently deleted records ──
   const [deletedStack,setDeletedStack]=useState([]);
   const [editCascadeConfirm,setEditCascadeConfirm]=useState(null); // {merged, existingSale, groupIds} | null
+  const [editBalanceBlockInfo,setEditBalanceBlockInfo]=useState(null); // {sale, expectedTotal, received, balance} | null
   const pushDeleted=(type,record)=>{
     if(!record)return;
     setDeletedStack(prev=>[{type,record,ts:Date.now()},...prev].slice(0,20));
@@ -7130,6 +7143,13 @@ return(
               const merged={...(existingSale||{}),...updated};
               const statusChanged=existingSale && (existingSale.status||existingSale.ful)!==(merged.status||merged.ful);
               const groupIds=statusChanged?findInstalmentGroupIds(merged,sales):[merged.id];
+              if(statusChanged && (merged.status||merged.ful)==="FULFILLED" && groupIds.length>1){
+                const balInfo=getGroupBalanceInfo(groupIds,sales);
+                if(balInfo && balInfo.balance>0){
+                  setEditBalanceBlockInfo({sale:merged,...balInfo});
+                  return;
+                }
+              }
               if(statusChanged && groupIds.length>1){
                 setEditCascadeConfirm({merged,existingSale,groupIds});
                 return;
@@ -7139,6 +7159,28 @@ return(
             onClose={()=>{setModal(null);setEditRow(null);}}
           />
         </Modal>
+      )}
+
+      {/* ── BALANCE DUE BLOCK (Edit Sale) ── */}
+      {editBalanceBlockInfo&&(
+        <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center"}}
+          onClick={()=>setEditBalanceBlockInfo(null)}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:16,padding:"24px 26px",maxWidth:420,width:"92%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
+            <div style={{fontSize:34,textAlign:"center",marginBottom:8}}>⚠️</div>
+            <div style={{fontSize:15,fontWeight:800,color:"#0f172a",textAlign:"center",marginBottom:10}}>Balance still due</div>
+            <div style={{fontSize:13,color:"#475569",lineHeight:1.6,textAlign:"center",marginBottom:16}}>
+              We still need to receive <strong style={{color:"#dc2626"}}>{fmt(shopId,editBalanceBlockInfo.balance)}</strong> from <strong>{editBalanceBlockInfo.sale.customer||"this customer"}</strong> before this can be marked Fulfilled.
+            </div>
+            <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:"10px 12px",marginBottom:18,display:"flex",justifyContent:"space-between",fontSize:12}}>
+              <span style={{color:"#64748b"}}>Expected {fmt(shopId,editBalanceBlockInfo.expectedTotal)} · Received {fmt(shopId,editBalanceBlockInfo.received)}</span>
+              <span style={{color:"#dc2626",fontWeight:800}}>Bal {fmt(shopId,editBalanceBlockInfo.balance)}</span>
+            </div>
+            <button onClick={()=>setEditBalanceBlockInfo(null)}
+              style={{width:"100%",padding:"11px 0",borderRadius:10,border:"none",background:"#dc2626",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              Got it — collect the balance first
+            </button>
+          </div>
+        </div>
       )}
 
       {/* ── STATUS CASCADE CONFIRMATION (Edit Sale) ── */}

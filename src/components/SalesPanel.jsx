@@ -410,6 +410,7 @@ export default function SalesPanel({
   const [waModal, setWaModal] = useState(null); // {phone,customerName,message} | null
   /* Status cascade across instalment groups (Advance/Part/Final payment) */
   const [cascadeConfirm, setCascadeConfirm] = useState(null); // {saleId, newStatus, groupIds} | null
+  const [balanceBlockInfo, setBalanceBlockInfo] = useState(null); // {sale, expectedTotal, received, balance} | null
   const [flashIds, setFlashIds] = useState(new Set());
   const [linkedGroupView, setLinkedGroupView] = useState(null); // array of sales in the group | null
   const [manualLinkSale, setManualLinkSale] = useState(null); // sale being manually linked | null
@@ -828,6 +829,17 @@ ${signOff} 💜`;
       if (hit) return want === "advance" ? "#f59e0b" : want === "part" ? "#7c3aed" : "#059669";
     }
     return "#0891b2";
+  };
+
+  /* Outstanding balance for an instalment group, based on the Expected
+     Total set on its Advance sale. Returns null if no Expected Total is
+     set (nothing to check against). */
+  const getGroupBalanceInfo = (group) => {
+    const advanceSale = (group||[]).find(x => instalmentTagType(x) === "advance");
+    const expectedTotal = advanceSale ? Number(advanceSale.expectedTotal) || 0 : 0;
+    if (expectedTotal <= 0) return null;
+    const received = (group||[]).reduce((a,x) => a + (Number(x.amount)||0), 0);
+    return { expectedTotal, received, balance: expectedTotal - received };
   };
 
   /* Apply a status change to every sale in the same instalment group,
@@ -1656,7 +1668,11 @@ ${signOff} 💜`;
                 // Show instalment summary row only on the advance sale
                 const showInstalmentSummary = instType === "advance" && instGroup.length >= 1;
                 const totalPaid = instGroup.reduce((a,x) => a + (Number(x.amount)||0), 0);
-                const expectedTotal = Number(s.expectedTotal) || 0;
+                // Expected Total is only ever entered on the Advance sale — look
+                // it up from the group so every row (not just the advance one)
+                // can correctly tell whether the group is fully paid.
+                const advanceSaleInGroup = instGroup.find(x => instalmentTagType(x) === "advance");
+                const expectedTotal = advanceSaleInGroup ? Number(advanceSaleInGroup.expectedTotal) || 0 : 0;
                 const balance = expectedTotal > 0 ? expectedTotal - totalPaid : null;
                 // Only mark fully paid if group contains an explicit Final Payment Sale
                 const hasFinalPayment = instGroup.some(x => instalmentTagType(x) === "final");
@@ -1896,6 +1912,14 @@ ${signOff} 💜`;
                                   </div>
                                 );
                               }
+                            } else if (isInstalment && isActuallyFullyPaid) {
+                              // Non-advance rows (Part/Final/untagged) in a fully-paid
+                              // group get the same sticker, not just the advance row.
+                              balanceBlock = (
+                                <div style={{marginTop:2,fontSize:10,fontWeight:800,color:"#059669",whiteSpace:"nowrap"}}>
+                                  ✅ Fully Paid
+                                </div>
+                              );
                             }
 
                             return (<>
@@ -1982,7 +2006,15 @@ ${signOff} 💜`;
                             const newStatus = e.target.value;
                             setEditStatusId(null);
                             const gKey = getInstalmentKey(s);
-                            const groupIds = gKey ? (instalmentGroups[gKey] || []).map(x => x.id) : [];
+                            const group = gKey ? (instalmentGroups[gKey] || []) : [];
+                            const groupIds = group.length > 1 ? group.map(x => x.id) : [];
+                            if (newStatus === "FULFILLED" && group.length > 0) {
+                              const balInfo = getGroupBalanceInfo(group);
+                              if (balInfo && balInfo.balance > 0) {
+                                setBalanceBlockInfo({ sale: s, ...balInfo });
+                                return;
+                              }
+                            }
                             if (groupIds.length > 1) {
                               setCascadeConfirm({ saleId: s.id, newStatus, groupIds });
                             } else if (onInlineEdit) {
@@ -2869,6 +2901,34 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
         </div>
       )}
       <WaModal data={waModal} onClose={() => setWaModal(null)}/>
+      {balanceBlockInfo && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 320,
+          background: "rgba(15,23,42,0.55)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+        }} onClick={() => setBalanceBlockInfo(null)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: "white", borderRadius: 16, padding: "24px 26px",
+            maxWidth: 420, width: "92%", boxShadow: "0 20px 60px rgba(0,0,0,0.3)",
+          }}>
+            <div style={{ fontSize: 34, textAlign: "center", marginBottom: 8 }}>⚠️</div>
+            <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a", textAlign: "center", marginBottom: 10 }}>
+              Balance still due
+            </div>
+            <div style={{ fontSize: 13, color: "#475569", lineHeight: 1.6, textAlign: "center", marginBottom: 16 }}>
+              We still need to receive <strong style={{ color: "#dc2626" }}>{fmt ? fmt(shopId, balanceBlockInfo.balance) : balanceBlockInfo.balance}</strong> from <strong>{balanceBlockInfo.sale.customer || "this customer"}</strong> before this can be marked Fulfilled.
+            </div>
+            <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 12px", marginBottom: 18, display: "flex", justifyContent: "space-between", fontSize: 12 }}>
+              <span style={{ color: "#64748b" }}>Expected {fmt ? fmt(shopId, balanceBlockInfo.expectedTotal) : balanceBlockInfo.expectedTotal} · Received {fmt ? fmt(shopId, balanceBlockInfo.received) : balanceBlockInfo.received}</span>
+              <span style={{ color: "#dc2626", fontWeight: 800 }}>Bal {fmt ? fmt(shopId, balanceBlockInfo.balance) : balanceBlockInfo.balance}</span>
+            </div>
+            <button onClick={() => setBalanceBlockInfo(null)}
+              style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "none", background: "#dc2626", color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+              Got it — collect the balance first
+            </button>
+          </div>
+        </div>
+      )}
       {manualLinkSale && (
         <div style={{
           position: "fixed", inset: 0, zIndex: 300,
