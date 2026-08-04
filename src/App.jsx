@@ -9682,7 +9682,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
           <p style={{margin:0,fontSize:11,color:shop.accent}}>All changes will update the sales record immediately on save</p></div>
       </div>
       {!isStaff && rosieEditActiveIdx!==-1 && (
-        <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",marginBottom:16,background:"#fffbeb",border:"1px solid #fde68a",borderRadius:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",marginBottom:16,background:"#fffbeb",border:"1px solid #fde68a",borderRadius:12,position:"sticky",top:0,zIndex:20,boxShadow:"0 4px 12px rgba(0,0,0,0.08)"}}>
           <div style={{flexShrink:0,lineHeight:0}}><Rosie mood="neutral" size={38} pose="point"/></div>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:13,color:"#92400e",fontWeight:700,lineHeight:1.4}}>{rosieEditSteps[rosieEditActiveIdx].label}</div>
@@ -11039,7 +11039,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     {/* ── Single column layout ── */}
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <div style={{flex:1,overflowY:"auto",padding:"12px 16px",WebkitOverflowScrolling:"touch"}}>
-        <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",margin:"0 0 12px",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",margin:"0 0 12px",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,position:"sticky",top:0,zIndex:20,boxShadow:"0 4px 12px rgba(0,0,0,0.08)"}}>
           <div style={{flexShrink:0,lineHeight:0}}><Rosie mood="happy" size={42} pose={rosieAllDone?"idle":"point"}/></div>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:13.5,color:"#166534",fontWeight:700,lineHeight:1.4}}>{rosieNudge}</div>
@@ -11180,23 +11180,32 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🚚 Payment & Delivery</p>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
                 <div><label style={lbl}>Payment By</label><select ref={el=>{rosieFieldRefs.current.payBy=el;}} value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{PAY_OPTIONS.map(o=><option key={o}>{o}</option>)}</select></div>
-                {shopId==="ros-india"&&(
+                {form.payBy==="SHOP" ? (
+                  <div><label style={lbl}>Shop Invoice No.</label><input value={form.shopInvoiceNo} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/></div>
+                ) : shopId==="ros-india" ? (
                   <div><label style={lbl}>Dispatch Unit</label>
-                    <select value={form.dispatchFrom} onChange={e=>{
-                      set("dispatchFrom",e.target.value);
-                    }} style={inp}>
+                    <select value={form.dispatchFrom} onChange={e=>set("dispatchFrom",e.target.value)} style={inp}>
+                      <option value="India-Unit1">🇮🇳 Unit 1 (Default)</option>
+                      <option value="India-Unit2">🇮🇳 Unit 2</option>
+                    </select>
+                  </div>
+                ) : <div/>}
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:(shopId==="ros-india"&&form.payBy==="SHOP")?"1fr 1fr":"1fr",gap:7,marginBottom:7}}>
+                <div><label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["PENDING","IN PROGRESS","FULFILLED","RETURN RQSTD","RETURN RCVD","EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select></div>
+                {shopId==="ros-india"&&form.payBy==="SHOP"&&(
+                  <div><label style={lbl}>Dispatch Unit</label>
+                    <select value={form.dispatchFrom} onChange={e=>set("dispatchFrom",e.target.value)} style={inp}>
                       <option value="India-Unit1">🇮🇳 Unit 1 (Default)</option>
                       <option value="India-Unit2">🇮🇳 Unit 2</option>
                     </select>
                   </div>
                 )}
-                <div><label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["PENDING","IN PROGRESS","FULFILLED","RETURN RQSTD","RETURN RCVD","EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select></div>
               </div>
-              {form.payBy==="SHOP"&&(
-                <div style={{marginBottom:7}}><label style={lbl}>Shop Invoice No.</label><input value={form.shopInvoiceNo} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/></div>
-              )}
-              <div><label style={lbl}>Dispatch Date</label><input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
-              <div style={{marginTop:7}}><label style={{...lbl,color:"#0369a1"}}>📦 Tracking No.</label><input value={form.trackingNo} onChange={e=>set("trackingNo",e.target.value.toUpperCase())} placeholder="e.g. AB123456789GB" style={{...inp,fontFamily:"DM Mono,monospace",border:"1px solid #7dd3fc"}} onFocus={fo} onBlur={bl}/></div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
+                <div><label style={lbl}>Dispatch Date</label><input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
+                <div><label style={{...lbl,color:"#0369a1"}}>📦 Tracking No.</label><input value={form.trackingNo} onChange={e=>set("trackingNo",e.target.value.toUpperCase())} placeholder="e.g. AB123456789GB" style={{...inp,fontFamily:"DM Mono,monospace",border:"1px solid #7dd3fc"}} onFocus={fo} onBlur={bl}/></div>
+              </div>
             </div>
 
             {/* Tags & Remarks */}
