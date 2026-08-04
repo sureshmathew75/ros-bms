@@ -2414,36 +2414,6 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
           return Math.floor((today - d) / 86400000);
         };
 
-        const defaultFrom = isIndiaShop ? "India-Unit1" : "UK";
-
-        const INST_TAGS_R = ["Advance Sale", "Part Payment", "Final Payment Sale"];
-        // Build instalment groups — split by each Advance Sale date per customer
-        const rInstGroupsRaw = {};
-        sales.forEach(s => {
-          const stags = (s.tag||"").split(",").map(t=>t.trim());
-          if (!stags.some(t=>INST_TAGS_R.includes(t))) return;
-          const ph = (s.phone||s.contact||"").replace(/[^0-9]/g,"").slice(-10);
-          const nm = (s.customer||"").toLowerCase().trim();
-          const k = nm+"__"+ph;
-          if (!rInstGroupsRaw[k]) rInstGroupsRaw[k] = [];
-          rInstGroupsRaw[k].push(s);
-        });
-        // Split each customer into separate order groups per Advance Sale
-        const rInstGroups = {};
-        Object.entries(rInstGroupsRaw).forEach(([custKey, custSales]) => {
-          const sorted = [...custSales].sort((a,b)=>{
-        const d=(a.date||"").localeCompare(b.date||"");
-        if(d!==0)return d;
-        return (a.invoiceNo||a.id||"").localeCompare(b.invoiceNo||b.id||"");
-      });
-          let grpKey = null; let gi = 0;
-          sorted.forEach(s => {
-            const st = (s.tag||"").split(",").map(t=>t.trim());
-            if (st.includes("Advance Sale")) { gi++; grpKey = custKey+"__g"+gi; rInstGroups[grpKey]=[]; }
-            if (grpKey) rInstGroups[grpKey].push(s);
-          });
-        });
-
         const filteredSales = sales
           .filter(s => {
             const st = (s.ful || s.status || "").toUpperCase();
@@ -2457,29 +2427,31 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
           })
           .sort((a, b) => daysWaiting(b.date) - daysWaiting(a.date));
 
-        // Deduplicate instalment groups — one row per group (advance sale leads)
-        const seenRInst = new Set();
+        // Deduplicate using the canonical instalment/manual-link grouping
+        // (the same system used everywhere else in the app) — not a
+        // separate, older tag-only check that misses Payment-Type-based
+        // or manually-linked groups. One row per linked group: anchored
+        // on the earliest transaction, amount = sum of the whole group.
+        const seenGroupKeys = new Set();
         const reportSales = [];
         filteredSales.forEach(s => {
-          const stags = (s.tag||"").split(",").map(t=>t.trim());
-          const isInst = stags.some(t=>INST_TAGS_R.includes(t));
-          if (isInst) {
-            const ph = (s.phone||s.contact||"").replace(/[^0-9]/g,"").slice(-10);
-            const nm = (s.customer||"").toLowerCase().trim();
-            const custKey2 = nm+"__"+ph;
-            // Find which group this sale belongs to
-            const gk = Object.keys(rInstGroups).find(k => k.startsWith(custKey2+"__g") && rInstGroups[k].some(x=>x.id===s.id)) || custKey2;
-            if (!seenRInst.has(gk)) {
-              seenRInst.add(gk);
-              // Use all sales in group (all statuses) for payment breakdown display
-              const fullGrp = rInstGroups[gk] || [s];
-              // Representative row = earliest pending sale in group, or advance, or first
-              const pendingSales = fullGrp.filter(x => activeStatuses.some(r=>(x.ful||x.status||"").toUpperCase()===r.toUpperCase()));
-              const advance = fullGrp.find(x=>(x.tag||"").includes("Advance Sale")) || fullGrp[0];
-              const rep = pendingSales.length > 0 ? (pendingSales.find(x=>(x.tag||"").includes("Advance Sale")) || pendingSales[0]) : advance;
-              reportSales.push({...rep, _grp: fullGrp, _grouped: true, expectedTotal: advance.expectedTotal});
-              seenRInst.add(gk);
-            }
+          const gKey = getInstalmentKey(s);
+          if (gKey) {
+            if (seenGroupKeys.has(gKey)) return; // this group already has a row
+            seenGroupKeys.add(gKey);
+            const fullGrp = instalmentGroups[gKey] || [s];
+            const sortedGrp = [...fullGrp].sort((a,b)=>(a.date||"").localeCompare(b.date||""));
+            const anchor = sortedGrp[0];
+            const totalAmount = fullGrp.reduce((a,x)=>a+(Number(x.amount)||0),0);
+            const advanceSale = fullGrp.find(x=>instalmentTagType(x)==="advance");
+            reportSales.push({
+              ...anchor,
+              amount: totalAmount,
+              _grp: fullGrp,
+              _grouped: fullGrp.length > 1,
+              _linkedCount: fullGrp.length,
+              expectedTotal: advanceSale ? advanceSale.expectedTotal : anchor.expectedTotal,
+            });
           } else {
             reportSales.push(s);
           }
@@ -2504,8 +2476,8 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
 
           const fmtAmt2 = v => fmt ? fmt(shopId, Number(v)||0) : (shop.symbol||"£") + (Number(v)||0).toLocaleString("en-IN");
           const tagLblP = x => {
-            const t=(x.tag||"").split(",").map(t=>t.trim());
-            return t.includes("Advance Sale")?"Advance":t.includes("Final Payment Sale")?"Final":t.includes("Part Payment")?"Part":"";
+            const t=instalmentTagType(x);
+            return t==="advance"?"Advance":t==="final"?"Final":t==="part"?"Part":"";
           };
           const tagColP = l => l==="Advance"?"#92400e":l==="Final"?"#166534":l==="Part"?"#5b21b6":"#374151";
           const tagBgP  = l => l==="Advance"?"#fffbeb":l==="Final"?"#f0fdf4":l==="Part"?"#f5f3ff":"white";
@@ -2546,7 +2518,17 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
               <td style="color:${dayColor};font-weight:700;vertical-align:top">${days}d</td>
               <td style="font-weight:700;vertical-align:top">${s.customer||"—"}</td>
               <td style="vertical-align:top">${s.phone||s.contact||"—"}</td>
-              <td style="vertical-align:top">${s.item||"—"}</td>
+              <td style="vertical-align:top">${s._grouped
+                ? `<span style="background:#e0e7ff;color:#4338ca;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:700">🔗 ${s._linkedCount} linked</span>`
+                  + `<div style="margin-top:4px">` + (s._grp||[]).map(x=>`<div style="font-size:11px;margin-bottom:2px">• ${x.item||"—"}</div>`).join("") + `</div>`
+                  + (()=>{
+                      const addrs = Array.from(new Set((s._grp||[]).map(x=>(x.address||"").trim()).filter(Boolean)));
+                      const rmks = Array.from(new Set((s._grp||[]).map(x=>(x.remarks||"").trim()).filter(Boolean)));
+                      return (addrs.length>0?`<div style="font-size:10px;color:#94a3b8;margin-top:3px">📍 ${addrs.join(" / ")}</div>`:"")
+                        + (rmks.length>0?`<div style="font-size:10px;color:#94a3b8;margin-top:2px;font-style:italic">📝 ${rmks.join(" / ")}</div>`:"");
+                    })()
+                : (s.item||"—")
+              }</td>
               ${amountCell}
               <td style="vertical-align:top"><span style="background:#fef9c3;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">${s.ful||s.status||"—"}</span></td>
               ${rptUnit==="ALL"?`<td style="vertical-align:top">${isCross?`<span style="color:#c2410c;font-weight:700">⚠ ${dispFrom}</span>`:`<span style="color:#64748b">${dispFrom}</span>`}</td>`:""}
@@ -2691,7 +2673,28 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                         </td>
                         <td style={{padding:"11px 16px",fontWeight:700,color:"#0f172a"}}>{s.customer||"—"}</td>
                         <td style={{padding:"11px 16px",fontFamily:"DM Mono,monospace",fontSize:12,color:"#64748b"}}>{s.phone||s.contact||"—"}</td>
-                        <td style={{padding:"11px 16px",color:"#374151",maxWidth:180,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.item||"—"}</td>
+                        <td style={{padding:"11px 16px",color:"#374151",maxWidth:240,...(s._grouped?{}:{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"})}}>
+                          {s._grouped ? (
+                            <div>
+                              <span style={{fontSize:9,fontWeight:800,padding:"1px 6px",borderRadius:999,background:"#e0e7ff",color:"#4338ca",whiteSpace:"nowrap"}}>
+                                🔗 {s._linkedCount} linked
+                              </span>
+                              <div style={{marginTop:4}}>
+                                {(s._grp||[]).map(x=>(
+                                  <div key={x.id} style={{fontSize:11,marginBottom:2}}>• {x.item||"—"}</div>
+                                ))}
+                              </div>
+                              {(() => {
+                                const addrs = Array.from(new Set((s._grp||[]).map(x=>(x.address||"").trim()).filter(Boolean)));
+                                const rmks = Array.from(new Set((s._grp||[]).map(x=>(x.remarks||"").trim()).filter(Boolean)));
+                                return (<>
+                                  {addrs.length>0 && <div style={{fontSize:10,color:"#94a3b8",marginTop:3}}>📍 {addrs.join(" / ")}</div>}
+                                  {rmks.length>0 && <div style={{fontSize:10,color:"#94a3b8",marginTop:2,fontStyle:"italic"}}>📝 {rmks.join(" / ")}</div>}
+                                </>);
+                              })()}
+                            </div>
+                          ) : (s.item||"—")}
+                        </td>
                         {rptUnit!=="India-Unit1"&&(
                           <td style={{padding:"11px 16px",textAlign:"right",verticalAlign:"top"}}>
                             {s._grouped ? (() => {
@@ -2700,8 +2703,8 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                               const totalPaid = grp.reduce((a,x)=>a+(Number(x.amount)||0),0);
                               const balance = expTotal>0?expTotal-totalPaid:null;
                               const tagLbl = x => {
-                                const t=(x.tag||"").split(",").map(t=>t.trim());
-                                return t.includes("Advance Sale")?"Advance":t.includes("Final Payment Sale")?"Final":t.includes("Part Payment")?"Part":"Pmt";
+                                const t=instalmentTagType(x);
+                                return t==="advance"?"Advance":t==="final"?"Final":t==="part"?"Part":"Pmt";
                               };
                               const col = l => l==="Advance"?"#92400e":l==="Final"?"#166534":"#5b21b6";
                               const bg  = l => l==="Advance"?"#fffbeb":l==="Final"?"#f0fdf4":"#f5f3ff";
@@ -2848,6 +2851,12 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                       <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
                         {gs.pay || "—"} · {gs.ful || gs.status || "—"}
                       </div>
+                      {gs.address && gs.address.trim() && (
+                        <div style={{ fontSize: 11, color: "#64748b", marginTop: 3 }}>📍 {gs.address}</div>
+                      )}
+                      {gs.remarks && gs.remarks.trim() && (
+                        <div style={{ fontSize: 11, color: "#64748b", marginTop: 2, fontStyle: "italic" }}>📝 {gs.remarks}</div>
+                      )}
                     </div>
                     <div style={{ fontWeight: 800, fontSize: 14, color: "#0f172a", whiteSpace: "nowrap" }}>
                       {fmt ? fmt(shopId, Number(gs.amount) || 0) : gs.amount}
