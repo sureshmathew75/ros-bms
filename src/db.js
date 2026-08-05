@@ -81,6 +81,7 @@ export const dbSaveSale = async (shopId, sale) => {
     sortpos:             sale.sortpos !== undefined && sale.sortpos !== null ? Number(sale.sortpos) : null,
     payment_type:        sale.paymentType || 'FULL',
     manual_link_group:   sale.manualLinkGroup || null,
+    shopify_order_id:    sale.shopifyOrderId || null,
   };
 
   const payload = { ...core, ...extended, verified: sale.verified || false };
@@ -195,6 +196,7 @@ export const dbLoadSales = async (shopId) => {
     sortpos:       r.sortpos !== undefined && r.sortpos !== null ? Number(r.sortpos) : null,
     paymentType:   r.payment_type || 'FULL',
     manualLinkGroup: r.manual_link_group || null,
+    shopifyOrderId: r.shopify_order_id || null,
   }));
   return mapped.sort((a, b) => parseDateMs(b.date) - parseDateMs(a.date));
 };

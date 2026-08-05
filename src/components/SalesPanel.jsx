@@ -1161,6 +1161,17 @@ ${signOff} 💜`;
             }}>
             ⬆ Export
           </button>
+          {shopId === "ros-selections" && !isStaff && (
+            <button onClick={() => setModal("import-shopify")}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "8px 14px", borderRadius: 9, border: "1px solid #bbf7d0",
+                background: "#f0fdf4", color: "#166534", fontWeight: 700, fontSize: 13,
+                cursor: "pointer", fontFamily: "inherit",
+              }}>
+              🛍️ Import from Shopify
+            </button>
+          )}
           {onReload && (
             <button onClick={async () => { setReloading(true); await onReload(); setReloading(false); }}
               disabled={reloading}
