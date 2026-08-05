@@ -8578,7 +8578,9 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
   });
 
   const handleImport = async () => {
-    const chosen = orders.filter(o => selected.has(o.shopifyOrderId));
+    const chosen = orders
+      .filter(o => selected.has(o.shopifyOrderId))
+      .sort((a,b) => (a.date||"").localeCompare(b.date||"") || (Number(a.shopifyOrderId)||0) - (Number(b.shopifyOrderId)||0));
     if (chosen.length === 0) return;
     setImporting(true);
 
