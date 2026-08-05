@@ -7075,6 +7075,29 @@ return(
         </Modal>
       )}
 
+      {/* ── IMPORT MODAL — SHOPIFY ── */}
+      {modal==="import-shopify"&&user?.role!=="staff"&&(
+        <Modal title="🛍️ Import from Shopify" onClose={()=>setModal(null)} accent={shop.accent}>
+          <ShopifyImportPanel
+            shopId={shopId} shop={shop} existingSales={sales} onClose={()=>setModal(null)}
+            onImport={async (rows)=>{
+              if(rows.length===0){setModal(null);return;}
+              setSalesData(prev=>{
+                const existingMap=new Map((prev[shopId]||[]).map(s=>[s.id,s]));
+                rows.forEach(r=>existingMap.set(r.id,r));
+                return {...prev,[shopId]:[...rows,...(prev[shopId]||[])]};
+              });
+              setModal(null);
+              const BATCH=50;
+              for(let i=0;i<rows.length;i+=BATCH){
+                const batch=rows.slice(i,i+BATCH);
+                await Promise.all(batch.map(sale=>dbSaveSale(shopId,sale).catch(e=>console.error("Shopify import save failed:",sale.id,e))));
+              }
+            }}
+          />
+        </Modal>
+      )}
+
       {/* ── EXPORT MODAL — SALES ── */}
       {modal==="export-sales"&&user?.role!=="staff"&&(
         <Modal title="⬆ Export Sales" onClose={()=>{setModal(null);setExportRows(null);}} accent={shop.accent}>
@@ -8499,6 +8522,157 @@ return(
 /* ══════════════════════════════════════════════════════
    IMPORT / EXPORT PANEL
 ══════════════════════════════════════════════════════ */
+/* ── ShopifyImportPanel: fetches paid Shopify orders via the secure
+   serverless endpoint, previews them, and lets the user pick which to
+   import as new Pending sales. Already-imported orders (matched by
+   shopify_order_id) are automatically excluded. ─────────────────────── */
+const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) => {
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState("");
+  const [orders, setOrders] = React.useState([]);
+  const [selected, setSelected] = React.useState(new Set());
+  const [days, setDays] = React.useState(30);
+  const [importing, setImporting] = React.useState(false);
+
+  const importedIds = React.useMemo(
+    () => new Set((existingSales||[]).map(s=>s.shopifyOrderId).filter(Boolean)),
+    [existingSales]
+  );
+
+  const fetchOrders = React.useCallback(async () => {
+    setLoading(true); setError("");
+    try {
+      const res = await fetch(`/api/shopify-orders?days=${days}`);
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || "Failed to fetch orders."); setOrders([]); }
+      else {
+        const fresh = (data.orders||[]).filter(o => !importedIds.has(o.shopifyOrderId));
+        setOrders(fresh);
+        setSelected(new Set(fresh.map(o=>o.shopifyOrderId)));
+      }
+    } catch (e) {
+      setError("Couldn't reach the import service: " + e.message);
+    } finally { setLoading(false); }
+  }, [days, importedIds]);
+
+  React.useEffect(() => { fetchOrders(); }, []); // eslint-disable-line
+
+  const toggle = (id) => setSelected(prev => {
+    const next = new Set(prev);
+    next.has(id) ? next.delete(id) : next.add(id);
+    return next;
+  });
+
+  const handleImport = async () => {
+    const chosen = orders.filter(o => selected.has(o.shopifyOrderId));
+    if (chosen.length === 0) return;
+    setImporting(true);
+    const pfx = shopId==="ros-hairlines" ? "SH" : "SI";
+    const rows = chosen.map((order, i) => {
+      const saleLines = order.items.map((it,li)=>({id:`L${li}`,name:it.name,qty:String(it.qty),price:String(it.price)}));
+      const displayItem = order.items.map(it=>it.name).join(", ") || "Shopify Order";
+      const encodedItem = saleLines.length>0 ? `__LINES__:${JSON.stringify(saleLines)}\n${displayItem}` : displayItem;
+      return {
+        id: `${pfx}-SHOPIFY-${(order.orderNumber||"").replace(/[^0-9]/g,"")||Date.now().toString().slice(-6)+i}`,
+        date: order.date,
+        customer: order.customer,
+        contact: order.phone,
+        phone: order.phone,
+        address: order.address,
+        qty: String(order.items.reduce((a,x)=>a+(x.qty||1),0))||"1",
+        item: encodedItem,
+        saleLines,
+        amount: order.amount,
+        ful: "PENDING",
+        status: "PENDING",
+        pay: "SHOPIFY",
+        payBy: "SHOPIFY",
+        paymentType: "FULL",
+        tag: "Shopify Import",
+        rem: `Imported from Shopify order ${order.orderNumber}`,
+        shopifyOrderId: order.shopifyOrderId,
+        taxRate: 0,
+        taxInclusive: true,
+      };
+    });
+    await onImport(rows);
+    setImporting(false);
+  };
+
+  return (
+    <div>
+      <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:14 }}>
+        <label style={{ fontSize:12, fontWeight:700, color:"#374151" }}>Look back</label>
+        <select value={days} onChange={e=>setDays(Number(e.target.value))}
+          style={{ padding:"6px 10px", borderRadius:8, border:"1px solid #e2e8f0", fontSize:12, fontFamily:"inherit" }}>
+          <option value={7}>7 days</option>
+          <option value={30}>30 days</option>
+          <option value={60}>60 days</option>
+          <option value={90}>90 days</option>
+        </select>
+        <button onClick={fetchOrders} disabled={loading}
+          style={{ padding:"6px 12px", borderRadius:8, border:"1px solid #e2e8f0", background:"white", fontSize:12, fontWeight:700, cursor:loading?"default":"pointer", fontFamily:"inherit" }}>
+          {loading?"Fetching…":"🔄 Refresh"}
+        </button>
+      </div>
+
+      {error && (
+        <div style={{ background:"#fef2f2", border:"1px solid #fecaca", borderRadius:10, padding:"12px 14px", marginBottom:14, fontSize:13, color:"#991b1b" }}>
+          ⚠️ {error}
+          {error.includes("not configured") && (
+            <div style={{ marginTop:6, fontSize:12 }}>Add <code>SHOPIFY_STORE_DOMAIN</code>, <code>SHOPIFY_CLIENT_ID</code>, and <code>SHOPIFY_CLIENT_SECRET</code> as environment variables in your Vercel project settings, then redeploy.</div>
+          )}
+        </div>
+      )}
+
+      {!loading && !error && orders.length===0 && (
+        <div style={{ textAlign:"center", padding:"30px 0", color:"#94a3b8", fontSize:13 }}>
+          No new paid orders found in the last {days} days — either there aren't any, or they've already been imported.
+        </div>
+      )}
+
+      {orders.length>0 && (
+        <>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+            <span style={{ fontSize:12, color:"#64748b" }}>{orders.length} new order{orders.length!==1?"s":""} found</span>
+            <button onClick={()=>setSelected(selected.size===orders.length?new Set():new Set(orders.map(o=>o.shopifyOrderId)))}
+              style={{ fontSize:11, fontWeight:700, color:shop.accent, background:"none", border:"none", cursor:"pointer" }}>
+              {selected.size===orders.length?"Deselect All":"Select All"}
+            </button>
+          </div>
+          <div style={{ maxHeight:340, overflowY:"auto", display:"flex", flexDirection:"column", gap:8, marginBottom:16 }}>
+            {orders.map(o => (
+              <label key={o.shopifyOrderId} style={{ display:"flex", gap:10, alignItems:"flex-start", padding:"10px 12px", borderRadius:10, border:"1px solid #e2e8f0", cursor:"pointer", background:selected.has(o.shopifyOrderId)?"#f0fdf4":"white" }}>
+                <input type="checkbox" checked={selected.has(o.shopifyOrderId)} onChange={()=>toggle(o.shopifyOrderId)} style={{ marginTop:3 }}/>
+                <div style={{ flex:1, minWidth:0 }}>
+                  <div style={{ display:"flex", justifyContent:"space-between" }}>
+                    <span style={{ fontWeight:700, fontSize:13, color:"#0f172a" }}>{o.customer}</span>
+                    <span style={{ fontWeight:800, fontSize:13, color:"#0f172a" }}>£{o.amount.toFixed(2)}</span>
+                  </div>
+                  <div style={{ fontSize:11, color:"#64748b" }}>{o.orderNumber} · {o.date} · {o.phone||"no phone"}</div>
+                  <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>{o.items.map(it=>`${it.name} ×${it.qty}`).join(", ")}</div>
+                  {o.address && <div style={{ fontSize:10, color:"#94a3b8", marginTop:2 }}>📍 {o.address}</div>}
+                </div>
+              </label>
+            ))}
+          </div>
+        </>
+      )}
+
+      <div style={{ display:"flex", gap:10 }}>
+        <button onClick={onClose}
+          style={{ flex:1, padding:"11px 0", borderRadius:10, border:"1px solid #e2e8f0", background:"white", color:"#374151", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+          Cancel
+        </button>
+        <button onClick={handleImport} disabled={importing||selected.size===0}
+          style={{ flex:1, padding:"11px 0", borderRadius:10, border:"none", background:shop.accent, color:"white", fontWeight:700, fontSize:13, cursor:(importing||selected.size===0)?"default":"pointer", fontFamily:"inherit", opacity:(importing||selected.size===0)?0.6:1 }}>
+          {importing?"Importing…":`Import Selected (${selected.size})`}
+        </button>
+      </div>
+    </div>
+  );
+};
+
 const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
   const [dragOver,setDragOver]=useState(false);
   const [fileName,setFileName]=useState(null);
@@ -9724,7 +9898,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
   const isExchanged=form.status==="EXCHANGED";
   const isRefunded=form.status==="REFUNDED";
   const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN RQSTD":"#c2410c","RETURN RCVD":"#991b1b","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","GOOD FEEDBACK RCVD":"#065f46","NEGATIVE FEEDBACK RCVD":"#9f1239"};
-  const PAY_OPTS = shopId==="ros-india" ? ["SIB","HDFC","SHOP"] : ["SHOP","BANK","EXCHANGE","GIFT","PROMOTION"];
+  const PAY_OPTS = shopId==="ros-india" ? ["SIB","HDFC","SHOP"] : ["SHOP","BANK","EXCHANGE","GIFT","PROMOTION","SHOPIFY"];
 
   const [editCustOpen,setEditCustOpen]=useState(false);
   const [invoiceEditing,setInvoiceEditing]=useState(false);
@@ -11002,7 +11176,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const rosieFieldRefs=useRef({});
   const [paymentTypeAcked,setPaymentTypeAcked]=useState(false);
   const defaultPay = shopId === "ros-india" ? "SIB" : "SHOP";
-  const PAY_OPTIONS = shopId === "ros-india" ? ["SIB","HDFC","SHOP"] : ["BANK","SHOP","EXCHANGE","GIFT","PROMOTION"];
+  const PAY_OPTIONS = shopId === "ros-india" ? ["SIB","HDFC","SHOP"] : ["BANK","SHOP","EXCHANGE","GIFT","PROMOTION","SHOPIFY"];
   const _now=new Date();
   const _yr=_now.getMonth()>=3?_now.getFullYear():_now.getFullYear()-1;
   // India uses 2-digit suffix (e.g. 27 for FY 2026-27), UK uses 1-digit
