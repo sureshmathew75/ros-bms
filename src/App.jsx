@@ -8534,8 +8534,15 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
   const [days, setDays] = React.useState(30);
   const [importing, setImporting] = React.useState(false);
 
-  const importedIds = React.useMemo(
+  // Two ways a Shopify order can already be "in" ros-bms: imported through
+  // this button (has shopifyOrderId set), or manually entered beforehand
+  // with the Shopify order number noted in Shop Invoice No.
+  const importedShopifyIds = React.useMemo(
     () => new Set((existingSales||[]).map(s=>s.shopifyOrderId).filter(Boolean)),
+    [existingSales]
+  );
+  const importedOrderNos = React.useMemo(
+    () => new Set((existingSales||[]).map(s=>(s.shopInvoiceNo||"").replace(/^#/,"").trim()).filter(Boolean)),
     [existingSales]
   );
 
@@ -8546,14 +8553,17 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Failed to fetch orders."); setOrders([]); }
       else {
-        const fresh = (data.orders||[]).filter(o => !importedIds.has(o.shopifyOrderId));
+        const fresh = (data.orders||[]).filter(o => {
+          const orderNo = (o.orderNumber||"").replace(/^#/,"").trim();
+          return !importedShopifyIds.has(o.shopifyOrderId) && !importedOrderNos.has(orderNo);
+        });
         setOrders(fresh);
         setSelected(new Set(fresh.map(o=>o.shopifyOrderId)));
       }
     } catch (e) {
       setError("Couldn't reach the import service: " + e.message);
     } finally { setLoading(false); }
-  }, [days, importedIds]);
+  }, [days, importedShopifyIds, importedOrderNos]);
 
   React.useEffect(() => { fetchOrders(); }, []); // eslint-disable-line
 
