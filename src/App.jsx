@@ -8536,13 +8536,17 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
 
   // Two ways a Shopify order can already be "in" ros-bms: imported through
   // this button (has shopifyOrderId set), or manually entered beforehand
-  // with the Shopify order number noted in Shop Invoice No.
+  // with the Shopify order number noted in Shop Invoice No. — compared as
+  // digits-only, since Shopify's order name may have a custom prefix
+  // (e.g. "#ROS4875") while what was typed in by hand may just be the
+  // plain number.
+  const normalizeOrderNo = (s) => (s||"").replace(/[^0-9]/g,"");
   const importedShopifyIds = React.useMemo(
     () => new Set((existingSales||[]).map(s=>s.shopifyOrderId).filter(Boolean)),
     [existingSales]
   );
   const importedOrderNos = React.useMemo(
-    () => new Set((existingSales||[]).map(s=>(s.shopInvoiceNo||"").replace(/^#/,"").trim()).filter(Boolean)),
+    () => new Set((existingSales||[]).map(s=>normalizeOrderNo(s.shopInvoiceNo)).filter(Boolean)),
     [existingSales]
   );
 
@@ -8554,7 +8558,7 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
       if (!res.ok) { setError(data.error || "Failed to fetch orders."); setOrders([]); }
       else {
         const fresh = (data.orders||[]).filter(o => {
-          const orderNo = (o.orderNumber||"").replace(/^#/,"").trim();
+          const orderNo = normalizeOrderNo(o.orderNumber);
           return !importedShopifyIds.has(o.shopifyOrderId) && !importedOrderNos.has(orderNo);
         });
         setOrders(fresh);
@@ -8615,7 +8619,7 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
         status: "PENDING",
         pay: "SHOPIFY",
         payBy: "SHOPIFY",
-        shopInvoiceNo: (order.orderNumber||"").replace(/^#/,""),
+        shopInvoiceNo: normalizeOrderNo(order.orderNumber),
         paymentType: "FULL",
         tag: "Shopify Import",
         rem: `Imported from Shopify order ${order.orderNumber}`,
