@@ -8567,13 +8567,31 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
     const chosen = orders.filter(o => selected.has(o.shopifyOrderId));
     if (chosen.length === 0) return;
     setImporting(true);
-    const pfx = shopId==="ros-hairlines" ? "SH" : "SI";
-    const rows = chosen.map((order, i) => {
+
+    // Sequential invoice numbers matching the same scheme New Sale uses
+    // (ROS#### + FY digit), so imported orders slot into the normal
+    // numbering series instead of a separate Shopify-prefixed one.
+    const _now = new Date();
+    const _yr = _now.getMonth() >= 3 ? _now.getFullYear() : _now.getFullYear() - 1;
+    const _fySuffix = String(_yr + 1).slice(-1);
+    const localNum = (() => {
+      try { const v = localStorage.getItem("ros_lastInv_" + shopId); return v ? parseInt(v) || 1312 : 1312; }
+      catch { return 1312; }
+    })();
+    const salesNum = (existingSales || []).reduce((max, s) => {
+      const m = (s.id || "").match(/^ROS(\d{4})\d$/);
+      return m ? Math.max(max, parseInt(m[1])) : max;
+    }, 1312);
+    let nextNum = Math.max(localNum, salesNum);
+
+    const rows = chosen.map((order) => {
+      nextNum += 1;
+      const invoiceId = `ROS${String(nextNum).padStart(4, "0")}${_fySuffix}`;
       const saleLines = order.items.map((it,li)=>({id:`L${li}`,name:it.name,qty:String(it.qty),price:String(it.price)}));
       const displayItem = order.items.map(it=>it.name).join(", ") || "Shopify Order";
       const encodedItem = saleLines.length>0 ? `__LINES__:${JSON.stringify(saleLines)}\n${displayItem}` : displayItem;
       return {
-        id: `${pfx}-SHOPIFY-${(order.orderNumber||"").replace(/[^0-9]/g,"")||Date.now().toString().slice(-6)+i}`,
+        id: invoiceId,
         date: order.date,
         customer: order.customer,
         contact: order.phone,
@@ -8587,6 +8605,7 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
         status: "PENDING",
         pay: "SHOPIFY",
         payBy: "SHOPIFY",
+        shopInvoiceNo: (order.orderNumber||"").replace(/^#/,""),
         paymentType: "FULL",
         tag: "Shopify Import",
         rem: `Imported from Shopify order ${order.orderNumber}`,
@@ -8595,6 +8614,7 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
         taxInclusive: true,
       };
     });
+    try { localStorage.setItem("ros_lastInv_" + shopId, String(nextNum)); } catch {}
     await onImport(rows);
     setImporting(false);
   };
@@ -10189,12 +10209,12 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
       </div>
       </>}
       <Divider title="Payment"/>
-      <div style={{display:"grid",gridTemplateColumns:form.payBy==="SHOP"?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
+      <div style={{display:"grid",gridTemplateColumns:(form.payBy==="SHOP"||form.payBy==="SHOPIFY")?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
         <div><label style={lbl}>Payment By</label>
           <select ref={el=>{rosieFieldRefs.current.payBy=el;}} value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
             {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
           </select></div>
-        {form.payBy==="SHOP"&&(<div><label style={lbl}>Shop Invoice No.</label>
+        {(form.payBy==="SHOP"||form.payBy==="SHOPIFY")&&(<div><label style={lbl}>{form.payBy==="SHOPIFY"?"Shopify Order No.":"Shop Invoice No."}</label>
           <input value={form.shopInvoiceNo||""} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/>
         </div>)}
       </div>
@@ -11441,8 +11461,8 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🚚 Payment & Delivery</p>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
                 <div><label style={lbl}>Payment By</label><select ref={el=>{rosieFieldRefs.current.payBy=el;}} value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{PAY_OPTIONS.map(o=><option key={o}>{o}</option>)}</select></div>
-                {form.payBy==="SHOP" ? (
-                  <div><label style={lbl}>Shop Invoice No.</label><input value={form.shopInvoiceNo} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/></div>
+                {(form.payBy==="SHOP"||form.payBy==="SHOPIFY") ? (
+                  <div><label style={lbl}>{form.payBy==="SHOPIFY"?"Shopify Order No.":"Shop Invoice No."}</label><input value={form.shopInvoiceNo} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/></div>
                 ) : shopId==="ros-india" ? (
                   <div><label style={lbl}>Dispatch Unit</label>
                     <select value={form.dispatchFrom} onChange={e=>set("dispatchFrom",e.target.value)} style={inp}>
