@@ -28,7 +28,12 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadExpenseCategories, dbSaveExpenseCategory, dbDeleteExpenseCategory,
   dbLoadHistoricalData, dbSaveHistoricalRecord, dbDeleteHistoricalRecord, dbImportHistoricalCSV,
   dbLoadRosieTasks, dbSaveRosieTask, dbDeleteRosieTask, dbMarkRosieTaskDone,
-  dbLoadRosieSettings, dbSaveRosieSettings } from "./db";
+  dbLoadRosieSettings, dbSaveRosieSettings,
+  dbLoadDismissedShopifyOrders, dbDismissShopifyOrders,
+  dbLoadAuditDismissals, dbDismissAuditFinding,
+  dbLoadAttendanceRecords, dbClockIn, dbClockOut, dbSetAttendanceRecord,
+  dbLoadAttendanceHolidays, dbAddAttendanceHoliday, dbRemoveAttendanceHoliday,
+  dbLoadInventoryItems, dbAddInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -380,6 +385,112 @@ const getGroupBalanceInfo=(groupIds,allSales)=>{
   return {expectedTotal,received,balance:expectedTotal-received};
 };
 
+const SHOP_LABELS={"ros-selections":"ROS Selections","ros-hairlines":"ROS Hairlines","ros-india":"ROS India"};
+
+/* ── runAudit: scans every sale in every shop for the five agreed
+   categories of issues. Read-only — never modifies anything, just
+   reports. Returns one flat array of findings, each tagged with which
+   category it belongs to so the UI can group and count them. ────────── */
+const runAudit=(salesData)=>{
+  const findings=[];
+  const push=(category,severity,shopId,saleId,customer,detail)=>{
+    const key=`${category}__${shopId}__${saleId}`;
+    findings.push({key,category,severity,shopId,saleId,customer,detail});
+  };
+
+  Object.keys(salesData||{}).forEach(shopId=>{
+    const sales=salesData[shopId]||[];
+    const seenGroups=new Set();
+
+    sales.forEach(s=>{
+      const status=(s.ful||s.status||"").toUpperCase();
+      const dispatched=status!=="PENDING";
+      const pt=inferPaymentType(s);
+      const ageDays=Math.floor((Date.now()-new Date(s.date).getTime())/86400000);
+
+      // 1. Payment integrity — dispatched without full payment
+      if(dispatched){
+        const groupIds=findInstalmentGroupIds(s,sales);
+        const groupKey=groupIds.slice().sort().join("_");
+        if(groupIds.length>1 && !seenGroups.has(groupKey)){
+          seenGroups.add(groupKey);
+          const bal=getGroupBalanceInfo(groupIds,sales);
+          if(bal && bal.balance>0){
+            push("payment","high",shopId,s.id,s.customer,
+              `Dispatched with ${fmt(shopId,bal.balance)} still unpaid (expected ${fmt(shopId,bal.expectedTotal)}, received ${fmt(shopId,bal.received)})`);
+          }
+        }
+      }
+
+      // 2. Broken links — orphaned Advance/Part (30+ days) or orphaned Final (any age)
+      if(pt==="ADVANCE"||pt==="PART"){
+        const groupIds=findInstalmentGroupIds(s,sales);
+        const group=sales.filter(x=>groupIds.includes(x.id));
+        const hasFinal=group.some(x=>inferPaymentType(x)==="FINAL");
+        if(!hasFinal && ageDays>=30){
+          push("links","medium",shopId,s.id,s.customer,
+            `${pt==="ADVANCE"?"Advance":"Part"} payment from ${ageDays} days ago with no closing payment yet`);
+        }
+      }
+      if(pt==="FINAL"){
+        const groupIds=findInstalmentGroupIds(s,sales);
+        if(groupIds.length<2){
+          push("links","medium",shopId,s.id,s.customer,
+            `Marked as Final payment but no matching Advance/Part payment found`);
+        }
+      }
+
+      // 3. Incomplete records
+      const missing=[];
+      if(!(s.phone||s.contact||"").trim()) missing.push("phone number");
+      if(!(s.address||"").trim()) missing.push("address");
+      if(!(s.item||"").trim()) missing.push("item");
+      if(!(Number(s.amount)>0)) missing.push("amount");
+      if(missing.length>0){
+        push("incomplete","medium",shopId,s.id,s.customer,`Missing: ${missing.join(", ")}`);
+      }
+      if(dispatched && !(s.trackingNo||"").trim()){
+        push("incomplete","low",shopId,s.id,s.customer,`Dispatched with no tracking number on file`);
+      }
+    });
+
+    // 4. Suspected duplicates — same customer + amount + date
+    const seenCombos={};
+    sales.forEach(s=>{
+      const key=`${(s.customer||"").toLowerCase().trim()}__${Number(s.amount)||0}__${s.date}`;
+      if(!key.trim() || key.startsWith("__")) return;
+      (seenCombos[key]=seenCombos[key]||[]).push(s);
+    });
+    Object.values(seenCombos).forEach(group=>{
+      if(group.length>1){
+        push("duplicates","medium",shopId,group.map(s=>s.id).join(", "),group[0].customer,
+          `${group.length} sales with the same customer, amount, and date — possible duplicate entry`);
+      }
+    });
+
+    // 5. Manual link consistency — linked sales with mismatched customer names
+    const byManualLink={};
+    sales.forEach(s=>{ if(s.manualLinkGroup) (byManualLink[s.manualLinkGroup]=byManualLink[s.manualLinkGroup]||[]).push(s); });
+    Object.values(byManualLink).forEach(group=>{
+      const names=new Set(group.map(s=>(s.customer||"").toLowerCase().trim()));
+      if(names.size>1){
+        push("consistency","high",shopId,group.map(s=>s.id).join(", "),group.map(s=>s.customer).join(" / "),
+          `Manually linked sales have different customer names — please verify this link is correct`);
+      }
+    });
+  });
+
+  return findings;
+};
+
+const AUDIT_CATEGORIES=[
+  {key:"payment",    label:"Payment Integrity",  icon:"💰", desc:"Dispatched before full payment was received"},
+  {key:"links",      label:"Broken Links",       icon:"🔗", desc:"Advance/Part/Final payments that don't properly connect"},
+  {key:"incomplete", label:"Incomplete Records", icon:"📋", desc:"Missing key details like phone, address, item, or tracking"},
+  {key:"duplicates", label:"Suspected Duplicates",icon:"⚠️", desc:"Same customer, amount, and date entered more than once"},
+  {key:"consistency",label:"Data Consistency",   icon:"🔍", desc:"Manually linked sales that don't fully match up"},
+];
+
 /* ── getSaleFY: returns FY start year for a sale using invoice suffix as ground truth ── */
 const getSaleFY=(sale)=>{
   const id=String(sale.id||"");
@@ -436,10 +547,159 @@ const calcShopStats=(data=[])=>{
 /* ════════════════════════════════════════════════════
    SHOP SELECTOR
 ════════════════════════════════════════════════════ */
+/* ── AuditPanel: read-only cross-shop integrity scan. Suresh-only. Never
+   writes anything — every finding links back to the actual sale so a
+   human decides how to fix it. ────────────────────────────────────────── */
+const AuditPanel = ({ salesData, onClose, onGoToShop }) => {
+  const [results, setResults] = React.useState(null);
+  const [running, setRunning] = React.useState(false);
+  const [expanded, setExpanded] = React.useState(null);
+  const [dismissedKeys, setDismissedKeys] = React.useState(new Set());
+
+  const runNow = () => {
+    setRunning(true);
+    Promise.all([
+      new Promise(res => setTimeout(res, 300)), // small delay so the "scanning" state actually registers
+      dbLoadAuditDismissals(),
+    ]).then(([, dismissed]) => {
+      const dismissedSet = new Set(dismissed);
+      setDismissedKeys(dismissedSet);
+      const findings = runAudit(salesData).filter(f => !dismissedSet.has(f.key));
+      setResults(findings);
+      setRunning(false);
+      setExpanded(null);
+    });
+  };
+
+  const dismissFinding = async (key) => {
+    setResults(prev => (prev||[]).filter(f => f.key !== key));
+    setDismissedKeys(prev => new Set([...prev, key]));
+    await dbDismissAuditFinding(key);
+  };
+
+  React.useEffect(() => { runNow(); }, []); // eslint-disable-line
+
+  const counts = React.useMemo(() => {
+    const c = {};
+    AUDIT_CATEGORIES.forEach(cat => { c[cat.key] = (results||[]).filter(f=>f.category===cat.key).length; });
+    return c;
+  }, [results]);
+  const totalFindings = (results||[]).length;
+  const mood = totalFindings===0 ? "clear" : totalFindings>10 ? "alert" : "neutral";
+
+  const handlePrint = () => {
+    const w = window.open("", "_blank");
+    const rows = (results||[]).map(f => `
+      <tr>
+        <td>${SHOP_LABELS[f.shopId]||f.shopId}</td>
+        <td>${AUDIT_CATEGORIES.find(c=>c.key===f.category)?.label||f.category}</td>
+        <td>${f.saleId}</td>
+        <td>${f.customer||"—"}</td>
+        <td>${f.detail}</td>
+      </tr>`).join("");
+    w.document.write(`<!DOCTYPE html><html><head><title>Audit Findings — ${new Date().toLocaleDateString("en-GB")}</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:24px;color:#0f172a;}
+        h1{font-size:18px;margin-bottom:4px;} p{color:#64748b;font-size:12px;margin-top:0;}
+        table{width:100%;border-collapse:collapse;margin-top:16px;} th,td{border:1px solid #e2e8f0;padding:8px 10px;font-size:11px;text-align:left;}
+        th{background:#f8fafc;text-transform:uppercase;letter-spacing:0.04em;font-size:10px;}
+      </style></head><body>
+      <h1>🕵️ Audit Findings</h1>
+      <p>Generated ${new Date().toLocaleString("en-GB")} · ${totalFindings} finding${totalFindings!==1?"s":""} across all shops</p>
+      <table><thead><tr><th>Shop</th><th>Category</th><th>Invoice</th><th>Customer</th><th>Detail</th></tr></thead><tbody>${rows}</tbody></table>
+      </body></html>`);
+    w.document.close();
+    setTimeout(()=>w.print(), 300);
+  };
+
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:400, background:"rgba(15,23,42,0.6)", display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:"white", borderRadius:20, width:"100%", maxWidth:720, maxHeight:"88vh", display:"flex", flexDirection:"column", boxShadow:"0 30px 80px rgba(0,0,0,0.35)", overflow:"hidden" }}>
+        <div style={{ padding:"20px 24px", borderBottom:"1px solid #f1f5f9", display:"flex", alignItems:"center", gap:16 }}>
+          <Auditor size={44} mood={mood} />
+          <div style={{ flex:1 }}>
+            <div style={{ fontSize:16, fontWeight:800, color:"#0f172a" }}>Audit</div>
+            <div style={{ fontSize:12, color:"#64748b" }}>
+              {running ? "Scanning every sale across all shops…" :
+                totalFindings===0 ? "Everything checks out — no issues found." :
+                `${totalFindings} finding${totalFindings!==1?"s":""} across ${new Set((results||[]).map(f=>f.shopId)).size} shop${new Set((results||[]).map(f=>f.shopId)).size!==1?"s":""}`}
+            </div>
+          </div>
+          <button onClick={runNow} disabled={running}
+            style={{ padding:"8px 14px", borderRadius:9, border:"1px solid #e2e8f0", background:"white", fontWeight:700, fontSize:12, cursor:running?"default":"pointer", fontFamily:"inherit", opacity:running?0.6:1 }}>
+            {running?"Scanning…":"🔄 Re-run"}
+          </button>
+          <button onClick={onClose} style={{ border:"none", background:"transparent", fontSize:20, cursor:"pointer", color:"#94a3b8" }}>✕</button>
+        </div>
+
+        <div style={{ flex:1, overflowY:"auto", padding:"18px 24px" }}>
+          {running ? (
+            <div style={{ textAlign:"center", padding:"60px 0", color:"#94a3b8", fontSize:13 }}>🔍 Checking payments, links, and records…</div>
+          ) : (
+            <>
+              <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:18 }}>
+                {AUDIT_CATEGORIES.map(cat => (
+                  <button key={cat.key} onClick={()=>setExpanded(expanded===cat.key?null:cat.key)}
+                    style={{ textAlign:"left", padding:"12px 14px", borderRadius:12, border:"1.5px solid "+(counts[cat.key]>0?"#fecaca":"#e2e8f0"), background:counts[cat.key]>0?"#fef2f2":"#f8fafc", cursor:"pointer", fontFamily:"inherit" }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                      <span style={{ fontSize:13, fontWeight:700, color:"#0f172a" }}>{cat.icon} {cat.label}</span>
+                      <span style={{ fontSize:14, fontWeight:800, color:counts[cat.key]>0?"#dc2626":"#94a3b8" }}>{counts[cat.key]}</span>
+                    </div>
+                    <div style={{ fontSize:10.5, color:"#94a3b8", marginTop:3 }}>{cat.desc}</div>
+                  </button>
+                ))}
+              </div>
+
+              {expanded && (
+                <div>
+                  <div style={{ fontSize:12, fontWeight:800, color:"#374151", marginBottom:8, textTransform:"uppercase", letterSpacing:"0.05em" }}>
+                    {AUDIT_CATEGORIES.find(c=>c.key===expanded)?.label}
+                  </div>
+                  <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                    {(results||[]).filter(f=>f.category===expanded).map((f,i) => (
+                      <div key={f.key||i}
+                        style={{ padding:"10px 12px", borderRadius:10, border:"1px solid #e2e8f0", background:"white" }}>
+                        <div style={{ display:"flex", justifyContent:"space-between", gap:8, alignItems:"flex-start" }}>
+                          <div onClick={()=>onGoToShop&&onGoToShop(f.shopId)} style={{ cursor:onGoToShop?"pointer":"default", flex:1, minWidth:0 }}>
+                            <div style={{ display:"flex", justifyContent:"space-between", gap:8 }}>
+                              <span style={{ fontSize:12.5, fontWeight:700, color:"#0f172a" }}>{f.customer||"—"} <span style={{color:"#94a3b8",fontWeight:600}}>· {SHOP_LABELS[f.shopId]||f.shopId}</span></span>
+                              <span style={{ fontSize:11, color:"#94a3b8", flexShrink:0 }}>{f.saleId}</span>
+                            </div>
+                            <div style={{ fontSize:11.5, color:"#64748b", marginTop:3 }}>{f.detail}</div>
+                          </div>
+                          <button onClick={(e)=>{ e.stopPropagation(); dismissFinding(f.key); }}
+                            title="I've checked this — it's not an issue"
+                            style={{ flexShrink:0, fontSize:10.5, fontWeight:700, padding:"4px 9px", borderRadius:999, border:"1px solid #e2e8f0", background:"#f8fafc", color:"#64748b", cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
+                            ✕ Not an issue
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        {!running && totalFindings>0 && (
+          <div style={{ padding:"14px 24px", borderTop:"1px solid #f1f5f9" }}>
+            <button onClick={handlePrint}
+              style={{ width:"100%", padding:"11px 0", borderRadius:10, border:"none", background:"#1e293b", color:"white", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+              🖨️ Print Findings
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
   const [hov,setHov]=useState(null);
   const [cmd,setCmd]=useState(false);
   const [statHov,setStatHov]=useState(null);
+  const [showAudit,setShowAudit]=useState(false);
   const [isMobile,setIsMobile]=useState(()=>window.innerWidth<768);
   const shopCardRefs=useRef({});
   // shopStats computed directly from salesData prop
@@ -528,6 +788,15 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
           {!isMobile&&<button onClick={()=>setCmd(true)} style={{display:"flex",alignItems:"center",gap:8,background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"7px 16px",color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
             🔍 Search… <kbd style={{background:"#e2e8f0",borderRadius:4,padding:"1px 7px",fontSize:11,marginLeft:4}}>/</kbd>
           </button>}
+          {user?.id==="suresh"&&(
+            <button onClick={()=>setShowAudit(true)}
+              style={{display:"flex",alignItems:"center",gap:6,padding:isMobile?"7px 10px":"7px 14px",
+                background:"#1e293b",border:"none",
+                borderRadius:10,cursor:"pointer",color:"white",fontSize:12,fontWeight:700,
+                fontFamily:"inherit"}}>
+              🕵️{!isMobile&&" Audit"}
+            </button>
+          )}
           {user?.role==="superadmin"&&(
             <button onClick={onOpenSettings}
               style={{display:"flex",alignItems:"center",gap:6,padding:isMobile?"7px 10px":"7px 14px",
@@ -836,6 +1105,9 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
         })()}
 </main>
 <CommandPalette cmd={cmd} setCmd={setCmd} />
+{showAudit && (
+  <AuditPanel salesData={salesData} onClose={()=>setShowAudit(false)} onGoToShop={(sid)=>{ setShowAudit(false); onSelect(sid); }} />
+)}
 </div>
 );
 };
@@ -1651,7 +1923,7 @@ const ReturnTrackingPortal=()=>{
         setErrorMsg("This return has expired. Please contact us directly for assistance.");
         setLoading(false);return;
       }
-      if(["REFUNDED","EXCHANGED"].includes(data.status)){
+      if(["REFUNDED","EXCHANGED","EXCHANGE_REFUND"].includes(data.status)){
         setErrorMsg("This return has already been completed. No further action is needed.");
         setLoading(false);return;
       }
@@ -1874,6 +2146,8 @@ const RETURN_STATUS_STYLE={
   RETURN_RECEIVED:  {bg:"#fef9c3",border:"#fde047",text:"#854d0e",label:"Received"},
   REFUNDED:         {bg:"#f5f3ff",border:"#c4b5fd",text:"#6d28d9",label:"Refunded"},
   EXCHANGED:        {bg:"#fdf4ff",border:"#e879f9",text:"#a21caf",label:"Exchanged"},
+  EXCHANGE_REFUND:  {bg:"#fff7ed",border:"#fdba74",text:"#9a3412",label:"Refund/Exchange"},
+  RETURN_EXPIRED:   {bg:"#fef2f2",border:"#fca5a5",text:"#991b1b",label:"Expired"},
 };
 
 // WhatsApp message templates
@@ -1961,7 +2235,7 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
   const [waModal,setWaModal]=React.useState(null); // {phone,customerName,message} | null
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const days=daysRemaining(ret.returnDeadline);
-  const isClosed=["REFUNDED","EXCHANGED"].includes(form.status);
+  const isClosed=["REFUNDED","EXCHANGED","EXCHANGE_REFUND"].includes(form.status);
 
   const inp={width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box",background:"white"};
   const lbl={display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
@@ -1978,12 +2252,18 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
     if(newStatus==="RETURN_RECEIVED") updates.receivedDate=today;
     if(newStatus==="REFUNDED") updates.refundDate=today;
     if(newStatus==="EXCHANGED") updates.exchangeDate=today;
+    if(newStatus==="EXCHANGE_REFUND"){ updates.refundDate=today; updates.exchangeDate=today; }
     setSaving(true);
     const updated={...ret,...form,...updates};
-    await dbSaveReturn(updated);
+    const ok=await dbSaveReturn(updated);
+    if(!ok){
+      alert("Couldn't save this — please check your connection and try again. Nothing was updated.");
+      setSaving(false);
+      return;
+    }
     // Sync sale status
     if(onSyncSaleStatus){
-      const saleStatus=newStatus==="RETURN_RECEIVED"?"RETRN RCVD":newStatus==="REFUNDED"?"REFUNDED":newStatus==="EXCHANGED"?"EXCHANGED":null;
+      const saleStatus=newStatus==="RETURN_RECEIVED"?"RETRN RCVD":newStatus==="REFUNDED"?"REFUNDED":(newStatus==="EXCHANGED"||newStatus==="EXCHANGE_REFUND")?"EXCHANGED":null;
       if(saleStatus) await onSyncSaleStatus(ret.saleId,saleStatus);
     }
     setForm(f=>({...f,...updates}));
@@ -1994,7 +2274,12 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
   const handleSave=async()=>{
     if(isClosed)return;
     setSaving(true);
-    await dbSaveReturn({...ret,...form});
+    const ok=await dbSaveReturn({...ret,...form});
+    if(!ok){
+      alert("Couldn't save this — please check your connection and try again. Nothing was updated.");
+      setSaving(false);
+      return;
+    }
     onUpdate({...ret,...form});
     setSaving(false);
     onClose();
@@ -2013,7 +2298,7 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
             <div>
               <p style={{margin:"0 0 2px",fontSize:11,fontWeight:700,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.06em"}}>Return Case</p>
               <h3 style={{margin:"0 0 2px",fontSize:17,fontWeight:900,color:"#0f172a",fontFamily:"DM Mono,monospace"}}>{ret.id}</h3>
-              <p style={{margin:0,fontSize:12,color:"#64748b"}}>{ret.customer} · {ret.phone} · Sale: {ret.saleId}</p>
+              <p style={{margin:0,fontSize:12,color:"#64748b"}}>{ret.customer} · {ret.phone}{ret.item?` · ${ret.item}`:""} · {ret.saleId?`Sale: ${ret.saleId}`:"📥 Manual entry, no linked sale"}</p>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:999,
@@ -2031,7 +2316,7 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
             <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",border:"1px solid #e2e8f0"}}>
               <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>Requested</p>
-              <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ret.resolution==="exchange"?"🔄 Exchange":"💰 Refund"}</p>
+              <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ret.resolution==="exchange"?"🔄 Exchange":ret.resolution==="exchange_refund"?"🔄💰 Refund/Exchange":"💰 Refund"}</p>
             </div>
             {/* Show deadline only for Expecting stage */}
             {(form.status==="RETURN_APPROVED"||form.status==="MSG_SENT"||form.status==="RETURN_IN_TRANSIT")?(
@@ -2236,9 +2521,311 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
   );
 };
 
+/* ── ManualReturnModal: for returns that just show up (customer sent the
+   item back without ever going through the request flow). Logs it
+   directly as RECEIVED, optionally linked to the original sale if found,
+   with a free-text fallback when it isn't. ────────────────────────────── */
+const STOCK_STATUS_OPTIONS=[
+  {key:"in_office",   label:"In Office",    color:"#166534", bg:"#f0fdf4"},
+  {key:"handed_over", label:"Handed Over",  color:"#1d4ed8", bg:"#eff6ff"},
+  {key:"resold",      label:"Resold",       color:"#7c3aed", bg:"#f5f3ff"},
+];
+
+/* ── ReturnedStockList: an excel-style, all-fields-visible table pulling
+   from every return that's actually come back (Received/Exchanged/
+   Refunded/Return-Exchange) — item, refund amount + date, customer,
+   current stock status, and remarks, each editable inline. ──────────── */
+const ReturnedStockList = ({ returns, setReturns, search, sales }) => {
+  const fmtDate=d=>{if(!d)return"—";try{const dt=new Date(d);return `${String(dt.getDate()).padStart(2,"0")}/${String(dt.getMonth()+1).padStart(2,"0")}/${String(dt.getFullYear()).slice(-2)}`;}catch{return d;}};
+  const getSaleDate = (ret) => {
+    if (!ret.saleId) return "";
+    const sale = (sales||[]).find(s => s.id===ret.saleId);
+    return sale?.date || "";
+  };
+  const relevant = (returns||[]).filter(r =>
+    ["RETURN_RECEIVED","EXCHANGED","REFUNDED","EXCHANGE_REFUND"].includes(r.status)
+  );
+  const filtered = search.trim()
+    ? relevant.filter(r => `${r.customer} ${r.item} ${r.id}`.toLowerCase().includes(search.trim().toLowerCase()))
+    : relevant;
+  const sorted = [...filtered].sort((a,b) => (b.receivedDate||b.refundDate||b.exchangeDate||"").localeCompare(a.receivedDate||a.refundDate||a.exchangeDate||""));
+
+  const saveField = async (ret, field, value) => {
+    const updated = { ...ret, [field]: value };
+    setReturns(prev => prev.map(r => r.id===ret.id ? updated : r));
+    await dbSaveReturn(updated);
+  };
+
+  const totalRefunded = sorted.reduce((a,r)=>a+(Number(r.refundAmount)||0),0);
+
+  const handlePrint = () => {
+    const w = window.open("", "_blank");
+    const rows = sorted.map(r => `
+      <tr>
+        <td>${r.refundDate?fmtDate(r.refundDate):"—"}</td>
+        <td>${r.refundAmount?Number(r.refundAmount).toLocaleString("en-IN",{style:"currency",currency:"INR"}):"—"}</td>
+        <td>${(r.customer||"—").toUpperCase()}</td>
+        <td>${(r.item||"—").toUpperCase()}</td>
+        <td>${getSaleDate(r)?fmtDate(getSaleDate(r)):"—"}</td>
+        <td>${STOCK_STATUS_OPTIONS.find(s=>s.key===r.stockStatus)?.label||"In Office"}</td>
+        <td>${r.staffNotes||"—"}</td>
+      </tr>`).join("");
+    w.document.write(`<!DOCTYPE html><html><head><title>Returned Items Stock List</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:24px;color:#0f172a;}
+        h1{font-size:18px;margin-bottom:4px;} p{color:#64748b;font-size:12px;margin-top:0;}
+        table{width:100%;border-collapse:collapse;margin-top:16px;} th,td{border:1px solid #e2e8f0;padding:8px 10px;font-size:11px;text-align:left;}
+        th{background:#f8fafc;text-transform:uppercase;letter-spacing:0.04em;font-size:10px;}
+      </style></head><body>
+      <h1>📦 Returned Items Stock List</h1>
+      <p>Generated ${new Date().toLocaleString("en-GB")} · ${sorted.length} item${sorted.length!==1?"s":""}</p>
+      <table><thead><tr><th>Refunded Date</th><th>Refunded Amount</th><th>Customer</th><th>Item</th><th>Sale Date</th><th>Stock Status</th><th>Remarks</th></tr></thead><tbody>${rows}</tbody></table>
+      </body></html>`);
+    w.document.close();
+    setTimeout(()=>w.print(), 300);
+  };
+
+  const cellStyle={padding:"7px 10px",borderBottom:"1px solid #f1f5f9",fontSize:12};
+  const inputStyle={width:"100%",border:"1px solid transparent",background:"transparent",fontSize:12,fontFamily:"inherit",padding:"4px 6px",borderRadius:6,outline:"none"};
+
+  return (
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+        <div style={{fontSize:12,color:"#64748b"}}>{sorted.length} returned item{sorted.length!==1?"s":""} · Total refunded: <strong style={{color:"#0f172a"}}>₹{totalRefunded.toLocaleString("en-IN")}</strong></div>
+        <button onClick={handlePrint}
+          style={{padding:"7px 14px",borderRadius:9,border:"none",background:"#1e293b",color:"white",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+          🖨️ Print / Export
+        </button>
+      </div>
+      <div style={{overflowX:"auto",border:"1px solid #e2e8f0",borderRadius:12,background:"white"}}>
+        <table style={{width:"100%",borderCollapse:"collapse",minWidth:900}}>
+          <thead>
+            <tr style={{background:"#f8fafc"}}>
+              {["Refunded Date","Refunded Amount","Customer","Item","Sale Date","Stock Status","Remarks"].map(h=>(
+                <th key={h} style={{padding:"9px 10px",fontSize:10.5,fontWeight:800,color:"#64748b",textAlign:"left",textTransform:"uppercase",letterSpacing:"0.04em",borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap"}}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sorted.length===0 && (
+              <tr><td colSpan={7} style={{padding:"40px 20px",textAlign:"center",color:"#94a3b8",fontSize:13}}>Nothing here yet — items appear once a return is Received, Exchanged, Refunded, or Refund/Exchange.</td></tr>
+            )}
+            {sorted.map(r => {
+              const st = STOCK_STATUS_OPTIONS.find(s=>s.key===r.stockStatus) || STOCK_STATUS_OPTIONS[0];
+              const saleDate = getSaleDate(r);
+              return (
+                <tr key={r.id}>
+                  <td style={cellStyle}>{r.refundDate?fmtDate(r.refundDate):"—"}</td>
+                  <td style={cellStyle}>
+                    <input type="number" defaultValue={r.refundAmount||""} placeholder="0"
+                      onBlur={e=>saveField(r,"refundAmount",Number(e.target.value)||0)}
+                      style={{...inputStyle,width:90}} onFocus={e=>e.target.style.border="1px solid #e2e8f0"}/>
+                  </td>
+                  <td style={{...cellStyle,textTransform:"uppercase"}}>{r.customer||"—"}</td>
+                  <td style={{...cellStyle,fontWeight:600,color:"#0f172a",maxWidth:160,textTransform:"uppercase"}}>{r.item||"—"}</td>
+                  <td style={cellStyle}>{saleDate?fmtDate(saleDate):"—"}</td>
+                  <td style={cellStyle}>
+                    <select value={r.stockStatus||"in_office"} onChange={e=>saveField(r,"stockStatus",e.target.value)}
+                      style={{...inputStyle,fontWeight:700,color:st.color,background:st.bg,border:"1px solid "+st.color+"33"}}>
+                      {STOCK_STATUS_OPTIONS.map(s=>(<option key={s.key} value={s.key}>{s.label}</option>))}
+                    </select>
+                  </td>
+                  <td style={cellStyle}>
+                    <input defaultValue={r.staffNotes||""} placeholder="—"
+                      onBlur={e=>saveField(r,"staffNotes",e.target.value)}
+                      style={{...inputStyle,minWidth:160}} onFocus={e=>e.target.style.border="1px solid #e2e8f0"}/>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+const ManualReturnModal = ({ shopId, shop, sales, onClose, onSave }) => {
+  const [stage, setStage] = React.useState("expecting"); // "expecting" | "received"
+  const [query, setQuery] = React.useState("");
+  const [linkedSale, setLinkedSale] = React.useState(null);
+  const [customer, setCustomer] = React.useState("");
+  const [phone, setPhone] = React.useState("");
+  const [item, setItem] = React.useState("");
+  const [reason, setReason] = React.useState("");
+  const [receivedDate, setReceivedDate] = React.useState(() => new Date().toISOString().slice(0,10));
+  const [resolution, setResolution] = React.useState("undecided");
+  const [staffNotes, setStaffNotes] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    setStaffNotes(stage==="received"
+      ? "Customer returned this item directly, without going through the return request process."
+      : "Customer asked us to log this return on their behalf — they weren't able to use the online return form.");
+  }, [stage]);
+
+  const matches = query.trim().length > 0
+    ? (sales||[]).filter(s =>
+        (s.customer||"").toLowerCase().includes(query.trim().toLowerCase()) ||
+        String(s.id||"").toLowerCase().includes(query.trim().toLowerCase())
+      ).slice(0,8)
+    : [];
+
+  const cleanItemText = (s) => {
+    if (Array.isArray(s.saleLines) && s.saleLines.length > 0) {
+      return s.saleLines.map(l => `${l.name}${l.qty&&l.qty!=="1"?` (x${l.qty})`:""}`).join(", ");
+    }
+    const raw = s.item || "";
+    // Strip the internal __LINES__:{...} encoding if present, keeping only the readable part after it
+    const idx = raw.indexOf("\n");
+    if (raw.startsWith("__LINES__:") && idx !== -1) return raw.slice(idx+1).trim();
+    return raw;
+  };
+
+  const selectSale = (s) => {
+    setLinkedSale(s);
+    setCustomer(s.customer||"");
+    setPhone(s.phone||s.contact||"");
+    setItem(cleanItemText(s));
+    setQuery("");
+  };
+
+  const inp = { width:"100%", padding:"9px 12px", borderRadius:9, border:"1.5px solid #e2e8f0", fontSize:13, fontFamily:"inherit", outline:"none", boxSizing:"border-box" };
+  const lbl = { display:"block", fontSize:11, fontWeight:700, color:"#374151", marginBottom:4, textTransform:"uppercase", letterSpacing:"0.05em" };
+
+  const handleSave = async () => {
+    if (!customer.trim() || !item.trim()) return;
+    setSaving(true);
+    try {
+      await onSave({
+        stage,
+        saleId: linkedSale?.id || null,
+        customer: customer.trim(),
+        phone: phone.trim(),
+        reason: reason.trim(),
+        resolution,
+        receivedDate: stage==="received" ? receivedDate : "",
+        staffNotes: staffNotes.trim(),
+        item: item.trim(),
+      });
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:310, background:"rgba(15,23,42,0.55)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:"white", borderRadius:16, padding:"22px 24px", maxWidth:460, width:"92%", maxHeight:"88vh", overflowY:"auto", boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+          <div style={{ fontSize:15, fontWeight:800, color:"#0f172a" }}>📥 Log a Return</div>
+          <button onClick={onClose} style={{ border:"none", background:"transparent", fontSize:18, cursor:"pointer", color:"#94a3b8" }}>✕</button>
+        </div>
+        <div style={{ fontSize:12, color:"#64748b", marginBottom:14, lineHeight:1.4 }}>
+          For a return the customer couldn't submit online, or one that arrived without any prior request.
+        </div>
+
+        <div style={{ marginBottom:14 }}>
+          <label style={lbl}>Return Stage</label>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:8 }}>
+            <button onClick={()=>setStage("expecting")}
+              style={{ padding:"10px 8px", borderRadius:9, border:"1.5px solid "+(stage==="expecting"?shop.accent:"#e2e8f0"), background:stage==="expecting"?shop.accentBg:"white", color:stage==="expecting"?shop.accentText:"#64748b", fontWeight:700, fontSize:12.5, cursor:"pointer", fontFamily:"inherit" }}>
+              📦 Expecting<div style={{fontSize:10,fontWeight:500,marginTop:2}}>Item on its way</div>
+            </button>
+            <button onClick={()=>setStage("received")}
+              style={{ padding:"10px 8px", borderRadius:9, border:"1.5px solid "+(stage==="received"?shop.accent:"#e2e8f0"), background:stage==="received"?shop.accentBg:"white", color:stage==="received"?shop.accentText:"#64748b", fontWeight:700, fontSize:12.5, cursor:"pointer", fontFamily:"inherit" }}>
+              ✅ Already Received<div style={{fontSize:10,fontWeight:500,marginTop:2}}>It's arrived</div>
+            </button>
+          </div>
+        </div>
+
+        <div style={{ marginBottom:14 }}>
+          <label style={lbl}>Link to a sale (optional)</label>
+          {linkedSale ? (
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"9px 12px", borderRadius:9, border:"1px solid #bbf7d0", background:"#f0fdf4" }}>
+              <div style={{ fontSize:12.5, fontWeight:700, color:"#166534" }}>{linkedSale.id} · {linkedSale.customer}</div>
+              <button onClick={()=>{ setLinkedSale(null); setCustomer(""); setPhone(""); setItem(""); }}
+                style={{ border:"none", background:"transparent", color:"#166534", cursor:"pointer", fontSize:12, fontWeight:700 }}>
+                Unlink
+              </button>
+            </div>
+          ) : (
+            <>
+              <input value={query} onChange={e=>setQuery(e.target.value)} placeholder="Search by customer name or invoice…" style={inp}/>
+              {matches.length > 0 && (
+                <div style={{ marginTop:6, border:"1px solid #e2e8f0", borderRadius:9, overflow:"hidden" }}>
+                  {matches.map(s => (
+                    <div key={s.id} onClick={()=>selectSale(s)}
+                      style={{ padding:"8px 12px", fontSize:12.5, cursor:"pointer", borderBottom:"1px solid #f1f5f9" }}>
+                      <strong>{s.customer}</strong> — {s.id} · {cleanItemText(s)||"—"}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10, marginBottom:10 }}>
+          <div><label style={lbl}>Customer Name</label>
+            <input value={customer} onChange={e=>setCustomer(e.target.value)} placeholder="Customer name" style={inp} disabled={!!linkedSale}/>
+          </div>
+          <div><label style={lbl}>Phone</label>
+            <input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Phone number" style={inp} disabled={!!linkedSale}/>
+          </div>
+        </div>
+
+        <div style={{ marginBottom:10 }}>
+          <label style={lbl}>Item Returned</label>
+          <input value={item} onChange={e=>setItem(e.target.value)} placeholder="What came back" style={inp}/>
+        </div>
+
+        <div style={{ display:"grid", gridTemplateColumns:stage==="received"?"1fr 1fr":"1fr", gap:10, marginBottom:10 }}>
+          {stage==="received" && (
+            <div><label style={lbl}>Received Date</label>
+              <input type="date" value={receivedDate} onChange={e=>setReceivedDate(e.target.value)} style={inp}/>
+            </div>
+          )}
+          <div><label style={lbl}>Resolution</label>
+            <select value={resolution} onChange={e=>setResolution(e.target.value)} style={inp}>
+              <option value="undecided">Not decided yet</option>
+              <option value="refund">Refund</option>
+              <option value="exchange">Exchange</option>
+              <option value="exchange_refund">Refund/Exchange (exchange + balance refund)</option>
+            </select>
+          </div>
+        </div>
+        {stage==="expecting" && (
+          <p style={{ margin:"0 0 10px", fontSize:11, color:"#94a3b8" }}>A 14-day return window will start today, same as a normal online request.</p>
+        )}
+
+        <div style={{ marginBottom:10 }}>
+          <label style={lbl}>Reason (optional)</label>
+          <input value={reason} onChange={e=>setReason(e.target.value)} placeholder="Why it was returned, if known" style={inp}/>
+        </div>
+
+        <div style={{ marginBottom:18 }}>
+          <label style={lbl}>Staff Notes</label>
+          <textarea value={staffNotes} onChange={e=>setStaffNotes(e.target.value)} rows={2} style={{...inp,resize:"vertical",fontFamily:"inherit"}}/>
+        </div>
+
+        <div style={{ display:"flex", gap:10 }}>
+          <button onClick={onClose} style={{ flex:1, padding:"11px 0", borderRadius:10, border:"1px solid #e2e8f0", background:"white", color:"#374151", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={saving||!customer.trim()||!item.trim()}
+            style={{ flex:1, padding:"11px 0", borderRadius:10, border:"none", background:shop.accent, color:"white", fontWeight:700, fontSize:13, cursor:(saving||!customer.trim()||!item.trim())?"default":"pointer", fontFamily:"inherit", opacity:(saving||!customer.trim()||!item.trim())?0.6:1 }}>
+            {saving?"Saving…":"Log This Return"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,onSyncSaleStatus,salesData={},pushDeleted})=>{
   const [filter,setFilter]=React.useState("ACTIVE");
   const [waModal,setWaModal]=React.useState(null); // {phone,customerName,message} | null
+  const [manualReturnModal,setManualReturnModal]=React.useState(false);
+  const [viewMode,setViewMode]=React.useState("list"); // "list" | "stock"
+  const [stockSearch,setStockSearch]=React.useState("");
 
   // Flatten all sales for delivery date lookup
   const allSales=React.useMemo(()=>{
@@ -2268,16 +2855,13 @@ const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,on
     if(!returns||returns.length===0)return;
     const scanReturns=async()=>{
       const today=new Date();today.setHours(0,0,0,0);
-      let anyExpired=false;
 
       for(const ret of returns){
-        if(["REFUNDED","EXCHANGED","RETURN_EXPIRED"].includes(ret.status))continue;
+        if(["REFUNDED","EXCHANGED","EXCHANGE_REFUND","RETURN_EXPIRED"].includes(ret.status))continue;
         if(!ret.returnDeadline)continue;
 
-        const deadline=new Date(ret.returnDeadline);deadline.setHours(0,0,0,0);
         const created=new Date(ret.createdAt);created.setHours(0,0,0,0);
         const daysFromCreated=Math.floor((today-created)/(1000*60*60*24));
-        const daysToDeadline=Math.ceil((deadline-today)/(1000*60*60*24));
         const hasTracking=!!(ret.trackingNo);
         const isReceived=ret.status==="RETURN_RECEIVED";
 
@@ -2306,42 +2890,13 @@ Thank you for your cooperation.`,
           }
         }
 
-        // ── 14-day expiry: deadline passed, no tracking, not received ──
-        if(daysToDeadline<0&&!hasTracking&&!isReceived){
-          // Mark as expired in Supabase
-          await dbSaveReturn({...ret,status:"RETURN_EXPIRED",expiredAt:today.toISOString().split("T")[0]});
-          anyExpired=true;
-
-          // Queue expiry message if not already sent
-          const exists=await dbMessageExists(shopId,ret.saleId,"RETURN_EXPIRED");
-          if(!exists){
-            await dbAddMessage({
-              shopId,
-              saleId:ret.saleId,
-              customer:ret.customer,
-              phone:ret.phone,
-              messageType:"RETURN_EXPIRED",
-              messageBody:`Dear ${ret.customer},
-
-Unfortunately, your return request ${ret.id} has now expired as we did not receive your returned item within the required timeframe.
-
-If you believe this is an error or have any questions, please contact us directly and we will be happy to assist.
-
-Please note that this does not affect your statutory rights under UK consumer legislation.
-
-Thank you for shopping with ROS.`,
-            });
-          }
-        }
+        // Note: returns no longer auto-expire — every case gets resolved
+        // as a Refund, Exchange, or Refund/Exchange. The deadline is still
+        // shown as a reference (days left / return window closing) but
+        // doesn't force a status change.
       }
 
-      // If any returns were expired, reload the returns list
-      if(anyExpired){
-        const updated=await dbLoadReturns(shopId);
-        setReturns(updated||[]);
-      }
-
-      // Reload messages to surface any newly queued reminders/expiry notices
+      // Reload messages to surface any newly queued reminders
       const updatedMsgs=await dbLoadMessages(shopId);
       if(setMessages)setMessages(updatedMsgs||[]);
     };
@@ -2356,14 +2911,44 @@ Thank you for shopping with ROS.`,
     return matchStatus&&matchSearch;
   });
 
+  // Refund Method / Refunded To only make sense once money has actually
+  // moved — hide them on tabs where nothing's been refunded yet.
+  const showRefundCols = filter==="REFUNDED" || filter==="EXCHANGE_REFUND";
+  const gridCols = showRefundCols
+    ? "32px 120px 1fr 90px 120px 120px minmax(140px,1fr) 180px 70px"
+    : "32px 120px 1fr 90px minmax(140px,1fr) 180px 70px";
+
   const counts={
     ACTIVE:returns.filter(r=>ACTIVE_STATUSES.includes(r.status)).length,
     RETURN_RECEIVED:returns.filter(r=>r.status==="RETURN_RECEIVED").length,
     EXCHANGED:returns.filter(r=>r.status==="EXCHANGED").length,
     REFUNDED:returns.filter(r=>r.status==="REFUNDED").length,
+    EXCHANGE_REFUND:returns.filter(r=>r.status==="EXCHANGE_REFUND").length,
+    RETURN_EXPIRED:returns.filter(r=>r.status==="RETURN_EXPIRED").length,
   };
 
-  const fmtDate=d=>{if(!d)return"—";try{const dt=new Date(d);return `${String(dt.getDate()).padStart(2,"0")}/${String(dt.getMonth()+1).padStart(2,"0")}/${String(dt.getFullYear()).slice(-2)}`;}catch{return d;}};
+  if(viewMode==="stock"&&shopId==="ros-india"){
+    return(
+      <div style={{padding:"0 0 40px"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:14}}>
+          <div>
+            <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>📦 Returned Items Stock List</h2>
+            <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>Item, refund, and stock status for every return that's come back</p>
+          </div>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <button onClick={()=>setViewMode("list")}
+              style={{padding:"8px 14px",borderRadius:10,border:"1px solid "+shop.accent,background:shop.accentBg,color:shop.accentText,fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+              ↩️ Back to Returns
+            </button>
+            <input value={stockSearch} onChange={e=>setStockSearch(e.target.value)}
+              placeholder="Search item or customer…"
+              style={{padding:"8px 14px",borderRadius:10,border:"1px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",width:200}}/>
+          </div>
+        </div>
+        <ReturnedStockList returns={returns} setReturns={setReturns} search={stockSearch} sales={salesData[shopId]||[]} />
+      </div>
+    );
+  }
 
   return(
     <div style={{padding:"0 0 40px"}}>
@@ -2375,9 +2960,21 @@ Thank you for shopping with ROS.`,
             <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>{returns.length} total · {counts.ACTIVE} active</p>
           </div>
           {/* Search */}
-          <input value={search} onChange={e=>setSearch(e.target.value)}
-            placeholder="Search returns…"
-            style={{padding:"8px 14px",borderRadius:10,border:"1px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",width:200}}/>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <button onClick={()=>setManualReturnModal(true)}
+              style={{padding:"8px 14px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+              📥 Log a Return
+            </button>
+            {shopId==="ros-india"&&(
+              <button onClick={()=>setViewMode(viewMode==="stock"?"list":"stock")}
+                style={{padding:"8px 14px",borderRadius:10,border:"1px solid "+(viewMode==="stock"?shop.accent:"#e2e8f0"),background:viewMode==="stock"?shop.accentBg:"white",color:viewMode==="stock"?shop.accentText:"#374151",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                📦 {viewMode==="stock"?"Back to Returns":"Stock List"}
+              </button>
+            )}
+            <input value={search} onChange={e=>setSearch(e.target.value)}
+              placeholder="Search returns…"
+              style={{padding:"8px 14px",borderRadius:10,border:"1px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",width:200}}/>
+          </div>
         </div>
 
         {/* Filter tabs */}
@@ -2407,6 +3004,7 @@ Thank you for shopping with ROS.`,
             {key:"RETURN_RECEIVED", label:"Received"},
             {key:"EXCHANGED", label:"Exchanged"},
             {key:"REFUNDED",  label:"Refunded"},
+            {key:"EXCHANGE_REFUND", label:"Refund/Exchange"},
           ].map(f=>(
             <button key={f.key} onClick={()=>setFilter(f.key)}
               style={{padding:"5px 14px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
@@ -2448,7 +3046,7 @@ Thank you for shopping with ROS.`,
         ):(
           <div>
             {/* Column headers with Select All */}
-            <div style={{display:"grid",gridTemplateColumns:"32px 130px 1fr 110px 100px 90px 80px",gap:8,padding:"8px 14px",borderRadius:10,background:"#f8fafc",border:"1px solid #e2e8f0",marginBottom:8}}>
+            <div style={{display:"grid",gridTemplateColumns:gridCols,gap:8,padding:"8px 14px",borderRadius:10,background:"#f8fafc",border:"1px solid #e2e8f0",marginBottom:8}}>
               <input type="checkbox"
                 checked={filtered.length>0&&filtered.every(r=>selected.has(r.id))}
                 onChange={e=>{
@@ -2456,35 +3054,44 @@ Thank you for shopping with ROS.`,
                   else setSelected(new Set());
                 }}
                 style={{width:15,height:15,cursor:"pointer",accentColor:shop.accent}}/>
-              {["Return ID","Customer","Status","Deadline","Days Left","Next Action",""].map(h=>(
+              {(showRefundCols
+                ? ["Return ID","Customer","Status","Refund Method","Refunded To","Remarks","Next Action",""]
+                : ["Return ID","Customer","Status","Remarks","Next Action",""]
+              ).map(h=>(
                 <span key={h} style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</span>
               ))}
             </div>
 
             {filtered.map(ret=>{
-              const days=daysRemaining(ret.returnDeadline);
               const statusStyle=RETURN_STATUS_STYLE[ret.status]||{bg:"#f8fafc",border:"#e2e8f0",text:"#374151",label:ret.status};
-              const isClosed=["REFUNDED","EXCHANGED"].includes(ret.status);
+              const isClosed=["REFUNDED","EXCHANGED","EXCHANGE_REFUND"].includes(ret.status);
               const isSelected=selected.has(ret.id);
 
               const openWA=(phone,msg)=>{
                 setWaModal({phone,customerName:ret.customer,message:msg});
               };
 
-              const handleQuickAction=async(newStatus)=>{
+              const handleQuickAction=async(newStatus,extraUpdates={})=>{
                 const today=new Date().toISOString().slice(0,10);
-                const updates={status:newStatus};
+                const updates={status:newStatus,...extraUpdates};
                 if(newStatus==="MSG_SENT") updates.instructionsSentAt=today;
                 if(newStatus==="RETURN_RECEIVED") updates.receivedDate=today;
                 if(newStatus==="REFUNDED") updates.refundDate=today;
                 if(newStatus==="EXCHANGED") updates.exchangeDate=today;
+                if(newStatus==="EXCHANGE_REFUND"){ updates.refundDate=today; updates.exchangeDate=today; }
                 const updated={...ret,...updates};
-                await dbSaveReturn(updated);
+                const ok=await dbSaveReturn(updated);
+                if(!ok){
+                  alert("Couldn't save this — please check your connection and try again. Nothing was updated.");
+                  return false;
+                }
                 if(onSyncSaleStatus){
-                  const saleStatus=newStatus==="RETURN_RECEIVED"?"RETRN RCVD":newStatus==="REFUNDED"?"REFUNDED":newStatus==="EXCHANGED"?"EXCHANGED":null;
-                  if(saleStatus) await onSyncSaleStatus(ret.saleId,saleStatus);
+                  const saleStatus=newStatus==="RETURN_RECEIVED"?"RETRN RCVD":newStatus==="REFUNDED"?"REFUNDED":(newStatus==="EXCHANGED"||newStatus==="EXCHANGE_REFUND")?"EXCHANGED":null;
+                  const saleExtra=extraUpdates.refundAmount!==undefined?{refundAmt:extraUpdates.refundAmount,adjType:"Return Refund"}:{};
+                  if(saleStatus) await onSyncSaleStatus(ret.saleId,saleStatus,saleExtra);
                 }
                 setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
+                return true;
               };
 
               // Determine next action button
@@ -2515,7 +3122,7 @@ Thank you for shopping with ROS.`,
                     <div style={{display:"flex",flexDirection:"column",gap:4}}>
                       <button onClick={e=>{e.stopPropagation();
                         if(!window.confirm("Mark item as received?"))return;
-                        handleQuickAction("RETURN_RECEIVED").then(()=>openWA(ret.phone,MSG_RECEIVED(ret.customer,ret.id)));
+                        handleQuickAction("RETURN_RECEIVED").then(ok=>{ if(ok) openWA(ret.phone,MSG_RECEIVED(ret.customer,ret.id)); });
                       }} style={{padding:"4px 10px",borderRadius:7,border:"none",background:"#f59e0b",
                         color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
                         📦 Mark Received
@@ -2547,8 +3154,8 @@ Thank you for shopping with ROS.`,
                     </div>
                   );
                 }
-                if(ret.status==="RETURN_RECEIVED") return(
-                  <div style={{display:"flex",gap:4}}>
+                if(!["REFUNDED","EXCHANGED","EXCHANGE_REFUND"].includes(ret.status)) return(
+                  <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
                     <button onClick={e=>{e.stopPropagation();
                       if(!window.confirm("Mark as Exchanged? This closes the case."))return;
                       handleQuickAction("EXCHANGED").then(()=>openWA(ret.phone,MSG_EXCHANGED(ret.customer,ret.id)));
@@ -2557,11 +3164,22 @@ Thank you for shopping with ROS.`,
                       🔄 Exchange
                     </button>
                     <button onClick={e=>{e.stopPropagation();
+                      const amt=window.prompt("Refund amount (₹)?", "");
+                      if(amt===null)return;
                       if(!window.confirm("Mark as Refunded? This closes the case."))return;
-                      handleQuickAction("REFUNDED").then(()=>openWA(ret.phone,MSG_REFUNDED(ret.customer,ret.id)));
+                      handleQuickAction("REFUNDED",{refundAmount:Number(amt)||0}).then(()=>openWA(ret.phone,MSG_REFUNDED(ret.customer,ret.id)));
                     }} style={{padding:"4px 8px",borderRadius:7,border:"none",background:"#6d28d9",
                       color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
                       💰 Refund
+                    </button>
+                    <button onClick={e=>{e.stopPropagation();
+                      const amt=window.prompt("Refund amount for the price difference (₹)?", "");
+                      if(amt===null)return;
+                      if(!window.confirm("Mark as Refund/Exchange — exchanged for a different item, with the price difference refunded? This closes the case."))return;
+                      handleQuickAction("EXCHANGE_REFUND",{refundAmount:Number(amt)||0});
+                    }} style={{padding:"4px 8px",borderRadius:7,border:"none",background:"#c2410c",
+                      color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+                      🔄💰 Refund/Exchange
                     </button>
                   </div>
                 );
@@ -2570,7 +3188,7 @@ Thank you for shopping with ROS.`,
 
               return(
                 <div key={ret.id}
-                  style={{display:"grid",gridTemplateColumns:"32px 130px 1fr 110px 100px 90px 1fr 80px",gap:8,padding:"11px 14px",
+                  style={{display:"grid",gridTemplateColumns:gridCols,gap:8,padding:"11px 14px",
                     borderRadius:12,border:"1px solid "+(isSelected?shop.accent:"#e2e8f0"),marginBottom:8,
                     background:isClosed?"#fafafa":isSelected?shop.accent+"08":"white",
                     cursor:"pointer",transition:"box-shadow 0.15s",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}
@@ -2584,7 +3202,7 @@ Thank you for shopping with ROS.`,
                   </div>
                   <div onClick={()=>setSelectedReturn(ret)}>
                     <p style={{margin:0,fontSize:12,fontWeight:800,color:shop.accent,fontFamily:"DM Mono,monospace"}}>{ret.id}</p>
-                    <p style={{margin:"1px 0 0",fontSize:10,color:"#94a3b8"}}>{ret.resolution==="exchange"?"🔄":"💰"} {ret.resolution}</p>
+                    <p style={{margin:"1px 0 0",fontSize:10,color:"#94a3b8"}}>{ret.resolution==="exchange"?"🔄":ret.resolution==="exchange_refund"?"🔄💰":"💰"} {ret.resolution==="exchange_refund"?"return/exchange":ret.resolution}</p>
                     {(()=>{
                       if(ret.status!=="MSG_SENT"&&ret.status!=="RETURN_IN_TRANSIT")return null;
                       if(ret.reminderSentAt)return null;
@@ -2598,7 +3216,7 @@ Thank you for shopping with ROS.`,
                         border:"1px solid #fca5a5"}}>🔔 Reminder Due</span>;
                     })()}
                   </div>
-                  <div onClick={()=>setSelectedReturn(ret)}>
+                  <div onClick={()=>setSelectedReturn(ret)} style={{minWidth:0,overflow:"hidden"}}>
                     <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ret.customer}</p>
                     <p style={{margin:"1px 0 0",fontSize:11,color:"#64748b"}}>{ret.saleId}</p>
                     <div style={{marginTop:4,display:"flex",flexWrap:"wrap",gap:"2px 10px"}}>
@@ -2611,11 +3229,11 @@ Thank you for shopping with ROS.`,
                           ret.receivedDate&&{ic:"📦",label:"Received",date:ret.receivedDate,color:"#d97706"},
                           ret.reminderSentAt&&{ic:"🔔",label:"Reminder",date:ret.reminderSentAt,color:"#dc2626"},
                           ret.exchangeDate&&{ic:"🔄",label:"Exchanged",date:ret.exchangeDate,color:"#a21caf"},
-                          ret.refundDate&&{ic:"💰",label:"Refunded",date:ret.refundDate,color:"#6d28d9"},
+                          ret.refundDate&&{ic:"💰",label:"Refunded",date:ret.refundDate,color:"#6d28d9",amount:ret.refundAmount},
                         ].filter(Boolean);
                         return items.map((item,i)=>(
                           <span key={i} style={{fontSize:10,color:item.color,whiteSpace:"nowrap"}}>
-                            {item.ic} <span style={{color:"#94a3b8"}}>{item.label}:</span> {fmtShort(item.date)}
+                            {item.ic} <span style={{color:"#94a3b8"}}>{item.label}:</span> {fmtShort(item.date)}{item.amount?` · ₹${Number(item.amount).toLocaleString("en-IN")}`:""}
                           </span>
                         ));
                       })()}
@@ -2627,50 +3245,46 @@ Thank you for shopping with ROS.`,
                       {statusStyle.label}
                     </span>
                   </div>
-                  <div style={{display:"flex",flexDirection:"column",alignItems:"flex-start"}} onClick={()=>setSelectedReturn(ret)}>
-                    {(()=>{
-                      if(isClosed){
-                        const resDate=ret.exchangeDate||ret.refundDate||"";
-                        return<>
-                          <span style={{fontSize:12,color:"#059669",fontWeight:700}}>✅ Resolved</span>
-                          <span style={{fontSize:10,color:"#94a3b8"}}>{resDate?fmtDate(resDate):"—"}</span>
-                        </>;
-                      }
-                      if(ret.status==="RETURN_RECEIVED"){
-                        const recvd=ret.receivedDate?new Date(ret.receivedDate.split("T")[0]):null;
-                        if(recvd)recvd.setHours(0,0,0,0);
-                        const today0=new Date();today0.setHours(0,0,0,0);
-                        const daysWaiting=recvd?Math.round((today0-recvd)/86400000):0;
-                        const waitColor=daysWaiting>=7?"#dc2626":daysWaiting>=3?"#d97706":"#64748b";
-                        return<>
-                          <span style={{fontSize:11,fontWeight:700,color:waitColor}}>⏳ Awaiting decision</span>
-                          <span style={{fontSize:10,color:waitColor}}>{daysWaiting===0?"Received today":daysWaiting===1?"Received yesterday":`Received ${daysWaiting}d ago`}</span>
-                        </>;
-                      }
-                      // Expecting / In Transit — show deadline
-                      return<>
-                        <span style={{fontSize:12,color:"#374151",fontWeight:600}}>{fmtDate(ret.returnDeadline)}</span>
-                        <span style={{fontSize:9,color:"#94a3b8",whiteSpace:"nowrap"}}>return window closing</span>
-                      </>;
-                    })()}
+                  {showRefundCols && (<>
+                  <div onClick={e=>e.stopPropagation()} style={{width:"100%",minWidth:0,display:"flex",alignItems:"center"}}>
+                    <select value={ret.refundMethod||""} onChange={async e=>{
+                        const updated={...ret,refundMethod:e.target.value};
+                        setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
+                        const ok=await dbSaveReturn(updated);
+                        if(!ok)alert("Couldn't save — please check your connection and try again.");
+                      }}
+                      style={{width:"100%",padding:"5px 7px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:11,fontFamily:"inherit",background:"white",color:ret.refundMethod?"#0f172a":"#94a3b8"}}>
+                      <option value="">—</option>
+                      <option value="Cash">Cash</option>
+                      <option value="UPI">UPI</option>
+                      <option value="Bank Transfer">Bank Transfer</option>
+                      <option value="Card">Card</option>
+                      <option value="Cheque">Cheque</option>
+                      <option value="Other">Other</option>
+                    </select>
                   </div>
-                  <div style={{display:"flex",alignItems:"center"}} onClick={()=>setSelectedReturn(ret)}>
-                    {(()=>{
-                      if(isClosed) return <span style={{fontSize:11,color:"#94a3b8"}}>—</span>;
-                      if(ret.status==="RETURN_RECEIVED"){
-                        const recvd=ret.receivedDate?new Date(ret.receivedDate.split("T")[0]):null;
-                        if(recvd)recvd.setHours(0,0,0,0);
-                        const today0=new Date();today0.setHours(0,0,0,0);
-                        const daysWaiting=recvd?Math.round((today0-recvd)/86400000):0;
-                        const waitColor=daysWaiting>=7?"#dc2626":daysWaiting>=3?"#d97706":"#059669";
-                        const waitBg=daysWaiting>=7?"#fef2f2":daysWaiting>=3?"#fffbeb":"#f0fdf4";
-                        return<span style={{fontSize:11,fontWeight:700,padding:"2px 9px",borderRadius:999,
-                          background:waitBg,color:waitColor,border:"1px solid "+waitColor+"33",whiteSpace:"nowrap"}}>
-                          {daysWaiting}d waiting
-                        </span>;
-                      }
-                      return <DaysChip days={days}/>;
-                    })()}
+                  <div onClick={e=>e.stopPropagation()} style={{width:"100%",minWidth:0,display:"flex",alignItems:"center"}}>
+                    <input defaultValue={ret.refundToName||""} placeholder="—"
+                      onBlur={async e=>{
+                        if(e.target.value===(ret.refundToName||""))return;
+                        const updated={...ret,refundToName:e.target.value};
+                        setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
+                        const ok=await dbSaveReturn(updated);
+                        if(!ok)alert("Couldn't save — please check your connection and try again.");
+                      }}
+                      style={{width:"100%",padding:"5px 7px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:11,fontFamily:"inherit",boxSizing:"border-box"}}/>
+                  </div>
+                  </>)}
+                  <div onClick={e=>e.stopPropagation()} style={{width:"100%",minWidth:0,display:"flex",alignItems:"center"}}>
+                    <input defaultValue={ret.staffNotes||""} placeholder="—"
+                      onBlur={async e=>{
+                        if(e.target.value===(ret.staffNotes||""))return;
+                        const updated={...ret,staffNotes:e.target.value};
+                        setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
+                        const ok=await dbSaveReturn(updated);
+                        if(!ok)alert("Couldn't save — please check your connection and try again.");
+                      }}
+                      style={{width:"100%",padding:"5px 7px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:11,fontFamily:"inherit",boxSizing:"border-box"}}/>
                   </div>
                   {/* Next Action */}
                   <div style={{display:"flex",alignItems:"center"}} onClick={e=>e.stopPropagation()}>
@@ -2781,6 +3395,49 @@ Thank you for shopping with ROS.`,
         </div>
       )}
       <WaModal data={waModal} onClose={()=>setWaModal(null)}/>
+      {manualReturnModal && (
+        <ManualReturnModal
+          shopId={shopId} shop={shop} sales={salesData[shopId]||[]}
+          onClose={()=>setManualReturnModal(false)}
+          onSave={async (form)=>{
+            const id = await dbNextReturnId();
+            const isExpecting = form.stage==="expecting";
+            const record = {
+              id, shopId,
+              saleId: form.saleId,
+              customer: form.customer,
+              phone: form.phone,
+              reason: form.reason,
+              resolution: form.resolution,
+              status: isExpecting ? "RETURN_APPROVED" : "RETURN_RECEIVED",
+              receivedDate: form.receivedDate,
+              staffNotes: form.staffNotes,
+              item: form.item,
+            };
+            if (isExpecting) {
+              const deadline = new Date(); deadline.setDate(deadline.getDate()+14);
+              record.returnDeadline = deadline.toISOString().slice(0,10);
+            }
+            const ok = await dbSaveReturn(record);
+            if(!ok){
+              alert("Couldn't save this return — please check your connection and try again. Nothing was saved.");
+              return;
+            }
+            setReturns(prev=>[record,...prev]);
+            if(form.saleId && onSyncSaleStatus && !isExpecting){
+              const saleStatus = shopId==="ros-india" ? "RETURN RCVD" : "RETRN RCVD";
+              await onSyncSaleStatus(form.saleId, saleStatus);
+            }
+            setManualReturnModal(false);
+            if(form.phone){
+              const message = isExpecting
+                ? RETURN_APPROVAL_MESSAGE(id, form.customer, "v1")
+                : MSG_RECEIVED(form.customer, id);
+              setWaModal({ phone: form.phone, customerName: form.customer, message });
+            }
+          }}
+        />
+      )}
     </div>
   );
 };
@@ -5013,8 +5670,112 @@ const HistoricalDataPanel=({shop,shopId,histData=[],setHistData,fmt})=>{
 };
 /* ── End HistoricalDataPanel ─────────────────────────────────────────────── */
 
+/* ── PurchasePLSection: purchase invoice details + P/L, shown only for
+   ROS India and only to Suresh. When the sale is part of a linked group
+   (Advance/Final split), one entry here updates every linked sale, and
+   "sales amount" for P/L is the sum received across the whole group. ── */
+const PurchasePLSection = ({ sale, allSales, shop, shopId, onSave }) => {
+  const [editing, setEditing] = React.useState(false);
+  const [purInvNo, setPurInvNo] = React.useState(sale.purInvNo||"");
+  const [purInvDate, setPurInvDate] = React.useState(sale.purInvDate||"");
+  const [purAmount, setPurAmount] = React.useState(sale.purAmount||"");
+  const [purOtherCharges, setPurOtherCharges] = React.useState(sale.purOtherCharges||"");
+  const [purOtherChargesNote, setPurOtherChargesNote] = React.useState(sale.purOtherChargesNote||"");
+  const [saving, setSaving] = React.useState(false);
+
+  const groupIds = findInstalmentGroupIds(sale, allSales);
+  const groupMembers = groupIds.length>0 ? allSales.filter(s=>groupIds.includes(s.id)) : [sale];
+  const salesAmountSum = groupMembers.reduce((a,s)=>a+(Number(s.amount)||0),0);
+  const pAmount = Number(sale.purAmount)||0;
+  const pOther = Number(sale.purOtherCharges)||0;
+  const pl = salesAmountSum - pAmount - pOther;
+  const lbl={fontSize:10,fontWeight:700,color:"#78350f",display:"block",marginBottom:3};
+  const inp={width:"100%",padding:"6px 8px",borderRadius:7,border:"1px solid #fde68a",fontSize:12,fontFamily:"inherit",boxSizing:"border-box"};
+
+  const handleSave = async () => {
+    const amt = Number(purAmount)||0;
+    if (amt > 0 && !purInvNo.trim()) {
+      alert("Please enter the purchase invoice number too — a purchase amount can't be saved on its own.");
+      return;
+    }
+    if (amt > 0 && !purInvDate) {
+      alert("Please enter the purchase date too — a purchase amount can't be saved on its own.");
+      return;
+    }
+    setSaving(true);
+    try{
+      await onSave({
+        purInvNo, purInvDate,
+        purAmount: amt,
+        purOtherCharges: Number(purOtherCharges)||0,
+        purOtherChargesNote,
+      });
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div style={{border:"1px solid #fde68a",borderRadius:14,padding:"14px 16px",marginBottom:20,background:"#fffbeb"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+        <p style={{margin:0,fontSize:11,fontWeight:800,color:"#92400e",textTransform:"uppercase",letterSpacing:"0.05em"}}>💼 Purchase &amp; P/L (Admin Only)</p>
+        {!editing && <button onClick={()=>setEditing(true)} style={{fontSize:11,fontWeight:700,color:"#92400e",background:"none",border:"1px solid #fde68a",borderRadius:999,padding:"3px 10px",cursor:"pointer",fontFamily:"inherit"}}>Edit</button>}
+      </div>
+
+      {groupIds.length>1 && (
+        <div style={{fontSize:11,color:"#92400e",marginBottom:10}}>🔗 Linked to {groupIds.length} transactions — entering this here updates all of them together.</div>
+      )}
+
+      {editing ? (
+        <div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:10}}>
+            <div><label style={lbl}>Purchase Invoice No.</label>
+              <input value={purInvNo} onChange={e=>setPurInvNo(e.target.value)} style={inp}/>
+            </div>
+            <div><label style={lbl}>Purchase Date</label>
+              <input type="date" value={purInvDate} onChange={e=>setPurInvDate(e.target.value)} style={inp}/>
+            </div>
+          </div>
+          <div style={{marginBottom:10}}>
+            <label style={lbl}>Purchase Amount</label>
+            <input type="number" value={purAmount} onChange={e=>setPurAmount(e.target.value)} style={inp}/>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:10,marginBottom:12}}>
+            <div><label style={lbl}>Other Charges</label>
+              <input type="number" value={purOtherCharges} onChange={e=>setPurOtherCharges(e.target.value)} style={inp}/>
+            </div>
+            <div><label style={lbl}>Note (shipping, agent, etc.)</label>
+              <input value={purOtherChargesNote} onChange={e=>setPurOtherChargesNote(e.target.value)} style={inp}/>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setEditing(false)} style={{flex:1,padding:"7px 0",borderRadius:8,border:"1px solid #fde68a",background:"white",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+            <button onClick={handleSave} disabled={saving} style={{flex:1,padding:"7px 0",borderRadius:8,border:"none",background:"#92400e",color:"white",fontWeight:700,fontSize:12,cursor:saving?"default":"pointer",fontFamily:"inherit",opacity:saving?0.7:1}}>{saving?"Saving…":"Save"}</button>
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:10}}>
+            <div><div style={{fontSize:10,color:"#92400e"}}>Invoice No.</div><div style={{fontSize:13,fontWeight:700,color:"#78350f"}}>{sale.purInvNo||"—"}</div></div>
+            <div><div style={{fontSize:10,color:"#92400e"}}>Date</div><div style={{fontSize:13,fontWeight:700,color:"#78350f"}}>{sale.purInvDate||"—"}</div></div>
+            <div><div style={{fontSize:10,color:"#92400e"}}>Amount</div><div style={{fontSize:13,fontWeight:700,color:"#78350f"}}>{sale.purAmount?fmt(shopId,sale.purAmount):"—"}</div></div>
+          </div>
+          {pOther>0 && (
+            <div style={{fontSize:12,color:"#78350f",marginBottom:10}}>Other charges: {fmt(shopId,pOther)}{sale.purOtherChargesNote?` (${sale.purOtherChargesNote})`:""}</div>
+          )}
+          <div style={{borderTop:"1px solid #fde68a",paddingTop:10,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+            <span style={{fontSize:12,color:"#78350f"}}>Sales received{groupIds.length>1?` (sum of ${groupIds.length})`:""}: <strong>{fmt(shopId,salesAmountSum)}</strong></span>
+            <span style={{fontSize:15,fontWeight:900,color:pl>=0?"#166534":"#991b1b"}}>P/L: {pl>=0?"+":""}{fmt(shopId,pl)}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,initialTab="sales",users=[]})=>{
-  const [tab,setTab]=useState(user?.role==="staff"?"sales":(initialTab||"sales"));
+  const [tab,setTab]=useState(user?.role==="staff"?(shopId==="ros-india"?"attendance":"sales"):(initialTab||"sales"));
   const [petEnabled,setPetEnabled]=useState(()=>{
     try{ return localStorage.getItem("rosie_enabled")!=="false"; }catch{ return true; }
   });
@@ -5127,7 +5888,8 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
         await dbSaveLogistic(shopId,record);
         setLogData(prev=>[record,...prev.filter(x=>(x.uuid||x.id)!==(record.uuid||record.id))]);
       }else if(type==="return"){
-        await dbSaveReturn(record);
+        const ok=await dbSaveReturn(record);
+        if(!ok) throw new Error("Return restore failed to save");
         setReturns(prev=>[record,...prev.filter(x=>x.id!==record.id)]);
       }
     }catch(e){
@@ -5161,7 +5923,26 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>x.id===merged.id?{...x,...merged}:x)}));
     setModal(null);setEditRow(null);
     // Persist to Supabase then reload to confirm sync
-    dbSaveSale(shopId,merged).then(reloadSalesData).catch(err=>console.error("❌ Edit save failed:",err));
+    dbSaveSale(shopId,merged).then(reloadSalesData).catch(err=>{
+      console.error("❌ Edit save failed:",err);
+      alert("Couldn't save this sale — please check your connection and try again.");
+    });
+    // Purchase invoice/amount/other-charges belong to the whole linked
+    // order, not just this one transaction — propagate them to every
+    // sale in the same Advance/Final group.
+    const groupIds=findInstalmentGroupIds(merged,sales);
+    if(groupIds.length>1){
+      const purFields={purInvNo:merged.purInvNo||"",purInvDate:merged.purInvDate||"",purAmount:Number(merged.purAmount)||0,purOtherCharges:Number(merged.purOtherCharges)||0,purOtherChargesNote:merged.purOtherChargesNote||""};
+      const others=groupIds.filter(id=>id!==merged.id);
+      setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>others.includes(x.id)?{...x,...purFields}:x)}));
+      others.forEach(id=>{
+        const s=sales.find(x=>x.id===id);
+        if(s) dbSaveSale(shopId,{...s,...purFields}).catch(err=>{
+          console.error("❌ Purchase field cascade failed:",id,err);
+          alert(`Couldn't update the linked sale ${id} with the purchase details — please check your connection and try again.`);
+        });
+      });
+    }
   };
 
   const [cascadeFlashIds,setCascadeFlashIds]=useState(new Set());
@@ -5169,10 +5950,11 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     setModal(null);setEditRow(null);
     const statusVal=merged.status||merged.ful;
     const others=groupIds.filter(id=>id!==merged.id);
-    // Update UI instantly: full merge on the edited sale, status-only on the rest
+    const purFields={purInvNo:merged.purInvNo||"",purInvDate:merged.purInvDate||"",purAmount:Number(merged.purAmount)||0,purOtherCharges:Number(merged.purOtherCharges)||0,purOtherChargesNote:merged.purOtherChargesNote||""};
+    // Update UI instantly: full merge on the edited sale, status + purchase fields on the rest
     setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>{
       if(x.id===merged.id) return {...x,...merged};
-      if(others.includes(x.id)) return {...x,status:statusVal,ful:statusVal};
+      if(others.includes(x.id)) return {...x,status:statusVal,ful:statusVal,...purFields};
       return x;
     })}));
     setCascadeFlashIds(new Set(groupIds));
@@ -5181,7 +5963,10 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     await Promise.all(others.map(id=>{
       const s=(sales||[]).find(x=>x.id===id);
       if(!s) return Promise.resolve();
-      return dbSaveSale(shopId,{...s,status:statusVal,ful:statusVal}).catch(err=>console.error("❌ Cascade save failed:",id,err));
+      return dbSaveSale(shopId,{...s,status:statusVal,ful:statusVal,...purFields}).catch(err=>{
+        console.error("❌ Cascade save failed:",id,err);
+        alert(`Couldn't update linked sale ${id} — please check your connection and try again.`);
+      });
     }));
     reloadSalesData();
   };
@@ -5280,7 +6065,9 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"analytics",l:"Analytics",ic:"📊"},
     {id:"reports",  l:"Reports",  ic:"📋"},
     {id:"returns",  l:"Returns",  ic:"↩️"},
-  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings");
+    {id:"attendance",l:"Attendance",ic:"🕐"},
+    {id:"inventory",l:"Inventory",ic:"📦"},
+  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india");
 
   const filtSales=sales.filter(s=>{
     const q=search.toLowerCase();
@@ -5545,7 +6332,7 @@ return(
         <nav style={{flex:1,padding:"10px 8px 6px",overflowY:"auto",overflowX:"hidden",scrollbarWidth:"none"}}>
           {/* group labels */}
           {[
-            {label:"MAIN",      ids:["dashboard","sales","customers","returns","invoices"]},
+            {label:"MAIN",      ids:["dashboard","sales","customers","returns","invoices","attendance","inventory"]},
             {label:"PURCHASES", ids:["purchases","suppliers","logistics","agents"]},
             {label:"EXPENSES",  ids:["expenses"]},
             {label:"FINANCE",   ids:["cashflow","reconciliation"]},
@@ -6844,17 +7631,17 @@ return(
               setMessages={setMessages}
               salesData={salesData}
               pushDeleted={pushDeleted}
-              onSyncSaleStatus={async (saleId, newStatus) => {
+              onSyncSaleStatus={async (saleId, newStatus, extraUpdates={}) => {
                 const allSales = Object.values(salesData).flat();
                 const sale = allSales.find(s => s.id === saleId);
                 if (!sale) return;
                 const sid = Object.keys(salesData).find(k => (salesData[k]||[]).some(s=>s.id===saleId));
                 if (!sid) return;
-                const updated = { ...sale, ful: newStatus, status: newStatus };
+                const updated = { ...sale, ful: newStatus, status: newStatus, ...extraUpdates };
                 await dbSaveSale(sid, updated);
                 setSalesData(prev => ({
                   ...prev,
-                  [sid]: (prev[sid]||[]).map(s => s.id===saleId ? {...s, ful:newStatus, status:newStatus} : s),
+                  [sid]: (prev[sid]||[]).map(s => s.id===saleId ? {...s, ful:newStatus, status:newStatus, ...extraUpdates} : s),
                 }));
               }}
             />
@@ -6863,6 +7650,16 @@ return(
           {/* INVOICES placeholder */}
           {tab==="invoices"&&(
             <InvoicesPanel shop={shop}/>
+          )}
+
+          {/* ── ATTENDANCE (ROS India only) ── */}
+          {tab==="attendance"&&shopId==="ros-india"&&(
+            <AttendancePage shopId={shopId} shop={shop} user={user} users={users} />
+          )}
+
+          {/* ── INVENTORY (ROS India only) ── */}
+          {tab==="inventory"&&shopId==="ros-india"&&(
+            <InventoryPage shopId={shopId} shop={shop} user={user} sales={sales} />
           )}
 
           {/* ── CASH FLOW ── */}
@@ -8423,6 +9220,32 @@ return(
                 </div>
               </div>
 
+              {shopId==="ros-india" && user?.id==="suresh" && (
+                <PurchasePLSection
+                  sale={selRow} allSales={salesData[shopId]||[]} shop={shop} shopId={shopId}
+                  onSave={async (updates)=>{
+                    const allSalesThisShop=salesData[shopId]||[];
+                    const groupIds=findInstalmentGroupIds(selRow,allSalesThisShop);
+                    const targets=groupIds.length>0?groupIds:[selRow.id];
+                    try{
+                      for(const id of targets){
+                        const s=allSalesThisShop.find(x=>x.id===id);
+                        if(s) await dbSaveSale(shopId,{...s,...updates});
+                      }
+                    }catch(err){
+                      console.error("❌ Purchase & P/L save failed:",err);
+                      alert("Couldn't save the purchase details — please check your connection and try again.");
+                      return;
+                    }
+                    setSalesData(prev=>({
+                      ...prev,
+                      [shopId]:(prev[shopId]||[]).map(s=>targets.includes(s.id)?{...s,...updates}:s),
+                    }));
+                    setSelRow(prev=>prev?{...prev,...updates}:prev);
+                  }}
+                />
+              )}
+
               {/* ── FOOTER ACTIONS ── */}
               {confirmDelete?(
                 /* ── CONFIRM DELETE PANEL ── */
@@ -8533,13 +9356,19 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
   const [selected, setSelected] = React.useState(new Set());
   const [days, setDays] = React.useState(30);
   const [importing, setImporting] = React.useState(false);
+  const [dismissedIds, setDismissedIds] = React.useState(new Set());
+
+  React.useEffect(() => {
+    dbLoadDismissedShopifyOrders(shopId).then(ids => setDismissedIds(new Set(ids))).catch(()=>{});
+  }, [shopId]);
 
   // Two ways a Shopify order can already be "in" ros-bms: imported through
   // this button (has shopifyOrderId set), or manually entered beforehand
   // with the Shopify order number noted in Shop Invoice No. — compared as
   // digits-only, since Shopify's order name may have a custom prefix
   // (e.g. "#ROS4875") while what was typed in by hand may just be the
-  // plain number.
+  // plain number. A third way: explicitly dismissed, for cases the above
+  // two don't catch (typos, missing values in old manual entries).
   const normalizeOrderNo = (s) => (s||"").replace(/[^0-9]/g,"");
   const importedShopifyIds = React.useMemo(
     () => new Set((existingSales||[]).map(s=>s.shopifyOrderId).filter(Boolean)),
@@ -8559,7 +9388,7 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
       else {
         const fresh = (data.orders||[]).filter(o => {
           const orderNo = normalizeOrderNo(o.orderNumber);
-          return !importedShopifyIds.has(o.shopifyOrderId) && !importedOrderNos.has(orderNo);
+          return !importedShopifyIds.has(o.shopifyOrderId) && !importedOrderNos.has(orderNo) && !dismissedIds.has(o.shopifyOrderId);
         });
         setOrders(fresh);
         setSelected(new Set(fresh.map(o=>o.shopifyOrderId)));
@@ -8567,9 +9396,25 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
     } catch (e) {
       setError("Couldn't reach the import service: " + e.message);
     } finally { setLoading(false); }
-  }, [days, importedShopifyIds, importedOrderNos]);
+  }, [days, importedShopifyIds, importedOrderNos, dismissedIds]);
 
-  React.useEffect(() => { fetchOrders(); }, []); // eslint-disable-line
+  React.useEffect(() => { fetchOrders(); }, [fetchOrders]);
+
+  const dismissOrder = async (shopifyOrderId) => {
+    setOrders(prev => prev.filter(o => o.shopifyOrderId !== shopifyOrderId));
+    setSelected(prev => { const next = new Set(prev); next.delete(shopifyOrderId); return next; });
+    setDismissedIds(prev => new Set([...prev, shopifyOrderId]));
+    await dbDismissShopifyOrders(shopId, [shopifyOrderId]);
+  };
+
+  const dismissAllShown = async () => {
+    const ids = orders.map(o => o.shopifyOrderId);
+    if (ids.length === 0) return;
+    setOrders([]);
+    setSelected(new Set());
+    setDismissedIds(prev => new Set([...prev, ...ids]));
+    await dbDismissShopifyOrders(shopId, ids);
+  };
 
   const toggle = (id) => setSelected(prev => {
     const next = new Set(prev);
@@ -8580,7 +9425,7 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
   const handleImport = async () => {
     const chosen = orders
       .filter(o => selected.has(o.shopifyOrderId))
-      .sort((a,b) => (a.date||"").localeCompare(b.date||"") || (Number(a.shopifyOrderId)||0) - (Number(b.shopifyOrderId)||0));
+      .sort((a,b) => (a.createdAt||a.date||"").localeCompare(b.createdAt||b.date||""));
     if (chosen.length === 0) return;
     setImporting(true);
 
@@ -8669,21 +9514,35 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
 
       {orders.length>0 && (
         <>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8 }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:8, gap:10 }}>
             <span style={{ fontSize:12, color:"#64748b" }}>{orders.length} new order{orders.length!==1?"s":""} found</span>
-            <button onClick={()=>setSelected(selected.size===orders.length?new Set():new Set(orders.map(o=>o.shopifyOrderId)))}
-              style={{ fontSize:11, fontWeight:700, color:shop.accent, background:"none", border:"none", cursor:"pointer" }}>
-              {selected.size===orders.length?"Deselect All":"Select All"}
-            </button>
+            <div style={{ display:"flex", gap:12 }}>
+              <button onClick={()=>setSelected(selected.size===orders.length?new Set():new Set(orders.map(o=>o.shopifyOrderId)))}
+                style={{ fontSize:11, fontWeight:700, color:shop.accent, background:"none", border:"none", cursor:"pointer" }}>
+                {selected.size===orders.length?"Deselect All":"Select All"}
+              </button>
+              <button onClick={dismissAllShown}
+                title="Use this if you've already entered all of these by hand — hides them from this list for good."
+                style={{ fontSize:11, fontWeight:700, color:"#dc2626", background:"none", border:"none", cursor:"pointer" }}>
+                Dismiss All Shown
+              </button>
+            </div>
           </div>
           <div style={{ maxHeight:340, overflowY:"auto", display:"flex", flexDirection:"column", gap:8, marginBottom:16 }}>
             {orders.map(o => (
               <label key={o.shopifyOrderId} style={{ display:"flex", gap:10, alignItems:"flex-start", padding:"10px 12px", borderRadius:10, border:"1px solid #e2e8f0", cursor:"pointer", background:selected.has(o.shopifyOrderId)?"#f0fdf4":"white" }}>
                 <input type="checkbox" checked={selected.has(o.shopifyOrderId)} onChange={()=>toggle(o.shopifyOrderId)} style={{ marginTop:3 }}/>
                 <div style={{ flex:1, minWidth:0 }}>
-                  <div style={{ display:"flex", justifyContent:"space-between" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
                     <span style={{ fontWeight:700, fontSize:13, color:"#0f172a" }}>{o.customer}</span>
-                    <span style={{ fontWeight:800, fontSize:13, color:"#0f172a" }}>£{o.amount.toFixed(2)}</span>
+                    <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
+                      <span style={{ fontWeight:800, fontSize:13, color:"#0f172a" }}>£{o.amount.toFixed(2)}</span>
+                      <button onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); dismissOrder(o.shopifyOrderId); }}
+                        title="Already have this one — hide it from this list for good"
+                        style={{ border:"none", background:"transparent", color:"#94a3b8", cursor:"pointer", fontSize:14, lineHeight:1, padding:0 }}>
+                        ✕
+                      </button>
+                    </div>
                   </div>
                   <div style={{ fontSize:11, color:"#64748b" }}>{o.orderNumber} · {o.date} · {o.phone||"no phone"}</div>
                   <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>{o.items.map(it=>`${it.name} ×${it.qty}`).join(", ")}</div>
@@ -9198,6 +10057,1113 @@ const NEW_SALE_STEP_EXPLAIN = {
   PART: "Marked as Part — another instalment, not the final one. I'll link it to the earlier payment automatically. 🔄",
   FINAL: "Marked as Final — this completes the balance. I'll close out the deal once you save. 🏁",
 };
+/* ── Auditor: a small inspector figure for the audit feature. Deliberately
+   distinct from Rosie — neat suit, glasses, magnifying glass — meant to
+   read as "credible finding" rather than "friendly nudge". ────────────── */
+const INDIA_STATES = [
+  "Andhra Pradesh","Arunachal Pradesh","Assam","Bihar","Chhattisgarh","Goa","Gujarat","Haryana",
+  "Himachal Pradesh","Jharkhand","Karnataka","Kerala","Madhya Pradesh","Maharashtra","Manipur",
+  "Meghalaya","Mizoram","Nagaland","Odisha","Punjab","Rajasthan","Sikkim","Tamil Nadu","Telangana",
+  "Tripura","Uttar Pradesh","Uttarakhand","West Bengal","Andaman and Nicobar Islands","Chandigarh",
+  "Dadra and Nagar Haveli and Daman and Diu","Delhi","Jammu and Kashmir","Ladakh","Lakshadweep","Puducherry",
+];
+
+/* Best-effort parser for addresses pasted from WhatsApp. Indian addresses
+   vary hugely in format, so this deliberately stays conservative — it
+   only pulls out the parts it can be reasonably confident about (a
+   6-digit PIN code, a recognised state name, a likely name line) and
+   leaves everything else as an editable address block, rather than
+   trying to over-segment into fields it'll frequently get wrong. */
+const parseIndianAddress = (raw) => {
+  let lines = (raw||"").split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
+  if (lines.length <= 1) lines = (raw||"").split(",").map(l=>l.trim()).filter(Boolean);
+
+  let pin = "";
+  let state = "";
+  const bodyLines = [];
+
+  lines.forEach(line => {
+    let remaining = line;
+    const pinMatch = remaining.match(/\b\d{6}\b/);
+    if (pinMatch && !pin) { pin = pinMatch[0]; remaining = remaining.replace(pinMatch[0], "").trim(); }
+    const stateMatch = INDIA_STATES.find(st => remaining.toLowerCase().includes(st.toLowerCase()));
+    if (stateMatch && !state) { state = stateMatch; remaining = remaining.replace(new RegExp(stateMatch,"i"), "").trim(); }
+    remaining = remaining.replace(/^[-,\s]+|[-,\s]+$/g, "");
+    if (remaining) bodyLines.push(remaining);
+  });
+
+  // First remaining line is likely the name if it's short and has no
+  // address-ish keywords or digits — otherwise leave name blank rather
+  // than risk mislabeling a real address line.
+  let name = "";
+  if (bodyLines.length > 1) {
+    const first = bodyLines[0];
+    const looksLikeAddress = /\d|road|street|st\.|nagar|post|po|dist|near|opp|house|building|floor|apartment|flat/i.test(first);
+    if (!looksLikeAddress && first.split(" ").length <= 4) {
+      name = bodyLines.shift();
+    }
+  }
+
+  return { name, address: bodyLines.join(", "), state, pin };
+};
+
+/* ── AddressEntryModal: structured address entry with a paste-and-parse
+   shortcut for WhatsApp addresses. Parsing is a best-effort shortcut,
+   never trusted blindly — every field stays editable. ────────────────── */
+const AddressEntryModal = ({ initialValue, onClose, onSave }) => {
+  const parsedInitial = React.useMemo(() => parseIndianAddress(initialValue||""), []); // eslint-disable-line
+  const [pasteBox, setPasteBox] = React.useState("");
+  const [name, setName] = React.useState(parsedInitial.name);
+  const [address, setAddress] = React.useState(parsedInitial.address || initialValue || "");
+  const [state, setState] = React.useState(parsedInitial.state);
+  const [pin, setPin] = React.useState(parsedInitial.pin);
+
+  const inp = { width:"100%", padding:"9px 12px", borderRadius:9, border:"1.5px solid #e2e8f0", fontSize:13, fontFamily:"inherit", outline:"none", boxSizing:"border-box" };
+  const lbl = { display:"block", fontSize:11, fontWeight:700, color:"#374151", marginBottom:4, textTransform:"uppercase", letterSpacing:"0.05em" };
+
+  const runParse = () => {
+    if (!pasteBox.trim()) return;
+    const parsed = parseIndianAddress(pasteBox);
+    if (parsed.name) setName(parsed.name);
+    if (parsed.address) setAddress(parsed.address);
+    if (parsed.state) setState(parsed.state);
+    if (parsed.pin) setPin(parsed.pin);
+  };
+
+  const formatted = [name, address, [state,pin].filter(Boolean).join(" - ")].filter(Boolean).join("\n");
+
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:320, background:"rgba(15,23,42,0.55)", display:"flex", alignItems:"center", justifyContent:"center" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:"white", borderRadius:16, padding:"22px 24px", maxWidth:440, width:"92%", maxHeight:"88vh", overflowY:"auto", boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
+        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:6 }}>
+          <div style={{ fontSize:15, fontWeight:800, color:"#0f172a" }}>📍 Enter Address</div>
+          <button onClick={onClose} style={{ border:"none", background:"transparent", fontSize:18, cursor:"pointer", color:"#94a3b8" }}>✕</button>
+        </div>
+
+        <div style={{ marginBottom:14 }}>
+          <label style={lbl}>Paste from WhatsApp (optional)</label>
+          <textarea value={pasteBox} onChange={e=>setPasteBox(e.target.value)} rows={4}
+            placeholder="Paste the full address the customer sent you…"
+            style={{...inp,resize:"vertical",fontFamily:"inherit"}}/>
+          <button onClick={runParse}
+            style={{ marginTop:6, width:"100%", padding:"9px 0", borderRadius:9, border:"1px solid #e2e8f0", background:"#f8fafc", color:"#374151", fontWeight:700, fontSize:12.5, cursor:"pointer", fontFamily:"inherit" }}>
+            ✨ Fill fields from paste
+          </button>
+          <p style={{ margin:"6px 0 0", fontSize:10.5, color:"#94a3b8" }}>This is a best-effort shortcut — please check the fields below before saving.</p>
+        </div>
+
+        <div style={{ borderTop:"1px solid #f1f5f9", paddingTop:14, marginBottom:14 }}>
+          <div style={{ marginBottom:10 }}>
+            <label style={lbl}>Name</label>
+            <input value={name} onChange={e=>setName(e.target.value)} placeholder="Recipient name" style={inp}/>
+          </div>
+          <div style={{ marginBottom:10 }}>
+            <label style={lbl}>Address</label>
+            <textarea value={address} onChange={e=>setAddress(e.target.value)} rows={3} placeholder="House, street, area, city, district" style={{...inp,resize:"vertical",fontFamily:"inherit"}}/>
+          </div>
+          <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:10 }}>
+            <div><label style={lbl}>State</label>
+              <select value={state} onChange={e=>setState(e.target.value)} style={inp}>
+                <option value="">Select state</option>
+                {INDIA_STATES.map(st=><option key={st} value={st}>{st}</option>)}
+              </select>
+            </div>
+            <div><label style={lbl}>PIN Code</label>
+              <input value={pin} onChange={e=>setPin(e.target.value.replace(/\D/g,"").slice(0,6))} placeholder="6-digit PIN" style={inp}/>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ marginBottom:18 }}>
+          <label style={lbl}>Preview</label>
+          <div style={{ padding:"10px 12px", borderRadius:9, background:"#f8fafc", border:"1px solid #e2e8f0", fontSize:12.5, color:"#374151", whiteSpace:"pre-line", lineHeight:1.5, minHeight:20 }}>
+            {formatted || <span style={{color:"#94a3b8"}}>Nothing entered yet</span>}
+          </div>
+        </div>
+
+        <div style={{ display:"flex", gap:10 }}>
+          <button onClick={onClose} style={{ flex:1, padding:"11px 0", borderRadius:10, border:"1px solid #e2e8f0", background:"white", color:"#374151", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+            Cancel
+          </button>
+          <button onClick={()=>onSave(formatted)} disabled={!formatted}
+            style={{ flex:1, padding:"11px 0", borderRadius:10, border:"none", background:"#f59e0b", color:"white", fontWeight:700, fontSize:13, cursor:formatted?"pointer":"default", fontFamily:"inherit", opacity:formatted?1:0.6 }}>
+            Save Address
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ── AttendancePage: ROS India's staff clock-in/out. Shared login split
+   into two identities by a lightweight PIN gate (Swapna / Jiji) —
+   convenience friction, not real authentication. Admin sees both
+   directly and manages PINs; staff unlock their own section by PIN. ─── */
+/* ── Attendance day classification: Sunday is the only holiday, Mon-Sat
+   are working days. >7h = Full Day, 3.5-7h = Half Day, under that but
+   still clocked in/out = Short, nothing logged on a past working day =
+   Absent. ────────────────────────────────────────────────────────────── */
+const classifyAttendanceDay = (dateStr, clockIn, clockOut, holidaySet) => {
+  const d = new Date(dateStr+"T00:00:00");
+  const dow = d.getDay(); // 0=Sunday
+  const todayStr = new Date().toISOString().slice(0,10);
+  if (dow === 0 || (holidaySet && holidaySet.has(dateStr))) return "holiday";
+  if (dateStr > todayStr) return "future";
+  if (!clockIn) return dateStr===todayStr ? "pending" : "absent";
+  if (!clockOut) return "inprogress";
+  const hours = (new Date(clockOut) - new Date(clockIn)) / 3600000;
+  if (hours > 7) return "full";
+  if (hours >= 3.5) return "half";
+  if (hours <= 0.05) return "absent"; // essentially zero duration — no real attendance happened
+  return "short";
+};
+
+const DAY_STATUS_STYLE = {
+  full:       {bg:"#16a34a", text:"white",   label:"Full Day"},
+  half:       {bg:"#f59e0b", text:"white",   label:"Half Day"},
+  short:      {bg:"#fca5a5", text:"#7f1d1d", label:"Short Hours"},
+  absent:     {bg:"#fee2e2", text:"#dc2626", label:"Absent"},
+  holiday:    {bg:"#f1f5f9", text:"#94a3b8", label:"Sunday"},
+  future:     {bg:"#ffffff", text:"#cbd5e1", label:""},
+  inprogress: {bg:"#dbeafe", text:"#1d4ed8", label:"In Progress"},
+  pending:    {bg:"#fef9c3", text:"#92400e", label:"Not Clocked In"},
+};
+
+/* ── AttendanceCalendar: month grid, one cell per day, colored by
+   classifyAttendanceDay. Reused for both the staff's own view and the
+   admin's per-person view. ───────────────────────────────────────────── */
+/* ── MonthSummaryBar: Working Days / Present / Absent / Full Day / Half
+   Day counts for a given person's month, visible to both staff and
+   admin. Only counts days up to today for present/absent (a future date
+   isn't yet "absent"). ──────────────────────────────────────────────── */
+const MonthSummaryBar = ({ year, month, records, holidaySet }) => {
+  const recByDate = {};
+  records.forEach(r => { recByDate[r.date] = r; });
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const todayStr = new Date().toISOString().slice(0,10);
+
+  let workingDays=0, present=0, absent=0, full=0, half=0;
+  for (let day=1; day<=daysInMonth; day++) {
+    const dateStr = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+    const dow = new Date(dateStr+"T00:00:00").getDay();
+    const isHoliday = dow===0 || holidaySet.has(dateStr);
+    if (!isHoliday) workingDays++;
+    if (dateStr > todayStr) continue; // don't count future days as present/absent yet
+    const rec = recByDate[dateStr];
+    const status = classifyAttendanceDay(dateStr, rec?.clockIn, rec?.clockOut, holidaySet);
+    if (status==="full") { present++; full++; }
+    else if (status==="half") { present++; half++; }
+    else if (status==="short" || status==="inprogress") { present++; }
+    else if (status==="absent") { absent++; }
+  }
+
+  const Stat = ({ label, value, color }) => (
+    <div style={{flex:1,textAlign:"center",padding:"10px 6px"}}>
+      <div style={{fontSize:20,fontWeight:900,color:color||"#0f172a"}}>{value}</div>
+      <div style={{fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>{label}</div>
+    </div>
+  );
+
+  return (
+    <div style={{display:"flex",border:"1px solid #e2e8f0",borderRadius:14,background:"white",marginBottom:16,overflow:"hidden"}}>
+      <Stat label="Working Days" value={workingDays}/>
+      <div style={{width:1,background:"#f1f5f9"}}/>
+      <Stat label="Present" value={present} color="#16a34a"/>
+      <div style={{width:1,background:"#f1f5f9"}}/>
+      <Stat label="Absent" value={absent} color="#dc2626"/>
+      <div style={{width:1,background:"#f1f5f9"}}/>
+      <Stat label="Full Day" value={full} color="#16a34a"/>
+      <div style={{width:1,background:"#f1f5f9"}}/>
+      <Stat label="Half Day" value={half} color="#f59e0b"/>
+    </div>
+  );
+};
+
+const AttendanceCalendar = ({ year, month, records, accent, onDayClick, holidaySet, holidays=[] }) => {
+  const holidayLabelMap = {};
+  holidays.forEach(h => { holidayLabelMap[h.date] = h.label || ""; });
+  const firstDay = new Date(year, month, 1);
+  const daysInMonth = new Date(year, month+1, 0).getDate();
+  const startWeekday = firstDay.getDay(); // 0=Sun
+  const recByDate = {};
+  records.forEach(r => { recByDate[r.date] = r; });
+
+  const cells = [];
+  for (let i=0; i<startWeekday; i++) cells.push(null);
+  for (let day=1; day<=daysInMonth; day++) {
+    const dateStr = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+    cells.push(dateStr);
+  }
+
+  let fullCount=0, halfCount=0, absentCount=0;
+  for (let day=1; day<=daysInMonth; day++) {
+    const dateStr = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
+    const rec = recByDate[dateStr];
+    const status = classifyAttendanceDay(dateStr, rec?.clockIn, rec?.clockOut, holidaySet);
+    if (status==="full") fullCount++;
+    else if (status==="half") halfCount++;
+    else if (status==="absent") absentCount++;
+  }
+
+  return (
+    <div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:6,marginBottom:10}}>
+        {["S","M","T","W","T","F","S"].map((d,i)=>(
+          <div key={i} style={{textAlign:"center",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase"}}>{d}</div>
+        ))}
+        {cells.map((dateStr,i)=>{
+          if (!dateStr) return <div key={i}/>;
+          const rec = recByDate[dateStr];
+          const status = classifyAttendanceDay(dateStr, rec?.clockIn, rec?.clockOut, holidaySet);
+          const st = DAY_STATUS_STYLE[status];
+          const dayNum = parseInt(dateStr.slice(-2));
+          const isToday = dateStr === new Date().toISOString().slice(0,10);
+          const isFuture = dateStr > new Date().toISOString().slice(0,10);
+          let hoursLabel = "";
+          if (rec?.clockIn && rec?.clockOut) {
+            const totalMin = Math.round((new Date(rec.clockOut) - new Date(rec.clockIn)) / 60000);
+            const h = Math.floor(totalMin/60), m = totalMin%60;
+            hoursLabel = m>0 ? `${h}h ${m}m` : `${h}h`;
+          }
+          const isSunday = new Date(dateStr+"T00:00:00").getDay()===0;
+          const customHolidayLabel = holidayLabelMap[dateStr];
+          const isCustomHoliday = status==="holiday" && !isSunday;
+          const cellTitle = isCustomHoliday
+            ? (customHolidayLabel ? `Holiday: ${customHolidayLabel}` : "Holiday")
+            : (onDayClick&&!isFuture?"Click to view/edit":st.label);
+          return (
+            <div key={i} title={cellTitle}
+              onClick={()=>{ if(onDayClick && !isFuture) onDayClick(dateStr, rec); }}
+              style={{
+                aspectRatio:"1",borderRadius:9,background:isCustomHoliday?"#f5f3ff":st.bg,color:isCustomHoliday?"#6d28d9":st.text,
+                display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",
+                fontSize:15,fontWeight:800,border:isToday?`2px solid ${accent}`:isCustomHoliday?"1px solid #c4b5fd":"1px solid transparent",
+                boxSizing:"border-box", cursor:(onDayClick&&!isFuture)?"pointer":"default", position:"relative",
+              }}>
+              {isCustomHoliday && <span style={{position:"absolute",top:2,right:3,fontSize:9}}>🎉</span>}
+              {dayNum}
+              {isCustomHoliday
+                ? (<>
+                    <span style={{fontSize:7,fontWeight:800,opacity:0.85,marginTop:1,letterSpacing:"0.03em"}}>HOLIDAY</span>
+                    {customHolidayLabel && <span style={{fontSize:8,fontWeight:700,opacity:0.9,textAlign:"center",lineHeight:1.1,padding:"0 2px"}}>{customHolidayLabel}</span>}
+                  </>)
+                : hoursLabel && <span style={{fontSize:10,fontWeight:700,opacity:0.95,marginTop:2}}>{hoursLabel}</span>}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{display:"flex",gap:14,flexWrap:"wrap",fontSize:10.5,color:"#64748b"}}>
+        <span><span style={{display:"inline-block",width:9,height:9,borderRadius:3,background:DAY_STATUS_STYLE.full.bg,marginRight:4}}/>Full Day ({fullCount})</span>
+        <span><span style={{display:"inline-block",width:9,height:9,borderRadius:3,background:DAY_STATUS_STYLE.half.bg,marginRight:4}}/>Half Day ({halfCount})</span>
+        <span><span style={{display:"inline-block",width:9,height:9,borderRadius:3,background:DAY_STATUS_STYLE.absent.bg,marginRight:4}}/>Absent ({absentCount})</span>
+        <span><span style={{display:"inline-block",width:9,height:9,borderRadius:3,background:DAY_STATUS_STYLE.holiday.bg,marginRight:4}}/>Sunday</span>
+      </div>
+    </div>
+  );
+};
+
+/* ── AttendancePage: login itself identifies the person now (Jiji /
+   Swapna each have their own account), so staff see their own clock
+   in/out directly — no PIN gate. Admin sees both, with calendars and a
+   printable monthly register. ────────────────────────────────────────── */
+/* ── InventoryPage: stock tracking for ROS India's kept-in-stock product
+   lines (as opposed to the dropshipped majority). Every stock change is
+   logged as its own movement — sale-out or restock-in — so clicking an
+   item shows a real ledger of who bought each unit, not just a count.
+   Adding items / restocking is admin-only; everyone can view. ───────── */
+const InventoryPage = ({ shopId, shop, user }) => {
+  const isAdmin = user?.role === "superadmin" || user?.role === "admin";
+  const [items, setItems] = React.useState([]);
+  const [movements, setMovements] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [selectedItemId, setSelectedItemId] = React.useState(null);
+  const [showAddItem, setShowAddItem] = React.useState(false);
+  const [restockFor, setRestockFor] = React.useState(null); // {id, name} | null
+  const [confirmDeleteId, setConfirmDeleteId] = React.useState(null);
+
+  const load = React.useCallback(() => {
+    setLoading(true);
+    Promise.all([dbLoadInventoryItems(shopId), dbLoadInventoryMovements(shopId)]).then(([i, m]) => {
+      setItems(i); setMovements(m); setLoading(false);
+    });
+  }, [shopId]);
+  React.useEffect(() => { load(); }, [load]);
+
+  const fmtDate = (d) => { try { return new Date(d+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}); } catch { return d; } };
+
+  const stockColor = (stock) => stock<=0 ? "#dc2626" : stock<=2 ? "#d97706" : "#166534";
+  const stockBg = (stock) => stock<=0 ? "#fef2f2" : stock<=2 ? "#fffbeb" : "#f0fdf4";
+
+  if (loading) return <div style={{padding:60,textAlign:"center",color:"#94a3b8"}}>Loading inventory…</div>;
+
+  const selectedItem = items.find(i => i.id === selectedItemId);
+
+  /* ── ITEM DETAIL VIEW ── */
+  if (selectedItem) {
+    const itemMovements = movements.filter(m => m.itemId === selectedItem.id);
+    const totalSold = selectedItem.totalStocked - selectedItem.currentStock;
+    return (
+      <div style={{padding:"0 0 40px"}}>
+        <button onClick={()=>setSelectedItemId(null)}
+          style={{border:"none",background:"none",color:"#64748b",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:14,padding:0}}>
+          ← Back to Inventory
+        </button>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",flexWrap:"wrap",gap:14,marginBottom:20}}>
+          <div>
+            <h2 style={{margin:0,fontSize:19,fontWeight:800,color:"#0f172a"}}>{selectedItem.name}</h2>
+            <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>Stock ledger — every unit in and out</p>
+          </div>
+          {isAdmin && (
+            <button onClick={()=>setRestockFor({id:selectedItem.id,name:selectedItem.name})}
+              style={{padding:"9px 16px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              + Restock
+            </button>
+          )}
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:24}}>
+          <div style={{padding:"14px 16px",borderRadius:12,background:stockBg(selectedItem.currentStock),border:"1px solid "+stockColor(selectedItem.currentStock)+"33"}}>
+            <div style={{fontSize:22,fontWeight:900,color:stockColor(selectedItem.currentStock)}}>{selectedItem.currentStock}</div>
+            <div style={{fontSize:10.5,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>In Stock Now</div>
+          </div>
+          <div style={{padding:"14px 16px",borderRadius:12,background:"#f8fafc",border:"1px solid #e2e8f0"}}>
+            <div style={{fontSize:22,fontWeight:900,color:"#0f172a"}}>{selectedItem.totalStocked}</div>
+            <div style={{fontSize:10.5,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Total Ever Stocked</div>
+          </div>
+          <div style={{padding:"14px 16px",borderRadius:12,background:"#f8fafc",border:"1px solid #e2e8f0"}}>
+            <div style={{fontSize:22,fontWeight:900,color:"#0f172a"}}>{totalSold}</div>
+            <div style={{fontSize:10.5,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Total Sold</div>
+          </div>
+        </div>
+
+        <div style={{fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:10}}>History</div>
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {itemMovements.length===0 && (
+            <div style={{textAlign:"center",padding:"30px 0",color:"#94a3b8",fontSize:13}}>No movements recorded yet.</div>
+          )}
+          {itemMovements.map(m => (
+            <div key={m.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 14px",borderRadius:10,border:"1px solid #e2e8f0",background:"white"}}>
+              <div>
+                <div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}>
+                  {m.type==="restock" ? "🟢 Restocked" : "🔴 Sold"}
+                  {m.type==="sale" && m.customer && <span style={{color:"#64748b",fontWeight:600}}> to {m.customer}</span>}
+                </div>
+                <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>
+                  {fmtDate(m.date)}{m.saleId?` · Invoice ${m.saleId}`:""}{m.note?` · ${m.note}`:""}
+                </div>
+              </div>
+              <div style={{fontSize:14,fontWeight:800,color:m.type==="restock"?"#166534":"#991b1b"}}>
+                {m.type==="restock"?"+":"-"}{m.qty}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {restockFor && (
+          <RestockModal item={restockFor} onClose={()=>setRestockFor(null)} onSave={async(qty,note)=>{
+            const ok = await dbAddInventoryMovement(shopId, restockFor.id, "restock", qty, new Date().toISOString().slice(0,10), null, null, note);
+            if (ok) { setRestockFor(null); load(); }
+            else alert("Couldn't save — please check your connection and try again.");
+          }}/>
+        )}
+      </div>
+    );
+  }
+
+  /* ── ITEM LIST VIEW ── */
+  return (
+    <div style={{padding:"0 0 40px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:18}}>
+        <div>
+          <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>📦 Inventory</h2>
+          <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>Stock tracking for the product lines you keep on hand</p>
+        </div>
+        {isAdmin && (
+          <button onClick={()=>setShowAddItem(true)}
+            style={{padding:"9px 16px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            + Add Item
+          </button>
+        )}
+      </div>
+
+      {items.length===0 ? (
+        <div style={{textAlign:"center",padding:"60px 20px",color:"#94a3b8",fontSize:13}}>
+          No inventory items yet. {isAdmin ? 'Click "+ Add Item" to start tracking your first stocked product.' : "Check back once your admin has added tracked items."}
+        </div>
+      ) : (
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:14}}>
+          {items.map(item => (
+            <div key={item.id} onClick={()=>setSelectedItemId(item.id)}
+              style={{padding:"16px 18px",borderRadius:14,border:"1px solid #e2e8f0",background:"white",cursor:"pointer",position:"relative"}}>
+              {isAdmin && (
+                <button onClick={(e)=>{e.stopPropagation();setConfirmDeleteId(item.id);}}
+                  title="Delete this item"
+                  style={{position:"absolute",top:10,right:10,border:"none",background:"transparent",color:"#cbd5e1",cursor:"pointer",fontSize:13}}>
+                  ✕
+                </button>
+              )}
+              <div style={{fontSize:14,fontWeight:700,color:"#0f172a",marginBottom:10,paddingRight:16}}>{item.name}</div>
+              <div style={{display:"inline-block",padding:"5px 12px",borderRadius:999,background:stockBg(item.currentStock),color:stockColor(item.currentStock),fontWeight:900,fontSize:18}}>
+                {item.currentStock}
+              </div>
+              <div style={{fontSize:10.5,color:"#94a3b8",marginTop:6}}>in stock · {item.totalStocked - item.currentStock} sold total</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showAddItem && (
+        <AddInventoryItemModal onClose={()=>setShowAddItem(false)} onSave={async(name,stock)=>{
+          const id = await dbAddInventoryItem(shopId, name, stock);
+          if (id) { setShowAddItem(false); load(); }
+          else alert("Couldn't add this item — please check your connection and try again.");
+        }}/>
+      )}
+
+      {confirmDeleteId && (
+        <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:"white",borderRadius:16,padding:22,maxWidth:320,width:"92%"}}>
+            <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:8}}>Delete this item?</div>
+            <p style={{fontSize:12,color:"#64748b",marginBottom:18}}>This removes the item and its full stock history. This can't be undone.</p>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setConfirmDeleteId(null)}
+                style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                Cancel
+              </button>
+              <button onClick={async()=>{
+                  const ok = await dbDeleteInventoryItem(shopId, confirmDeleteId);
+                  setConfirmDeleteId(null);
+                  if (ok) load();
+                  else alert("Couldn't delete — please check your connection and try again.");
+                }}
+                style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#dc2626",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const AddInventoryItemModal = ({ onClose, onSave }) => {
+  const [name, setName] = React.useState("");
+  const [stock, setStock] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const inp = {width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
+  const lbl = {display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"white",borderRadius:16,padding:22,maxWidth:340,width:"92%"}}>
+        <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:16}}>+ Add Inventory Item</div>
+        <div style={{marginBottom:12}}>
+          <label style={lbl}>Item Name</label>
+          <input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Side Bangs" style={inp} autoFocus/>
+        </div>
+        <div style={{marginBottom:18}}>
+          <label style={lbl}>Starting Stock</label>
+          <input type="number" value={stock} onChange={e=>setStock(e.target.value)} placeholder="e.g. 10" style={inp}/>
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={onClose}
+            style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            Cancel
+          </button>
+          <button
+            onClick={async()=>{
+              if(!name.trim()) return;
+              setSaving(true);
+              await onSave(name.trim(), Number(stock)||0);
+              setSaving(false);
+            }}
+            disabled={!name.trim()||saving}
+            style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#1e293b",color:"white",fontWeight:700,fontSize:13,cursor:(!name.trim()||saving)?"default":"pointer",fontFamily:"inherit",opacity:(!name.trim()||saving)?0.6:1}}>
+            {saving?"Saving…":"Add Item"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const RestockModal = ({ item, onClose, onSave }) => {
+  const [qty, setQty] = React.useState("");
+  const [note, setNote] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const inp = {width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
+  const lbl = {display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"white",borderRadius:16,padding:22,maxWidth:340,width:"92%"}}>
+        <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:4}}>+ Restock {item.name}</div>
+        <p style={{fontSize:11,color:"#94a3b8",marginBottom:16}}>Logs a restock event and adds to current stock.</p>
+        <div style={{marginBottom:12}}>
+          <label style={lbl}>Quantity Added</label>
+          <input type="number" value={qty} onChange={e=>setQty(e.target.value)} placeholder="e.g. 10" style={inp} autoFocus/>
+        </div>
+        <div style={{marginBottom:18}}>
+          <label style={lbl}>Note (optional)</label>
+          <input value={note} onChange={e=>setNote(e.target.value)} placeholder="e.g. New batch from factory" style={inp}/>
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={onClose}
+            style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            Cancel
+          </button>
+          <button
+            onClick={async()=>{
+              const q=Number(qty)||0;
+              if(q<=0) return;
+              setSaving(true);
+              await onSave(q, note);
+              setSaving(false);
+            }}
+            disabled={!(Number(qty)>0)||saving}
+            style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#1e293b",color:"white",fontWeight:700,fontSize:13,cursor:(!(Number(qty)>0)||saving)?"default":"pointer",fontFamily:"inherit",opacity:(!(Number(qty)>0)||saving)?0.6:1}}>
+            {saving?"Saving…":"Add Stock"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const AttendancePage = ({ shopId, shop, user, users=[] }) => {
+  const isAdminView = user?.role !== "staff";
+  const [records, setRecords] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [viewDate, setViewDate] = React.useState(() => new Date());
+  const [adminSelected, setAdminSelected] = React.useState(null);
+  const [dayEdit, setDayEdit] = React.useState(null); // {staffName, date, clockInTime, clockOutTime} | null
+  const [clockOutVerify, setClockOutVerify] = React.useState(null); // {staffName, mode:'captcha'|'confirm', captchaText, typed, wrong} | null
+  const [holidays, setHolidays] = React.useState([]); // [{date, label}]
+  const [showHolidayManager, setShowHolidayManager] = React.useState(false);
+  const holidaySet = React.useMemo(() => new Set(holidays.map(h=>h.date)), [holidays]);
+  const [nowTick, setNowTick] = React.useState(() => Date.now());
+
+  // Keeps the live "time since clock-in" display updating
+  React.useEffect(() => {
+    const t = setInterval(() => setNowTick(Date.now()), 30000);
+    return () => clearInterval(t);
+  }, []);
+
+  // Current hour in India Standard Time, regardless of the device's own
+  // timezone — clock-in is only allowed 8:00am–6:00pm IST.
+  const getISTParts = () => {
+    const parts = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "numeric", hour12: false }).formatToParts(new Date());
+    const hour = parseInt(parts.find(p=>p.type==="hour").value, 10);
+    const minute = parseInt(parts.find(p=>p.type==="minute").value, 10);
+    return { hour, minute };
+  };
+  const isWithinClockInWindow = () => {
+    const { hour } = getISTParts();
+    return hour >= 8 && hour < 18;
+  };
+
+  const staffAccounts = React.useMemo(
+    () => users.filter(u => u.role==="staff" && (u.shops||[]).includes("ros-india")),
+    [users]
+  );
+
+  const load = React.useCallback(() => {
+    setLoading(true);
+    Promise.all([dbLoadAttendanceRecords(shopId), dbLoadAttendanceHolidays(shopId)]).then(([r, h]) => {
+      setRecords(r); setHolidays(h); setLoading(false);
+    });
+  }, [shopId]);
+  React.useEffect(() => { load(); }, [load]);
+  React.useEffect(() => {
+    if (isAdminView && staffAccounts.length>0 && !adminSelected) setAdminSelected(staffAccounts[0].name);
+  }, [isAdminView, staffAccounts, adminSelected]);
+
+  const today = new Date().toISOString().slice(0,10);
+  const myName = user?.name || "";
+  const getTodayRecord = (staffName) => records.find(r => r.staffName===staffName && r.date===today);
+  const recordsFor = (staffName) => records.filter(r => r.staffName===staffName);
+
+  const fmtTime = (iso) => { if(!iso) return null; try { return new Date(iso).toLocaleTimeString("en-IN",{hour:"numeric",minute:"2-digit",hour12:true}); } catch { return null; } };
+  const computeHours = (clockIn, clockOut) => {
+    if (!clockIn || !clockOut) return null;
+    const ms = new Date(clockOut) - new Date(clockIn);
+    const h = Math.floor(ms/3600000), m = Math.round((ms%3600000)/60000);
+    return `${h}h ${m}m`;
+  };
+
+  const handleClockIn = async (staffName) => {
+    if (!isWithinClockInWindow()) {
+      alert("Clock in is only allowed between 8:00 AM and 6:00 PM.");
+      return;
+    }
+    const rec = await dbClockIn(shopId, staffName);
+    if (rec) load();
+    else alert("Couldn't clock in — please check your connection and try again.");
+  };
+  const handleClockOut = async (staffName) => {
+    const rec = getTodayRecord(staffName);
+    if (!rec) return;
+    const ok = await dbClockOut(shopId, staffName, rec.id);
+    if (ok) load();
+    else alert("Couldn't clock out — please check your connection and try again.");
+  };
+
+  // Guards against accidental taps: under 7 hours in, require typing a
+  // short random code to confirm; past 7 hours, a normal shift is likely
+  // ending, so just a plain yes/no is enough.
+  const requestClockOut = (staffName) => {
+    const rec = getTodayRecord(staffName);
+    if (!rec) return;
+    const elapsedHours = (Date.now() - new Date(rec.clockIn).getTime()) / 3600000;
+    if (elapsedHours < 7) {
+      const chars = "ABCDEFGHJKMNPQRSTUVWXYZ23456789";
+      const captchaText = Array.from({length:5}, () => chars[Math.floor(Math.random()*chars.length)]).join("");
+      setClockOutVerify({ staffName, mode: "captcha", captchaText, typed: "" });
+    } else {
+      setClockOutVerify({ staffName, mode: "confirm" });
+    }
+  };
+
+  const monthTotalHours = (staffName, year, month) => {
+    const recs = recordsFor(staffName).filter(r => r.date.startsWith(`${year}-${String(month+1).padStart(2,"0")}`));
+    let totalMs = 0;
+    recs.forEach(r => { if (r.clockIn && r.clockOut) totalMs += new Date(r.clockOut) - new Date(r.clockIn); });
+    const h = Math.floor(totalMs/3600000), m = Math.round((totalMs%3600000)/60000);
+    return `${h}h ${m}m`;
+  };
+
+  const handlePrint = (staffName, year, month) => {
+    const recs = recordsFor(staffName).filter(r => r.date.startsWith(`${year}-${String(month+1).padStart(2,"0")}`)).sort((a,b)=>a.date.localeCompare(b.date));
+    const monthLabel = new Date(year, month, 1).toLocaleDateString("en-GB",{month:"long",year:"numeric"});
+    const w = window.open("", "_blank");
+    const rows = recs.map(r => {
+      const status = classifyAttendanceDay(r.date, r.clockIn, r.clockOut, holidaySet);
+      return `<tr><td>${r.date}</td><td>${fmtTime(r.clockIn)||"—"}</td><td>${fmtTime(r.clockOut)||"—"}</td><td>${computeHours(r.clockIn,r.clockOut)||"—"}</td><td>${DAY_STATUS_STYLE[status]?.label||""}</td></tr>`;
+    }).join("");
+    w.document.write(`<!DOCTYPE html><html><head><title>Attendance — ${staffName} — ${monthLabel}</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:24px;color:#0f172a;}
+        h1{font-size:18px;margin-bottom:4px;} p{color:#64748b;font-size:12px;margin-top:0;}
+        table{width:100%;border-collapse:collapse;margin-top:16px;} th,td{border:1px solid #e2e8f0;padding:8px 10px;font-size:11px;text-align:left;}
+        th{background:#f8fafc;text-transform:uppercase;letter-spacing:0.04em;font-size:10px;}
+      </style></head><body>
+      <h1>🕐 Attendance — ${staffName}</h1>
+      <p>${monthLabel} · Total worked: ${monthTotalHours(staffName,year,month)}</p>
+      <table><thead><tr><th>Date</th><th>Clock In</th><th>Clock Out</th><th>Hours</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>
+      </body></html>`);
+    w.document.close();
+    setTimeout(()=>w.print(), 300);
+  };
+
+  const changeMonth = (delta) => setViewDate(d => new Date(d.getFullYear(), d.getMonth()+delta, 1));
+
+  if (loading) return <div style={{padding:60,textAlign:"center",color:"#94a3b8"}}>Loading attendance…</div>;
+
+  const year = viewDate.getFullYear(), month = viewDate.getMonth();
+  const monthLabel = viewDate.toLocaleDateString("en-GB",{month:"long",year:"numeric"});
+
+  const BigClockButton = ({ staffName }) => {
+    const rec = getTodayRecord(staffName);
+    const notClockedIn = !rec;
+    const clockedIn = rec && !rec.clockOut;
+    const done = rec && rec.clockOut;
+    const windowOpen = isWithinClockInWindow();
+    const canClockIn = notClockedIn && windowOpen;
+    const isDisabled = done || (notClockedIn && !windowOpen);
+
+    let elapsedLabel = null, expectedOutLabel = null;
+    if (clockedIn) {
+      void nowTick; // re-render on tick
+      const elapsedMs = Date.now() - new Date(rec.clockIn).getTime();
+      const eh = Math.floor(elapsedMs/3600000), em = Math.floor((elapsedMs%3600000)/60000);
+      elapsedLabel = `${eh}h ${em}m`;
+      const expectedOut = new Date(new Date(rec.clockIn).getTime() + 8*3600000);
+      expectedOutLabel = expectedOut.toLocaleTimeString("en-IN",{hour:"numeric",minute:"2-digit",hour12:true});
+    }
+
+    return (
+      <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"20px 0"}}>
+        <button
+          onClick={()=> canClockIn ? handleClockIn(staffName) : clockedIn ? requestClockOut(staffName) : null}
+          disabled={isDisabled}
+          style={{
+            width:220,height:220,borderRadius:"50%",border:"none",cursor:isDisabled?"default":"pointer",
+            background: isDisabled && notClockedIn
+              ? "radial-gradient(circle at 35% 30%, #e2e8f0, #94a3b8)"
+              : notClockedIn
+                ? "radial-gradient(circle at 35% 30%, #4ade80, #16a34a)"
+                : clockedIn
+                  ? "radial-gradient(circle at 35% 30%, #f87171, #dc2626)"
+                  : "radial-gradient(circle at 35% 30%, #cbd5e1, #94a3b8)",
+            color:"white", fontFamily:"inherit",
+            boxShadow: isDisabled ? "0 8px 20px rgba(0,0,0,0.12)" : notClockedIn ? "0 16px 40px rgba(22,163,74,0.4)" : "0 16px 40px rgba(220,38,38,0.4)",
+            display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,
+            transition:"transform 0.15s", opacity:isDisabled&&notClockedIn?0.7:1,
+          }}
+          onMouseDown={e=>{if(!isDisabled)e.currentTarget.style.transform="scale(0.96)";}}
+          onMouseUp={e=>{e.currentTarget.style.transform="scale(1)";}}
+          onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";}}>
+          <span style={{fontSize:44}}>{notClockedIn?(windowOpen?"🟢":"🔒"):clockedIn?"🔴":"✅"}</span>
+          <span style={{fontSize:20,fontWeight:900,letterSpacing:"0.02em"}}>{notClockedIn?"CLOCK IN":clockedIn?"CLOCK OUT":"DONE"}</span>
+        </button>
+
+        {clockedIn && (
+          <div style={{marginTop:16,padding:"10px 18px",borderRadius:12,background:"#eff6ff",border:"1px solid #bfdbfe",textAlign:"center"}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#1d4ed8",textTransform:"uppercase",letterSpacing:"0.05em"}}>⏱ Timer Running</div>
+            <div style={{fontSize:18,fontWeight:900,color:"#0f172a",marginTop:2}}>{elapsedLabel}</div>
+            <div style={{fontSize:11,color:"#64748b",marginTop:2}}>8 hours completes around {expectedOutLabel}</div>
+          </div>
+        )}
+
+        {notClockedIn && !windowOpen && (
+          <div style={{marginTop:14,fontSize:11.5,color:"#dc2626",textAlign:"center",maxWidth:240}}>Clock in is only available between 8:00 AM and 6:00 PM.</div>
+        )}
+
+        <div style={{marginTop:14,fontSize:14,color:"#374151",textAlign:"center"}}>
+          {notClockedIn ? "Not clocked in yet today" :
+           clockedIn ? `Clocked in at ${fmtTime(rec.clockIn)}` :
+           `${fmtTime(rec.clockIn)} → ${fmtTime(rec.clockOut)} · Worked ${computeHours(rec.clockIn,rec.clockOut)}`}
+        </div>
+      </div>
+    );
+  };
+
+  const MonthNav = () => (
+    <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:14,marginBottom:14}}>
+      <button onClick={()=>changeMonth(-1)} style={{border:"none",background:"#f1f5f9",width:30,height:30,borderRadius:9,cursor:"pointer",fontSize:14,fontWeight:800,color:"#64748b"}}>‹</button>
+      <span style={{fontSize:13,fontWeight:800,color:"#0f172a",minWidth:130,textAlign:"center"}}>{monthLabel}</span>
+      <button onClick={()=>changeMonth(1)} style={{border:"none",background:"#f1f5f9",width:30,height:30,borderRadius:9,cursor:"pointer",fontSize:14,fontWeight:800,color:"#64748b"}}>›</button>
+    </div>
+  );
+
+  /* ── STAFF VIEW ── */
+  if (!isAdminView) {
+    return (
+      <div style={{maxWidth:420,margin:"0 auto",padding:"10px 0 40px"}}>
+        <h2 style={{fontSize:18,fontWeight:800,color:"#0f172a",marginBottom:2,textAlign:"center"}}>🕐 Hi {myName}!</h2>
+        <p style={{fontSize:12,color:"#64748b",marginBottom:6,textAlign:"center"}}>Tap the button below to clock in or out.</p>
+
+        <BigClockButton staffName={myName} />
+
+        <div style={{marginTop:10,paddingTop:20,borderTop:"1px solid #e2e8f0"}}>
+          <MonthNav/>
+          <MonthSummaryBar year={year} month={month} records={recordsFor(myName)} holidaySet={holidaySet}/>
+          <AttendanceCalendar year={year} month={month} records={recordsFor(myName)} accent={shop.accent} holidaySet={holidaySet} holidays={holidays}/>
+          <div style={{marginTop:14,textAlign:"center",fontSize:12,color:"#64748b"}}>
+            Total worked this month: <strong style={{color:"#0f172a"}}>{monthTotalHours(myName,year,month)}</strong>
+          </div>
+        </div>
+        {clockOutVerify && (
+          <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.6)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+            <div style={{background:"white",borderRadius:16,padding:24,maxWidth:320,width:"92%",textAlign:"center"}}>
+              {clockOutVerify.mode==="captcha" ? (
+                <>
+                  <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:4}}>Confirm Clock Out</div>
+                  <p style={{fontSize:12,color:"#64748b",marginBottom:16}}>It's early in your shift — type the code below to confirm this wasn't an accidental tap.</p>
+                  <div style={{fontSize:26,fontWeight:900,letterSpacing:"0.35em",color:"#0f172a",background:"#f8fafc",border:"1.5px dashed #cbd5e1",borderRadius:10,padding:"14px 0",marginBottom:14,userSelect:"none"}}>
+                    {clockOutVerify.captchaText}
+                  </div>
+                  <input value={clockOutVerify.typed} onChange={e=>setClockOutVerify(v=>({...v,typed:e.target.value.toUpperCase(),wrong:false}))}
+                    placeholder="Type the code above" autoFocus
+                    style={{width:"100%",padding:"10px 12px",borderRadius:9,border:"1.5px solid "+(clockOutVerify.wrong?"#fca5a5":"#e2e8f0"),fontSize:16,textAlign:"center",letterSpacing:"0.2em",fontFamily:"inherit",outline:"none",boxSizing:"border-box",marginBottom:clockOutVerify.wrong?4:14,textTransform:"uppercase"}}/>
+                  {clockOutVerify.wrong && <p style={{margin:"0 0 10px",fontSize:11,color:"#dc2626"}}>That's not quite right — try again.</p>}
+                  <div style={{display:"flex",gap:10}}>
+                    <button onClick={()=>setClockOutVerify(null)}
+                      style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                      Cancel
+                    </button>
+                    <button
+                      onClick={()=>{
+                        if(clockOutVerify.typed.trim()===clockOutVerify.captchaText){
+                          const sn=clockOutVerify.staffName;
+                          setClockOutVerify(null);
+                          handleClockOut(sn);
+                        } else {
+                          setClockOutVerify(v=>({...v,typed:"",wrong:true}));
+                        }
+                      }}
+                      disabled={clockOutVerify.typed.trim().length!==5}
+                      style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#dc2626",color:"white",fontWeight:700,fontSize:13,cursor:clockOutVerify.typed.trim().length===5?"pointer":"default",fontFamily:"inherit",opacity:clockOutVerify.typed.trim().length===5?1:0.6}}>
+                      Clock Out
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:6}}>Clock out now?</div>
+                  <p style={{fontSize:12,color:"#64748b",marginBottom:18}}>You've completed a full shift. Confirm you're ready to clock out.</p>
+                  <div style={{display:"flex",gap:10}}>
+                    <button onClick={()=>setClockOutVerify(null)}
+                      style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                      Not yet
+                    </button>
+                    <button
+                      onClick={()=>{
+                        const sn=clockOutVerify.staffName;
+                        setClockOutVerify(null);
+                        handleClockOut(sn);
+                      }}
+                      style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#dc2626",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                      Yes, Clock Out
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  /* ── ADMIN VIEW ── */
+  const liveNow = staffAccounts.map(s => ({ s, rec: getTodayRecord(s.name) })).filter(x => x.rec && !x.rec.clockOut);
+
+  const openDayEdit = (dateStr, rec) => {
+    const toLocalTime = (iso) => { if(!iso) return ""; return new Intl.DateTimeFormat("en-GB",{timeZone:"Asia/Kolkata",hour:"2-digit",minute:"2-digit",hour12:false}).format(new Date(iso)); };
+    setDayEdit({ staffName: adminSelected, date: dateStr, clockInTime: toLocalTime(rec?.clockIn), clockOutTime: toLocalTime(rec?.clockOut) });
+  };
+
+  const saveDayEdit = async () => {
+    if (!dayEdit) return;
+    const ok = await dbSetAttendanceRecord(shopId, dayEdit.staffName, dayEdit.date, dayEdit.clockInTime||null, dayEdit.clockOutTime||null);
+    if (ok) { setDayEdit(null); load(); }
+    else alert("Couldn't save — please check your connection and try again.");
+  };
+
+  return (
+    <div style={{padding:"0 0 40px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:16}}>
+        <div>
+          <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>🕐 Attendance</h2>
+          <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>Monday–Saturday working, Sunday off · Full day &gt;7h · Half day 3.5–7h</p>
+        </div>
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          {staffAccounts.map(s=>(
+            <button key={s.id} onClick={()=>setAdminSelected(s.name)}
+              style={{padding:"8px 14px",borderRadius:9,border:"1px solid "+(adminSelected===s.name?shop.accent:"#e2e8f0"),background:adminSelected===s.name?shop.accentBg:"white",color:adminSelected===s.name?shop.accentText:"#374151",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>
+              👤 {s.name}
+            </button>
+          ))}
+          <button onClick={()=>setShowHolidayManager(true)}
+            style={{padding:"8px 14px",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>
+            🗓️ Manage Holidays
+          </button>
+          <button onClick={()=>handlePrint(adminSelected,year,month)}
+            style={{padding:"8px 14px",borderRadius:9,border:"none",background:"#1e293b",color:"white",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>
+            🖨️ Print
+          </button>
+        </div>
+      </div>
+
+      <div style={{marginBottom:18,padding:"12px 16px",borderRadius:12,background:liveNow.length>0?"#f0fdf4":"#f8fafc",border:"1px solid "+(liveNow.length>0?"#bbf7d0":"#e2e8f0")}}>
+        <div style={{fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:8}}>🔴 Live Now</div>
+        <div style={{display:"flex",flexDirection:"column",gap:6}}>
+          {staffAccounts.map(s=>{
+            const rec=getTodayRecord(s.name);
+            if(rec && !rec.clockOut){
+              const elapsedMs = Date.now() - new Date(rec.clockIn).getTime();
+              const eh = Math.floor(elapsedMs/3600000), em = Math.floor((elapsedMs%3600000)/60000);
+              return (
+                <div key={s.id} style={{fontSize:13,color:"#166534",fontWeight:700}}>
+                  🟢 {s.name} — clocked in since {fmtTime(rec.clockIn)} ({eh}h {em}m so far)
+                </div>
+              );
+            }
+            if(rec && rec.clockOut){
+              return (
+                <div key={s.id} style={{fontSize:13,color:"#64748b",fontWeight:600}}>
+                  ⚪ {s.name} — done for today ({fmtTime(rec.clockIn)} → {fmtTime(rec.clockOut)})
+                </div>
+              );
+            }
+            return (
+              <div key={s.id} style={{fontSize:13,color:"#94a3b8",fontWeight:600}}>
+                ⚪ {s.name} — not clocked in yet today
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {adminSelected && (
+        <div style={{maxWidth:480,margin:"0 auto"}}>
+          <div style={{textAlign:"center",fontSize:16,fontWeight:600,color:"#374151",marginBottom:6}}>
+            {(() => {
+              const rec = getTodayRecord(adminSelected);
+              if (!rec) return <span style={{color:"#94a3b8"}}>Not clocked in today</span>;
+              if (!rec.clockOut) return <span style={{color:"#16a34a",fontWeight:700}}>🟢 Clocked in at {fmtTime(rec.clockIn)}</span>;
+              return <span>{fmtTime(rec.clockIn)} → {fmtTime(rec.clockOut)} · Worked {computeHours(rec.clockIn,rec.clockOut)}</span>;
+            })()}
+          </div>
+          <MonthNav/>
+          <MonthSummaryBar year={year} month={month} records={recordsFor(adminSelected)} holidaySet={holidaySet}/>
+          <p style={{textAlign:"center",fontSize:10.5,color:"#94a3b8",marginBottom:8}}>Click any day to view or correct the times</p>
+          <AttendanceCalendar year={year} month={month} records={recordsFor(adminSelected)} accent={shop.accent} onDayClick={openDayEdit} holidaySet={holidaySet} holidays={holidays}/>
+          <div style={{marginTop:14,textAlign:"center",fontSize:12,color:"#64748b"}}>
+            Total worked this month: <strong style={{color:"#0f172a"}}>{monthTotalHours(adminSelected,year,month)}</strong>
+          </div>
+        </div>
+      )}
+
+      {dayEdit && (
+        <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <div style={{background:"white",borderRadius:16,padding:24,maxWidth:320,width:"92%"}}>
+            <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:4}}>{dayEdit.staffName} — {dayEdit.date}</div>
+            <div style={{fontSize:11,color:"#94a3b8",marginBottom:16}}>Correct the clock-in/out times below (24-hour, IST).</div>
+            <div style={{marginBottom:12}}>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Clock In</label>
+              <input type="time" value={dayEdit.clockInTime} onChange={e=>setDayEdit(d=>({...d,clockInTime:e.target.value}))}
+                style={{width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}/>
+            </div>
+            <div style={{marginBottom:16}}>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Clock Out</label>
+              <input type="time" value={dayEdit.clockOutTime} onChange={e=>setDayEdit(d=>({...d,clockOutTime:e.target.value}))}
+                style={{width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box"}}/>
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setDayEdit(null)}
+                style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                Cancel
+              </button>
+              <button onClick={saveDayEdit}
+                style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                Save
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showHolidayManager && (
+        <HolidayManagerModal
+          shopId={shopId} holidays={holidays}
+          onClose={()=>setShowHolidayManager(false)}
+          onAdd={async (date,label)=>{
+            const ok = await dbAddAttendanceHoliday(shopId, date, label);
+            if (ok) load();
+            else alert("Couldn't add — please check your connection and try again.");
+          }}
+          onRemove={async (date)=>{
+            const ok = await dbRemoveAttendanceHoliday(shopId, date);
+            if (ok) load();
+            else alert("Couldn't remove — please check your connection and try again.");
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+const HolidayManagerModal = ({ shopId, holidays, onClose, onAdd, onRemove }) => {
+  const [newDate, setNewDate] = React.useState("");
+  const [newLabel, setNewLabel] = React.useState("");
+  const sorted = [...holidays].sort((a,b)=>a.date.localeCompare(b.date));
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"white",borderRadius:16,padding:24,maxWidth:380,width:"92%",maxHeight:"80vh",display:"flex",flexDirection:"column"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+          <div style={{fontSize:14,fontWeight:800,color:"#0f172a"}}>🗓️ Holidays</div>
+          <button onClick={onClose} style={{border:"none",background:"transparent",fontSize:18,cursor:"pointer",color:"#94a3b8"}}>✕</button>
+        </div>
+        <p style={{fontSize:11,color:"#94a3b8",marginBottom:14}}>These dates show as holidays on the calendar and don't count as working days or absences — Sundays are always a holiday automatically.</p>
+
+        <div style={{display:"flex",gap:8,marginBottom:14}}>
+          <input type="date" value={newDate} onChange={e=>setNewDate(e.target.value)}
+            style={{flex:1,padding:"8px 10px",borderRadius:8,border:"1.5px solid #e2e8f0",fontSize:12.5,fontFamily:"inherit"}}/>
+          <input value={newLabel} onChange={e=>setNewLabel(e.target.value)} placeholder="Label (optional)"
+            style={{flex:1,padding:"8px 10px",borderRadius:8,border:"1.5px solid #e2e8f0",fontSize:12.5,fontFamily:"inherit"}}/>
+        </div>
+        <button onClick={()=>{ if(newDate){ onAdd(newDate,newLabel); setNewDate(""); setNewLabel(""); } }}
+          disabled={!newDate}
+          style={{width:"100%",padding:"9px 0",borderRadius:9,border:"none",background:"#1e293b",color:"white",fontWeight:700,fontSize:12.5,cursor:newDate?"pointer":"default",fontFamily:"inherit",opacity:newDate?1:0.6,marginBottom:16}}>
+          + Add Holiday
+        </button>
+
+        <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:6}}>
+          {sorted.length===0 && <div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:20}}>No extra holidays set yet.</div>}
+          {sorted.map(h=>(
+            <div key={h.date} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",borderRadius:8,background:"#f8fafc",border:"1px solid #f1f5f9"}}>
+              <div>
+                <div style={{fontSize:12.5,fontWeight:700,color:"#0f172a"}}>{new Date(h.date+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})}</div>
+                {h.label && <div style={{fontSize:11,color:"#64748b"}}>{h.label}</div>}
+              </div>
+              <button onClick={()=>onRemove(h.date)}
+                style={{border:"none",background:"transparent",color:"#dc2626",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                Remove
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const Auditor = ({ size = 64, mood = "neutral" }) => {
+  const suitColor  = "#2d3748";
+  const suitShade  = "#1a202c";
+  const skinColor  = "#e8c39e";
+  const hairColor  = "#4a4a4a";
+  const shirtColor = "#ffffff";
+  const tieColor   = mood==="alert" ? "#dc2626" : mood==="clear" ? "#059669" : "#475569";
+  return (
+    <svg width={size} height={size*1.5} viewBox="0 0 100 150" style={{ overflow:"visible" }}>
+      <ellipse cx="50" cy="140" rx="18" ry="4" fill="#00000015" />
+
+      {/* Legs */}
+      <line x1="42" y1="106" x2="40" y2="132" stroke={suitShade} strokeWidth="8" strokeLinecap="round" />
+      <line x1="58" y1="106" x2="60" y2="132" stroke={suitShade} strokeWidth="8" strokeLinecap="round" />
+      <ellipse cx="39" cy="135" rx="7" ry="4" fill="#1f2937" />
+      <ellipse cx="61" cy="135" rx="7" ry="4" fill="#1f2937" />
+
+      {/* Torso - suit jacket */}
+      <path d="M32 66 L68 66 L74 118 Q50 128 26 118 Z" fill={suitColor} />
+      <path d="M46 66 L50 76 L54 66 Z" fill={shirtColor} />
+      <path d="M48 68 L50 100 L52 68 Z" fill={tieColor} />
+      <path d="M32 66 L46 66 L44 78 Z" fill={suitShade} opacity="0.5" />
+      <path d="M68 66 L54 66 L56 78 Z" fill={suitShade} opacity="0.5" />
+
+      {/* Arm holding magnifying glass */}
+      <line x1="68" y1="72" x2="86" y2="54" stroke={suitColor} strokeWidth="7" strokeLinecap="round" />
+      <circle cx="86" cy="54" r="4" fill={skinColor} />
+      <circle cx="98" cy="42" r="10" fill="none" stroke="#94a3b8" strokeWidth="3.5" />
+      <circle cx="98" cy="42" r="10" fill="#dbeafe" opacity="0.35" />
+      <line x1="105" y1="49" x2="112" y2="56" stroke="#94a3b8" strokeWidth="4" strokeLinecap="round" />
+
+      {/* Other arm */}
+      <line x1="32" y1="72" x2="18" y2="92" stroke={suitColor} strokeWidth="7" strokeLinecap="round" />
+      <circle cx="18" cy="92" r="4" fill={skinColor} />
+
+      {/* Head */}
+      <circle cx="50" cy="38" r="24" fill={skinColor} />
+      {/* Hair */}
+      <path d="M26 34 Q24 14 50 12 Q76 14 74 34 Q70 18 50 18 Q30 18 26 34 Z" fill={hairColor} />
+      <path d="M24 32 Q22 24 27 18 Q22 26 24 36 Z" fill={hairColor} />
+      <path d="M76 32 Q78 24 73 18 Q78 26 76 36 Z" fill={hairColor} />
+
+      {/* Glasses */}
+      <circle cx="40" cy="38" r="7" fill="none" stroke="#334155" strokeWidth="2" />
+      <circle cx="60" cy="38" r="7" fill="none" stroke="#334155" strokeWidth="2" />
+      <line x1="47" y1="38" x2="53" y2="38" stroke="#334155" strokeWidth="2" />
+      <circle cx="40" cy="38" r="3" fill="#1f2937" />
+      <circle cx="60" cy="38" r="3" fill="#1f2937" />
+
+      {/* Eyebrows - stern */}
+      <line x1="34" y1="29" x2="44" y2="31" stroke="#334155" strokeWidth="2" strokeLinecap="round" />
+      <line x1="66" y1="29" x2="56" y2="31" stroke="#334155" strokeWidth="2" strokeLinecap="round" />
+
+      {/* Mouth - mood dependent */}
+      {mood==="alert"
+        ? <path d="M42 52 Q50 47 58 52" stroke="#78350f" strokeWidth="2" fill="none" strokeLinecap="round" />
+        : mood==="clear"
+          ? <path d="M42 49 Q50 55 58 49" stroke="#78350f" strokeWidth="2" fill="none" strokeLinecap="round" />
+          : <line x1="43" y1="51" x2="57" y2="51" stroke="#78350f" strokeWidth="2" strokeLinecap="round" />
+      }
+    </svg>
+  );
+};
+
 const Rosie = ({ mood = "happy", size = 56, pose = "idle" }) => {
   const skinColor    = "#ffdfc0";
   const hairColor    = "#3b2a20";
@@ -9587,7 +11553,7 @@ const TalkToRosieModal = ({ settings, onClose, onSave }) => {
   };
 
   return (
-    <div style={{ position:"fixed", inset:0, zIndex:310, background:"rgba(15,23,42,0.55)", display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onClose}>
+    <div style={{ position:"fixed", inset:0, zIndex:310, background:"rgba(15,23,42,0.55)", display:"flex", alignItems:"center", justifyContent:"center" }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:"white", borderRadius:16, padding:"22px 24px", maxWidth:420, width:"92%", boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
           <div style={{ fontSize:15, fontWeight:800, color:"#0f172a" }}>💬 Talk to Rosie</div>
@@ -9650,7 +11616,7 @@ const RosieTasksModal = ({ tasks, users, currentUser, onClose, onSave, onDelete 
   const userName = (id) => users.find(u=>u.id===id)?.name || id;
 
   return (
-    <div style={{ position:"fixed", inset:0, zIndex:310, background:"rgba(15,23,42,0.55)", display:"flex", alignItems:"center", justifyContent:"center" }} onClick={onClose}>
+    <div style={{ position:"fixed", inset:0, zIndex:310, background:"rgba(15,23,42,0.55)", display:"flex", alignItems:"center", justifyContent:"center" }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:"white", borderRadius:16, padding:"22px 24px", maxWidth:480, width:"92%", maxHeight:"85vh", display:"flex", flexDirection:"column", boxShadow:"0 20px 60px rgba(0,0,0,0.3)" }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
           <div style={{ fontSize:15, fontWeight:800, color:"#0f172a" }}>🐾 Manage Rosie's Tasks</div>
@@ -9736,7 +11702,7 @@ const WaModal=({data,onClose})=>{
     onClose();
   };
   return (
-    <div style={{position:"fixed",inset:0,zIndex:300,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center"}} onClick={onClose}>
+    <div style={{position:"fixed",inset:0,zIndex:300,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center"}}>
       <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:16,padding:"22px 24px",maxWidth:460,width:"92%",maxHeight:"80vh",display:"flex",flexDirection:"column",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
           <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>💬 Send WhatsApp Message</div>
@@ -9844,6 +11810,7 @@ const TagPicker=({value,onChange,accent,accentBg,inp,fo,bl,lbl})=>{
 };
 
 const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,isSuperadmin=false,isSuresh=false})=>{
+  const [showAddressModal,setShowAddressModal]=useState(false);
   const rosieFieldRefs=useRef({});
   const [statusOverride,setStatusOverride]=useState(false); // admin-only: bypass the status chain
   // ros-india: an id only counts as an assigned invoice number when it matches IND######
@@ -10065,7 +12032,15 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
           </div>
         )}
         <div style={{position:"relative"}}>
-          <label style={lbl}>Address</label>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+            <label style={lbl}>Address</label>
+            {shopId==="ros-india"&&(
+              <button onClick={()=>setShowAddressModal(true)}
+                style={{fontSize:10.5,fontWeight:700,color:"#b45309",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:999,padding:"3px 9px",cursor:"pointer",fontFamily:"inherit",marginBottom:4}}>
+                📍 Enter Address
+              </button>
+            )}
+          </div>
           <input value={form.address||""}
             onChange={e=>{set("address",e.target.value);const q=e.target.value.trim().toLowerCase();if(q.length>=1){const m=customers.filter(c=>(c.address||c.addressee||"").toLowerCase().includes(q)).slice(0,6);setEditAddrMatches(m);setEditAddrOpen(m.length>0);}else{setEditAddrOpen(false);setEditAddrMatches([]);}}}
             onBlur={()=>setTimeout(()=>setEditAddrOpen(false),180)}
@@ -10426,7 +12401,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
               </div>
             </div>
             <div>
-              <label style={{...lbl,color:"#166534"}}>💰 Pur. Amount ({shop.symbol})</label>
+              <label style={{...lbl,color:"#166534"}}>🏭 Pur. Amount ({shop.symbol}) — what YOU paid the factory/supplier</label>
               <input type="number" onWheel={e=>e.target.blur()} value={form.purAmount} onChange={e=>set("purAmount",e.target.value)}
                 placeholder="0.00" style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/>
             </div>
@@ -10441,7 +12416,16 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
               alert("Sale date can't be in the future. Please pick today's date or an earlier one.");
               return;
             }
-            onSave({...form,id:(form.invAssigned&&form.invoiceNo)?form.invoiceNo:((shopId==="ros-india"&&new Date(form.date||sale.date||0)>=new Date(2026,3,1)&&!String(sale.id||"").includes("-"))?`IN-${Date.now().toString().slice(-6)}`:sale.id),ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:parseFloat(form.discount)||0,otherCharges:parseFloat(form.otherCharges)||0,otherChargesLabel:form.otherChargesLabel||"Other Charges",contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""});
+            const purAmt=parseFloat(form.purAmount)||0;
+            if(purAmt>0 && !String(form.purInvNo||"").trim()){
+              alert("Please enter the purchase invoice number too — a purchase amount can't be saved on its own.");
+              return;
+            }
+            if(purAmt>0 && !form.purInvDate){
+              alert("Please enter the purchase date too — a purchase amount can't be saved on its own.");
+              return;
+            }
+            onSave({...form,id:(form.invAssigned&&form.invoiceNo)?form.invoiceNo:((shopId==="ros-india"&&new Date(form.date||sale.date||0)>=new Date(2026,3,1)&&!String(sale.id||"").includes("-"))?`IN-${Date.now().toString().slice(-6)}`:sale.id),ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:parseFloat(form.discount)||0,otherCharges:parseFloat(form.otherCharges)||0,otherChargesLabel:form.otherChargesLabel||"Other Charges",contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""});
           }}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
@@ -10451,6 +12435,13 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
           Cancel
         </button>
       </div>
+      {showAddressModal && (
+        <AddressEntryModal
+          initialValue={form.address||""}
+          onClose={()=>setShowAddressModal(false)}
+          onSave={(formatted)=>{ set("address",formatted); setShowAddressModal(false); }}
+        />
+      )}
     </div>
   );
 };
@@ -11211,6 +13202,7 @@ const AddTabInput=({onAdd,accent})=>{
 const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,onDeleteShopItem,customers=[],sales=[],isSuperadmin=false})=>{
   const rosieFieldRefs=useRef({});
   const [paymentTypeAcked,setPaymentTypeAcked]=useState(false);
+  const [showAddressModal,setShowAddressModal]=useState(false);
   const defaultPay = shopId === "ros-india" ? "SIB" : "SHOP";
   const PAY_OPTIONS = shopId === "ros-india" ? ["SIB","HDFC","SHOP"] : ["BANK","SHOP","EXCHANGE","GIFT","PROMOTION","SHOPIFY"];
   const _now=new Date();
@@ -11310,10 +13302,11 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
       alert("Sale date can't be in the future. Please pick today's date or an earlier one.");
       return;
     }
+    const purAmt=parseFloat(form.purAmount)||0;
     const filledLines=lines.filter(l=>l.name.trim()||(parseFloat(l.price)>0));
     const combinedItem=filledLines.map(l=>`${l.name}(x${l.qty})`).join(", ")||"Sale";
     const combinedQty=filledLines.reduce((s,l)=>s+(parseFloat(l.qty)||0),0)||1;
-    onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:parseFloat(form.purAmount)||0,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||"",dispatchFrom:form.dispatchFrom||""});
+    onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||"",dispatchFrom:form.dispatchFrom||""});
   };
 
   const rosieFilledLines = lines.filter(l=>l.name.trim());
@@ -11331,7 +13324,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const rosieNudge = rosieAllDone ? "All set! Review and hit Save Sale when ready. ✅" : rosieSteps[rosieActiveIdx].label;
 
   return(<>
-    {showNewCust&&(<div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>setShowNewCust(false)}><div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.50)",backdropFilter:"blur(4px)"}}/><div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.25)",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",zIndex:81}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 22px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"12",borderRadius:"20px 20px 0 0"}}><h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>➕ New Customer</h3><button onClick={()=>setShowNewCust(false)} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button></div><div style={{padding:22}}><NewCustomerForm shop={shop} onSave={handleAddCustomer} onClose={()=>setShowNewCust(false)} customers={customerList}/></div></div></div>)}
+    {showNewCust&&(<div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}><div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.50)",backdropFilter:"blur(4px)"}}/><div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.25)",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",zIndex:81}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 22px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"12",borderRadius:"20px 20px 0 0"}}><h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>➕ New Customer</h3><button onClick={()=>setShowNewCust(false)} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button></div><div style={{padding:22}}><NewCustomerForm shop={shop} onSave={handleAddCustomer} onClose={()=>setShowNewCust(false)} customers={customerList}/></div></div></div>)}
 
     {/* ── Single column layout ── */}
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
@@ -11405,7 +13398,18 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
                 <div><label style={lbl}>Contact</label><input ref={el=>{rosieFieldRefs.current.contact=el;}} value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/></div>
-                <div><label style={lbl}>Address</label><input value={form.address||""} onChange={e=>set("address",e.target.value)} placeholder="Address" style={inp} onFocus={fo} onBlur={bl}/></div>
+                <div>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <label style={lbl}>Address</label>
+                    {shopId==="ros-india"&&(
+                      <button onClick={()=>setShowAddressModal(true)}
+                        style={{fontSize:10.5,fontWeight:700,color:"#b45309",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:999,padding:"3px 9px",cursor:"pointer",fontFamily:"inherit",marginBottom:4}}>
+                        📍 Enter Address
+                      </button>
+                    )}
+                  </div>
+                  <input value={form.address||""} onChange={e=>set("address",e.target.value)} placeholder="Address" style={inp} onFocus={fo} onBlur={bl}/>
+                </div>
               </div>
             </div>
 
@@ -11529,15 +13533,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               <div style={{marginTop:7}}><label style={lbl}>Remarks</label><input value={form.remarks} onChange={e=>set("remarks",e.target.value)} placeholder="Notes…" style={inp} onFocus={fo} onBlur={bl}/></div>
             </div>
 
-            {/* Purchase Details — ROS INDIA only */}
-            {shopId==="ros-india"&&(<div style={{background:"#f0fdf4",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #bbf7d0"}}>
-              <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:"#166534",textTransform:"uppercase",letterSpacing:"0.07em"}}>📦 Purchase Details</p>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
-                <div><label style={{...lbl,color:"#166534"}}>Pur. Inv. No.</label><input value={form.purInvNo} onChange={e=>set("purInvNo",e.target.value)} placeholder="Invoice no." style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/></div>
-                <div><label style={{...lbl,color:"#166534"}}>Pur. Date</label><input type="date" value={form.purInvDate} onChange={e=>set("purInvDate",e.target.value)} style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/></div>
-              </div>
-              <div><label style={{...lbl,color:"#166534"}}>Pur. Amount ({shop.symbol})</label><input type="number" onWheel={e=>e.target.blur()} value={form.purAmount} onChange={e=>set("purAmount",e.target.value)} placeholder="0.00" style={{...inp,border:"1px solid #86efac"}} onFocus={fo} onBlur={bl}/></div>
-            </div>)}
+            {/* Purchase Details are added later via Edit Sale, not at creation time */}
 
         <div style={{height:80}}/>{/* spacer for sticky bottom bar */}
       </div>
@@ -11556,6 +13552,13 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
         </div>
       </div>
     </div>
+    {showAddressModal && (
+      <AddressEntryModal
+        initialValue={form.address||""}
+        onClose={()=>setShowAddressModal(false)}
+        onSave={(formatted)=>{ set("address",formatted); setShowAddressModal(false); }}
+      />
+    )}
   </>);
 };
 
@@ -11576,7 +13579,7 @@ const CustomerEditModal=({customer,shop,onSave,onClose})=>{
   const bl=e=>e.target.style.borderColor="#e2e8f0";
   return(
     <div style={{position:"fixed",inset:0,zIndex:70,display:"flex",alignItems:"center",
-      justifyContent:"center",padding:16}} onClick={onClose}>
+      justifyContent:"center",padding:16}}>
       <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.45)",backdropFilter:"blur(5px)"}}/>
       <div style={{position:"relative",background:"white",borderRadius:20,
         boxShadow:"0 32px 64px rgba(0,0,0,0.22)",width:"100%",maxWidth:560,
@@ -12574,13 +14577,15 @@ const INITIAL_USERS=[
    avatar:"linear-gradient(135deg,#1d4ed8,#7c3aed)", shops:["ros-selections","ros-hairlines","ros-india"]},
   {id:"rani",   name:"Rani",   initials:"RA", role:"admin",      pin:"2222",
    avatar:"linear-gradient(135deg,#059669,#0891b2)", shops:["ros-selections","ros-hairlines","ros-india"]},
-  {id:"staff",  name:"Staff",  initials:"ST", role:"staff",      pin:"3333",
-   avatar:"linear-gradient(135deg,#64748b,#334155)", shops:["ros-india"]},
+  {id:"jiji",   name:"Jiji",   initials:"JI", role:"staff",      pin:"4444",
+   avatar:"linear-gradient(135deg,#f59e0b,#ea580c)", shops:["ros-india"]},
+  {id:"swapna", name:"Swapna", initials:"SW", role:"staff",      pin:"5555",
+   avatar:"linear-gradient(135deg,#ec4899,#db2777)", shops:["ros-india"]},
 ];
 const ROLE_NAV={
-  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","reconciliation","documents","analytics","reports","historical","returns","settings"],
-  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","reconciliation","documents","analytics","reports","historical","returns"],
-  staff:["sales","returns"],
+  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","reconciliation","documents","analytics","reports","historical","returns","attendance","inventory","settings"],
+  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","reconciliation","documents","analytics","reports","historical","returns","attendance","inventory"],
+  staff:["sales","returns","attendance","inventory"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
 
@@ -12705,7 +14710,12 @@ const LoginScreen=({onLogin,users})=>{
                 <p style={{margin:0,fontSize:13,color:"rgba(255,255,255,0.36)",fontWeight:400}}>Choose your account to continue</p>
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {(users||[]).map((u,i)=>(
+                {(users||[]).slice().sort((a,b)=>{
+                  const rolePriority={superadmin:0,admin:1,staff:2};
+                  const pa=rolePriority[a.role]??3, pb=rolePriority[b.role]??3;
+                  if(pa!==pb) return pa-pb;
+                  return (a.name||"").localeCompare(b.name||"");
+                }).map((u,i)=>(
                   <div key={u.id} className="ros-user-card" onClick={()=>setSelUser(u)}
                     style={{display:"flex",alignItems:"center",gap:14,background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.08)",borderRadius:16,padding:"14px 16px",boxShadow:"0 4px 20px rgba(0,0,0,0.28)"}}>
                     <div style={{width:44,height:44,borderRadius:13,background:u.avatar,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:15,flexShrink:0,boxShadow:"0 4px 14px rgba(0,0,0,0.35)"}}>
