@@ -397,14 +397,21 @@ const WaModal = ({ data, onClose }) => {
   );
 };
 
+/* Base row tone — warm cream instead of flat white, used for any status
+   not called out below (and as the default fallback). */
+const CREAM_ROW_BG = "#fdfbf3";
+/* Fulfilled uses a sage/desaturated green — deliberately a different green
+   family from the vivid Shopify payment-channel badge (#059669/#d1fae5),
+   so "fulfilled" and "paid via Shopify" read as distinct signals even
+   though both are technically green. */
 const STATUS_ROW_BG = {
-  "PENDING":       "#fffbeb",
-  "FULFILLED":     "#f0fdf4",
-  "GOOD FEEDBACK": "#ecfdf5",
-  "RTRN REQSTD":   "#fff7ed",
-  "RETRN RCVD":    "#fef2f2",
-  "EXCHANGED":     "#eef2ff",
-  "REFUNDED":      "#faf5ff",
+  "PENDING":       "#ffffff",
+  "FULFILLED":     "#e9f5ec",
+  "GOOD FEEDBACK": "#e7f6f2",
+  "RTRN REQSTD":   "#fbeee0",
+  "RETRN RCVD":    "#fbe9e8",
+  "EXCHANGED":     "#eceef9",
+  "REFUNDED":      "#f6f0f8",
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -1941,7 +1948,7 @@ We hope you enjoy your purchase! 💜
                 const isDragOver = dragOverId === s.id && dragId && dragId !== s.id;
                 const mergedRowBg = { ...STATUS_ROW_BG, ...(statusRowBgProp || {}) };
                 const isFlashing = flashIds.has(s.id) || (externalFlashIds && externalFlashIds.has(s.id));
-                const rowBg = isH ? "#fde047" : (isFlashing ? "#86efac" : (s.flagged ? "#fef2f2" : (isInstalment ? instBg : (mergedRowBg[ful] || "white"))));
+                const rowBg = isH ? "#fde047" : (isFlashing ? "#86efac" : (s.flagged ? "#fef2f2" : (isInstalment ? instBg : (mergedRowBg[ful] || CREAM_ROW_BG))));
 
                 return (
                   <tr key={s.id}
