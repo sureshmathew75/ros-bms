@@ -33,7 +33,8 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadAuditDismissals, dbDismissAuditFinding,
   dbLoadAttendanceRecords, dbClockIn, dbClockOut, dbSetAttendanceRecord,
   dbLoadAttendanceHolidays, dbAddAttendanceHoliday, dbRemoveAttendanceHoliday,
-  dbLoadInventoryItems, dbAddInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement } from "./db";
+  dbLoadInventoryItems, dbAddInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement,
+  dbLoadUpfrontRefunds, dbAddUpfrontRefund, dbDeleteUpfrontRefund } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -161,6 +162,7 @@ const BSTYLE={
   "RETRN RCVD":               {bg:"#fee2e2",c:"#991b1b",b:"#fca5a5"},
   "EXCHANGED":                {bg:"#e0e7ff",c:"#4338ca",b:"#c7d2fe"},
   "REFUNDED":                 {bg:"#f3e4ff",c:"#7e22ce",b:"#d8b4fe"},
+  "CANCELLED":                {bg:"#f1f5f9",c:"#64748b",b:"#cbd5e1"},
   // ── India-specific delivery statuses (simplified 8-status system) ──
   "RETURN RQSTD":             {bg:"#ffedd5",c:"#c2410c",b:"#fed7aa"},
   "RETURN RCVD":              {bg:"#fee2e2",c:"#991b1b",b:"#fca5a5"},
@@ -187,18 +189,18 @@ const BSTYLE={
 
 // Row background colour per delivery status
 const STATUS_ROW_BG={
-  "PENDING":                   "#fffbeb",
-  "FULFILLED":                 "#f0fdf4",
-  "GOOD FEEDBACK":             "#ecfdf5",
-  "RTRN REQSTD":               "#fff7ed",
-  "RETRN RCVD":                "#fef2f2",
-  "EXCHANGED":                 "#eef2ff",
-  "REFUNDED":                  "#faf5ff",
+  "PENDING":                         "#ffffff",
+  "FULFILLED":                       "#e9f5ec",
+  "GOOD FEEDBACK":                   "#e7f6f2",
+  "RTRN REQSTD":                     "#fbeee0",
+  "RETRN RCVD":                      "#fbe9e8",
+  "EXCHANGED":                       "#eceef9",
+  "REFUNDED":                        "#f6f0f8",
   // India-specific
-  "RETURN RQSTD":          "#fff7ed",
-  "RETURN RCVD":           "#fef2f2",
-  "GOOD FEEDBACK RCVD":    "#ecfdf5",
-  "NEGATIVE FEEDBACK RCVD":"#fff1f2",
+  "RETURN RQSTD":                    "#fbeee0",
+  "RETURN RCVD":                     "#fbe9e8",
+  "GOOD FEEDBACK RCVD":              "#e7f6f2",
+  "NEGATIVE FEEDBACK RCVD":"#f9e4e3",
 };
 const Badge=({l})=>{
   const b=BSTYLE[l]||{bg:"#f1f5f9",c:"#475569",b:"#e2e8f0"};
@@ -2820,12 +2822,380 @@ const ManualReturnModal = ({ shopId, shop, sales, onClose, onSave }) => {
   );
 };
 
+/* ── UpfrontRefundsView: money refunded before dispatch (cancellation,
+   stock issue, payment problem) — no item ever comes back, so this is
+   deliberately separate from the returns ledger above. Logging a refund
+   here writes straight back to the linked sale's Refund/P&L via the same
+   sync path Returns already uses, and a full refund auto-marks the sale
+   Cancelled. ─────────────────────────────────────────────────────────── */
+const REFUND_REASONS = ["Customer Cancelled", "Out of Stock", "Price or Payment Issue", "Other"];
+
+const UpfrontRefundsView = ({ shopId, shop, allSales, upfrontRefunds, setUpfrontRefunds, onSyncSaleStatus, setWaModal,
+  showLogRefund, setShowLogRefund, confirmDeleteRefund, setConfirmDeleteRefund, filter, setFilter, counts }) => {
+
+  const fmtDate = (d) => { try { return new Date(d+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}); } catch { return d; } };
+  const totalRefunded = upfrontRefunds.reduce((a,r)=>a+(Number(r.amount)||0),0);
+
+  const handleSave = async (data) => {
+    // Rule 1: no duplicate — same sale + same exact amount already logged
+    if (data.saleId) {
+      const dup = upfrontRefunds.find(r => r.saleId === data.saleId && Number(r.amount) === Number(data.amount));
+      if (dup) {
+        alert(`This exact refund amount (${shop.symbol}${Number(data.amount).toLocaleString()}) has already been logged for this sale. If this is a genuinely separate refund, please double-check before proceeding.`);
+        return;
+      }
+    }
+
+    // Rule 2: refund can never exceed what was actually received — checks
+    // the whole linked group's total if this sale is part of an
+    // Advance/Final pair, and accounts for anything already refunded
+    // (whether logged here or entered manually on the sale itself).
+    if (data.saleId) {
+      const sale = allSales.find(s => s.id === data.saleId);
+      if (sale) {
+        const groupIds = findInstalmentGroupIds(sale, allSales);
+        const groupReceived = groupIds.length > 1
+          ? allSales.filter(s => groupIds.includes(s.id)).reduce((a,s)=>a+(Number(s.amount)||0),0)
+          : (Number(sale.amount)||0);
+        const existingRefund = Number(sale.refundAmt) || 0;
+        const newTotal = existingRefund + (Number(data.amount)||0);
+        if (newTotal > groupReceived) {
+          const remaining = Math.max(groupReceived - existingRefund, 0);
+          alert(`This refund would exceed the amount received.\n\nReceived: ${shop.symbol}${groupReceived.toLocaleString()}\nAlready refunded: ${shop.symbol}${existingRefund.toLocaleString()}\nYou can refund up to ${shop.symbol}${remaining.toLocaleString()} more on this sale.`);
+          return;
+        }
+      }
+    }
+
+    const id = await dbAddUpfrontRefund(shopId, data);
+    if (!id) { alert("Couldn't save — please check your connection and try again."); return; }
+    setUpfrontRefunds(prev => [{ ...data, id }, ...prev]);
+    setShowLogRefund(false);
+
+    if (data.saleId && onSyncSaleStatus) {
+      const sale = allSales.find(s => s.id === data.saleId);
+      const extra = { refundAmt: (Number(sale?.refundAmt)||0) + (Number(data.amount)||0) };
+      const newStatus = data.isFull ? "CANCELLED" : (sale?.status || sale?.ful || "PENDING");
+      await onSyncSaleStatus(data.saleId, newStatus, extra);
+    }
+
+    if (data.phone && setWaModal) {
+      setWaModal({ phone: data.phone, customerName: data.customer, message: MSG_REFUNDED(data.customer, id) });
+    }
+  };
+
+  const handleDelete = async (id) => {
+    const ok = await dbDeleteUpfrontRefund(shopId, id);
+    setConfirmDeleteRefund(null);
+    if (ok) setUpfrontRefunds(prev => prev.filter(r => r.id !== id));
+    else alert("Couldn't delete — please check your connection and try again.");
+  };
+
+  return (
+    <div style={{padding:"0 12px 40px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:14}}>
+        <div>
+          <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>💸 Upfront Refunds</h2>
+          <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>Money refunded before dispatch — cancellations, stock issues, payment problems. No item ever comes back.</p>
+        </div>
+        <button onClick={()=>setShowLogRefund(true)}
+          style={{padding:"9px 16px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+          + Log Refund
+        </button>
+      </div>
+
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
+        {[
+          {key:"ACTIVE",    label:"Expecting"},
+          {key:"RETURN_RECEIVED", label:"Received"},
+          {key:"EXCHANGED", label:"Exchanged"},
+          {key:"REFUNDED",  label:"Refunded"},
+          {key:"EXCHANGE_REFUND", label:"Refund/Exchange"},
+          {key:"UPFRONT_REFUNDS", label:"💸 Upfront Refunds"},
+        ].map(f=>(
+          <button key={f.key} onClick={()=>setFilter(f.key)}
+            style={{padding:"5px 14px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+              border:"1px solid "+(filter===f.key?shop.accent:"#e2e8f0"),
+              background:filter===f.key?shop.accent:"white",
+              color:filter===f.key?"white":"#64748b"}}>
+            {f.label}{f.key==="UPFRONT_REFUNDS"?(upfrontRefunds.length>0?` (${upfrontRefunds.length})`:""):(counts[f.key]>0?` (${counts[f.key]})`:"")}
+          </button>
+        ))}
+      </div>
+
+      {upfrontRefunds.length>0 && (
+        <div style={{padding:"12px 16px",borderRadius:12,background:"#fef2f2",border:"1px solid #fecaca",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+          <span style={{fontSize:12,color:"#991b1b",fontWeight:600}}>Total refunded upfront ({upfrontRefunds.length} case{upfrontRefunds.length!==1?"s":""})</span>
+          <span style={{fontSize:16,fontWeight:900,color:"#991b1b"}}>{shop.symbol}{totalRefunded.toLocaleString()}</span>
+        </div>
+      )}
+
+      {upfrontRefunds.length===0 ? (
+        <div style={{textAlign:"center",padding:"60px 20px",color:"#94a3b8",fontSize:13}}>
+          No upfront refunds logged yet. Click "+ Log Refund" when you need to refund a customer before dispatch.
+        </div>
+      ) : (
+        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+          {upfrontRefunds.map(r => (
+            <div key={r.id} style={{padding:"14px 16px",borderRadius:12,border:"1px solid #e2e8f0",background:"white",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+                <div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                    <span style={{fontSize:13,fontWeight:700,color:"#0f172a"}}>{r.customer}</span>
+                    <span style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:999,
+                      background:r.isFull?"#fef2f2":"#fffbeb",color:r.isFull?"#991b1b":"#92400e",
+                      border:"1px solid "+(r.isFull?"#fecaca":"#fde68a")}}>
+                      {r.isFull?"FULL REFUND":"PARTIAL REFUND"}
+                    </span>
+                  </div>
+                  <div style={{fontSize:11,color:"#64748b",marginTop:2}}>
+                    {r.phone && <>{r.phone} · </>}
+                    {r.saleId ? `Linked to ${r.saleId}` : "No linked sale"} · {fmtDate(r.date)}
+                  </div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:17,fontWeight:900,color:"#991b1b"}}>{shop.symbol}{Number(r.amount).toLocaleString()}</div>
+                  <div style={{fontSize:10,color:"#94a3b8"}}>{r.reason}</div>
+                </div>
+              </div>
+              {(r.reasonNote || r.refundMethod || r.refundToName || r.staffNotes) && (
+                <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid #f1f5f9",fontSize:11,color:"#64748b",display:"flex",flexDirection:"column",gap:3}}>
+                  {r.reasonNote && <div>📝 {r.reasonNote}</div>}
+                  {(r.refundMethod || r.refundToName) && <div>💳 {r.refundMethod||"—"}{r.refundToName?` · to ${r.refundToName}`:""}</div>}
+                  {r.staffNotes && <div>🗒️ {r.staffNotes}</div>}
+                </div>
+              )}
+              <div style={{marginTop:10,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                {r.phone ? (
+                  <button onClick={()=>setWaModal({phone:r.phone,customerName:r.customer,message:MSG_REFUNDED(r.customer,r.id)})}
+                    style={{border:"1px solid #bbf7d0",background:"#f0fdf4",color:"#166534",fontSize:11,fontWeight:700,cursor:"pointer",padding:"5px 12px",borderRadius:8,fontFamily:"inherit"}}>
+                    💬 Notify
+                  </button>
+                ) : <span/>}
+                <button onClick={()=>setConfirmDeleteRefund({id:r.id,customer:r.customer})}
+                  style={{border:"none",background:"transparent",color:"#dc2626",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {showLogRefund && (
+        <LogRefundModal shopId={shopId} shop={shop} allSales={allSales} onClose={()=>setShowLogRefund(false)} onSave={handleSave} />
+      )}
+
+      {confirmDeleteRefund && (
+        <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:"white",borderRadius:16,padding:22,maxWidth:320,width:"92%"}}>
+            <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:8}}>Delete this refund record?</div>
+            <p style={{fontSize:12,color:"#64748b",marginBottom:18}}>This removes the record for {confirmDeleteRefund.customer}. This won't undo any changes already made to a linked sale.</p>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setConfirmDeleteRefund(null)}
+                style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                Cancel
+              </button>
+              <button onClick={()=>handleDelete(confirmDeleteRefund.id)}
+                style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#dc2626",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const LogRefundModal = ({ shopId, shop, allSales, onClose, onSave }) => {
+  const [saleSearch, setSaleSearch] = React.useState("");
+  const [linkedSale, setLinkedSale] = React.useState(null);
+  const [customer, setCustomer] = React.useState("");
+  const [phone, setPhone] = React.useState("");
+  const [amount, setAmount] = React.useState("");
+  const [isFull, setIsFull] = React.useState(true);
+  const [reason, setReason] = React.useState(REFUND_REASONS[0]);
+  const [reasonNote, setReasonNote] = React.useState("");
+  const [refundMethod, setRefundMethod] = React.useState("");
+  const [refundToName, setRefundToName] = React.useState("");
+  const [date, setDate] = React.useState(() => new Date().toISOString().slice(0,10));
+  const [staffNotes, setStaffNotes] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+
+  const inp = {width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
+  const lbl = {display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
+
+  const searchResults = saleSearch.trim().length>=2
+    ? allSales.filter(s => (s.customer||"").toLowerCase().includes(saleSearch.toLowerCase()) || (s.id||"").toLowerCase().includes(saleSearch.toLowerCase())).slice(0,6)
+    : [];
+
+  const pickSale = (s) => {
+    setLinkedSale(s);
+    setCustomer(s.customer||"");
+    setPhone(s.phone||s.contact||"");
+    setSaleSearch("");
+    if (!amount) setAmount(String(s.amount||""));
+  };
+
+  const canSave = customer.trim() && Number(amount)>0;
+
+  const handleSave = async () => {
+    if (!canSave) return;
+    setSaving(true);
+    await onSave({
+      saleId: linkedSale?.id || null,
+      customer: customer.trim(), phone: phone.trim(),
+      amount: Number(amount)||0, isFull,
+      reason, reasonNote: reasonNote.trim(),
+      refundMethod, refundToName: refundToName.trim(),
+      date, staffNotes: staffNotes.trim(),
+    });
+    setSaving(false);
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"white",borderRadius:16,padding:24,maxWidth:420,width:"94%",maxHeight:"88vh",overflowY:"auto"}}>
+        <div style={{fontSize:15,fontWeight:800,color:"#0f172a",marginBottom:4}}>💸 Log an Upfront Refund</div>
+        <p style={{fontSize:11,color:"#94a3b8",marginBottom:16}}>For refunds issued before dispatch — no item to receive back.</p>
+
+        <div style={{marginBottom:14}}>
+          <label style={lbl}>Link to a Sale (optional)</label>
+          {linkedSale ? (
+            <>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",borderRadius:9,background:"#f0fdf4",border:"1px solid #bbf7d0"}}>
+              <span style={{fontSize:12,fontWeight:700,color:"#166534"}}>{linkedSale.id} — {linkedSale.customer}</span>
+              <button onClick={()=>setLinkedSale(null)} style={{border:"none",background:"transparent",color:"#166534",cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
+            </div>
+            {(() => {
+              const groupIds = findInstalmentGroupIds(linkedSale, allSales);
+              const groupReceived = groupIds.length > 1
+                ? allSales.filter(s => groupIds.includes(s.id)).reduce((a,s)=>a+(Number(s.amount)||0),0)
+                : (Number(linkedSale.amount)||0);
+              const existingRefund = Number(linkedSale.refundAmt) || 0;
+              const remaining = Math.max(groupReceived - existingRefund, 0);
+              if (existingRefund <= 0) return null;
+              return (
+                <div style={{marginTop:6,fontSize:11,color:"#92400e",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8,padding:"7px 10px"}}>
+                  Received {shop.symbol}{groupReceived.toLocaleString()} · already refunded {shop.symbol}{existingRefund.toLocaleString()} · up to {shop.symbol}{remaining.toLocaleString()} more can be refunded.
+                </div>
+              );
+            })()}
+            </>
+          ) : (
+            <>
+              <input value={saleSearch} onChange={e=>setSaleSearch(e.target.value)} placeholder="Search by customer name or invoice…" style={inp}/>
+              {searchResults.length>0 && (
+                <div style={{marginTop:4,border:"1px solid #e2e8f0",borderRadius:9,overflow:"hidden"}}>
+                  {searchResults.map(s=>(
+                    <div key={s.id} onClick={()=>pickSale(s)}
+                      style={{padding:"8px 12px",fontSize:12,cursor:"pointer",borderBottom:"1px solid #f1f5f9"}}
+                      onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
+                      onMouseLeave={e=>e.currentTarget.style.background="white"}>
+                      <strong>{s.id}</strong> — {s.customer} · {shop.symbol}{Number(s.amount||0).toLocaleString()}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+          <div><label style={lbl}>Customer</label><input value={customer} onChange={e=>setCustomer(e.target.value)} placeholder="Customer name" style={inp} disabled={!!linkedSale}/></div>
+          <div><label style={lbl}>Phone</label><input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Optional" style={inp} disabled={!!linkedSale}/></div>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+          <div>
+            <label style={lbl}>Refund Amount ({shop.symbol})</label>
+            <input type="number" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0.00" style={inp}/>
+          </div>
+          <div>
+            <label style={lbl}>Type</label>
+            <div style={{display:"flex",gap:6}}>
+              <button onClick={()=>setIsFull(true)} style={{flex:1,padding:"9px 0",borderRadius:9,border:"1.5px solid "+(isFull?shop.accent:"#e2e8f0"),background:isFull?shop.accentBg:"white",color:isFull?shop.accentText:"#64748b",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Full</button>
+              <button onClick={()=>setIsFull(false)} style={{flex:1,padding:"9px 0",borderRadius:9,border:"1.5px solid "+(!isFull?shop.accent:"#e2e8f0"),background:!isFull?shop.accentBg:"white",color:!isFull?shop.accentText:"#64748b",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Partial</button>
+            </div>
+          </div>
+        </div>
+
+        {isFull && linkedSale && (
+          <div style={{fontSize:11,color:"#92400e",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:8,padding:"8px 10px",marginBottom:14}}>
+            This will mark {linkedSale.id} as <strong>Cancelled</strong> once saved.
+          </div>
+        )}
+
+        <div style={{marginBottom:14}}>
+          <label style={lbl}>Reason</label>
+          <select value={reason} onChange={e=>setReason(e.target.value)} style={inp}>
+            {REFUND_REASONS.map(r=><option key={r} value={r}>{r}</option>)}
+          </select>
+        </div>
+
+        <div style={{marginBottom:14}}>
+          <label style={lbl}>Reason Note (optional)</label>
+          <input value={reasonNote} onChange={e=>setReasonNote(e.target.value)} placeholder="Any extra detail…" style={inp}/>
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+          <div>
+            <label style={lbl}>Refund Method</label>
+            <select value={refundMethod} onChange={e=>setRefundMethod(e.target.value)} style={inp}>
+              <option value="">—</option>
+              <option value="Cash">Cash</option>
+              <option value="UPI">UPI</option>
+              <option value="Bank Transfer">Bank Transfer</option>
+              <option value="Card">Card</option>
+              <option value="Cheque">Cheque</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+          <div><label style={lbl}>Refunded To</label><input value={refundToName} onChange={e=>setRefundToName(e.target.value)} placeholder="Optional" style={inp}/></div>
+        </div>
+
+        <div style={{marginBottom:14}}>
+          <label style={lbl}>Date</label>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/>
+        </div>
+
+        <div style={{marginBottom:18}}>
+          <label style={lbl}>Staff Notes (optional)</label>
+          <input value={staffNotes} onChange={e=>setStaffNotes(e.target.value)} placeholder="Any extra context…" style={inp}/>
+        </div>
+
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={onClose}
+            style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={!canSave||saving}
+            style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#dc2626",color:"white",fontWeight:700,fontSize:13,cursor:(!canSave||saving)?"default":"pointer",fontFamily:"inherit",opacity:(!canSave||saving)?0.6:1}}>
+            {saving?"Saving…":"Save Refund"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,onSyncSaleStatus,salesData={},pushDeleted})=>{
   const [filter,setFilter]=React.useState("ACTIVE");
   const [waModal,setWaModal]=React.useState(null); // {phone,customerName,message} | null
   const [manualReturnModal,setManualReturnModal]=React.useState(false);
   const [viewMode,setViewMode]=React.useState("list"); // "list" | "stock"
   const [stockSearch,setStockSearch]=React.useState("");
+  const [upfrontRefunds,setUpfrontRefunds]=React.useState([]);
+  const [upfrontLoaded,setUpfrontLoaded]=React.useState(false);
+  const [showLogRefund,setShowLogRefund]=React.useState(false);
+  const [confirmDeleteRefund,setConfirmDeleteRefund]=React.useState(null); // {id, customer}
+
+  React.useEffect(()=>{
+    if(filter==="UPFRONT_REFUNDS"&&!upfrontLoaded){
+      dbLoadUpfrontRefunds(shopId).then(data=>{setUpfrontRefunds(data||[]);setUpfrontLoaded(true);});
+    }
+  },[filter,shopId,upfrontLoaded]);
 
   // Flatten all sales for delivery date lookup
   const allSales=React.useMemo(()=>{
@@ -2845,6 +3215,7 @@ const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,on
     }catch{return"";}
   };
   const [selectedReturn,setSelectedReturn]=React.useState(null);
+  const [expandedIds,setExpandedIds]=React.useState(new Set());
   const [search,setSearch]=React.useState("");
   const [confirmDelete,setConfirmDelete]=React.useState(null); // {id, customer}
   const [selected,setSelected]=React.useState(new Set());
@@ -2914,9 +3285,6 @@ Thank you for your cooperation.`,
   // Refund Method / Refunded To only make sense once money has actually
   // moved — hide them on tabs where nothing's been refunded yet.
   const showRefundCols = filter==="REFUNDED" || filter==="EXCHANGE_REFUND";
-  const gridCols = showRefundCols
-    ? "32px 120px 1fr 90px 120px 120px minmax(140px,1fr) 180px 70px"
-    : "32px 120px 1fr 90px minmax(140px,1fr) 180px 70px";
 
   const counts={
     ACTIVE:returns.filter(r=>ACTIVE_STATUSES.includes(r.status)).length,
@@ -2926,6 +3294,22 @@ Thank you for your cooperation.`,
     EXCHANGE_REFUND:returns.filter(r=>r.status==="EXCHANGE_REFUND").length,
     RETURN_EXPIRED:returns.filter(r=>r.status==="RETURN_EXPIRED").length,
   };
+
+  if(filter==="UPFRONT_REFUNDS"){
+    return(
+      <>
+      <UpfrontRefundsView
+        shopId={shopId} shop={shop} allSales={allSales}
+        upfrontRefunds={upfrontRefunds} setUpfrontRefunds={setUpfrontRefunds}
+        onSyncSaleStatus={onSyncSaleStatus} setWaModal={setWaModal}
+        showLogRefund={showLogRefund} setShowLogRefund={setShowLogRefund}
+        confirmDeleteRefund={confirmDeleteRefund} setConfirmDeleteRefund={setConfirmDeleteRefund}
+        filter={filter} setFilter={setFilter} counts={counts}
+      />
+      <WaModal data={waModal} onClose={()=>setWaModal(null)}/>
+      </>
+    );
+  }
 
   if(viewMode==="stock"&&shopId==="ros-india"){
     return(
@@ -2938,7 +3322,7 @@ Thank you for your cooperation.`,
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <button onClick={()=>setViewMode("list")}
               style={{padding:"8px 14px",borderRadius:10,border:"1px solid "+shop.accent,background:shop.accentBg,color:shop.accentText,fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
-              ↩️ Back to Returns
+              ↩️ Back to Returns & Refunds
             </button>
             <input value={stockSearch} onChange={e=>setStockSearch(e.target.value)}
               placeholder="Search item or customer…"
@@ -3005,13 +3389,14 @@ Thank you for your cooperation.`,
             {key:"EXCHANGED", label:"Exchanged"},
             {key:"REFUNDED",  label:"Refunded"},
             {key:"EXCHANGE_REFUND", label:"Refund/Exchange"},
+            {key:"UPFRONT_REFUNDS", label:"💸 Upfront Refunds"},
           ].map(f=>(
             <button key={f.key} onClick={()=>setFilter(f.key)}
               style={{padding:"5px 14px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
                 border:"1px solid "+(filter===f.key?shop.accent:"#e2e8f0"),
                 background:filter===f.key?shop.accent:"white",
                 color:filter===f.key?"white":"#64748b"}}>
-              {f.label}{counts[f.key]>0?` (${counts[f.key]})`:""}
+              {f.label}{f.key==="UPFRONT_REFUNDS"?(upfrontRefunds.length>0?` (${upfrontRefunds.length})`:""):(counts[f.key]>0?` (${counts[f.key]})`:"")}
             </button>
           ))}
         </div>
@@ -3045,8 +3430,8 @@ Thank you for your cooperation.`,
           </div>
         ):(
           <div>
-            {/* Column headers with Select All */}
-            <div style={{display:"grid",gridTemplateColumns:gridCols,gap:8,padding:"8px 14px",borderRadius:10,background:"#f8fafc",border:"1px solid #e2e8f0",marginBottom:8}}>
+            {/* Select all bar */}
+            <div style={{display:"flex",alignItems:"center",gap:10,padding:"8px 14px",marginBottom:8}}>
               <input type="checkbox"
                 checked={filtered.length>0&&filtered.every(r=>selected.has(r.id))}
                 onChange={e=>{
@@ -3054,12 +3439,7 @@ Thank you for your cooperation.`,
                   else setSelected(new Set());
                 }}
                 style={{width:15,height:15,cursor:"pointer",accentColor:shop.accent}}/>
-              {(showRefundCols
-                ? ["Return ID","Customer","Status","Refund Method","Refunded To","Remarks","Next Action",""]
-                : ["Return ID","Customer","Status","Remarks","Next Action",""]
-              ).map(h=>(
-                <span key={h} style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>{h}</span>
-              ))}
+              <span style={{fontSize:11,fontWeight:700,color:"#94a3b8"}}>Select all ({filtered.length})</span>
             </div>
 
             {filtered.map(ret=>{
@@ -3188,95 +3568,113 @@ Thank you for your cooperation.`,
 
               return(
                 <div key={ret.id}
-                  style={{display:"grid",gridTemplateColumns:gridCols,gap:8,padding:"11px 14px",
+                  style={{padding:"14px 16px",
                     borderRadius:12,border:"1px solid "+(isSelected?shop.accent:"#e2e8f0"),marginBottom:8,
                     background:isClosed?"#fafafa":isSelected?shop.accent+"08":"white",
-                    cursor:"pointer",transition:"box-shadow 0.15s",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}
+                    transition:"box-shadow 0.15s",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}
                   onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.10)"}
                   onMouseLeave={e=>e.currentTarget.style.boxShadow="0 1px 3px rgba(0,0,0,0.04)"}>
-                  {/* Checkbox */}
-                  <div style={{display:"flex",alignItems:"center"}} onClick={e=>e.stopPropagation()}>
-                    <input type="checkbox" checked={isSelected}
+
+                  {/* Top row: checkbox, ID/customer, status pill */}
+                  <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
+                    <input type="checkbox" checked={isSelected} onClick={e=>e.stopPropagation()}
                       onChange={()=>setSelected(prev=>{const s=new Set(prev);s.has(ret.id)?s.delete(ret.id):s.add(ret.id);return s;})}
-                      style={{width:15,height:15,cursor:"pointer",accentColor:shop.accent}}/>
-                  </div>
-                  <div onClick={()=>setSelectedReturn(ret)}>
-                    <p style={{margin:0,fontSize:12,fontWeight:800,color:shop.accent,fontFamily:"DM Mono,monospace"}}>{ret.id}</p>
-                    <p style={{margin:"1px 0 0",fontSize:10,color:"#94a3b8"}}>{ret.resolution==="exchange"?"🔄":ret.resolution==="exchange_refund"?"🔄💰":"💰"} {ret.resolution==="exchange_refund"?"return/exchange":ret.resolution}</p>
-                    {(()=>{
-                      if(ret.status!=="MSG_SENT"&&ret.status!=="RETURN_IN_TRANSIT")return null;
-                      if(ret.reminderSentAt)return null;
-                      const iDate=ret.instructionsSentAt?new Date(ret.instructionsSentAt):null;
-                      if(!iDate)return null;
-                      const d=new Date();d.setHours(0,0,0,0);
-                      const days=Math.floor((d-iDate)/86400000);
-                      if(days<6)return null;
-                      return<span style={{display:"inline-block",marginTop:2,fontSize:9,fontWeight:800,
-                        padding:"1px 6px",borderRadius:999,background:"#fef2f2",color:"#dc2626",
-                        border:"1px solid #fca5a5"}}>🔔 Reminder Due</span>;
-                    })()}
-                  </div>
-                  <div onClick={()=>setSelectedReturn(ret)} style={{minWidth:0,overflow:"hidden"}}>
-                    <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ret.customer}</p>
-                    <p style={{margin:"1px 0 0",fontSize:11,color:"#64748b"}}>{ret.saleId}</p>
-                    <div style={{marginTop:4,display:"flex",flexWrap:"wrap",gap:"2px 10px"}}>
-                      {(()=>{
-                        const delivDate=getDeliveryDate(ret.saleId);
-                        const items=[
-                          delivDate&&{ic:"🚚",label:"Delivered",date:delivDate,color:"#0369a1"},
-                          ret.createdAt&&{ic:"📋",label:"Requested",date:ret.createdAt,color:"#374151"},
-                          ret.instructionsSentAt&&{ic:"✅",label:"Instructions",date:ret.instructionsSentAt,color:"#059669"},
-                          ret.receivedDate&&{ic:"📦",label:"Received",date:ret.receivedDate,color:"#d97706"},
-                          ret.reminderSentAt&&{ic:"🔔",label:"Reminder",date:ret.reminderSentAt,color:"#dc2626"},
-                          ret.exchangeDate&&{ic:"🔄",label:"Exchanged",date:ret.exchangeDate,color:"#a21caf"},
-                          ret.refundDate&&{ic:"💰",label:"Refunded",date:ret.refundDate,color:"#6d28d9",amount:ret.refundAmount},
-                        ].filter(Boolean);
-                        return items.map((item,i)=>(
-                          <span key={i} style={{fontSize:10,color:item.color,whiteSpace:"nowrap"}}>
-                            {item.ic} <span style={{color:"#94a3b8"}}>{item.label}:</span> {fmtShort(item.date)}{item.amount?` · ₹${Number(item.amount).toLocaleString("en-IN")}`:""}
-                          </span>
-                        ));
-                      })()}
+                      style={{width:15,height:15,cursor:"pointer",accentColor:shop.accent,marginTop:3,flexShrink:0}}/>
+
+                    <div style={{flex:1,minWidth:0,cursor:"pointer"}} onClick={()=>setSelectedReturn(ret)}>
+                      <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                        <span style={{fontSize:12,fontWeight:800,color:shop.accent,fontFamily:"DM Mono,monospace"}}>{ret.id}</span>
+                        <span style={{fontSize:10,color:"#94a3b8"}}>{ret.resolution==="exchange"?"🔄":ret.resolution==="exchange_refund"?"🔄💰":"💰"} {ret.resolution==="exchange_refund"?"return/exchange":ret.resolution}</span>
+                        {(()=>{
+                          if(ret.status!=="MSG_SENT"&&ret.status!=="RETURN_IN_TRANSIT")return null;
+                          if(ret.reminderSentAt)return null;
+                          const iDate=ret.instructionsSentAt?new Date(ret.instructionsSentAt):null;
+                          if(!iDate)return null;
+                          const d=new Date();d.setHours(0,0,0,0);
+                          const days=Math.floor((d-iDate)/86400000);
+                          if(days<6)return null;
+                          return<span style={{fontSize:9,fontWeight:800,
+                            padding:"1px 6px",borderRadius:999,background:"#fef2f2",color:"#dc2626",
+                            border:"1px solid #fca5a5"}}>🔔 Reminder Due</span>;
+                        })()}
+                      </div>
+                      <div style={{marginTop:4,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ret.customer}</div>
+                      <div style={{fontSize:11,color:"#64748b"}}>{ret.saleId}</div>
                     </div>
-                  </div>
-                  <div style={{display:"flex",alignItems:"center"}} onClick={()=>setSelectedReturn(ret)}>
-                    <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:999,
+
+                    <span style={{fontSize:11,fontWeight:700,padding:"4px 11px",borderRadius:999,flexShrink:0,
                       background:statusStyle.bg,border:"1px solid "+statusStyle.border,color:statusStyle.text,whiteSpace:"nowrap"}}>
                       {statusStyle.label}
                     </span>
                   </div>
-                  {showRefundCols && (<>
-                  <div onClick={e=>e.stopPropagation()} style={{width:"100%",minWidth:0,display:"flex",alignItems:"center"}}>
-                    <select value={ret.refundMethod||""} onChange={async e=>{
-                        const updated={...ret,refundMethod:e.target.value};
-                        setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
-                        const ok=await dbSaveReturn(updated);
-                        if(!ok)alert("Couldn't save — please check your connection and try again.");
-                      }}
-                      style={{width:"100%",padding:"5px 7px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:11,fontFamily:"inherit",background:"white",color:ret.refundMethod?"#0f172a":"#94a3b8"}}>
-                      <option value="">—</option>
-                      <option value="Cash">Cash</option>
-                      <option value="UPI">UPI</option>
-                      <option value="Bank Transfer">Bank Transfer</option>
-                      <option value="Card">Card</option>
-                      <option value="Cheque">Cheque</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                  <div onClick={e=>e.stopPropagation()} style={{width:"100%",minWidth:0,display:"flex",alignItems:"center"}}>
-                    <input defaultValue={ret.refundToName||""} placeholder="—"
-                      onBlur={async e=>{
-                        if(e.target.value===(ret.refundToName||""))return;
-                        const updated={...ret,refundToName:e.target.value};
-                        setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
-                        const ok=await dbSaveReturn(updated);
-                        if(!ok)alert("Couldn't save — please check your connection and try again.");
-                      }}
-                      style={{width:"100%",padding:"5px 7px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:11,fontFamily:"inherit",boxSizing:"border-box"}}/>
-                  </div>
-                  </>)}
-                  <div onClick={e=>e.stopPropagation()} style={{width:"100%",minWidth:0,display:"flex",alignItems:"center"}}>
-                    <input defaultValue={ret.staffNotes||""} placeholder="—"
+
+                  {(() => {
+                    const isExpanded = expandedIds.has(ret.id);
+                    return isExpanded && (<>
+                  {/* Timeline chips row */}
+                  {(()=>{
+                    const delivDate=getDeliveryDate(ret.saleId);
+                    const items=[
+                      delivDate&&{ic:"🚚",label:"Delivered",date:delivDate,color:"#0369a1"},
+                      ret.createdAt&&{ic:"📋",label:"Requested",date:ret.createdAt,color:"#374151"},
+                      ret.instructionsSentAt&&{ic:"✅",label:"Instructions",date:ret.instructionsSentAt,color:"#059669"},
+                      ret.receivedDate&&{ic:"📦",label:"Received",date:ret.receivedDate,color:"#d97706"},
+                      ret.reminderSentAt&&{ic:"🔔",label:"Reminder",date:ret.reminderSentAt,color:"#dc2626"},
+                      ret.exchangeDate&&{ic:"🔄",label:"Exchanged",date:ret.exchangeDate,color:"#a21caf"},
+                      ret.refundDate&&{ic:"💰",label:"Refunded",date:ret.refundDate,color:"#6d28d9",amount:ret.refundAmount},
+                    ].filter(Boolean);
+                    if(items.length===0) return null;
+                    return (
+                      <div style={{marginTop:10,paddingLeft:27,display:"flex",flexWrap:"wrap",gap:"3px 12px"}}>
+                        {items.map((item,i)=>(
+                          <span key={i} style={{fontSize:10,color:item.color,whiteSpace:"nowrap"}}>
+                            {item.ic} <span style={{color:"#94a3b8"}}>{item.label}:</span> {fmtShort(item.date)}{item.amount?` · ₹${Number(item.amount).toLocaleString("en-IN")}`:""}
+                          </span>
+                        ))}
+                      </div>
+                    );
+                  })()}
+
+                  {/* Refund Method / Refunded To — only on Refunded / Refund-Exchange tabs */}
+                  {showRefundCols && (
+                    <div style={{marginTop:12,paddingLeft:27,display:"flex",gap:10,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+                      <div style={{flex:"1 1 160px",minWidth:140}}>
+                        <label style={{display:"block",fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:3}}>Refund Method</label>
+                        <select value={ret.refundMethod||""} onChange={async e=>{
+                            const updated={...ret,refundMethod:e.target.value};
+                            setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
+                            const ok=await dbSaveReturn(updated);
+                            if(!ok)alert("Couldn't save — please check your connection and try again.");
+                          }}
+                          style={{width:"100%",padding:"6px 8px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:11,fontFamily:"inherit",background:"white",color:ret.refundMethod?"#0f172a":"#94a3b8",boxSizing:"border-box"}}>
+                          <option value="">—</option>
+                          <option value="Cash">Cash</option>
+                          <option value="UPI">UPI</option>
+                          <option value="Bank Transfer">Bank Transfer</option>
+                          <option value="Card">Card</option>
+                          <option value="Cheque">Cheque</option>
+                          <option value="Other">Other</option>
+                        </select>
+                      </div>
+                      <div style={{flex:"1 1 160px",minWidth:140}}>
+                        <label style={{display:"block",fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:3}}>Refunded To</label>
+                        <input defaultValue={ret.refundToName||""} placeholder="—"
+                          onBlur={async e=>{
+                            if(e.target.value===(ret.refundToName||""))return;
+                            const updated={...ret,refundToName:e.target.value};
+                            setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
+                            const ok=await dbSaveReturn(updated);
+                            if(!ok)alert("Couldn't save — please check your connection and try again.");
+                          }}
+                          style={{width:"100%",padding:"6px 8px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:11,fontFamily:"inherit",boxSizing:"border-box"}}/>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Remarks row */}
+                  <div style={{marginTop:12,paddingLeft:27}} onClick={e=>e.stopPropagation()}>
+                    <label style={{display:"block",fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:3}}>Remarks</label>
+                    <input defaultValue={ret.staffNotes||""} placeholder="Add a note…"
                       onBlur={async e=>{
                         if(e.target.value===(ret.staffNotes||""))return;
                         const updated={...ret,staffNotes:e.target.value};
@@ -3284,22 +3682,36 @@ Thank you for your cooperation.`,
                         const ok=await dbSaveReturn(updated);
                         if(!ok)alert("Couldn't save — please check your connection and try again.");
                       }}
-                      style={{width:"100%",padding:"5px 7px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:11,fontFamily:"inherit",boxSizing:"border-box"}}/>
+                      style={{width:"100%",padding:"7px 9px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
                   </div>
-                  {/* Next Action */}
-                  <div style={{display:"flex",alignItems:"center"}} onClick={e=>e.stopPropagation()}>
-                    {nextAction()}
-                  </div>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"flex-end",gap:6}} onClick={e=>e.stopPropagation()}>
-                    <span onClick={()=>setSelectedReturn(ret)} style={{fontSize:11,color:shop.accent,fontWeight:700,cursor:"pointer"}}>View →</span>
-                    <button
-                      onClick={()=>setConfirmDelete({id:ret.id,customer:ret.customer})}
-                      title="Delete return"
-                      style={{width:26,height:26,borderRadius:7,border:"1px solid #fecaca",background:"#fff5f5",
-                        color:"#dc2626",fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",
-                        justifyContent:"center",flexShrink:0}}>
-                      🗑️
+                    </>);
+                  })()}
+
+                  {/* Details toggle */}
+                  <div style={{marginTop:10,paddingLeft:27}}>
+                    <button onClick={e=>{e.stopPropagation();
+                        setExpandedIds(prev=>{const s=new Set(prev);s.has(ret.id)?s.delete(ret.id):s.add(ret.id);return s;});
+                      }}
+                      style={{border:"none",background:"transparent",color:"#94a3b8",fontSize:11,fontWeight:700,cursor:"pointer",padding:0,display:"flex",alignItems:"center",gap:4}}>
+                      {expandedIds.has(ret.id) ? "▴ Hide details" : "▾ Details"}
                     </button>
+                  </div>
+
+                  {/* Footer: next action + view/delete */}
+                  <div style={{marginTop:12,paddingLeft:27,paddingTop:10,borderTop:"1px solid #f1f5f9",
+                    display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
+                    <div onClick={e=>e.stopPropagation()}>{nextAction()}</div>
+                    <div style={{display:"flex",alignItems:"center",gap:8}} onClick={e=>e.stopPropagation()}>
+                      <span onClick={()=>setSelectedReturn(ret)} style={{fontSize:11,color:shop.accent,fontWeight:700,cursor:"pointer"}}>View →</span>
+                      <button
+                        onClick={()=>setConfirmDelete({id:ret.id,customer:ret.customer})}
+                        title="Delete return"
+                        style={{width:26,height:26,borderRadius:7,border:"1px solid #fecaca",background:"#fff5f5",
+                          color:"#dc2626",fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",
+                          justifyContent:"center",flexShrink:0}}>
+                        🗑️
+                      </button>
+                    </div>
                   </div>
                 </div>
               );
@@ -5919,6 +6331,16 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   };
 
   const commitEditSave=(merged)=>{
+    // If a tracking number was entered but the status is still Pending,
+    // auto-upgrade it — matches the same protection the quick "+Add
+    // Tracking" button already has, so status stays consistent no matter
+    // which way tracking gets entered.
+    if (merged.trackingNo && merged.trackingNo.trim()) {
+      const currentStatus = (merged.ful || merged.status || "").toUpperCase();
+      if (currentStatus === "PENDING") {
+        merged = { ...merged, ful: "FULFILLED", status: "FULFILLED" };
+      }
+    }
     // Update UI instantly so sales list reflects new status immediately
     setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>x.id===merged.id?{...x,...merged}:x)}));
     setModal(null);setEditRow(null);
@@ -6064,7 +6486,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"historical",l:"History",   ic:"📈"},
     {id:"analytics",l:"Analytics",ic:"📊"},
     {id:"reports",  l:"Reports",  ic:"📋"},
-    {id:"returns",  l:"Returns",  ic:"↩️"},
+    {id:"returns",  l:"Returns & Refunds",  ic:"↩️"},
     {id:"attendance",l:"Attendance",ic:"🕐"},
     {id:"inventory",l:"Inventory",ic:"📦"},
   ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india");
@@ -9368,14 +9790,24 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
   // digits-only, since Shopify's order name may have a custom prefix
   // (e.g. "#ROS4875") while what was typed in by hand may just be the
   // plain number. A third way: explicitly dismissed, for cases the above
-  // two don't catch (typos, missing values in old manual entries).
+  // two don't catch (typos, missing values in old manual entries). A
+  // fourth, fuzzy safety net: same customer + same date + same amount —
+  // catches re-imports even if the ID-based fields on the original sale
+  // were somehow lost or never set (e.g. edited afterward in a way that
+  // dropped shopifyOrderId), which is how a duplicate slipped through
+  // before.
   const normalizeOrderNo = (s) => (s||"").replace(/[^0-9]/g,"");
+  const normalizeName = (s) => (s||"").trim().toLowerCase().replace(/\s+/g," ");
   const importedShopifyIds = React.useMemo(
     () => new Set((existingSales||[]).map(s=>s.shopifyOrderId).filter(Boolean)),
     [existingSales]
   );
   const importedOrderNos = React.useMemo(
     () => new Set((existingSales||[]).map(s=>normalizeOrderNo(s.shopInvoiceNo)).filter(Boolean)),
+    [existingSales]
+  );
+  const importedFuzzyKeys = React.useMemo(
+    () => new Set((existingSales||[]).map(s=>`${normalizeName(s.customer)}|${s.date}|${Number(s.amount)||0}`)),
     [existingSales]
   );
 
@@ -9388,7 +9820,9 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
       else {
         const fresh = (data.orders||[]).filter(o => {
           const orderNo = normalizeOrderNo(o.orderNumber);
-          return !importedShopifyIds.has(o.shopifyOrderId) && !importedOrderNos.has(orderNo) && !dismissedIds.has(o.shopifyOrderId);
+          const fuzzyKey = `${normalizeName(o.customer)}|${o.date}|${Number(o.amount)||0}`;
+          return !importedShopifyIds.has(o.shopifyOrderId) && !importedOrderNos.has(orderNo)
+            && !dismissedIds.has(o.shopifyOrderId) && !importedFuzzyKeys.has(fuzzyKey);
         });
         setOrders(fresh);
         setSelected(new Set(fresh.map(o=>o.shopifyOrderId)));
@@ -9396,7 +9830,7 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
     } catch (e) {
       setError("Couldn't reach the import service: " + e.message);
     } finally { setLoading(false); }
-  }, [days, importedShopifyIds, importedOrderNos, dismissedIds]);
+  }, [days, importedShopifyIds, importedOrderNos, importedFuzzyKeys, dismissedIds]);
 
   React.useEffect(() => { fetchOrders(); }, [fetchOrders]);
 
