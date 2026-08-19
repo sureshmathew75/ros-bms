@@ -352,20 +352,32 @@ const WaModal = ({ data, onClose }) => {
     onClose();
   };
   const handleOpen = () => {
-    window.open("https://wa.me/" + e164 + "?text=" + encodeURIComponent(message), "_blank", "noopener,noreferrer");
+    // No fixed number (e.g. sending to an internal team, not a customer) —
+    // use WhatsApp's contact-picker link instead of a broken empty wa.me path.
+    const url = clean
+      ? "https://wa.me/" + e164 + "?text=" + encodeURIComponent(message)
+      : "https://api.whatsapp.com/send?text=" + encodeURIComponent(message);
+    window.open(url, "_blank", "noopener,noreferrer");
     onClose();
   };
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onClose}>
+    <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center" }}>
       <div onClick={e => e.stopPropagation()} style={{ background: "white", borderRadius: 16, padding: "22px 24px", maxWidth: 460, width: "92%", maxHeight: "80vh", display: "flex", flexDirection: "column", boxShadow: "0 20px 60px rgba(0,0,0,0.3)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>💬 Send WhatsApp Message</div>
           <button onClick={onClose} style={{ border: "none", background: "transparent", fontSize: 18, cursor: "pointer", color: "#94a3b8", lineHeight: 1 }}>✕</button>
         </div>
-        <div style={{ marginBottom: 12, padding: "10px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10 }}>
-          <div style={{ fontWeight: 700, fontSize: 13, color: "#0f172a" }}>{customerName || "Customer"}</div>
-          <div style={{ fontSize: 12, color: "#15803d", fontWeight: 600 }}>📱 {phone || "No phone on file"}</div>
-        </div>
+        {(customerName || phone) && (
+          <div style={{ marginBottom: 12, padding: "10px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10 }}>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#0f172a" }}>{customerName || "Customer"}</div>
+            <div style={{ fontSize: 12, color: "#15803d", fontWeight: 600 }}>📱 {phone || "No phone on file"}</div>
+          </div>
+        )}
+        {!customerName && !phone && (
+          <div style={{ marginBottom: 12, padding: "10px 12px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, fontSize: 12, color: "#1e40af" }}>
+            No fixed recipient — you'll choose who to send this to when WhatsApp opens.
+          </div>
+        )}
         <div style={{ fontSize: 11, color: "#64748b", marginBottom: 6, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.05em" }}>Message</div>
         <div style={{ flex: 1, overflowY: "auto", whiteSpace: "pre-wrap", fontSize: 13, color: "#374151", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "12px 14px", marginBottom: 16, lineHeight: 1.5 }}>
           {message}
@@ -445,6 +457,7 @@ export default function SalesPanel({
   const [flashIds, setFlashIds] = useState(new Set());
   const [linkedGroupView, setLinkedGroupView] = useState(null); // array of sales in the group | null
   const [manualLinkSale, setManualLinkSale] = useState(null); // sale being manually linked | null
+  const [dispatchSheetOpen, setDispatchSheetOpen] = useState(false);
   const [manualLinkQuery, setManualLinkQuery] = useState("");
   const [dragOverId, setDragOverId] = useState(null);
   const handleReorderDrop = async (targetId) => {
@@ -468,6 +481,7 @@ export default function SalesPanel({
   const [editAmountId,   setEditAmountId]   = useState(null);
   const [amountInput,    setAmountInput]    = useState("");
   const [editStatusId,   setEditStatusId]   = useState(null);
+  const [editPayId,      setEditPayId]      = useState(null); // saleId being shown payment-method dropdown
   const [showReport,     setShowReport]     = useState(false);
   const [showColMenu,    setShowColMenu]    = useState(false);
 
@@ -478,7 +492,7 @@ export default function SalesPanel({
   const COL_DEFAULTS = {
     "Invoice":true,"Date":true,"Customer":true,"Item":true,
     "Amount":true,"Verified":true,"Refund":false,"Payment":true,"Status":true,
-    "Tags":false,"Pur. Amount":true,"Tracking":true,
+    "Tags":false,"Pur. Amount":true,"P/L":false,"Tracking":true,
     "Delivered":true,"Informed":false,"From":true,"Actions":true,
   };
   const [colVis, setColVis] = useState(() => {
@@ -526,6 +540,10 @@ export default function SalesPanel({
   const setStatusTab = setStatusFilter ?? setStatusTabLocal;
   /* Recheck flag filter — independent of fulfilment status tabs */
   const [flaggedOnly, setFlaggedOnly] = useState(false);
+  /* Payment channel quick filter — Bank vs Shop/Shopify. "ALL" = no filter.
+     Independent of status tabs, same pattern as flaggedOnly above. */
+  const [payFilter, setPayFilter] = useState("ALL"); // "ALL" | "BANK" | "SHOP"
+  const isBankPay = (s) => { const p = (s.pay || "SHOP").toUpperCase(); return p === "BANK" || p === "SIB"; };
 
   const accent   = shop?.accent   || "#059669";
   const accentBg = shop?.accentBg || "#ecfdf5";
@@ -635,8 +653,17 @@ export default function SalesPanel({
   const statusFiltered = useMemo(() => {
     const base = statusTab === "ALL" ? periodFiltSales
       : periodFiltSales.filter(s => (s.ful || s.status || "PENDING").toUpperCase() === statusTab.toUpperCase());
-    return flaggedOnly ? base.filter(s => s.flagged) : base;
-  }, [periodFiltSales, statusTab, flaggedOnly]);
+    const flagFiltered = flaggedOnly ? base.filter(s => s.flagged) : base;
+    if (payFilter === "ALL") return flagFiltered;
+    return flagFiltered.filter(s => payFilter === "BANK" ? isBankPay(s) : !isBankPay(s));
+  }, [periodFiltSales, statusTab, flaggedOnly, payFilter]);
+
+  /* ── Payment channel counts (from period+search filtered, pre-payFilter) ── */
+  const payCounts = useMemo(() => {
+    let bank = 0, shop = 0;
+    periodFiltSales.forEach(s => { if (isBankPay(s)) bank++; else shop++; });
+    return { BANK: bank, SHOP: shop };
+  }, [periodFiltSales]);
 
   const flaggedCount = useMemo(
     () => periodFiltSales.filter(s => s.flagged).length,
@@ -671,7 +698,7 @@ export default function SalesPanel({
   );
 
   /* ── Carrier config ─────────────────────────────────────────────────── */
-  const UK_CARRIERS = ["Royal Mail","Evri","DPD","UPS","Parcelforce","Other"];
+  const UK_CARRIERS = ["Royal Mail","Evri","DPD","UPS","Parcelforce","FedEx","Other"];
   const IN_CARRIERS = ["Speed Post","DTDC","Other"];
   const CARRIERS = isIndiaShop ? IN_CARRIERS : UK_CARRIERS;
 
@@ -683,6 +710,7 @@ export default function SalesPanel({
       case "dpd":          return `https://track.dpd.co.uk/parcels/${cleanNo}`;
       case "ups":          return `https://www.ups.com/track?tracknum=${cleanNo}`;
       case "parcelforce":  return `https://www.parcelforce.com/track-trace?trackNumber=${cleanNo}`;
+      case "fedex":        return `https://www.fedex.com/wtrk/track/?trknbr=${cleanNo}`;
       case "speed post":   return `https://www.indiapost.gov.in/_layouts/15/dop.portal.tracking/trackconsignment.aspx`;
       case "dtdc":         return `https://www.dtdc.com/track-your-shipment/`;
       default: return null;
@@ -691,34 +719,135 @@ export default function SalesPanel({
 
   const buildTrackingMsg = (sale, carrier, trackNo) => {
     const url = trackingURL(carrier, trackNo);
-    const carrierName = carrier || "our courier";
+    const carrierName = (carrier || "our courier").toUpperCase();
     const isDtdc = (carrier||"").toLowerCase() === "dtdc";
     const trackLine = url
       ? isDtdc
-        ? `You can track your parcel here:
-${url}
-
-Please enter your tracking number (${trackNo}) and the security code shown on the page to see your delivery status.`
-        : `You can track your parcel here:
-${url}`
+        ? `*TRACKING* -- ${url}\n\nPlease enter your tracking number (${trackNo}) and the security code shown on the page to see your delivery status.`
+        : `*TRACKING* -- ${url}`
       : `Your tracking number is: ${trackNo}`;
     const signOff = shop?.short ? `ROS ${shop.short}` : "ROS";
-    return `Dear ${sale.customer||"Customer"},
+    return `Dear *${(sale.customer||"Customer").toUpperCase()}*,
 
-Your order has been dispatched! 📦
+Your order is now **ready to despatch!** 📦💜
 
-Carrier: ${carrierName}
-Tracking Number: ${trackNo}
+━━━━━━━━━━━━━━━━━━
+
+*📦 DELIVERY & TRACKING*
+
+**Carrier:** ${carrierName}
+**Tracking Number:** ${trackNo}
+
 ${trackLine}
 
-Your order is expected to arrive within 1–3 working days. If you experience any unexpected delay, please contact us as soon as possible.
+Your parcel is expected to arrive within **1–3 working days**.
 
-Once your parcel arrives, kindly inspect the item(s) promptly. If your order has arrived damaged, is incorrect, or you are not completely satisfied for any reason, please contact us via WhatsApp within 2 days of delivery. We are committed to resolving any genuine concerns quickly and fairly, with your satisfaction as our priority.
+We kindly recommend keeping an eye on the tracking updates until your parcel has been successfully delivered.
 
-Please note that requests made after this notification period may not be eligible for immediate resolution and, where applicable, return or handling charges may apply in accordance with our return policy.
+━━━━━━━━━━━━━━━━━━
 
-Thank you for your trust and cooperation. We truly appreciate your support and hope you enjoy your purchase.
-${signOff} 💜`;
+*🔎 IMPORTANT — PLEASE CHECK YOUR DELIVERY ADDRESS*
+
+**Before every dispatch, we provide the recipient with the tracking details and a photo of the address label attached to the parcel.**
+
+Please **carefully check the address shown on the label** and contact us as soon as possible if you notice any incorrect or missing information.
+
+⚠️ **Once the address details have been checked and confirmed, any subsequent delivery issue resulting from incorrect or incomplete information in the confirmed address will be the responsibility of the recipient.**
+
+This is why we strongly recommend checking the address label carefully **before or immediately after dispatch notification**, so that any genuine error can be brought to our attention at the earliest opportunity.
+
+━━━━━━━━━━━━━━━━━━
+
+*🚚 YOUR DELIVERY*
+
+Once your parcel has been dispatched, it is our responsibility to ensure that it is handed over to the carrier correctly and sent securely to your delivery address.
+
+However, we kindly ask you to **monitor the tracking regularly** and let us know immediately if you notice anything unusual, such as:
+
+• An unexpected delivery delay
+• An incorrect or unusual tracking update
+• A delivery attempt you were not expecting
+• Any other issue with the movement of your parcel
+
+Early notification allows us to contact the carrier promptly and take the necessary steps to assist you.
+
+━━━━━━━━━━━━━━━━━━
+
+*⚠️ IMPORTANT — MARKED AS DELIVERED*
+
+If the tracking shows that your parcel has been **delivered but you have not physically received it**, please contact us **on the same day**.
+
+This is extremely important because reporting the issue promptly gives us the best opportunity to contact the carrier, investigate the delivery and, where necessary, recover the parcel.
+
+If you notify us **on the same day that the parcel is marked as delivered**, we will take full responsibility for raising the matter with the carrier and will do everything reasonably possible to resolve it.
+
+If the issue is reported later, it may become more difficult for us to investigate or recover the parcel. Any loss arising from a delayed notification may therefore become the responsibility of the recipient, particularly where the carrier's investigation or recovery options have become limited.
+
+━━━━━━━━━━━━━━━━━━
+
+*🔍 PLEASE CHECK YOUR ORDER PROMPTLY*
+
+When your parcel arrives, please check the contents as soon as possible.
+
+If you receive:
+
+• A damaged item
+• An incorrect item
+• A missing item
+• Or there is any other genuine concern with your order
+
+please contact us via **WhatsApp within 2 days of delivery**.
+
+We will always do our best to review genuine concerns promptly and find a fair solution.
+
+Please note that concerns reported after this notification period may be more difficult to investigate and, where applicable, return or handling charges may apply in accordance with our return policy.
+
+━━━━━━━━━━━━━━━━━━
+
+*📦 IF YOUR PARCEL IS RETURNED TO US*
+
+If a parcel is returned to us because of **repeated unsuccessful delivery attempts**, failure to receive the parcel, an incorrect/incomplete address, **non-payment of import charges or any levy on the parcel**, or other circumstances within the recipient's control, the responsibility for the resulting return rests with the recipient.
+
+Once the parcel is safely returned to us, we will be happy to arrange a **refund or exchange**, subject to our applicable return policy.
+
+Please note that any **additional shipping costs and other reasonable expenses incurred as a result of the parcel being returned and subsequently re-shipped** will be the responsibility of the recipient.
+
+We strongly recommend following the tracking updates and making the necessary arrangements to receive the parcel promptly to avoid these additional costs.
+
+━━━━━━━━━━━━━━━━━━
+
+*🌍 INTERNATIONAL ORDERS*
+
+For international shipments, customs regulations, import duties, taxes and clearance procedures vary from country to country.
+
+Depending on the destination country's applicable customs regulations and tariff policies, your parcel may be subject to:
+
+• Import duties
+• Customs charges
+• VAT or other taxes
+• Clearance or government-imposed fees
+
+These charges are determined by the **customs authorities of the destination country** and are completely outside our control.
+
+Any applicable customs or import charges are the **responsibility of the customer**.
+
+Please note that these charges are **not shipping charges**. We have already paid the applicable shipping cost for your parcel before dispatch.
+
+If required, we will be happy to provide the relevant **shipping invoice or proof of postage** upon request.
+
+━━━━━━━━━━━━━━━━━━
+
+*💜 OUR COMMITMENT TO YOU*
+
+We genuinely appreciate your order and your trust in ${signOff}.
+
+Our aim is to make sure your parcel reaches you **safely and securely**. Your cooperation in checking the address, monitoring the tracking and informing us promptly of any unusual activity helps us resolve any delivery issues as quickly as possible.
+
+Thank you for your trust and continued support.
+
+We hope you enjoy your purchase! 💜
+
+*${signOff}*`;
   };
 
   const openTrackingWA = (sale, carrier, trackNo) => {
@@ -994,12 +1123,36 @@ ${signOff} 💜`;
   const activeTabCfg = STATUS_TABS.find(t => t.key === statusTab) || STATUS_TABS[0];
 
   /* ── KPI card definitions ───────────────────────────────────────────── */
+  const totalPL = useMemo(() => {
+    if (!isIndiaShop) return 0;
+    const seenGroups = new Set();
+    let total = 0;
+    periodSales.forEach(s => {
+      if (!(Number(s.purAmount)>0)) return;
+      const gKey = getInstalmentKey(s) || s.id;
+      if (seenGroups.has(gKey)) return;
+      seenGroups.add(gKey);
+      const group = instalmentGroups[gKey] || [s];
+      const salesSum = group.reduce((a,x)=>a+(Number(x.amount)||0)-Math.max(Number(x.adjAmt)||0,Number(x.refundAmt)||0),0);
+      total += salesSum - (Number(s.purAmount)||0) - (Number(s.purOtherCharges)||0);
+    });
+    return total;
+  }, [periodSales, instalmentGroups, isIndiaShop]);
+
   const kpiDefs = [
     { icon:"🛒", label:"Orders",    getValue: g=>String(g.count),    topGrad:"linear-gradient(90deg,#4f46e5,#818cf8,#4f46e5)", topColor:"#6366f1", iconBg:"#eef2ff", iconColor:"#4f46e5", shadow:"rgba(99,102,241,0.14)",  glowColor:"rgba(99,102,241,0.32)"  },
     { icon:"📦", label:"Quantity",  getValue: g=>`${g.qty} units`,   topGrad:"linear-gradient(90deg,#0284c7,#38bdf8,#0284c7)", topColor:"#0ea5e9", iconBg:"#e0f2fe", iconColor:"#0284c7", shadow:"rgba(14,165,233,0.14)",  glowColor:"rgba(14,165,233,0.32)"  },
     { icon:"💰", label:"Revenue",   getValue: g=>fmtAmt(g.rev),      topGrad:`linear-gradient(90deg,${accent},${accent}99,${accent})`,          topColor:accent,    iconBg:accentBg,   iconColor:accent,    shadow:`${accent}22`,               glowColor:`${accent}44`            },
     { icon:"📈", label:"Avg. Order",getValue: g=>fmtAmt(g.avg),      topGrad:"linear-gradient(90deg,#d97706,#fbbf24,#d97706)", topColor:"#f59e0b", iconBg:"#fef3c7", iconColor:"#d97706",shadow:"rgba(245,158,11,0.14)", glowColor:"rgba(245,158,11,0.36)"  },
+    ...(isIndiaShop && user?.role==="superadmin" ? [
+      { icon:"📊", label:"Total P/L", getValue: g=>(g.pl>=0?"+":"-")+fmtAmt(Math.abs(g.pl)), topGrad:"linear-gradient(90deg,#7c3aed,#a78bfa,#7c3aed)", topColor:"#7c3aed", iconBg:"#f5f3ff", iconColor:"#7c3aed", shadow:"rgba(124,58,237,0.14)", glowColor:"rgba(124,58,237,0.32)" },
+    ] : []),
   ];
+
+  // Tracks which linked groups have already shown their P/L figure, so it
+  // only appears once per group in the table rather than on every row —
+  // showing the same number repeatedly was confusing.
+  const shownPLGroups = new Set();
 
   return (
     <div style={{ padding: 0 }}>
@@ -1172,6 +1325,17 @@ ${signOff} 💜`;
               🛍️ Import from Shopify
             </button>
           )}
+          {isIndiaShop && !isStaff && (
+            <button onClick={() => setDispatchSheetOpen(true)}
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "8px 14px", borderRadius: 9, border: "1px solid #fde68a",
+                background: "#fffbeb", color: "#92400e", fontWeight: 700, fontSize: 13,
+                cursor: "pointer", fontFamily: "inherit",
+              }}>
+              🚚 Dispatch Sheet
+            </button>
+          )}
           {onReload && (
             <button onClick={async () => { setReloading(true); await onReload(); setReloading(false); }}
               disabled={reloading}
@@ -1219,7 +1383,7 @@ ${signOff} 💜`;
                   </button>
                 </div>
                 {/* Column toggles */}
-                {["Invoice","Date","Customer","Item","Amount",...(isIndiaShop?["Verified"]:[]),"Refund","Payment","Status","Tags","Pur. Amount","Tracking","Delivered","Informed","From"].map(col=>(
+                {["Invoice","Date","Customer","Item","Amount",...(isIndiaShop?["Verified"]:[]),"Refund","Payment","Status","Tags","Pur. Amount",...(isIndiaShop&&user?.role==="superadmin"?["P/L"]:[]),"Tracking","Delivered","Informed","From"].map(col=>(
                   <label key={col} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 4px",
                     cursor:"pointer",borderRadius:6,fontSize:12,color:"#374151"}}
                     onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
@@ -1359,6 +1523,7 @@ ${signOff} 💜`;
                           avg:   periodSales.length>0
                             ? Math.round(periodSales.reduce((a,s)=>a+(Number(s.amount)||0)-(Number(s.adjAmt)||0),0)/periodSales.length)
                             : 0,
+                          pl: totalPL,
                         })}
                       </span>
                     </div>
@@ -1466,6 +1631,39 @@ ${signOff} 💜`;
           </button>
         )}
 
+        {/* Payment channel quick filter — Bank vs Shop/Shopify.
+            Click a pill to filter to that channel; click again to clear. */}
+        <div style={{ display: "flex", alignItems: "stretch", flexShrink: 0 }}>
+          {[
+            { key: "SHOP", icon: "🛍️", label: isIndiaShop ? "Shop" : "Shopify", color: "#059669", bg: "#d1fae5", chip: "#a7f3d0" },
+            { key: "BANK", icon: "🏦",  label: isIndiaShop ? "SIB / Bank" : "Bank", color: "#2563eb", bg: "#dbeafe", chip: "#93c5fd" },
+          ].map(p => {
+            const isActive = payFilter === p.key;
+            return (
+              <button key={p.key}
+                onClick={() => setPayFilter(isActive ? "ALL" : p.key)}
+                title={`Show only ${p.label} sales`}
+                style={{
+                  display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
+                  padding: "0 12px", border: "none", borderLeft: "1px solid #f1f5f9",
+                  background: isActive ? p.bg : "#f8fafc",
+                  color: isActive ? p.color : "#64748b",
+                  cursor: "pointer", fontFamily: "inherit",
+                  fontWeight: isActive ? 800 : 600, fontSize: 12,
+                }}>
+                <span>{p.icon}</span>
+                <span>{p.label}</span>
+                <span style={{
+                  background: isActive ? p.color : "#e2e8f0",
+                  color: isActive ? "white" : "#64748b",
+                  borderRadius: 999, padding: "1px 7px",
+                  fontSize: 10, fontWeight: 800, lineHeight: "16px",
+                }}>{payCounts[p.key] || 0}</span>
+              </button>
+            );
+          })}
+        </div>
+
         {/* Inline search — right side */}
         <div style={{
           display: "flex", alignItems: "center", gap: 8, flexShrink: 0,
@@ -1569,12 +1767,13 @@ ${signOff} 💜`;
               <tr style={{ background: "#f8fafc" }}>
                 {["Invoice", "Date", "Customer", "Item", "Amount", ...(isIndiaShop ? ["Verified"] : []), "Refund", "Payment", "Status", "Tags",
                   ...(isIndiaShop&&!isStaff ? ["Pur. Amount"] : []),
+                  ...(isIndiaShop&&user?.role==="superadmin" ? ["P/L"] : []),
                   "Tracking", "Delivered", "Informed", "From", "Actions"]
                   .filter(h => h==="Actions" || showCol(h))
                   .map((h, i) => (
                     <th key={h} style={{
                       padding: "11px 16px",
-                      textAlign: (h==="Amount"||h==="Refund"||h==="Payment"||h==="Status"||h==="Pur. Amount") ? "right" : "left",
+                      textAlign: (h==="Amount"||h==="Refund"||h==="Payment"||h==="Status"||h==="Pur. Amount"||h==="P/L") ? "right" : "left",
                       fontSize: 11, fontWeight: 800, color: "#94a3b8",
                       textTransform: "uppercase", letterSpacing: "0.06em",
                       borderBottom: "1px solid #f1f5f9", whiteSpace: "nowrap",
@@ -1901,6 +2100,20 @@ ${signOff} 💜`;
                           🔗+ Link
                         </div>
                       )}
+                      {isIndiaShop && onInlineEdit && (
+                        <div
+                          onClick={(e) => { e.stopPropagation(); onInlineEdit(s.id, { readyToShip: !s.readyToShip }); }}
+                          title={s.readyToShip ? "Remove from Dispatch Sheet" : "Mark ready to ship — adds to the Dispatch Sheet"}
+                          style={{
+                            marginTop: 4, display: "inline-flex", alignItems: "center", gap: 3,
+                            fontSize: 9, fontWeight: 700, padding: "1px 7px", borderRadius: 999,
+                            color: s.readyToShip ? "#065f46" : "#64748b",
+                            background: s.readyToShip ? "#d1fae5" : "transparent",
+                            border: "1px "+(s.readyToShip?"solid #6ee7b7":"dashed #cbd5e1"), cursor: "pointer",
+                          }}>
+                          📦 {s.readyToShip ? "Ready to Ship" : "Mark Ready"}
+                        </div>
+                      )}
                     </td>
                     {/* Item */}
                     <td style={{ padding: "12px 16px" }}>
@@ -2043,14 +2256,42 @@ ${signOff} 💜`;
 
                     )}
                     {showCol("Payment")&&(
-                    <td style={{ padding: "12px 16px", textAlign: "right" }}>
-                      <Badge l={(isIndiaShop&&(s.pay==="BANK"||s.pay==="SIB"))?"SIB":(s.pay||"SHOP")} />
-                      {(s.pay === "SHOP" || s.pay === "SHOPIFY" || !s.pay) && s.shopInvoiceNo && (
-                        <div style={{
-                          fontSize: 10, fontFamily: "DM Mono,monospace",
-                          color: "#64748b", marginTop: 3, whiteSpace: "nowrap",
-                        }}>
-                          {s.shopInvoiceNo}
+                    <td style={{ padding: "12px 16px", textAlign: "right" }} onClick={e => e.stopPropagation()}>
+                      {editPayId === s.id ? (
+                        <select
+                          autoFocus
+                          value={isBankPay(s) ? "BANK" : "SHOP"}
+                          onChange={e => {
+                            const newPay = e.target.value;
+                            setEditPayId(null);
+                            if (newPay !== (isBankPay(s) ? "BANK" : "SHOP") && onInlineEdit) {
+                              onInlineEdit(s.id, { pay: newPay });
+                            }
+                          }}
+                          onBlur={() => setEditPayId(null)}
+                          style={{ padding: "5px 8px", borderRadius: 8, border: "1.5px solid #7dd3fc",
+                            fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer",
+                            background: "white", minWidth: 110 }}>
+                          <option value="SHOP">🛍️ {isIndiaShop ? "Shop" : "Shopify"}</option>
+                          <option value="BANK">🏦 {isIndiaShop ? "SIB / Bank" : "Bank"}</option>
+                        </select>
+                      ) : (
+                        <div
+                          onClick={() => onInlineEdit && setEditPayId(s.id)}
+                          title={onInlineEdit ? "Click to change payment method" : undefined}
+                          style={{ cursor: onInlineEdit ? "pointer" : "default", display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
+                          <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                            <Badge l={(isIndiaShop&&(s.pay==="BANK"||s.pay==="SIB"))?"SIB":(s.pay||"SHOP")} />
+                            {onInlineEdit && <span style={{ fontSize: 9, color: "#94a3b8" }}>▼</span>}
+                          </div>
+                          {(s.pay === "SHOP" || s.pay === "SHOPIFY" || !s.pay) && s.shopInvoiceNo && (
+                            <div style={{
+                              fontSize: 10, fontFamily: "DM Mono,monospace",
+                              color: "#64748b", whiteSpace: "nowrap",
+                            }}>
+                              {s.shopInvoiceNo}
+                            </div>
+                          )}
                         </div>
                       )}
                     </td>
@@ -2075,7 +2316,7 @@ ${signOff} 💜`;
                               }
                             }
                             if (groupIds.length > 1) {
-                              setCascadeConfirm({ saleId: s.id, newStatus, groupIds });
+                              applyCascade(s.id, newStatus, groupIds);
                             } else if (onInlineEdit) {
                               onInlineEdit(s.id, { ful: newStatus, status: newStatus });
                             }
@@ -2123,16 +2364,44 @@ ${signOff} 💜`;
                     {/* Pur. Amount — ROS INDIA only */}
                     {isIndiaShop&&!isStaff&&showCol("Pur. Amount")&&(
                       <td style={{ padding: "12px 16px", textAlign: "right" }}>
-                        {s.purInvNo ? (
+                        {Number(s.purAmount)>0 ? (
                           <span style={{
                             fontFamily: "DM Mono, monospace", fontSize: 12, fontWeight: 700,
                             color: "#166534", background: "#f0fdf4",
                             border: "1px solid #bbf7d0", borderRadius: 7,
                             padding: "3px 9px", whiteSpace: "nowrap",
-                          }}>
+                          }} title={s.purInvNo?`Invoice: ${s.purInvNo}`:"No invoice number on file"}>
                             {shop.symbol}{Number(s.purAmount||0).toLocaleString()}
                           </span>
                         ) : <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>}
+                      </td>
+                    )}
+                    {/* P/L — ROS INDIA superadmin only, shown once per linked group */}
+                    {isIndiaShop&&user?.role==="superadmin"&&showCol("P/L")&&(
+                      <td style={{ padding: "12px 16px", textAlign: "right" }}>
+                        {!(Number(s.purAmount)>0) ? (
+                          <span style={{ color: "#cbd5e1", fontSize: 11 }}>—</span>
+                        ) : (() => {
+                          const gKey = getInstalmentKey(s) || s.id;
+                          const alreadyShown = shownPLGroups.has(gKey);
+                          shownPLGroups.add(gKey);
+                          if (alreadyShown) {
+                            return <span style={{ color: "#cbd5e1", fontSize: 11 }} title="See the linked transaction above for this group's P/L">🔗 ↑</span>;
+                          }
+                          const group = instalmentGroups[gKey] || [s];
+                          const salesSum = group.reduce((a,x)=>a+(Number(x.amount)||0)-Math.max(Number(x.adjAmt)||0,Number(x.refundAmt)||0),0);
+                          const pl = salesSum - (Number(s.purAmount)||0) - (Number(s.purOtherCharges)||0);
+                          return (
+                            <span style={{
+                              fontFamily: "DM Mono, monospace", fontSize: 12, fontWeight: 700,
+                              color: pl>=0?"#166534":"#991b1b", background: pl>=0?"#f0fdf4":"#fef2f2",
+                              border: "1px solid "+(pl>=0?"#bbf7d0":"#fecaca"), borderRadius: 7,
+                              padding: "3px 9px", whiteSpace: "nowrap",
+                            }} title={group.length>1?`Combined P/L for ${group.length} linked transactions`:""}>
+                              {pl>=0?"+":"-"}{shop.symbol}{Math.abs(pl).toLocaleString()}
+                            </span>
+                          );
+                        })()}
                       </td>
                     )}
                     {/* Tracking */}
@@ -2418,6 +2687,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
 
         // Use top-level state; init defaults on open
         const activeStatuses = rptStatuses || UNFULFILLED;
+        const defaultFrom = isIndiaShop ? "India-Unit1" : "UK";
         const today = new Date(); today.setHours(0,0,0,0);
         const daysWaiting = (dateStr) => {
           if (!dateStr) return 0;
@@ -2441,8 +2711,12 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
         // Deduplicate using the canonical instalment/manual-link grouping
         // (the same system used everywhere else in the app) — not a
         // separate, older tag-only check that misses Payment-Type-based
-        // or manually-linked groups. One row per linked group: anchored
-        // on the earliest transaction, amount = sum of the whole group.
+        // or manually-linked groups. One row per linked group, anchored
+        // on whichever sale in the group actually matched the active
+        // status filter (e.g. the Pending one) — not just whichever is
+        // chronologically earliest, since that could be a different,
+        // already-Fulfilled member of the same group and would show the
+        // wrong status/details on the report row.
         const seenGroupKeys = new Set();
         const reportSales = [];
         filteredSales.forEach(s => {
@@ -2452,7 +2726,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
             seenGroupKeys.add(gKey);
             const fullGrp = instalmentGroups[gKey] || [s];
             const sortedGrp = [...fullGrp].sort((a,b)=>(a.date||"").localeCompare(b.date||""));
-            const anchor = sortedGrp[0];
+            const anchor = fullGrp.find(x => x.id === s.id) || sortedGrp[0];
             const totalAmount = fullGrp.reduce((a,x)=>a+(Number(x.amount)||0),0);
             const advanceSale = fullGrp.find(x=>instalmentTagType(x)==="advance");
             reportSales.push({
@@ -2501,6 +2775,11 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
 
             // Build amount cell — instalment breakdown or single amount
             let amountCell = "";
+            const payLabelP = (isIndiaShop&&(s.pay==="BANK"||s.pay==="SIB"))?"SIB":(s.pay||"SHOP");
+            const payColorP = (s.pay==="BANK"||s.pay==="SIB")?"#2563eb":"#059669";
+            const paymentCell = rptUnit!=="India-Unit1"
+              ? `<td style="vertical-align:top"><span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;background:${payColorP}18;color:${payColorP}">${payLabelP}</span></td>`
+              : "";
             if (rptUnit !== "India-Unit1") {
               if (s._grouped && s._grp && s._grp.length > 0) {
                 const grp = [...s._grp].sort((a,b)=>(a.date||"").localeCompare(b.date||""));
@@ -2541,7 +2820,9 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                 : (s.item||"—")
               }</td>
               ${amountCell}
+              ${paymentCell}
               <td style="vertical-align:top"><span style="background:#fef9c3;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">${s.ful||s.status||"—"}</span></td>
+              <td style="vertical-align:top;font-size:11px;color:#374151">${s.rem||s.remarks||"—"}</td>
               ${rptUnit==="ALL"?`<td style="vertical-align:top">${isCross?`<span style="color:#c2410c;font-weight:700">⚠ ${dispFrom}</span>`:`<span style="color:#64748b">${dispFrom}</span>`}</td>`:""}
             </tr>`;
           }).join("");
@@ -2569,7 +2850,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
             </div>
           </div>
           <table>
-            <thead><tr><th>Order Date</th><th>Waiting</th><th>Customer</th><th>Phone</th><th>Item</th>${rptUnit!=='India-Unit1'?'<th>Amount</th>':''}<th>Status</th>${rptUnit==='ALL'?'<th>Dispatch From</th>':''}</tr></thead>
+            <thead><tr><th>Order Date</th><th>Waiting</th><th>Customer</th><th>Phone</th><th>Item</th>${rptUnit!=='India-Unit1'?'<th>Amount</th>':''}${rptUnit!=='India-Unit1'?'<th>Payment</th>':''}<th>Status</th><th>Remarks</th>${rptUnit==='ALL'?'<th>Dispatch From</th>':''}</tr></thead>
             <tbody>${rows}</tbody>
           </table>
           <div class="footer">Developed by ROS Nexus · ros-bms.vercel.app · ${new Date().toLocaleDateString("en-GB")}</div>
@@ -2651,7 +2932,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
                 <thead style={{position:"sticky",top:0,zIndex:2}}>
                   <tr>
-                    {["Order Date","Waiting","Customer","Phone","Item",...(rptUnit!=="India-Unit1"?["Amount"]:[]),"Status",...(rptUnit==="ALL"?["Dispatch From"]:[])].map(h=>(
+                    {["Order Date","Waiting","Customer","Phone","Item",...(rptUnit!=="India-Unit1"?["Amount"]:[]),...(rptUnit!=="India-Unit1"?["Payment"]:[]),"Status","Remarks",...(rptUnit==="ALL"?["Dispatch From"]:[])].map(h=>(
                       <th key={h} style={{padding:"10px 16px",fontSize:11,fontWeight:800,color:"#64748b",
                         textTransform:"uppercase",letterSpacing:"0.05em",background:"#f8fafc",
                         borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap",
@@ -2661,7 +2942,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                 </thead>
                 <tbody>
                   {reportSales.length===0?(
-                    <tr><td colSpan={8} style={{padding:"80px 20px",textAlign:"center",color:"#94a3b8"}}>
+                    <tr><td colSpan={10} style={{padding:"80px 20px",textAlign:"center",color:"#94a3b8"}}>
                       <div style={{fontSize:40,marginBottom:12}}>✅</div>
                       <p style={{margin:0,fontSize:16,fontWeight:700}}>All clear — no pending orders</p>
                     </td></tr>
@@ -2748,11 +3029,19 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                             )}
                           </td>
                         )}
+                        {rptUnit!=="India-Unit1"&&(
+                          <td style={{padding:"11px 16px"}}>
+                            <Badge l={(isIndiaShop&&(s.pay==="BANK"||s.pay==="SIB"))?"SIB":(s.pay||"SHOP")} />
+                          </td>
+                        )}
                         <td style={{padding:"11px 16px"}}>
                           <span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999,
                             background:"#fef9c3",color:"#854d0e",border:"1px solid #fde047",whiteSpace:"nowrap"}}>
                             {s.ful||s.status||"—"}
                           </span>
+                        </td>
+                        <td style={{padding:"11px 16px",color:"#374151",fontSize:12,maxWidth:220}}>
+                          {s.rem||s.remarks||<span style={{color:"#cbd5e1"}}>—</span>}
                         </td>
                         {rptUnit==="ALL"&&(
                           <td style={{padding:"11px 16px"}}>
@@ -3079,6 +3368,128 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
           </div>
         </div>
       )}
+      {dispatchSheetOpen && (
+        <DispatchSheetModal
+          sales={sales} shopId={shopId} onClose={()=>setDispatchSheetOpen(false)}
+          onInlineEdit={onInlineEdit} setWaModal={setWaModal}
+        />
+      )}
     </div>
   );
 }
+
+/* ── DispatchSheetModal: name + address + item/qty only, for sales
+   marked "ready to ship". Grouped month-wise, printable — this is what
+   gets handed off to the (separate) despatch unit, so it deliberately
+   never includes amount, payment, or any other financial detail. ────── */
+const DispatchSheetModal = ({ sales, shopId, onClose, onInlineEdit, setWaModal }) => {
+  const ready = (sales||[]).filter(s => s.readyToShip);
+  const byMonth = {};
+  ready.forEach(s => {
+    const d = new Date(s.date);
+    const key = isNaN(d.getTime()) ? "Unknown" : d.toLocaleDateString("en-GB",{month:"long",year:"numeric"});
+    (byMonth[key] = byMonth[key] || []).push(s);
+  });
+  const months = Object.keys(byMonth).sort((a,b)=>{
+    const da = new Date(byMonth[a][0]?.date), db = new Date(byMonth[b][0]?.date);
+    return db - da;
+  });
+
+  const buildWhatsAppText = () => {
+    const lines = [`🚚 *Dispatch Sheet* — ${new Date().toLocaleDateString("en-GB")}`, `${ready.length} item${ready.length!==1?"s":""} ready to ship`, ""];
+    months.forEach(m => {
+      lines.push(`*${m}*`);
+      byMonth[m].forEach((s,i) => {
+        lines.push(`${i+1}. ${s.customer||"—"}`);
+        lines.push(`${s.address||"No address on file"}`);
+        lines.push(`Item: ${s.item||"—"}`);
+        lines.push("");
+      });
+    });
+    return lines.join("\n").trim();
+  };
+
+  const handleSendWhatsApp = () => {
+    if (!setWaModal) return;
+    setWaModal({ phone: "", customerName: "", message: buildWhatsAppText() });
+    onClose();
+  };
+
+  const handlePrint = () => {
+    const w = window.open("", "_blank");
+    const sections = months.map(m => `
+      <h2>${m}</h2>
+      <table><thead><tr><th>#</th><th>Name</th><th>Address</th><th>Item</th></tr></thead><tbody>
+        ${byMonth[m].map((s,i)=>`<tr><td>${i+1}</td><td>${s.customer||"—"}</td><td style="white-space:pre-line">${s.address||"—"}</td><td>${s.item||"—"}</td></tr>`).join("")}
+      </tbody></table>`).join("");
+    w.document.write(`<!DOCTYPE html><html><head><title>Dispatch Sheet</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:24px;color:#0f172a;}
+        h1{font-size:18px;margin-bottom:4px;} p{color:#64748b;font-size:12px;margin-top:0;}
+        h2{font-size:13px;margin:20px 0 6px;text-transform:uppercase;letter-spacing:0.04em;color:#475569;}
+        table{width:100%;border-collapse:collapse;} th,td{border:1px solid #e2e8f0;padding:8px 10px;font-size:12px;text-align:left;vertical-align:top;}
+        th{background:#f8fafc;text-transform:uppercase;letter-spacing:0.04em;font-size:10px;}
+      </style></head><body>
+      <h1>🚚 Dispatch Sheet</h1>
+      <p>Generated ${new Date().toLocaleString("en-GB")} · ${ready.length} item${ready.length!==1?"s":""} ready to ship</p>
+      ${sections}
+      </body></html>`);
+    w.document.close();
+    setTimeout(()=>w.print(), 300);
+  };
+
+  return (
+    <div style={{ position:"fixed", inset:0, zIndex:320, background:"rgba(15,23,42,0.55)", display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:"white", borderRadius:16, width:"100%", maxWidth:640, maxHeight:"85vh", display:"flex", flexDirection:"column", boxShadow:"0 20px 60px rgba(0,0,0,0.3)", overflow:"hidden" }}>
+        <div style={{ padding:"18px 22px", borderBottom:"1px solid #f1f5f9", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+          <div>
+            <div style={{ fontSize:15, fontWeight:800, color:"#0f172a" }}>🚚 Dispatch Sheet</div>
+            <div style={{ fontSize:12, color:"#64748b" }}>{ready.length} item{ready.length!==1?"s":""} marked ready — name &amp; address only, for the despatch unit</div>
+          </div>
+          <button onClick={onClose} style={{ border:"none", background:"transparent", fontSize:18, cursor:"pointer", color:"#94a3b8" }}>✕</button>
+        </div>
+        <div style={{ flex:1, overflowY:"auto", padding:"16px 22px" }}>
+          {ready.length===0 ? (
+            <div style={{ textAlign:"center", padding:"50px 0", color:"#94a3b8", fontSize:13 }}>
+              Nothing marked "Ready to Ship" yet — use the 📦 chip on a sale row to add it here.
+            </div>
+          ) : months.map(m => (
+            <div key={m} style={{ marginBottom:18 }}>
+              <div style={{ fontSize:11, fontWeight:800, color:"#92400e", textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:8 }}>{m}</div>
+              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
+                {byMonth[m].map(s => (
+                  <div key={s.id} style={{ padding:"10px 12px", borderRadius:10, border:"1px solid #e2e8f0", display:"flex", justifyContent:"space-between", gap:10 }}>
+                    <div style={{ minWidth:0 }}>
+                      <div style={{ fontSize:12.5, fontWeight:700, color:"#0f172a" }}>{s.customer||"—"}</div>
+                      <div style={{ fontSize:11.5, color:"#64748b", whiteSpace:"pre-line", marginTop:2 }}>{s.address||"No address on file"}</div>
+                      <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>{s.item||"—"}</div>
+                    </div>
+                    {onInlineEdit && (
+                      <button onClick={()=>onInlineEdit(s.id,{readyToShip:false})}
+                        title="Remove from this sheet"
+                        style={{ flexShrink:0, border:"none", background:"transparent", color:"#94a3b8", cursor:"pointer", fontSize:13 }}>
+                        ✕
+                      </button>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        {ready.length>0 && (
+          <div style={{ padding:"14px 22px", borderTop:"1px solid #f1f5f9", display:"flex", gap:10 }}>
+            <button onClick={handlePrint}
+              style={{ flex:1, padding:"11px 0", borderRadius:10, border:"none", background:"#92400e", color:"white", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+              🖨️ Print / Export
+            </button>
+            <button onClick={handleSendWhatsApp}
+              style={{ flex:1, padding:"11px 0", borderRadius:10, border:"none", background:"#25D366", color:"white", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
+              💬 Send via WhatsApp
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};

@@ -43,7 +43,16 @@ function buildSales(sales){
   const monthData=[];
   for(let i=5;i>=0;i--){const d=new Date(curY,curM-i,1);const mY=d.getFullYear(),mM=d.getMonth();const mS=sales.filter(s=>{const sd=new Date(s.date);return sd.getFullYear()===mY&&sd.getMonth()===mM;});monthData.push({label:d.toLocaleString("default",{month:"short",year:"2-digit"}),rev:rev(mS),orders:mS.length});}
   const payMap={};sales.forEach(s=>{const p=s.pay||"SHOP";payMap[p]=(payMap[p]||0)+netAmt(s);});
+  /* Normalised 2-way channel split (same figures as payMap, just bucketed
+     Bank vs Shop/Shopify) — powers the Payment Channel summary. */
+  let bankRev=0,bankCount=0,shopRev=0,shopCount=0;
+  sales.forEach(s=>{
+    const p=(s.pay||"SHOP").toUpperCase();
+    if(p==="BANK"||p==="SIB"){bankRev+=netAmt(s);bankCount++;}
+    else{shopRev+=netAmt(s);shopCount++;}
+  });
   return{total,monthRev,fyRev,fulfilled,returned,pending,topCusts,monthData,payMap,
+    bankRev,bankCount,shopRev,shopCount,
     count:sales.length,monthCount:monthly.length,fyCount:fy.length};
 }
 function buildCust(sales){
@@ -102,12 +111,16 @@ ${html}</body></html>`);
   setTimeout(()=>{win.print();win.onafterprint=()=>win.close();},500);
 }
 
-function getPrintHTML(key,sales,exps,purch,shop){
+function getPrintHTML(key,sales,exps,purch,shop,shopId){
   const sym=shop.symbol;
   const f=n=>sym+Number(n||0).toLocaleString("en-GB",{minimumFractionDigits:2,maximumFractionDigits:2});
+  const isIndiaShop=shopId==="ros-india"||shopId==="ros-india-staff";
   if(key==="sales"){
     const d=buildSales(sales);
+    const shopLabel=isIndiaShop?"Shop":"Shop / Shopify";
+    const bankLabel=isIndiaShop?"SIB / Bank":"Bank";
     return`<div><span class="kpi"><span class="kv">${f(d.monthRev)}</span><span class="kl">This Month Revenue</span></span><span class="kpi"><span class="kv">${f(d.fyRev)}</span><span class="kl">Financial Year Revenue</span></span><span class="kpi"><span class="kv">${f(d.total)}</span><span class="kl">Lifetime Revenue</span></span><span class="kpi"><span class="kv">${d.monthCount}</span><span class="kl">This Month Orders</span></span><span class="kpi"><span class="kv">${d.fyCount}</span><span class="kl">Financial Year Orders</span></span><span class="kpi"><span class="kv">${d.count}</span><span class="kl">Lifetime Orders</span></span></div>
+<h2>Payment Channel</h2><div><span class="kpi"><span class="kv" style="color:#059669">${f(d.shopRev)}</span><span class="kl">🛍️ ${shopLabel} Revenue (${d.shopCount} orders)</span></span><span class="kpi"><span class="kv" style="color:#2563eb">${f(d.bankRev)}</span><span class="kl">🏦 ${bankLabel} Revenue (${d.bankCount} orders)</span></span></div>
 <h2>Monthly Revenue (Last 6 Months)</h2><table><thead><tr><th>Month</th><th>Orders</th><th class="thr">Revenue</th></tr></thead><tbody>${d.monthData.map(m=>`<tr><td>${m.label}</td><td>${m.orders}</td><td class="num">${f(m.rev)}</td></tr>`).join("")}</tbody></table>
 <h2>Top 10 Customers</h2><table><thead><tr><th>#</th><th>Customer</th><th>Orders</th><th class="thr">Total Spend</th></tr></thead><tbody>${d.topCusts.map((c,i)=>`<tr><td>${i+1}</td><td>${c.name}</td><td>${c.orders}</td><td class="num">${f(c.total)}</td></tr>`).join("")}</tbody></table>
 <h2>Payment Method Breakdown</h2><table><thead><tr><th>Method</th><th class="thr">Revenue</th></tr></thead><tbody>${Object.entries(d.payMap).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<tr><td>${k}</td><td class="num">${f(v)}</td></tr>`).join("")}</tbody></table>`;
@@ -144,6 +157,7 @@ function getPrintHTML(key,sales,exps,purch,shop){
 export default function ReportsPanel({shop,sales=[],customers=[],exps=[],purch=[],shopId}){
   const [active,setActive]=useState(null);
   const [hov,setHov]=useState(null);
+  const isIndiaShop = shopId==="ros-india" || shopId==="ros-india-staff";
 
   const REPORTS=[
     {key:"sales",    t:"Sales Report",    d:"Revenue, orders and customer breakdown",  ic:"📊"},
@@ -167,6 +181,30 @@ export default function ReportsPanel({shop,sales=[],customers=[],exps=[],purch=[
             <KPI l="Financial Year Orders" v={d.fyCount} shop={shop}/>
             <KPI l="Lifetime Orders" v={d.count} shop={shop}/>
           </div>
+          <p style={{margin:"0 0 6px",fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>Payment Channel</p>
+          {(()=>{
+            const grand=d.bankRev+d.shopRev;
+            const bankPct=grand?Math.round((d.bankRev/grand)*100):0;
+            const shopPct=100-bankPct;
+            return(
+              <div style={{marginBottom:14}}>
+                <div style={{display:"flex",height:10,borderRadius:999,overflow:"hidden",background:"#f1f5f9",marginBottom:8}}>
+                  {shopPct>0&&<div style={{width:`${shopPct}%`,background:"#059669"}}/>}
+                  {bankPct>0&&<div style={{width:`${bankPct}%`,background:"#2563eb"}}/>}
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                  <div style={{background:"#ecfdf5",border:"1px solid #a7f3d0",borderRadius:8,padding:"8px 10px"}}>
+                    <p style={{margin:0,fontSize:12,fontWeight:900,color:"#047857"}}>🛍️ {fmtAmt(shop,d.shopRev)}</p>
+                    <p style={{margin:0,fontSize:10,color:"#059669"}}>{isIndiaShop?"Shop":"Shop / Shopify"} · {d.shopCount} orders · {shopPct}%</p>
+                  </div>
+                  <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:8,padding:"8px 10px"}}>
+                    <p style={{margin:0,fontSize:12,fontWeight:900,color:"#1d4ed8"}}>🏦 {fmtAmt(shop,d.bankRev)}</p>
+                    <p style={{margin:0,fontSize:10,color:"#2563eb"}}>{isIndiaShop?"SIB / Bank":"Bank"} · {d.bankCount} orders · {bankPct}%</p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           <p style={{margin:"0 0 6px",fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em"}}>Last 6 Months</p>
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:12,marginBottom:14}}>
             <thead><tr style={{background:"#f8fafc"}}><TH>Month</TH><TH>Orders</TH><TH right>Revenue</TH></tr></thead>
@@ -280,7 +318,7 @@ export default function ReportsPanel({shop,sales=[],customers=[],exps=[],purch=[
                     style={{flex:1,padding:"8px 0",borderRadius:9,border:"1px solid "+shop.accent+"44",background:isA?shop.accent:shop.accentBg,color:isA?"white":shop.accentText,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}>
                     {isA?"▲ Hide":"👁 Preview"}
                   </button>
-                  <button onClick={()=>printReport(r.t,shop,getPrintHTML(r.key,sales,exps,purch,shop))}
+                  <button onClick={()=>printReport(r.t,shop,getPrintHTML(r.key,sales,exps,purch,shop,shopId))}
                     style={{flex:1,padding:"8px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"#f8fafc",color:"#374151",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",transition:"all 0.15s"}}
                     onMouseEnter={e=>{e.currentTarget.style.background="#0f172a";e.currentTarget.style.color="white";}}
                     onMouseLeave={e=>{e.currentTarget.style.background="#f8fafc";e.currentTarget.style.color="#374151";}}>
