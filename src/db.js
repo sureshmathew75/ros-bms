@@ -23,6 +23,7 @@ export const dbSaveSale = async (shopId, sale) => {
     date:          String(sale.date || today()),
     item:          String(sale.item || ''),
     qty:           String(sale.qty || '1'),
+    shopify_order_id: sale.shopifyOrderId || null,
     contact:       String(sale.contact || ''),
     phone:         String(sale.phone || ''),
     address:       String(sale.address || ''),
@@ -57,7 +58,11 @@ export const dbSaveSale = async (shopId, sale) => {
     pur_inv_no:      String(sale.purInvNo || ''),
     pur_inv_date:    String(sale.purInvDate || ''),
     pur_amount:      Number(sale.purAmount) || 0,
+    pur_other_charges: Number(sale.purOtherCharges) || 0,
+    pur_other_charges_note: String(sale.purOtherChargesNote || ''),
     tracking_no:     String(sale.trackingNo || ''),
+    sortpos:         sale.sortpos !== undefined && sale.sortpos !== null ? Number(sale.sortpos) : null,
+    ready_to_ship:   sale.readyToShip ? true : false,
     delivery_date:        String(sale.deliveryDate || ''),
     delivery_informed:    sale.deliveryInformed ? true : false,
     delivery_time:   String(sale.deliveryTime || ''),
@@ -81,7 +86,7 @@ export const dbSaveSale = async (shopId, sale) => {
     sortpos:             sale.sortpos !== undefined && sale.sortpos !== null ? Number(sale.sortpos) : null,
     payment_type:        sale.paymentType || 'FULL',
     manual_link_group:   sale.manualLinkGroup || null,
-    shopify_order_id:    sale.shopifyOrderId || null,
+    ready_to_ship:       sale.readyToShip ? true : false,
   };
 
   const payload = { ...core, ...extended, verified: sale.verified || false };
@@ -100,8 +105,10 @@ export const dbSaveSale = async (shopId, sale) => {
 
   // Try full payload first, fall back to core-only if extended columns missing
   let { error } = await upsert(payload);
+  let usedFallback = false;
   if (error) {
     console.warn('⚠️ Full payload failed, retrying with core columns only:', error.message);
+    usedFallback = true;
     ({ error } = await upsert(core));
   }
 
@@ -110,6 +117,7 @@ export const dbSaveSale = async (shopId, sale) => {
     throw error;
   } else {
     console.log('✅ Sale saved:', sale.id);
+    return !usedFallback;
   }
 };
 
@@ -181,6 +189,8 @@ export const dbLoadSales = async (shopId) => {
     purInvNo:      r.pur_inv_no || '',
     purInvDate:    r.pur_inv_date || '',
     purAmount:     Number(r.pur_amount) || 0,
+    purOtherCharges: Number(r.pur_other_charges) || 0,
+    purOtherChargesNote: r.pur_other_charges_note || '',
     paidBy:        r.paid_by || '',
     trackingNo:    r.tracking_no || '',
     dispatchFrom:      r.dispatch_from || '',
@@ -196,6 +206,7 @@ export const dbLoadSales = async (shopId) => {
     sortpos:       r.sortpos !== undefined && r.sortpos !== null ? Number(r.sortpos) : null,
     paymentType:   r.payment_type || 'FULL',
     manualLinkGroup: r.manual_link_group || null,
+    readyToShip: r.ready_to_ship || false,
     shopifyOrderId: r.shopify_order_id || null,
   }));
   return mapped.sort((a, b) => parseDateMs(b.date) - parseDateMs(a.date));
@@ -699,7 +710,7 @@ export const dbNextReturnId = async () => {
 };
 
 export const dbSaveReturn = async (ret) => {
-  if (!sb) return;
+  if (!sb) return false;
   const payload = {
     id:                     ret.id,
     shop_id:                ret.shopId,
@@ -709,25 +720,31 @@ export const dbSaveReturn = async (ret) => {
     reason:                 ret.reason || '',
     resolution:             ret.resolution || 'refund',
     status:                 ret.status || 'RETURN_APPROVED',
-    return_deadline:        ret.returnDeadline || '',
+    return_deadline:        ret.returnDeadline || ret.receivedDate || new Date().toISOString().slice(0,10),
     tracking_no:            ret.trackingNo || '',
     courier:                ret.courier || '',
     proof_url:              ret.proofUrl || '',
-    received_date:          ret.receivedDate || '',
+    received_date:          ret.receivedDate || null,
     instructions_sent_at:   ret.instructionsSentAt || null,
     reminder_sent_at:      ret.reminderSentAt || null,
-    refund_date:            ret.refundDate || '',
-    exchange_date:          ret.exchangeDate || '',
+    refund_date:            ret.refundDate || null,
+    exchange_date:          ret.exchangeDate || null,
     staff_notes:            ret.staffNotes || '',
     return_address_version: ret.returnAddressVersion || 'v1',
-    expired_at:             ret.expiredAt || '',
+    expired_at:             ret.expiredAt || null,
+    item:                   ret.item || '',
+    refund_amount:          Number(ret.refundAmount) || 0,
+    refund_method:          ret.refundMethod || '',
+    refund_to_name:         ret.refundToName || '',
+    stock_status:           ret.stockStatus || 'in_office',
   };
   const { data: existing } = await sb.from('returns').select('id').eq('id', ret.id).maybeSingle();
   const { error } = existing
     ? await sb.from('returns').update(payload).eq('id', ret.id)
     : await sb.from('returns').insert(payload);
-  if (error) console.error('Save return error:', error);
-  else console.log('✅ Return saved:', ret.id);
+  if (error) { console.error('Save return error:', error); return false; }
+  console.log('✅ Return saved:', ret.id);
+  return true;
 };
 
 export const dbLoadReturns = async (shopId) => {
@@ -759,6 +776,11 @@ export const dbLoadReturns = async (shopId) => {
     staffNotes:           r.staff_notes || '',
     returnAddressVersion: r.return_address_version || 'v1',
     expiredAt:            r.expired_at || '',
+    item:                 r.item || '',
+    refundAmount:         Number(r.refund_amount) || 0,
+    refundMethod:         r.refund_method || '',
+    refundToName:         r.refund_to_name || '',
+    stockStatus:          r.stock_status || 'in_office',
   }));
 };
 
@@ -1113,4 +1135,232 @@ export const dbSaveRosieSettings = async (shopId, settings) => {
   };
   const { error } = await sb.from('rosie_settings').upsert(payload, { onConflict: 'shop_id' });
   if (error) console.error('Save Rosie settings error:', error);
+};
+
+/* ── Dismissed Shopify orders: permanently hides an order from the
+   "Import from Shopify" list, for cases already handled outside the
+   automatic duplicate-matching (e.g. entered manually beforehand). ──── */
+export const dbLoadDismissedShopifyOrders = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('dismissed_shopify_orders').select('shopify_order_id').eq('shop_id', shopId);
+  if (error) { console.error('Load dismissed Shopify orders error:', error); return []; }
+  return (data || []).map(r => r.shopify_order_id);
+};
+
+export const dbDismissShopifyOrders = async (shopId, shopifyOrderIds) => {
+  if (!sb || !shopifyOrderIds.length) return;
+  const payload = shopifyOrderIds.map(id => ({ shop_id: shopId, shopify_order_id: id }));
+  const { error } = await sb.from('dismissed_shopify_orders').upsert(payload, { onConflict: 'shop_id,shopify_order_id' });
+  if (error) console.error('Dismiss Shopify orders error:', error);
+};
+
+/* ── Audit finding dismissals: lets Suresh mark a specific audit finding
+   as "checked, not an issue" so it stops reappearing on future runs. ── */
+export const dbLoadAuditDismissals = async () => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('audit_dismissals').select('finding_key');
+  if (error) { console.error('Load audit dismissals error:', error); return []; }
+  return (data || []).map(r => r.finding_key);
+};
+
+export const dbDismissAuditFinding = async (findingKey) => {
+  if (!sb) return;
+  const { error } = await sb.from('audit_dismissals').upsert({ finding_key: findingKey }, { onConflict: 'finding_key' });
+  if (error) console.error('Dismiss audit finding error:', error);
+};
+
+/* ── Attendance system (ROS India). Two staff share one login, split by
+   a lightweight per-person PIN — this is a convenience gate, not real
+   authentication, matching the low-stakes nature of "who's clocking in". */
+export const dbLoadAttendanceStaff = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('attendance_staff').select('*').eq('shop_id', shopId);
+  if (error) { console.error('Load attendance staff error:', error); return []; }
+  return (data || []).map(r => ({ staffName: r.staff_name, pin: r.pin }));
+};
+
+export const dbSaveAttendanceStaffPin = async (staffName, shopId, pin) => {
+  if (!sb) return false;
+  const { error } = await sb.from('attendance_staff').upsert({ staff_name: staffName, shop_id: shopId, pin }, { onConflict: 'staff_name' });
+  if (error) { console.error('Save attendance PIN error:', error); return false; }
+  return true;
+};
+
+export const dbLoadAttendanceRecords = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('attendance_records').select('*').eq('shop_id', shopId).order('date', { ascending: false });
+  if (error) { console.error('Load attendance records error:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id, shopId: r.shop_id, staffName: r.staff_name, date: r.date,
+    clockIn: r.clock_in, clockOut: r.clock_out,
+  }));
+};
+
+export const dbClockIn = async (shopId, staffName) => {
+  if (!sb) return null;
+  const today = new Date().toISOString().slice(0,10);
+  const id = `ATT-${staffName}-${today}`;
+  const nowIso = new Date().toISOString();
+  const { error } = await sb.from('attendance_records').upsert(
+    { id, shop_id: shopId, staff_name: staffName, date: today, clock_in: nowIso },
+    { onConflict: 'id' }
+  );
+  if (error) { console.error('Clock in error:', error); return null; }
+  return { id, shopId, staffName, date: today, clockIn: nowIso, clockOut: null };
+};
+
+export const dbClockOut = async (shopId, staffName, recordId) => {
+  if (!sb) return false;
+  const nowIso = new Date().toISOString();
+  const { error } = await sb.from('attendance_records').update({ clock_out: nowIso }).eq('id', recordId);
+  if (error) { console.error('Clock out error:', error); return false; }
+  return true;
+};
+
+// Admin manual correction — sets/overwrites clock-in and clock-out for a
+// specific date, creating the record if none exists yet (e.g. staff
+// forgot to clock in at all that day). Times are local "HH:MM" strings.
+export const dbSetAttendanceRecord = async (shopId, staffName, date, clockInTime, clockOutTime) => {
+  if (!sb) return false;
+  const id = `ATT-${staffName}-${date}`;
+  const toIso = (time) => time ? new Date(`${date}T${time}:00+05:30`).toISOString() : null;
+  const { error } = await sb.from('attendance_records').upsert(
+    { id, shop_id: shopId, staff_name: staffName, date, clock_in: toIso(clockInTime), clock_out: toIso(clockOutTime) },
+    { onConflict: 'id' }
+  );
+  if (error) { console.error('Set attendance record error:', error); return false; }
+  return true;
+};
+
+// Admin-set holidays (beyond the standing Sunday holiday) — festivals,
+// granted leave, etc., set in advance.
+export const dbLoadAttendanceHolidays = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('attendance_holidays').select('*').eq('shop_id', shopId);
+  if (error) { console.error('Load attendance holidays error:', error); return []; }
+  return (data || []).map(r => ({ date: r.date, label: r.label || '' }));
+};
+
+export const dbAddAttendanceHoliday = async (shopId, date, label) => {
+  if (!sb) return false;
+  const { error } = await sb.from('attendance_holidays').upsert({ shop_id: shopId, date, label: label || '' }, { onConflict: 'shop_id,date' });
+  if (error) { console.error('Add attendance holiday error:', error); return false; }
+  return true;
+};
+
+export const dbRemoveAttendanceHoliday = async (shopId, date) => {
+  if (!sb) return false;
+  const { error } = await sb.from('attendance_holidays').delete().eq('shop_id', shopId).eq('date', date);
+  if (error) { console.error('Remove attendance holiday error:', error); return false; }
+  return true;
+};
+
+/* ── Inventory management (ROS India stocked items only). Every stock
+   change — sale-out or restock-in — is logged as its own movement, so
+   an item's history is a real ledger, not just a running number. ────── */
+export const dbLoadInventoryItems = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('inventory_items').select('*').eq('shop_id', shopId).order('name');
+  if (error) { console.error('Load inventory items error:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id, name: r.name, currentStock: Number(r.current_stock) || 0,
+    totalStocked: Number(r.total_stocked) || 0, createdAt: r.created_at,
+  }));
+};
+
+export const dbAddInventoryItem = async (shopId, name, initialStock) => {
+  if (!sb) return null;
+  const id = `INV-${Date.now().toString().slice(-8)}`;
+  const stock = Number(initialStock) || 0;
+  const { error } = await sb.from('inventory_items').insert({
+    id, shop_id: shopId, name, current_stock: 0, total_stocked: 0,
+  });
+  if (error) { console.error('Add inventory item error:', error); return null; }
+  if (stock > 0) {
+    // dbAddInventoryMovement is the single source of truth for stock
+    // changes — inserting the item at 0 first and letting this call set
+    // the real starting stock avoids double-counting it.
+    await dbAddInventoryMovement(shopId, id, 'restock', stock, new Date().toISOString().slice(0,10), null, null, 'Initial stock');
+  }
+  return id;
+};
+
+export const dbDeleteInventoryItem = async (shopId, itemId) => {
+  if (!sb) return false;
+  const { error } = await sb.from('inventory_items').delete().eq('id', itemId).eq('shop_id', shopId);
+  if (error) { console.error('Delete inventory item error:', error); return false; }
+  await sb.from('inventory_movements').delete().eq('item_id', itemId);
+  return true;
+};
+
+export const dbLoadInventoryMovements = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('inventory_movements').select('*').eq('shop_id', shopId).order('date', { ascending: false });
+  if (error) { console.error('Load inventory movements error:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id, itemId: r.item_id, type: r.type, qty: Number(r.qty) || 0,
+    date: r.date, saleId: r.sale_id, customer: r.customer, note: r.note || '',
+  }));
+};
+
+export const dbAddInventoryMovement = async (shopId, itemId, type, qty, date, saleId, customer, note) => {
+  if (!sb) return false;
+  const id = `MOV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random()*1000)}`;
+  const { error: moveErr } = await sb.from('inventory_movements').insert({
+    id, item_id: itemId, shop_id: shopId, type, qty, date, sale_id: saleId, customer, note: note || '',
+  });
+  if (moveErr) { console.error('Add inventory movement error:', moveErr); return false; }
+
+  const { data: item, error: fetchErr } = await sb.from('inventory_items').select('current_stock,total_stocked').eq('id', itemId).maybeSingle();
+  if (fetchErr || !item) { console.error('Fetch inventory item for stock update error:', fetchErr); return false; }
+
+  const delta = type === 'restock' ? qty : -qty;
+  const newStock = Number(item.current_stock || 0) + delta;
+  const newTotal = type === 'restock' ? Number(item.total_stocked || 0) + qty : Number(item.total_stocked || 0);
+  const { error: updateErr } = await sb.from('inventory_items').update({ current_stock: newStock, total_stocked: newTotal }).eq('id', itemId);
+  if (updateErr) { console.error('Update inventory stock error:', updateErr); return false; }
+  return true;
+};
+
+/* ── Upfront refunds: money returned before dispatch (cancellation,
+   stock issue, payment problem) — no item ever comes back. ─────────── */
+export const dbLoadUpfrontRefunds = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('upfront_refunds').select('*').eq('shop_id', shopId).order('date', { ascending: false });
+  if (error) { console.error('Load upfront refunds error:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id, saleId: r.sale_id, customer: r.customer, phone: r.phone || '',
+    amount: Number(r.amount) || 0, isFull: r.is_full !== false,
+    reason: r.reason || 'Other', reasonNote: r.reason_note || '',
+    refundMethod: r.refund_method || '', refundToName: r.refund_to_name || '',
+    date: r.date, staffNotes: r.staff_notes || '',
+  }));
+};
+
+export const dbAddUpfrontRefund = async (shopId, refund) => {
+  if (!sb) return null;
+  const id = `UFR-${Date.now().toString().slice(-8)}`;
+  const { error } = await sb.from('upfront_refunds').insert({
+    id, shop_id: shopId,
+    sale_id: refund.saleId || null,
+    customer: refund.customer || '',
+    phone: refund.phone || '',
+    amount: Number(refund.amount) || 0,
+    is_full: !!refund.isFull,
+    reason: refund.reason || 'Other',
+    reason_note: refund.reasonNote || '',
+    refund_method: refund.refundMethod || '',
+    refund_to_name: refund.refundToName || '',
+    date: refund.date || new Date().toISOString().slice(0,10),
+    staff_notes: refund.staffNotes || '',
+  });
+  if (error) { console.error('Add upfront refund error:', error); return null; }
+  return id;
+};
+
+export const dbDeleteUpfrontRefund = async (shopId, id) => {
+  if (!sb) return false;
+  const { error } = await sb.from('upfront_refunds').delete().eq('id', id).eq('shop_id', shopId);
+  if (error) { console.error('Delete upfront refund error:', error); return false; }
+  return true;
 };
