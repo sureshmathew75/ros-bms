@@ -1769,7 +1769,27 @@ We hope you enjoy your purchase! 💜
         overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.04)",
       }}>
         <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+          <style>{`
+            .ros-sales-row td {
+              background: var(--row-bg, ${CREAM_ROW_BG});
+              box-shadow: var(--row-shadow, 0 2px 6px rgba(15,23,42,0.08), 0 1px 2px rgba(15,23,42,0.06));
+              transition: box-shadow .15s ease, transform .15s ease;
+            }
+            .ros-sales-row:hover td {
+              box-shadow: 0 6px 16px rgba(15,23,42,0.14), 0 2px 4px rgba(15,23,42,0.08);
+              transform: translateY(-1px);
+            }
+            .ros-sales-row td:first-child {
+              border-top-left-radius: 10px;
+              border-bottom-left-radius: 10px;
+              border-left: var(--row-left-border, 3px solid transparent);
+            }
+            .ros-sales-row td:last-child {
+              border-top-right-radius: 10px;
+              border-bottom-right-radius: 10px;
+            }
+          `}</style>
+          <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 10px", minWidth: 720 }}>
             <thead>
               <tr style={{ background: "#f8fafc" }}>
                 {["Invoice", "Date", "Customer", "Item", "Amount", ...(isIndiaShop ? ["Verified"] : []), "Refund", "Payment", "Status", "Tags",
@@ -1949,9 +1969,20 @@ We hope you enjoy your purchase! 💜
                 const mergedRowBg = { ...STATUS_ROW_BG, ...(statusRowBgProp || {}) };
                 const isFlashing = flashIds.has(s.id) || (externalFlashIds && externalFlashIds.has(s.id));
                 const rowBg = isH ? "#fde047" : (isFlashing ? "#86efac" : (s.flagged ? "#fef2f2" : (isInstalment ? instBg : (mergedRowBg[ful] || CREAM_ROW_BG))));
+                /* Floating-card row: background/shadow/left-accent are all
+                   passed down as CSS custom properties (rather than set
+                   directly on the <tr>) because box-shadow and border-radius
+                   don't render reliably on table rows — only on <td>. The
+                   .ros-sales-row stylesheet below reads these vars on each
+                   cell instead. */
+                const cardShadow = isDragOver
+                  ? `0 0 0 2px ${accent}, 0 4px 10px rgba(15,23,42,0.12)`
+                  : null;
+                const cardLeftBorder = s.flagged ? "3px solid #dc2626" : (isInstalment ? `5px solid ${instColor}` : null);
 
                 return (
                   <tr key={s.id}
+                    className="ros-sales-row"
                     draggable={reorderEnabled}
                     onDragStart={(e) => { if (!reorderEnabled) return; setDragId(s.id); e.dataTransfer.effectAllowed = "move"; }}
                     onDragOver={(e) => { if (!reorderEnabled || !dragId) return; e.preventDefault(); if (dragOverId !== s.id) setDragOverId(s.id); }}
@@ -1962,11 +1993,11 @@ We hope you enjoy your purchase! 💜
                     onMouseEnter={() => setHovR(s.id)}
                     onMouseLeave={() => setHovR(null)}
                     style={{
-                      background: rowBg, cursor: reorderEnabled ? "grab" : "pointer",
+                      cursor: reorderEnabled ? "grab" : "pointer",
                       opacity: isDragging ? 0.4 : 1,
-                      borderBottom: isDragOver ? "2px dashed " + accent : "1px solid #e2e8f0",
-                      transition: "background 0.12s",
-                      borderLeft: s.flagged ? "3px solid #dc2626" : (isInstalment ? `5px solid ${instColor}` : "3px solid transparent"),
+                      "--row-bg": rowBg,
+                      ...(cardShadow ? { "--row-shadow": cardShadow } : {}),
+                      ...(cardLeftBorder ? { "--row-left-border": cardLeftBorder } : {}),
                     }}>
                     {/* Invoice */}
                     <td style={{ padding: "12px 16px" }}>
