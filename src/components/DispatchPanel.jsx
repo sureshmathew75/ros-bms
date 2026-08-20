@@ -377,6 +377,58 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
     catch { alert(text); }
   };
 
+  /* Bulk WhatsApp — bundles the whole day's sheet into one message with no
+     fixed recipient, for pinging an internal despatch group chat. Mirrors
+     the old Dispatch Sheet's "Send via WhatsApp" button in SalesPanel.jsx. */
+  const sendBulkWhatsApp = () => {
+    const dateLabel = formatDate ? formatDate(selectedDate) : selectedDate;
+    const lines = [`🚚 *Despatch Log* — ${dateLabel}`, `${dayEntries.length} item${dayEntries.length !== 1 ? "s" : ""}`, ""];
+    dayEntries.forEach((e, i) => {
+      lines.push(`${i + 1}. ${e.customer || "—"}`);
+      lines.push(e.address || "No address on file");
+      lines.push(`Phone: ${e.phone || "—"}`);
+      lines.push(`Tracking: ${e.trackingNo || "—"} (${e.shipper || "no shipper"})`);
+      if (e.remarks) lines.push(`Remarks: ${e.remarks}`);
+      lines.push("");
+    });
+    setWaModal({ phone: "", customerName: "", message: lines.join("\n").trim() });
+  };
+
+  /* Print — clean tabular printout of the selected day's sheet. Mirrors
+     the old Dispatch Sheet's "Print / Export" button in SalesPanel.jsx,
+     extended with the extra columns this page tracks (phone, tracking,
+     shipper, remarks). */
+  const handlePrint = () => {
+    const w = window.open("", "_blank");
+    if (!w) return;
+    const dateLabel = formatDate ? formatDate(selectedDate) : selectedDate;
+    const rows = dayEntries.map((e, i) => `
+      <tr>
+        <td>${i + 1}</td>
+        <td>${e.customer || "—"}</td>
+        <td style="white-space:pre-line">${e.address || "—"}</td>
+        <td>${e.phone || "—"}</td>
+        <td>${e.trackingNo || "—"}</td>
+        <td>${e.shipper || "—"}</td>
+        <td>${e.remarks || "—"}</td>
+      </tr>`).join("");
+    w.document.write(`<!DOCTYPE html><html><head><title>Despatch Log — ${dateLabel}</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:24px;color:#0f172a;}
+        h1{font-size:18px;margin-bottom:4px;} p{color:#64748b;font-size:12px;margin-top:0;}
+        table{width:100%;border-collapse:collapse;margin-top:14px;}
+        th,td{border:1px solid #e2e8f0;padding:8px 10px;font-size:12px;text-align:left;vertical-align:top;}
+        th{background:#f8fafc;text-transform:uppercase;letter-spacing:0.04em;font-size:10px;}
+      </style></head><body>
+      <h1>🚚 Despatch Log</h1>
+      <p>${dateLabel} · ${dayEntries.length} item${dayEntries.length !== 1 ? "s" : ""}</p>
+      <table><thead><tr><th>#</th><th>Customer</th><th>Address</th><th>Phone</th><th>Tracking No.</th><th>Shipper</th><th>Remarks</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+      </body></html>`);
+    w.document.close();
+    setTimeout(() => w.print(), 300);
+  };
+
   const quickDate = (offsetDays) => {
     const d = new Date();
     d.setDate(d.getDate() + offsetDays);
@@ -406,10 +458,21 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
         <SummaryChip label="Rows today" value={summary.total} bg="#f1f5f9" color="#334155" />
         <SummaryChip label="Awaiting tracking" value={summary.noTracking} bg={summary.noTracking ? "#fef3c7" : "#f1f5f9"} color={summary.noTracking ? "#92400e" : "#334155"} />
         <SummaryChip label="Not yet notified" value={summary.notNotified} bg={summary.notNotified ? "#fee2e2" : "#f1f5f9"} color={summary.notNotified ? "#991b1b" : "#334155"} />
-        <button onClick={copyDayList} disabled={!dayEntries.length}
-          style={{ marginLeft: "auto", padding: "8px 14px", borderRadius: 10, border: "1px solid #e2e8f0", background: "white", color: "#334155", fontWeight: 700, fontSize: 12.5, cursor: dayEntries.length ? "pointer" : "not-allowed", opacity: dayEntries.length ? 1 : 0.5, fontFamily: "inherit" }}>
-          📋 Copy Day's List
-        </button>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={handlePrint} disabled={!dayEntries.length}
+            style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #e2e8f0", background: "white", color: "#334155", fontWeight: 700, fontSize: 12.5, cursor: dayEntries.length ? "pointer" : "not-allowed", opacity: dayEntries.length ? 1 : 0.5, fontFamily: "inherit" }}>
+            🖨️ Print / Export
+          </button>
+          <button onClick={sendBulkWhatsApp} disabled={!dayEntries.length}
+            title="Send the whole day's sheet as one message — no fixed recipient, for your despatch team chat"
+            style={{ padding: "8px 14px", borderRadius: 10, border: "none", background: dayEntries.length ? "#25D366" : "#f1f5f9", color: dayEntries.length ? "white" : "#94a3b8", fontWeight: 700, fontSize: 12.5, cursor: dayEntries.length ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
+            💬 Send Sheet via WhatsApp
+          </button>
+          <button onClick={copyDayList} disabled={!dayEntries.length}
+            style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #e2e8f0", background: "white", color: "#334155", fontWeight: 700, fontSize: 12.5, cursor: dayEntries.length ? "pointer" : "not-allowed", opacity: dayEntries.length ? 1 : 0.5, fontFamily: "inherit" }}>
+            📋 Copy Day's List
+          </button>
+        </div>
       </div>
 
       {/* Ready-to-dispatch quick add */}

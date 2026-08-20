@@ -464,7 +464,6 @@ export default function SalesPanel({
   const [flashIds, setFlashIds] = useState(new Set());
   const [linkedGroupView, setLinkedGroupView] = useState(null); // array of sales in the group | null
   const [manualLinkSale, setManualLinkSale] = useState(null); // sale being manually linked | null
-  const [dispatchSheetOpen, setDispatchSheetOpen] = useState(false);
   const [manualLinkQuery, setManualLinkQuery] = useState("");
   const [dragOverId, setDragOverId] = useState(null);
   const handleReorderDrop = async (targetId) => {
@@ -1365,17 +1364,6 @@ We hope you enjoy your purchase! 💜
               🛍️ Import from Shopify
             </button>
           )}
-          {isIndiaShop && !isStaff && (
-            <button onClick={() => setDispatchSheetOpen(true)}
-              style={{
-                display: "flex", alignItems: "center", gap: 6,
-                padding: "8px 14px", borderRadius: 9, border: "1px solid #fde68a",
-                background: "#fffbeb", color: "#92400e", fontWeight: 700, fontSize: 13,
-                cursor: "pointer", fontFamily: "inherit",
-              }}>
-              🚚 Dispatch Sheet
-            </button>
-          )}
           {onReload && (
             <button onClick={async () => { setReloading(true); await onReload(); setReloading(false); }}
               disabled={reloading}
@@ -2174,7 +2162,7 @@ We hope you enjoy your purchase! 💜
                       {isIndiaShop && onInlineEdit && (
                         <div
                           onClick={(e) => { e.stopPropagation(); onInlineEdit(s.id, { readyToShip: !s.readyToShip }); }}
-                          title={s.readyToShip ? "Remove from Dispatch Sheet" : "Mark ready to ship — adds to the Dispatch Sheet"}
+                          title={s.readyToShip ? "Remove from Ready to Dispatch" : "Mark ready to ship — surfaces it on the Despatch Log page"}
                           style={{
                             marginTop: 4, display: "inline-flex", alignItems: "center", gap: 3,
                             fontSize: 9, fontWeight: 700, padding: "1px 7px", borderRadius: 999,
@@ -3534,128 +3522,6 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
           </div>
         </div>
       )}
-      {dispatchSheetOpen && (
-        <DispatchSheetModal
-          sales={sales} shopId={shopId} onClose={()=>setDispatchSheetOpen(false)}
-          onInlineEdit={onInlineEdit} setWaModal={setWaModal}
-        />
-      )}
     </div>
   );
 }
-
-/* ── DispatchSheetModal: name + address + item/qty only, for sales
-   marked "ready to ship". Grouped month-wise, printable — this is what
-   gets handed off to the (separate) despatch unit, so it deliberately
-   never includes amount, payment, or any other financial detail. ────── */
-const DispatchSheetModal = ({ sales, shopId, onClose, onInlineEdit, setWaModal }) => {
-  const ready = (sales||[]).filter(s => s.readyToShip);
-  const byMonth = {};
-  ready.forEach(s => {
-    const d = new Date(s.date);
-    const key = isNaN(d.getTime()) ? "Unknown" : d.toLocaleDateString("en-GB",{month:"long",year:"numeric"});
-    (byMonth[key] = byMonth[key] || []).push(s);
-  });
-  const months = Object.keys(byMonth).sort((a,b)=>{
-    const da = new Date(byMonth[a][0]?.date), db = new Date(byMonth[b][0]?.date);
-    return db - da;
-  });
-
-  const buildWhatsAppText = () => {
-    const lines = [`🚚 *Dispatch Sheet* — ${new Date().toLocaleDateString("en-GB")}`, `${ready.length} item${ready.length!==1?"s":""} ready to ship`, ""];
-    months.forEach(m => {
-      lines.push(`*${m}*`);
-      byMonth[m].forEach((s,i) => {
-        lines.push(`${i+1}. ${s.customer||"—"}`);
-        lines.push(`${s.address||"No address on file"}`);
-        lines.push(`Item: ${s.item||"—"}`);
-        lines.push("");
-      });
-    });
-    return lines.join("\n").trim();
-  };
-
-  const handleSendWhatsApp = () => {
-    if (!setWaModal) return;
-    setWaModal({ phone: "", customerName: "", message: buildWhatsAppText() });
-    onClose();
-  };
-
-  const handlePrint = () => {
-    const w = window.open("", "_blank");
-    const sections = months.map(m => `
-      <h2>${m}</h2>
-      <table><thead><tr><th>#</th><th>Name</th><th>Address</th><th>Item</th></tr></thead><tbody>
-        ${byMonth[m].map((s,i)=>`<tr><td>${i+1}</td><td>${s.customer||"—"}</td><td style="white-space:pre-line">${s.address||"—"}</td><td>${s.item||"—"}</td></tr>`).join("")}
-      </tbody></table>`).join("");
-    w.document.write(`<!DOCTYPE html><html><head><title>Dispatch Sheet</title>
-      <style>
-        body{font-family:Arial,sans-serif;padding:24px;color:#0f172a;}
-        h1{font-size:18px;margin-bottom:4px;} p{color:#64748b;font-size:12px;margin-top:0;}
-        h2{font-size:13px;margin:20px 0 6px;text-transform:uppercase;letter-spacing:0.04em;color:#475569;}
-        table{width:100%;border-collapse:collapse;} th,td{border:1px solid #e2e8f0;padding:8px 10px;font-size:12px;text-align:left;vertical-align:top;}
-        th{background:#f8fafc;text-transform:uppercase;letter-spacing:0.04em;font-size:10px;}
-      </style></head><body>
-      <h1>🚚 Dispatch Sheet</h1>
-      <p>Generated ${new Date().toLocaleString("en-GB")} · ${ready.length} item${ready.length!==1?"s":""} ready to ship</p>
-      ${sections}
-      </body></html>`);
-    w.document.close();
-    setTimeout(()=>w.print(), 300);
-  };
-
-  return (
-    <div style={{ position:"fixed", inset:0, zIndex:320, background:"rgba(15,23,42,0.55)", display:"flex", alignItems:"center", justifyContent:"center", padding:20 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:"white", borderRadius:16, width:"100%", maxWidth:640, maxHeight:"85vh", display:"flex", flexDirection:"column", boxShadow:"0 20px 60px rgba(0,0,0,0.3)", overflow:"hidden" }}>
-        <div style={{ padding:"18px 22px", borderBottom:"1px solid #f1f5f9", display:"flex", justifyContent:"space-between", alignItems:"center" }}>
-          <div>
-            <div style={{ fontSize:15, fontWeight:800, color:"#0f172a" }}>🚚 Dispatch Sheet</div>
-            <div style={{ fontSize:12, color:"#64748b" }}>{ready.length} item{ready.length!==1?"s":""} marked ready — name &amp; address only, for the despatch unit</div>
-          </div>
-          <button onClick={onClose} style={{ border:"none", background:"transparent", fontSize:18, cursor:"pointer", color:"#94a3b8" }}>✕</button>
-        </div>
-        <div style={{ flex:1, overflowY:"auto", padding:"16px 22px" }}>
-          {ready.length===0 ? (
-            <div style={{ textAlign:"center", padding:"50px 0", color:"#94a3b8", fontSize:13 }}>
-              Nothing marked "Ready to Ship" yet — use the 📦 chip on a sale row to add it here.
-            </div>
-          ) : months.map(m => (
-            <div key={m} style={{ marginBottom:18 }}>
-              <div style={{ fontSize:11, fontWeight:800, color:"#92400e", textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:8 }}>{m}</div>
-              <div style={{ display:"flex", flexDirection:"column", gap:8 }}>
-                {byMonth[m].map(s => (
-                  <div key={s.id} style={{ padding:"10px 12px", borderRadius:10, border:"1px solid #e2e8f0", display:"flex", justifyContent:"space-between", gap:10 }}>
-                    <div style={{ minWidth:0 }}>
-                      <div style={{ fontSize:12.5, fontWeight:700, color:"#0f172a" }}>{s.customer||"—"}</div>
-                      <div style={{ fontSize:11.5, color:"#64748b", whiteSpace:"pre-line", marginTop:2 }}>{s.address||"No address on file"}</div>
-                      <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>{s.item||"—"}</div>
-                    </div>
-                    {onInlineEdit && (
-                      <button onClick={()=>onInlineEdit(s.id,{readyToShip:false})}
-                        title="Remove from this sheet"
-                        style={{ flexShrink:0, border:"none", background:"transparent", color:"#94a3b8", cursor:"pointer", fontSize:13 }}>
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-        {ready.length>0 && (
-          <div style={{ padding:"14px 22px", borderTop:"1px solid #f1f5f9", display:"flex", gap:10 }}>
-            <button onClick={handlePrint}
-              style={{ flex:1, padding:"11px 0", borderRadius:10, border:"none", background:"#92400e", color:"white", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
-              🖨️ Print / Export
-            </button>
-            <button onClick={handleSendWhatsApp}
-              style={{ flex:1, padding:"11px 0", borderRadius:10, border:"none", background:"#25D366", color:"white", fontWeight:700, fontSize:13, cursor:"pointer", fontFamily:"inherit" }}>
-              💬 Send via WhatsApp
-            </button>
-          </div>
-        )}
-      </div>
-    </div>
-  );
-};
