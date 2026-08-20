@@ -11,6 +11,7 @@ import PurchasesPanel from "./components/PurchasesPanel";
 import ReportsPanel from "./components/ReportsPanel";
 import SalesPanel from "./components/SalesPanel";
 import SuppliersPanel from "./components/SuppliersPanel";
+import DispatchPanel from "./components/DispatchPanel";
 import {
   L_SEL,
   L_HAIR,
@@ -6489,7 +6490,8 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"returns",  l:"Returns & Refunds",  ic:"↩️"},
     {id:"attendance",l:"Attendance",ic:"🕐"},
     {id:"inventory",l:"Inventory",ic:"📦"},
-  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india");
+    {id:"dispatch", l:"Despatch Log", ic:"📤"},
+  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india").filter(n=>n.id!=="dispatch"||shopId==="ros-india");
 
   const filtSales=sales.filter(s=>{
     const q=search.toLowerCase();
@@ -6754,7 +6756,7 @@ return(
         <nav style={{flex:1,padding:"10px 8px 6px",overflowY:"auto",overflowX:"hidden",scrollbarWidth:"none"}}>
           {/* group labels */}
           {[
-            {label:"MAIN",      ids:["dashboard","sales","customers","returns","invoices","attendance","inventory"]},
+            {label:"MAIN",      ids:["dashboard","sales","customers","returns","invoices","attendance","inventory","dispatch"]},
             {label:"PURCHASES", ids:["purchases","suppliers","logistics","agents"]},
             {label:"EXPENSES",  ids:["expenses"]},
             {label:"FINANCE",   ids:["cashflow","reconciliation"]},
@@ -8082,6 +8084,11 @@ return(
           {/* ── INVENTORY (ROS India only) ── */}
           {tab==="inventory"&&shopId==="ros-india"&&(
             <InventoryPage shopId={shopId} shop={shop} user={user} sales={sales} />
+          )}
+
+          {/* ── DESPATCH LOG (ROS India only) ── */}
+          {tab==="dispatch"&&shopId==="ros-india"&&(
+            <DispatchPanel shopId={shopId} shop={shop} user={user} sales={sales} />
           )}
 
           {/* ── CASH FLOW ── */}
@@ -15017,9 +15024,9 @@ const INITIAL_USERS=[
    avatar:"linear-gradient(135deg,#ec4899,#db2777)", shops:["ros-india"]},
 ];
 const ROLE_NAV={
-  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","reconciliation","documents","analytics","reports","historical","returns","attendance","inventory","settings"],
-  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","reconciliation","documents","analytics","reports","historical","returns","attendance","inventory"],
-  staff:["sales","returns","attendance","inventory"],
+  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","reconciliation","documents","analytics","reports","historical","returns","attendance","inventory","dispatch","settings"],
+  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","reconciliation","documents","analytics","reports","historical","returns","attendance","inventory","dispatch"],
+  staff:["sales","returns","attendance","inventory","dispatch"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
 
