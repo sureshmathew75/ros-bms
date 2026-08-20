@@ -274,10 +274,6 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
     return m;
   }, [entries]);
 
-  const readyToDispatch = useMemo(() => {
-    return allSales.filter(s => s.readyToShip && !loggedSaleIds[s.id]);
-  }, [allSales, loggedSaleIds]);
-
   const searchResults = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return [];
@@ -474,23 +470,6 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
           </button>
         </div>
       </div>
-
-      {/* Ready-to-dispatch quick add */}
-      {readyToDispatch.length > 0 && (
-        <div style={{ marginBottom: 16, padding: "12px 14px", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 12 }}>
-          <div style={{ fontSize: 11.5, fontWeight: 800, color: "#1e40af", textTransform: "uppercase", letterSpacing: "0.05em", marginBottom: 8 }}>
-            Ready to Dispatch — not yet on the log ({readyToDispatch.length})
-          </div>
-          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {readyToDispatch.map(s => (
-              <button key={s.id} onClick={() => addFromSale(s)}
-                style={{ padding: "6px 12px", borderRadius: 999, border: "1px solid #93c5fd", background: "white", color: "#1e40af", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>
-                + {s.customer || "Unnamed"}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
 
       {/* Search-to-add */}
       <div style={{ marginBottom: 18, position: "relative" }}>
