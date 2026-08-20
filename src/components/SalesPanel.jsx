@@ -520,6 +520,31 @@ export default function SalesPanel({
   const [crossOnly,      setCrossOnly]      = useState(false);
   const [rptUnit,        setRptUnit]        = useState("ALL"); // ALL / India-Unit1 / India-Unit2
 
+  /* Pending Dispatch Report column visibility — separate from the main
+     table's colVis above, since what's useful while browsing sales (this
+     shop's own staff) is different from what's needed on a printed
+     handoff sheet (sometimes an outside/temp dispatcher who only needs
+     name + item, sometimes full detail). Shared by all three shops since
+     this report modal is the same code for each. Persisted so the choice
+     sticks between sessions. */
+  const DISP_COL_DEFAULTS = {
+    "Order Date":true,"Waiting":true,"Customer":true,"Phone":true,"Item":true,
+    "Amount":true,"Payment":true,"Status":true,"Remarks":true,"Dispatch From":true,
+  };
+  const [dispColVis, setDispColVis] = useState(() => {
+    try {
+      const saved = localStorage.getItem("ros_dispatch_col_vis");
+      return saved ? {...DISP_COL_DEFAULTS,...JSON.parse(saved)} : DISP_COL_DEFAULTS;
+    } catch { return DISP_COL_DEFAULTS; }
+  });
+  const setDispCols = (next) => {
+    setDispColVis(next);
+    try { localStorage.setItem("ros_dispatch_col_vis", JSON.stringify(next)); } catch {}
+  };
+  const toggleDispCol = (col) => setDispCols({ ...dispColVis, [col]: !dispColVis[col] });
+  const showDispCol = (col) => dispColVis[col] !== false;
+  const [showDispColMenu, setShowDispColMenu] = useState(false);
+
   // Close column menu on outside click
   useEff(() => {
     if (!showColMenu) return;
@@ -527,6 +552,14 @@ export default function SalesPanel({
     window.addEventListener("click", handler);
     return () => window.removeEventListener("click", handler);
   }, [showColMenu]);
+
+  // Close dispatch-report column menu on outside click
+  useEff(() => {
+    if (!showDispColMenu) return;
+    const handler = () => setShowDispColMenu(false);
+    window.addEventListener("click", handler);
+    return () => window.removeEventListener("click", handler);
+  }, [showDispColMenu]);
   /* Month picker state */
   const [pickedMonth, setPickedMonth] = useState(null);   // "YYYY-MM" or null
   /* Drag-to-reorder only makes sense when viewing a single month —
@@ -2726,6 +2759,19 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
         // Use top-level state; init defaults on open
         const activeStatuses = rptStatuses || UNFULFILLED;
         const defaultFrom = isIndiaShop ? "India-Unit1" : "UK";
+        /* Column visibility = the existing business/privacy rules (India
+           Unit 1 agency staff never see prices/payment; Dispatch From only
+           makes sense when viewing "All Units") AND the user's manual
+           show/hide choice below. The business rule always wins — the
+           toggle can hide a column further, never reveal one the privacy
+           rule is already hiding. */
+        const ALL_DISP_COLS = ["Order Date","Waiting","Customer","Phone","Item","Amount","Payment","Status","Remarks","Dispatch From"];
+        const colOn = (name) => {
+          if ((name === "Amount" || name === "Payment") && rptUnit === "India-Unit1") return false;
+          if (name === "Dispatch From" && rptUnit !== "ALL") return false;
+          return showDispCol(name);
+        };
+        const visibleDispCols = ALL_DISP_COLS.filter(colOn);
         const today = new Date(); today.setHours(0,0,0,0);
         const daysWaiting = (dateStr) => {
           if (!dateStr) return 0;
@@ -2815,10 +2861,10 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
             let amountCell = "";
             const payLabelP = (isIndiaShop&&(s.pay==="BANK"||s.pay==="SIB"))?"SIB":(s.pay||"SHOP");
             const payColorP = (s.pay==="BANK"||s.pay==="SIB")?"#2563eb":"#059669";
-            const paymentCell = rptUnit!=="India-Unit1"
+            const paymentCell = colOn("Payment")
               ? `<td style="vertical-align:top"><span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;background:${payColorP}18;color:${payColorP}">${payLabelP}</span></td>`
               : "";
-            if (rptUnit !== "India-Unit1") {
+            if (colOn("Amount")) {
               if (s._grouped && s._grp && s._grp.length > 0) {
                 const grp = [...s._grp].sort((a,b)=>(a.date||"").localeCompare(b.date||""));
                 const expTotal = Number(s.expectedTotal)||0;
@@ -2841,28 +2887,35 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
               }
             }
 
-            return `<tr style="background:${isCross?"#fff7ed":"white"}">
-              <td style="vertical-align:top">${fmtD(s.date)}</td>
-              <td style="color:${dayColor};font-weight:700;vertical-align:top">${days}d</td>
-              <td style="font-weight:700;vertical-align:top">${s.customer||"—"}</td>
-              <td style="vertical-align:top">${s.phone||s.contact||"—"}</td>
-              <td style="vertical-align:top">${s._grouped
-                ? `<span style="background:#e0e7ff;color:#4338ca;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:700">🔗 ${s._linkedCount} linked</span>`
-                  + `<div style="margin-top:4px">` + (s._grp||[]).map(x=>`<div style="font-size:11px;margin-bottom:2px">• ${x.item||"—"}</div>`).join("") + `</div>`
-                  + (()=>{
-                      const addrs = Array.from(new Set((s._grp||[]).map(x=>(x.address||"").trim()).filter(Boolean)));
-                      const rmks = Array.from(new Set((s._grp||[]).map(x=>(x.rem||x.remarks||"").trim()).filter(Boolean)));
-                      return addrs.map(a=>`<div style="font-size:10px;color:#94a3b8;margin-top:3px">📍 ${a}</div>`).join("")
-                        + rmks.map(r=>`<div style="font-size:10px;color:#94a3b8;margin-top:2px;font-style:italic">📝 ${r}</div>`).join("");
-                    })()
-                : (s.item||"—")
-              }</td>
-              ${amountCell}
-              ${paymentCell}
-              <td style="vertical-align:top"><span style="background:#fef9c3;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">${s.ful||s.status||"—"}</span></td>
-              <td style="vertical-align:top;font-size:11px;color:#374151">${s.rem||s.remarks||"—"}</td>
-              ${rptUnit==="ALL"?`<td style="vertical-align:top">${isCross?`<span style="color:#c2410c;font-weight:700">⚠ ${dispFrom}</span>`:`<span style="color:#64748b">${dispFrom}</span>`}</td>`:""}
-            </tr>`;
+            const itemCellInner = s._grouped
+              ? `<span style="background:#e0e7ff;color:#4338ca;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:700">🔗 ${s._linkedCount} linked</span>`
+                + `<div style="margin-top:4px">` + (s._grp||[]).map(x=>`<div style="font-size:11px;margin-bottom:2px">• ${x.item||"—"}</div>`).join("") + `</div>`
+                + (()=>{
+                    const addrs = Array.from(new Set((s._grp||[]).map(x=>(x.address||"").trim()).filter(Boolean)));
+                    const rmks = Array.from(new Set((s._grp||[]).map(x=>(x.rem||x.remarks||"").trim()).filter(Boolean)));
+                    return addrs.map(a=>`<div style="font-size:10px;color:#94a3b8;margin-top:3px">📍 ${a}</div>`).join("")
+                      + rmks.map(r=>`<div style="font-size:10px;color:#94a3b8;margin-top:2px;font-style:italic">📝 ${r}</div>`).join("");
+                  })()
+              : (s.item||"—");
+
+            // One HTML string per possible column — only the ones the user
+            // (and the privacy rules in colOn) left switched on get joined
+            // into the row, in the same fixed left-to-right order always.
+            const cellsByCol = {
+              "Order Date":    `<td style="vertical-align:top">${fmtD(s.date)}</td>`,
+              "Waiting":       `<td style="color:${dayColor};font-weight:700;vertical-align:top">${days}d</td>`,
+              "Customer":      `<td style="font-weight:700;vertical-align:top">${s.customer||"—"}</td>`,
+              "Phone":         `<td style="vertical-align:top">${s.phone||s.contact||"—"}</td>`,
+              "Item":          `<td style="vertical-align:top">${itemCellInner}</td>`,
+              "Amount":        amountCell,
+              "Payment":       paymentCell,
+              "Status":        `<td style="vertical-align:top"><span style="background:#fef9c3;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:700">${s.ful||s.status||"—"}</span></td>`,
+              "Remarks":       `<td style="vertical-align:top;font-size:11px;color:#374151">${s.rem||s.remarks||"—"}</td>`,
+              "Dispatch From": `<td style="vertical-align:top">${isCross?`<span style="color:#c2410c;font-weight:700">⚠ ${dispFrom}</span>`:`<span style="color:#64748b">${dispFrom}</span>`}</td>`,
+            };
+            const cellsHtml = visibleDispCols.map(c => cellsByCol[c] || "").join("");
+
+            return `<tr style="background:${isCross?"#fff7ed":"white"}">${cellsHtml}</tr>`;
           }).join("");
 
           w.document.write(`<!DOCTYPE html><html><head><title>${reportTitle}</title>
@@ -2888,7 +2941,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
             </div>
           </div>
           <table>
-            <thead><tr><th>Order Date</th><th>Waiting</th><th>Customer</th><th>Phone</th><th>Item</th>${rptUnit!=='India-Unit1'?'<th>Amount</th>':''}${rptUnit!=='India-Unit1'?'<th>Payment</th>':''}<th>Status</th><th>Remarks</th>${rptUnit==='ALL'?'<th>Dispatch From</th>':''}</tr></thead>
+            <thead><tr>${visibleDispCols.map(c=>`<th>${c}</th>`).join("")}</tr></thead>
             <tbody>${rows}</tbody>
           </table>
           <div class="footer">Developed by ROS Nexus · ros-bms.vercel.app · ${new Date().toLocaleDateString("en-GB")}</div>
@@ -2952,6 +3005,67 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                     background:crossOnly?"#fff7ed":"white",color:crossOnly?"#c2410c":"#64748b"}}>
                   ⚠ Cross-dispatch only
                 </button>
+                <div style={{width:1,height:20,background:"#e2e8f0"}}/>
+                {/* Column visibility — what shows on screen AND on the printed/PDF report.
+                    Same control for all three shops since this modal is shared code. */}
+                <div style={{position:"relative"}}>
+                  <button onClick={e=>{e.stopPropagation();setShowDispColMenu(v=>!v);}}
+                    style={{display:"flex",alignItems:"center",gap:5,padding:"4px 12px",borderRadius:999,
+                      border:"1px solid #e2e8f0",background:"white",color:"#374151",
+                      fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                    ⚙ Columns
+                  </button>
+                  {showDispColMenu&&(
+                    <div style={{position:"absolute",top:"calc(100% + 6px)",right:0,zIndex:50,
+                      background:"white",borderRadius:12,boxShadow:"0 8px 32px rgba(0,0,0,0.15)",
+                      border:"1px solid #e2e8f0",padding:12,minWidth:210}}
+                      onClick={e=>e.stopPropagation()}>
+                      <div style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",
+                        letterSpacing:"0.06em",marginBottom:8}}>Show / Hide Columns</div>
+                      {/* Presets — the two use cases: quick minimal handoff sheet vs full detail */}
+                      <div style={{display:"flex",gap:5,marginBottom:10}}>
+                        <button onClick={()=>{
+                          const full={...DISP_COL_DEFAULTS};Object.keys(full).forEach(k=>full[k]=true);
+                          setDispCols(full);
+                        }} style={{flex:1,padding:"4px 0",borderRadius:6,border:"1px solid #e2e8f0",
+                          background:"#f8fafc",color:"#374151",fontSize:11,fontWeight:600,cursor:"pointer"}}>
+                          Full
+                        </button>
+                        <button onClick={()=>{
+                          const minimal={...DISP_COL_DEFAULTS};
+                          Object.keys(minimal).forEach(k=>minimal[k]=(k==="Customer"||k==="Item"));
+                          setDispCols(minimal);
+                        }} style={{flex:1,padding:"4px 0",borderRadius:6,border:"1px solid #e2e8f0",
+                          background:"#f8fafc",color:"#374151",fontSize:11,fontWeight:600,cursor:"pointer"}}>
+                          Minimal
+                        </button>
+                      </div>
+                      {/* Individual toggles — greyed out when the current Unit view
+                          already forces that column off (privacy rule always wins) */}
+                      {ALL_DISP_COLS.map(col=>{
+                        const forcedOff = (col==="Amount"||col==="Payment") ? rptUnit==="India-Unit1" : col==="Dispatch From" ? rptUnit!=="ALL" : false;
+                        return (
+                          <label key={col} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 4px",
+                            cursor:forcedOff?"not-allowed":"pointer",borderRadius:6,fontSize:12,
+                            color:forcedOff?"#cbd5e1":"#374151"}}
+                            onMouseEnter={e=>{if(!forcedOff)e.currentTarget.style.background="#f8fafc";}}
+                            onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+                            <input type="checkbox" checked={showDispCol(col)} disabled={forcedOff}
+                              onChange={()=>toggleDispCol(col)}
+                              style={{width:14,height:14,cursor:forcedOff?"not-allowed":"pointer",accentColor:accent}}/>
+                            {col}
+                            {forcedOff && <span style={{fontSize:9,color:"#cbd5e1",marginLeft:"auto"}}>hidden here</span>}
+                          </label>
+                        );
+                      })}
+                      <button onClick={()=>setShowDispColMenu(false)}
+                        style={{width:"100%",marginTop:8,padding:"6px 0",borderRadius:8,border:"none",
+                          background:accent,color:"white",fontSize:12,fontWeight:700,cursor:"pointer"}}>
+                        Done
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <button onClick={printReport}
                   style={{padding:"8px 16px",borderRadius:9,border:"none",background:"#0f172a",color:"white",
                     fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6}}>
@@ -2970,7 +3084,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
               <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
                 <thead style={{position:"sticky",top:0,zIndex:2}}>
                   <tr>
-                    {["Order Date","Waiting","Customer","Phone","Item",...(rptUnit!=="India-Unit1"?["Amount"]:[]),...(rptUnit!=="India-Unit1"?["Payment"]:[]),"Status","Remarks",...(rptUnit==="ALL"?["Dispatch From"]:[])].map(h=>(
+                    {visibleDispCols.map(h=>(
                       <th key={h} style={{padding:"10px 16px",fontSize:11,fontWeight:800,color:"#64748b",
                         textTransform:"uppercase",letterSpacing:"0.05em",background:"#f8fafc",
                         borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap",
@@ -2980,7 +3094,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                 </thead>
                 <tbody>
                   {reportSales.length===0?(
-                    <tr><td colSpan={10} style={{padding:"80px 20px",textAlign:"center",color:"#94a3b8"}}>
+                    <tr><td colSpan={visibleDispCols.length} style={{padding:"80px 20px",textAlign:"center",color:"#94a3b8"}}>
                       <div style={{fontSize:40,marginBottom:12}}>✅</div>
                       <p style={{margin:0,fontSize:16,fontWeight:700}}>All clear — no pending orders</p>
                     </td></tr>
@@ -2994,15 +3108,24 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                       <tr key={s.id} style={{background:isCross?"#fff7ed":i%2===0?"white":"#fafafa",
                         borderBottom:"1px solid #f1f5f9",
                         borderLeft:isCross?"3px solid #f97316":"3px solid transparent"}}>
+                        {colOn("Order Date")&&(
                         <td style={{padding:"11px 16px",color:"#374151",whiteSpace:"nowrap",fontSize:12}}>{fmtD(s.date)}</td>
+                        )}
+                        {colOn("Waiting")&&(
                         <td style={{padding:"11px 16px"}}>
                           <span style={{fontSize:12,fontWeight:800,padding:"2px 9px",borderRadius:999,
                             background:dayBg,color:dayColor,border:"1px solid "+dayColor+"33",whiteSpace:"nowrap"}}>
                             {days}d
                           </span>
                         </td>
+                        )}
+                        {colOn("Customer")&&(
                         <td style={{padding:"11px 16px",fontWeight:700,color:"#0f172a"}}>{s.customer||"—"}</td>
+                        )}
+                        {colOn("Phone")&&(
                         <td style={{padding:"11px 16px",fontFamily:"DM Mono,monospace",fontSize:12,color:"#64748b"}}>{s.phone||s.contact||"—"}</td>
+                        )}
+                        {colOn("Item")&&(
                         <td style={{padding:"11px 16px",color:"#374151",maxWidth:240,...(s._grouped?{}:{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"})}}>
                           {s._grouped ? (
                             <div>
@@ -3029,7 +3152,8 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                             </div>
                           ) : (s.item||"—")}
                         </td>
-                        {rptUnit!=="India-Unit1"&&(
+                        )}
+                        {colOn("Amount")&&(
                           <td style={{padding:"11px 16px",textAlign:"right",verticalAlign:"top"}}>
                             {s._grouped ? (() => {
                               const grp = (s._grp||[s]).slice().sort((a,b)=>(a.date||"").localeCompare(b.date||""));
@@ -3067,21 +3191,25 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                             )}
                           </td>
                         )}
-                        {rptUnit!=="India-Unit1"&&(
+                        {colOn("Payment")&&(
                           <td style={{padding:"11px 16px"}}>
                             <Badge l={(isIndiaShop&&(s.pay==="BANK"||s.pay==="SIB"))?"SIB":(s.pay||"SHOP")} />
                           </td>
                         )}
+                        {colOn("Status")&&(
                         <td style={{padding:"11px 16px"}}>
                           <span style={{fontSize:11,fontWeight:700,padding:"3px 9px",borderRadius:999,
                             background:"#fef9c3",color:"#854d0e",border:"1px solid #fde047",whiteSpace:"nowrap"}}>
                             {s.ful||s.status||"—"}
                           </span>
                         </td>
+                        )}
+                        {colOn("Remarks")&&(
                         <td style={{padding:"11px 16px",color:"#374151",fontSize:12,maxWidth:220}}>
                           {s.rem||s.remarks||<span style={{color:"#cbd5e1"}}>—</span>}
                         </td>
-                        {rptUnit==="ALL"&&(
+                        )}
+                        {colOn("Dispatch From")&&(
                           <td style={{padding:"11px 16px"}}>
                             {isCross?(
                               <span style={{fontSize:12,fontWeight:700,color:"#c2410c",display:"flex",alignItems:"center",gap:4}}>
