@@ -1364,3 +1364,67 @@ export const dbDeleteUpfrontRefund = async (shopId, id) => {
   if (error) { console.error('Delete upfront refund error:', error); return false; }
   return true;
 };
+
+/* ═══════════════════════════════════════════════════════════
+   DISPATCH LOG  (ROS India — daily despatch sheet)
+   Independent of `sales`: one row per parcel, soft-linked back to the
+   sale via sale_id so the same order can appear more than once if it
+   ships in multiple parcels.
+   ═══════════════════════════════════════════════════════════ */
+export const dbSaveDispatchEntry = async (shopId, e) => {
+  if (!sb) return { error: 'No Supabase client' };
+
+  const payload = {
+    shop_id:       shopId,
+    sale_id:       e.saleId || '',
+    dispatch_date: e.dispatchDate || today(),
+    customer:      e.customer || '',
+    phone:         e.phone || '',
+    address:       e.address || '',
+    tracking_no:   e.trackingNo || '',
+    shipper:       e.shipper || '',
+    notified:      !!e.notified,
+    remarks:       e.remarks || '',
+  };
+
+  if (e._uuid) {
+    const { error } = await sb.from('dispatch_log').update(payload).eq('id', e._uuid).eq('shop_id', shopId);
+    if (error) { console.error('❌ Update dispatch entry error:', error); return { error: error.message }; }
+    return { error: null, uuid: e._uuid };
+  }
+
+  const { data, error } = await sb.from('dispatch_log').insert(payload).select('id').single();
+  if (error) { console.error('❌ Insert dispatch entry error:', error); return { error: error.message }; }
+  console.log('✅ Dispatch entry saved, uuid:', data?.id);
+  return { error: null, uuid: data?.id };
+};
+
+export const dbLoadDispatchLog = async (shopId) => {
+  if (!sb) return null;
+  const { data, error } = await sb.from('dispatch_log').select('*')
+    .eq('shop_id', shopId)
+    .order('dispatch_date', { ascending: false })
+    .order('created_at', { ascending: true });
+  if (error) { console.error('Load dispatch log error:', error); return null; }
+  return data.map(r => ({
+    uuid:         r.id,
+    saleId:       r.sale_id || '',
+    dispatchDate: r.dispatch_date || '',
+    customer:     r.customer || '',
+    phone:        r.phone || '',
+    address:      r.address || '',
+    trackingNo:   r.tracking_no || '',
+    shipper:      r.shipper || '',
+    notified:     !!r.notified,
+    remarks:      r.remarks || '',
+    createdAt:    r.created_at || '',
+  }));
+};
+
+export const dbDeleteDispatchEntry = async (id, shopId) => {
+  if (!sb) return;
+  const { error } = await sb.from('dispatch_log').delete()
+    .eq('id', id).eq('shop_id', shopId);
+  if (error) console.error('Delete dispatch entry error:', error);
+  else console.log('✅ Dispatch entry deleted:', id);
+};
