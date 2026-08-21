@@ -335,6 +335,100 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
   const isIndiaShop = shopId === "ros-india" || shopId === "ros-india-staff";
   const SHIPPERS = isIndiaShop ? IN_SHIPPERS : UK_SHIPPERS;
 
+  /* ── Linked-transaction grouping ──────────────────────────────────────
+     A single customer parcel can be split across several sale rows
+     (Advance/Part/Final payment, or two rows manually linked in Sales).
+     Mirrors SalesPanel.jsx's own instalment-grouping logic so that if the
+     "Ready to Ship" chip gets pressed on more than one of those linked
+     rows, they still collapse to ONE despatch log entry instead of one
+     per transaction. Kept as a local copy (rather than a shared import)
+     since both files already duplicate a few small helpers like this and
+     neither imports from the other. */
+  const inferPaymentType = (sale) => {
+    if (sale.paymentType) return sale.paymentType;
+    const tags = (sale.tag || "").split(",").map(t => t.trim());
+    if (tags.includes("Advance Sale")) return "ADVANCE";
+    if (tags.includes("Final Payment Sale")) return "FINAL";
+    if (tags.includes("Part Payment")) return "PART";
+    return "FULL";
+  };
+  const tagPriority = (s) => {
+    const pt = inferPaymentType(s);
+    if (pt === "ADVANCE") return 0;
+    if (pt === "FINAL") return 2;
+    return 1;
+  };
+  const { saleGroupKey, groupMembers } = useMemo(() => {
+    const rawGroups = {};
+    allSales.forEach(s => {
+      if (inferPaymentType(s) === "FULL") return; // never grouped
+      const phone = (s.phone || s.contact || "").replace(/\D/g, "").slice(-10);
+      const name = (s.customer || "").toLowerCase().trim();
+      if (!phone && !name) return;
+      const key = `${name}__${phone}`;
+      (rawGroups[key] ||= []).push(s);
+    });
+    const result = {};
+    Object.entries(rawGroups).forEach(([custKey, custSales]) => {
+      const sorted = [...custSales].sort((a, b) => {
+        const d = (a.date || "").localeCompare(b.date || "");
+        if (d !== 0) return d;
+        const p = tagPriority(a) - tagPriority(b);
+        if (p !== 0) return p;
+        return (a.invoiceNo || a.id || "").localeCompare(b.invoiceNo || b.id || "");
+      });
+      let groupIdx = 0, currentKey = null, dealOpen = false;
+      for (const s of sorted) {
+        const pt = inferPaymentType(s);
+        const isAdvance = pt === "ADVANCE";
+        const isFinal = pt === "FINAL";
+        if (!dealOpen || isAdvance) {
+          groupIdx++;
+          currentKey = `${custKey}__grp${groupIdx}`;
+          result[currentKey] = [];
+          dealOpen = true;
+        }
+        result[currentKey].push(s);
+        if (isFinal) dealOpen = false;
+      }
+    });
+    // Manual link merge pass — same as SalesPanel: sales sharing a
+    // manualLinkGroup value are unified into one group regardless of what
+    // the automatic Advance/Part/Final pass did with them.
+    const byManualLink = {};
+    allSales.forEach(s => { if (s.manualLinkGroup) (byManualLink[s.manualLinkGroup] ||= []).push(s); });
+    Object.values(byManualLink).forEach(linkedSales => {
+      if (linkedSales.length < 2) return;
+      const linkedIds = new Set(linkedSales.map(s => s.id));
+      const touchedKeys = Object.keys(result).filter(k => result[k].some(s => linkedIds.has(s.id)));
+      const unionMap = {};
+      touchedKeys.forEach(k => result[k].forEach(s => { unionMap[s.id] = s; }));
+      linkedSales.forEach(s => { unionMap[s.id] = s; });
+      touchedKeys.forEach(k => delete result[k]);
+      const mergedKey = `manual__${Array.from(linkedIds).sort().join("_")}`;
+      result[mergedKey] = Object.values(unionMap);
+    });
+    const keyOf = {};
+    Object.entries(result).forEach(([gk, members]) => { members.forEach(s => { keyOf[s.id] = gk; }); });
+    return { saleGroupKey: keyOf, groupMembers: result };
+  }, [allSales]);
+  // A sale with no linked payments is its own solo "group" of one.
+  const despatchKeyOf = (sale) => saleGroupKey[sale.id] || sale.id;
+  // Which sale should represent the group on the despatch row — prefer the
+  // Advance (it usually carries the address/phone first), else whichever
+  // transaction comes first in the same Advance→Part→Final ordering used
+  // to build the groups above.
+  const anchorSaleForGroup = (members) => {
+    if (!members || !members.length) return null;
+    const advance = members.find(m => inferPaymentType(m) === "ADVANCE");
+    if (advance) return advance;
+    return [...members].sort((a, b) => {
+      const d = (a.date || "").localeCompare(b.date || "");
+      if (d !== 0) return d;
+      return tagPriority(a) - tagPriority(b);
+    })[0];
+  };
+
   // The 7 dates (Mon→Sun) of the week currently in view.
   const weekDates = useMemo(() => {
     const mon = mondayOf(weekAnchor);
@@ -352,6 +446,20 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
     entries.forEach(e => { if (e.saleId) m[e.saleId] = (m[e.saleId] || 0) + 1; });
     return m;
   }, [entries]);
+
+  // Which despatch GROUPS (see grouping helpers above) already have a row
+  // on the log — this is what the auto-add effect checks, so linked
+  // transactions collapse to one entry regardless of how many of them get
+  // individually flagged "Ready to Ship".
+  const loggedGroupKeys = useMemo(() => {
+    const s = new Set();
+    entries.forEach(e => {
+      if (!e.saleId) return;
+      const linkedSale = allSales.find(x => x.id === e.saleId);
+      s.add(linkedSale ? despatchKeyOf(linkedSale) : e.saleId);
+    });
+    return s;
+  }, [entries, allSales, saleGroupKey]);
 
   const searchResults = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -482,9 +590,22 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
   // later does NOT remove its row — despatch staff may already have
   // typed tracking info into it, so that stays intact; remove it by
   // hand with the row's ✕ if it was added in error.
+  //
+  // De-duplicated at the GROUP level: when a sale is one of several linked
+  // transactions (Advance/Part/Final, or manually linked), pressing "Ready
+  // to Ship" on more than one of them must still only create ONE despatch
+  // row for that parcel, not one per transaction.
   useEffect(() => {
     if (loading) return;
-    const toAdd = allSales.filter(s => s.readyToShip && !loggedSaleIds[s.id] && !dismissedSaleIds[s.id]);
+    const seenKeys = new Set();
+    const toAdd = [];
+    allSales.forEach(s => {
+      if (!s.readyToShip) return;
+      const key = despatchKeyOf(s);
+      if (loggedGroupKeys.has(key) || dismissedSaleIds[key] || seenKeys.has(key)) return;
+      seenKeys.add(key);
+      toAdd.push(anchorSaleForGroup(groupMembers[key]) || s);
+    });
     if (!toAdd.length) return;
     let cancelled = false;
     (async () => {
@@ -508,7 +629,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
       }
     })();
     return () => { cancelled = true; };
-  }, [loading, allSales, loggedSaleIds, dismissedSaleIds]);
+  }, [loading, allSales, loggedGroupKeys, dismissedSaleIds, saleGroupKey]);
 
   const updateEntry = (uuid, patch) => {
     setEntries(prev => prev.map(e => e.uuid === uuid ? { ...e, ...patch } : e));
@@ -537,10 +658,13 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
     setEntries(prev => prev.filter(e => e.uuid !== uuid));
     await dbDeleteDispatchEntry(uuid, shopId);
     // Stop auto-add from immediately recreating this row — the linked
-    // sale is likely still flagged "Ready to Ship" in Sales.
+    // sale (or, if it's part of a linked group, ANY sale in that group)
+    // is likely still flagged "Ready to Ship" in Sales.
     if (removed?.saleId) {
+      const linkedSale = allSales.find(x => x.id === removed.saleId);
+      const key = linkedSale ? despatchKeyOf(linkedSale) : removed.saleId;
       setDismissedSaleIds(prev => {
-        const next = { ...prev, [removed.saleId]: true };
+        const next = { ...prev, [key]: true };
         saveDismissed(shopId, next);
         return next;
       });
