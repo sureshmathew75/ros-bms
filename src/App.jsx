@@ -6470,27 +6470,25 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const pendAmt=sales.filter(s=>s.pay==="Pending").reduce((a,s)=>a+s.amount,0);
   const totExp=exps.reduce((a,e)=>a+e.amount,0);
 
+  // Order here drives the visual order within each sidebar group below
+  // (the group renderer filters this list, so it keeps NAV's own order).
   const NAV=[
     {id:"dashboard",l:"Dashboard",ic:"⊞"},
     {id:"sales",    l:"Sales",    ic:"🛒"},
-    {id:"purchases",l:"Purchases",ic:"📦"},
-    {id:"logistics",l:"Logistics",ic:"🚚"},
     {id:"customers",l:"Customers",ic:"👥"},
+    {id:"returns",  l:"Returns & Refunds",  ic:"↩️"},
+    {id:"dispatch", l:"Despatch Log", ic:"📤"},
+    {id:"purchases",l:"Purchases",ic:"📦"},
     {id:"suppliers",l:"Suppliers",ic:"🏭"},
+    {id:"logistics",l:"Logistics",ic:"🚚"},
     {id:"agents",   l:"Agents",   ic:"🤝"},
     {id:"products", l:"Products", ic:"🏷️"},
-    {id:"invoices", l:"Sales Invoices", ic:"🧾"},
-    {id:"expenses", l:"Expenses", ic:"💳"},
-    {id:"cashflow",       l:"Cash Flow",     ic:"🏦"},
-    {id:"reconciliation", l:"Bank Statement", ic:"📊"},
-    {id:"documents",l:"Documents",ic:"📎"},
-    {id:"historical",l:"History",   ic:"📈"},
-    {id:"analytics",l:"Analytics",ic:"📊"},
-    {id:"reports",  l:"Reports",  ic:"📋"},
-    {id:"returns",  l:"Returns & Refunds",  ic:"↩️"},
     {id:"attendance",l:"Attendance",ic:"🕐"},
     {id:"inventory",l:"Inventory",ic:"📦"},
-    {id:"dispatch", l:"Despatch Log", ic:"📤"},
+    {id:"expenses", l:"Expenses", ic:"💳"},
+    {id:"documents",l:"Documents",ic:"📎"},
+    {id:"analytics",l:"Analytics",ic:"📊"},
+    {id:"reports",  l:"Reports",  ic:"📋"},
   ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india");
 
   const filtSales=sales.filter(s=>{
@@ -6756,11 +6754,12 @@ return(
         <nav style={{flex:1,padding:"10px 8px 6px",overflowY:"auto",overflowX:"hidden",scrollbarWidth:"none"}}>
           {/* group labels */}
           {[
-            {label:"MAIN",      ids:["dashboard","sales","customers","returns","invoices","attendance","inventory","dispatch"]},
-            {label:"PURCHASES", ids:["purchases","suppliers","logistics","agents"]},
-            {label:"EXPENSES",  ids:["expenses"]},
-            {label:"FINANCE",   ids:["cashflow","reconciliation"]},
-            {label:"INSIGHTS",  ids:["documents","analytics","reports","historical"]},
+            {label:"MAIN",       ids:["dashboard"]},
+            {label:"SALES",      ids:["sales","customers","returns","dispatch"]},
+            {label:"PURCHASES",  ids:["purchases","suppliers","logistics","agents"]},
+            {label:"OPERATIONS", ids:["attendance","inventory"]},
+            {label:"EXPENSES",   ids:["expenses"]},
+            {label:"INSIGHTS",   ids:["documents","analytics","reports"]},
           ].map(group=>{
             const groupItems=NAV.filter(n=>group.ids.includes(n.id));
             if(groupItems.length===0)return null;
@@ -15060,8 +15059,8 @@ const INITIAL_USERS=[
    avatar:"linear-gradient(135deg,#ec4899,#db2777)", shops:["ros-india"]},
 ];
 const ROLE_NAV={
-  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","reconciliation","documents","analytics","reports","historical","returns","attendance","inventory","dispatch","settings"],
-  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","invoices","expenses","cashflow","reconciliation","documents","analytics","reports","historical","returns","attendance","inventory","dispatch"],
+  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","inventory","dispatch","settings"],
+  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","inventory","dispatch"],
   staff:["sales","returns","attendance","inventory","dispatch"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
