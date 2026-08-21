@@ -420,6 +420,21 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
   }, [allSales]);
   // A sale with no linked payments is its own solo "group" of one.
   const despatchKeyOf = (sale) => saleGroupKey[sale.id] || sale.id;
+
+  // Address is now entered/edited ONLY on the Sales page — the Despatch
+  // Log always pulls the live value from the linked sale rather than
+  // keeping its own editable copy, so a correction made in Sales shows up
+  // here automatically. Falls back to the snapshot taken when the row was
+  // added, in case the sale record itself is ever missing (e.g. deleted).
+  const liveAddressFor = (entry) => {
+    const linked = allSales.find(x => x.id === entry.saleId);
+    return (linked ? linked.address : entry.address) || "";
+  };
+  // Same idea for phone — entered/edited only on the Sales page now.
+  const livePhoneFor = (entry) => {
+    const linked = allSales.find(x => x.id === entry.saleId);
+    return (linked ? (linked.phone || linked.contact) : entry.phone) || "";
+  };
   // Which sale should represent the group on the despatch row — prefer the
   // Advance (it usually carries the address/phone first), else whichever
   // transaction comes first in the same Advance→Part→Final ordering used
@@ -678,7 +693,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
   };
 
   const notify = (entry) => {
-    const phone = (entry.phone || "").replace(/[^0-9]/g, "");
+    const phone = livePhoneFor(entry).replace(/[^0-9]/g, "");
     if (!phone) { alert("No phone number on this row."); return; }
     const message = buildDispatchTrackingMsg(entry, shop);
     setWaModal({
@@ -693,7 +708,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
       const dayList = entriesByDate[d];
       lines.push(`${ddmmyyyy(d)} (${dayList.length})`);
       dayList.forEach((e, i) => lines.push(
-        `  ${i + 1}. ${e.customer || "—"} — ${e.phone || "—"} — ${e.trackingNo || "no tracking yet"} (${e.shipper || "no shipper"})`
+        `  ${i + 1}. ${e.customer || "—"} — ${livePhoneFor(e) || "—"} — ${e.trackingNo || "no tracking yet"} (${e.shipper || "no shipper"})`
       ));
       lines.push("");
     });
@@ -713,8 +728,8 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
       lines.push(`*${ddmmyyyy(d)}*`);
       dayList.forEach((e, i) => {
         lines.push(`${i + 1}. ${e.customer || "—"}`);
-        lines.push(e.address || "No address on file");
-        lines.push(`Phone: ${e.phone || "—"}`);
+        lines.push(liveAddressFor(e) || "No address on file");
+        lines.push(`Phone: ${livePhoneFor(e) || "—"}`);
         lines.push(`Tracking: ${e.trackingNo || "—"} (${e.shipper || "no shipper"})`);
         if (e.remarks) lines.push(`Remarks: ${e.remarks}`);
         lines.push("");
@@ -737,8 +752,8 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
         <tr>
           <td>${i + 1}</td>
           <td>${e.customer || "—"}</td>
-          <td style="white-space:pre-line">${e.address || "—"}</td>
-          <td>${e.phone || "—"}</td>
+          <td style="white-space:pre-line">${liveAddressFor(e) || "—"}</td>
+          <td>${livePhoneFor(e) || "—"}</td>
           <td>${e.trackingNo || "—"}</td>
           <td>${e.shipper || "—"}</td>
           <td>${e.remarks || "—"}</td>
@@ -971,16 +986,29 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
                         <td style={{ padding: "8px 12px", color: "#94a3b8", fontWeight: 700, verticalAlign: "top" }}>{idx + 1}</td>
                         <td style={{ padding: "8px 12px", fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap", verticalAlign: "top" }}>{e.customer || "—"}</td>
                         <td style={{ padding: "8px 12px", minWidth: 180, verticalAlign: "top" }}>
-                          <textarea value={e.address} rows={5}
-                            onChange={ev => updateEntry(e.uuid, { address: ev.target.value })}
-                            onBlur={ev => saveEntry(e.uuid, { address: ev.target.value })}
-                            style={{ ...cellInputStyle, resize: "vertical" }} />
+                          {/* Read-only — address is entered/edited on the Sales page only;
+                              this always shows that sale's current address live. */}
+                          <div style={{
+                            minHeight: 92, padding: "6px 8px", borderRadius: 7,
+                            border: "1px solid #e2e8f0", background: "#f8fafc",
+                            fontSize: 12, color: "#374151", whiteSpace: "pre-wrap", lineHeight: 1.4,
+                          }}>
+                            {liveAddressFor(e) || (
+                              <span style={{ color: "#94a3b8", fontStyle: "italic" }}>No address on file — set it on the Sales page</span>
+                            )}
+                          </div>
                         </td>
                         <td style={{ padding: "8px 12px", minWidth: 120, verticalAlign: "top" }}>
-                          <input value={e.phone}
-                            onChange={ev => updateEntry(e.uuid, { phone: ev.target.value })}
-                            onBlur={ev => saveEntry(e.uuid, { phone: ev.target.value })}
-                            style={cellInputStyle} />
+                          {/* Read-only — phone is entered/edited on the Sales page only;
+                              this always shows that sale's current number live. */}
+                          <div style={{
+                            padding: "6px 8px", borderRadius: 7, border: "1px solid #e2e8f0",
+                            background: "#f8fafc", fontSize: 12, color: "#374151",
+                          }}>
+                            {livePhoneFor(e) || (
+                              <span style={{ color: "#94a3b8", fontStyle: "italic" }}>—</span>
+                            )}
+                          </div>
                         </td>
                         <td style={{ padding: "8px 12px", minWidth: 140, verticalAlign: "top" }}>
                           <input value={e.trackingNo} placeholder="Tracking no."
