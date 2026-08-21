@@ -277,7 +277,6 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
   const [weekAnchor, setWeekAnchor] = useState(todayISO()); // any date within the visible week
   const [addDate, setAddDate] = useState(todayISO());       // which day new adds land on
   const [search, setSearch] = useState("");
-  const [searchFocused, setSearchFocused] = useState(false);
   const [waModal, setWaModal] = useState(null);
   const [savingIds, setSavingIds] = useState({}); // uuid -> true while a save is in flight
   const [viewMode, setViewMode] = useState("log"); // "log" | "calendar"
@@ -325,13 +324,6 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
       .sort((a, b) => (b.readyToShip ? 1 : 0) - (a.readyToShip ? 1 : 0))
       .slice(0, 12);
   }, [allSales, search]);
-
-  // Shown when the search box is focused but empty — a quick-pick list of
-  // sales already flagged "Ready to Ship" in the Sales tab, so marking
-  // something ready surfaces it here without a permanent always-on bar.
-  const readySuggestions = useMemo(() => {
-    return allSales.filter(s => s.readyToShip && !loggedSaleIds[s.id]).slice(0, 12);
-  }, [allSales, loggedSaleIds]);
 
   // Entries for the visible week, grouped by date — every date in
   // weekDates gets an array (empty ones included) so each day block
@@ -441,6 +433,41 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
     // immediately visible even if addDate falls outside the current view.
     setWeekAnchor(addDate);
   };
+
+  // Auto-add: any sale flagged "Ready to Ship" in the Sales tab that
+  // isn't on the log yet gets added automatically, dated today — no
+  // click needed. (Earlier this was a manual click-to-add suggestion;
+  // changed to fully automatic per explicit request.) A sale un-flagged
+  // later does NOT remove its row — despatch staff may already have
+  // typed tracking info into it, so that stays intact; remove it by
+  // hand with the row's ✕ if it was added in error.
+  useEffect(() => {
+    if (loading) return;
+    const toAdd = allSales.filter(s => s.readyToShip && !loggedSaleIds[s.id]);
+    if (!toAdd.length) return;
+    let cancelled = false;
+    (async () => {
+      for (const sale of toAdd) {
+        const draft = {
+          saleId: sale.id,
+          dispatchDate: todayISO(),
+          customer: sale.customer || "",
+          phone: sale.phone || sale.contact || "",
+          address: sale.address || "",
+          trackingNo: "",
+          shipper: "",
+          notified: false,
+          remarks: "",
+        };
+        const res = await persist(null, draft);
+        if (cancelled) return;
+        if (!res?.error) {
+          setEntries(prev => [...prev, { ...draft, uuid: res.uuid, createdAt: new Date().toISOString() }]);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [loading, allSales, loggedSaleIds]);
 
   const updateEntry = (uuid, patch) => {
     setEntries(prev => prev.map(e => e.uuid === uuid ? { ...e, ...patch } : e));
@@ -637,57 +664,33 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
           <input
             value={search}
             onChange={e => setSearch(e.target.value)}
-            onFocus={() => setSearchFocused(true)}
-            onBlur={() => setTimeout(() => setSearchFocused(false), 150)}
             placeholder="🔍 Search customer name or phone to add to the despatch log…"
             style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #e2e8f0", fontSize: 13.5, fontFamily: "inherit", boxSizing: "border-box" }}
           />
-          {search.trim() ? (
-            searchResults.length > 0 && (
-              <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: "white", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 10px 30px rgba(15,23,42,0.12)", zIndex: 50, maxHeight: 320, overflowY: "auto" }}>
-                {searchResults.map(s => (
-                  <div key={s.id} onClick={() => addFromSale(s)}
-                    style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}
-                    onMouseEnter={e => e.currentTarget.style.background = "#f8fafc"}
-                    onMouseLeave={e => e.currentTarget.style.background = "white"}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{s.customer || "—"}</div>
-                      <div style={{ fontSize: 11.5, color: "#64748b" }}>{s.phone || s.contact || "No phone"} · {s.item || "—"}</div>
-                    </div>
-                    <div style={{ flexShrink: 0, display: "flex", gap: 6 }}>
-                      {s.readyToShip && (
-                        <span style={{ fontSize: 10.5, fontWeight: 700, color: "#166534", background: "#dcfce7", borderRadius: 999, padding: "2px 8px" }}>Ready</span>
-                      )}
-                      {loggedSaleIds[s.id] && (
-                        <span style={{ fontSize: 10.5, fontWeight: 700, color: "#92400e", background: "#fef3c7", borderRadius: 999, padding: "2px 8px" }}>
-                          already on log ×{loggedSaleIds[s.id]}
-                        </span>
-                      )}
-                    </div>
+          {searchResults.length > 0 && (
+            <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: "white", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 10px 30px rgba(15,23,42,0.12)", zIndex: 50, maxHeight: 320, overflowY: "auto" }}>
+              {searchResults.map(s => (
+                <div key={s.id} onClick={() => addFromSale(s)}
+                  style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#f8fafc"}
+                  onMouseLeave={e => e.currentTarget.style.background = "white"}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{s.customer || "—"}</div>
+                    <div style={{ fontSize: 11.5, color: "#64748b" }}>{s.phone || s.contact || "No phone"} · {s.item || "—"}</div>
                   </div>
-                ))}
-              </div>
-            )
-          ) : (
-            searchFocused && readySuggestions.length > 0 && (
-              <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: "white", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 10px 30px rgba(15,23,42,0.12)", zIndex: 50, maxHeight: 320, overflowY: "auto" }}>
-                <div style={{ padding: "8px 14px", fontSize: 10.5, fontWeight: 800, color: "#166534", textTransform: "uppercase", letterSpacing: "0.05em", background: "#f0fdf4" }}>
-                  Ready to Ship — flagged in Sales
+                  <div style={{ flexShrink: 0, display: "flex", gap: 6 }}>
+                    {s.readyToShip && (
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: "#166534", background: "#dcfce7", borderRadius: 999, padding: "2px 8px" }}>Ready</span>
+                    )}
+                    {loggedSaleIds[s.id] && (
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: "#92400e", background: "#fef3c7", borderRadius: 999, padding: "2px 8px" }}>
+                        already on log ×{loggedSaleIds[s.id]}
+                      </span>
+                    )}
+                  </div>
                 </div>
-                {readySuggestions.map(s => (
-                  <div key={s.id} onClick={() => addFromSale(s)}
-                    style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}
-                    onMouseEnter={e => e.currentTarget.style.background = "#f8fafc"}
-                    onMouseLeave={e => e.currentTarget.style.background = "white"}>
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{s.customer || "—"}</div>
-                      <div style={{ fontSize: 11.5, color: "#64748b" }}>{s.phone || s.contact || "No phone"} · {s.item || "—"}</div>
-                    </div>
-                    <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: "#166534", background: "#dcfce7", borderRadius: 999, padding: "2px 8px" }}>+ Add</span>
-                  </div>
-                ))}
-              </div>
-            )
+              ))}
+            </div>
           )}
         </div>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "#64748b", fontWeight: 700, flexShrink: 0 }}>
