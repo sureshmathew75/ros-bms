@@ -262,6 +262,11 @@ function weekdayName(iso) {
   const [y, m, d] = iso.split("-").map(Number);
   return new Date(y, m - 1, d).toLocaleDateString("en-GB", { weekday: "long" });
 }
+function monthLabel(ym) {
+  const [y, m] = ym.split("-").map(Number);
+  return new Date(y, m - 1, 1).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+}
+const currentMonthKey = () => todayISO().slice(0, 7);
 
 /* ═══════════════════════════════════════════════════════════════════════
    DISPATCH PANEL
@@ -274,6 +279,8 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
   const [search, setSearch] = useState("");
   const [waModal, setWaModal] = useState(null);
   const [savingIds, setSavingIds] = useState({}); // uuid -> true while a save is in flight
+  const [viewMode, setViewMode] = useState("log"); // "log" | "calendar"
+  const [calMonth, setCalMonth] = useState(currentMonthKey()); // "YYYY-MM" shown in Calendar view
 
   useEffect(() => {
     let cancelled = false;
@@ -329,6 +336,53 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
   }, [entries, weekDates]);
 
   const weekEntries = useMemo(() => weekDates.flatMap(d => entriesByDate[d]), [weekDates, entriesByDate]);
+
+  // Only show days that (a) aren't in the future — a future date can't
+  // have despatches yet, so it's just clutter — and (b) actually have at
+  // least one entry, so an empty past day doesn't take up space either.
+  const visibleWeekDates = useMemo(() => {
+    const today = todayISO();
+    return weekDates.filter(d => d <= today && entriesByDate[d].length > 0);
+  }, [weekDates, entriesByDate]);
+
+  // Per-day counts across the ENTIRE log (not just the visible week) —
+  // feeds the Calendar view's day badges.
+  const calendarCounts = useMemo(() => {
+    const m = {};
+    entries.forEach(e => { if (e.dispatchDate) m[e.dispatchDate] = (m[e.dispatchDate] || 0) + 1; });
+    return m;
+  }, [entries]);
+
+  // Month-by-month totals across the entire log, most recent first, with
+  // a month-over-month % change — the "business growth" trend view.
+  const monthlyTotals = useMemo(() => {
+    const m = {};
+    entries.forEach(e => {
+      if (!e.dispatchDate) return;
+      const key = e.dispatchDate.slice(0, 7);
+      m[key] = (m[key] || 0) + 1;
+    });
+    const keys = Object.keys(m).sort();
+    const maxCount = Math.max(1, ...Object.values(m));
+    return keys.map((key, i) => {
+      const prev = i > 0 ? m[keys[i - 1]] : null;
+      const delta = prev ? Math.round(((m[key] - prev) / prev) * 100) : null;
+      return { key, label: monthLabel(key), count: m[key], delta, pct: Math.round((m[key] / maxCount) * 100) };
+    }).reverse();
+  }, [entries]);
+
+  // Calendar grid cells for calMonth — null for the leading/trailing
+  // blanks so the grid lines up under Mon..Sun headers.
+  const calCells = useMemo(() => {
+    const [y, m] = calMonth.split("-").map(Number);
+    const first = new Date(y, m - 1, 1);
+    const startDow = (first.getDay() + 6) % 7; // Mon=0
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const cells = [];
+    for (let i = 0; i < startDow; i++) cells.push(null);
+    for (let d = 1; d <= daysInMonth; d++) cells.push(`${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+    return cells;
+  }, [calMonth]);
 
   // Tracking numbers already used ANYWHERE in the log (not just this
   // week) — for the duplicate guard. Keyed by uppercased, whitespace-
@@ -409,10 +463,9 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
 
   const copyWeekList = async () => {
     const lines = [`Despatch — ${ddmmyyyy(weekDates[0])} to ${ddmmyyyy(weekDates[6])}`, ""];
-    weekDates.forEach(d => {
+    visibleWeekDates.forEach(d => {
       const dayList = entriesByDate[d];
       lines.push(`${ddmmyyyy(d)} (${dayList.length})`);
-      if (!dayList.length) lines.push("  —");
       dayList.forEach((e, i) => lines.push(
         `  ${i + 1}. ${e.customer || "—"} — ${e.phone || "—"} — ${e.trackingNo || "no tracking yet"} (${e.shipper || "no shipper"})`
       ));
@@ -429,9 +482,8 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
      WhatsApp" button in SalesPanel.jsx. */
   const sendBulkWhatsApp = () => {
     const lines = [`🚚 *Despatch Log* — ${ddmmyyyy(weekDates[0])} to ${ddmmyyyy(weekDates[6])}`, `${weekEntries.length} item${weekEntries.length !== 1 ? "s" : ""}`, ""];
-    weekDates.forEach(d => {
+    visibleWeekDates.forEach(d => {
       const dayList = entriesByDate[d];
-      if (!dayList.length) return;
       lines.push(`*${ddmmyyyy(d)}*`);
       dayList.forEach((e, i) => {
         lines.push(`${i + 1}. ${e.customer || "—"}`);
@@ -446,13 +498,14 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
   };
 
   /* Print — clean tabular printout of the visible week, one table per
-     day (empty days shown with a "no despatches" note so the date still
-     appears). Mirrors the old Dispatch Sheet's "Print / Export" button
-     in SalesPanel.jsx, extended with this page's extra columns. */
+     day that actually has despatches (matching the on-screen Log view —
+     no empty or future-dated sections). Mirrors the old Dispatch Sheet's
+     "Print / Export" button in SalesPanel.jsx, extended with this page's
+     extra columns. */
   const handlePrint = () => {
     const w = window.open("", "_blank");
     if (!w) return;
-    const sections = weekDates.map(d => {
+    const sections = visibleWeekDates.map(d => {
       const dayList = entriesByDate[d];
       const rows = dayList.map((e, i) => `
         <tr>
@@ -466,10 +519,8 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
         </tr>`).join("");
       return `
         <h2>${weekdayName(d)}, ${ddmmyyyy(d)} — ${dayList.length} item${dayList.length !== 1 ? "s" : ""}</h2>
-        ${dayList.length
-          ? `<table><thead><tr><th>#</th><th>Customer</th><th>Address</th><th>Phone</th><th>Tracking No.</th><th>Shipper</th><th>Remarks</th></tr></thead><tbody>${rows}</tbody></table>`
-          : `<p style="color:#94a3b8;font-size:12px;">No despatches.</p>`}`;
-    }).join("");
+        <table><thead><tr><th>#</th><th>Customer</th><th>Address</th><th>Phone</th><th>Tracking No.</th><th>Shipper</th><th>Remarks</th></tr></thead><tbody>${rows}</tbody></table>`;
+    }).join("") || `<p style="color:#94a3b8;font-size:12px;">No despatches recorded this week.</p>`;
     w.document.write(`<!DOCTYPE html><html><head><title>Despatch Log — ${ddmmyyyy(weekDates[0])} to ${ddmmyyyy(weekDates[6])}</title>
       <style>
         body{font-family:Arial,sans-serif;padding:24px;color:#0f172a;}
@@ -491,6 +542,21 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
     mon.setDate(mon.getDate() + offsetWeeks * 7);
     setWeekAnchor(localISO(mon));
   };
+  // Can't navigate past the week that contains today — future weeks are
+  // guaranteed empty, so there's nothing useful to page forward into.
+  const atCurrentWeekOrLater = mondayOf(weekAnchor).getTime() >= mondayOf(todayISO()).getTime();
+
+  const shiftMonth = (offset) => {
+    const [y, m] = calMonth.split("-").map(Number);
+    const d = new Date(y, m - 1 + offset, 1);
+    setCalMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`);
+  };
+  const atCurrentMonthOrLater = calMonth >= currentMonthKey();
+
+  const jumpToDay = (iso) => {
+    setViewMode("log");
+    setWeekAnchor(iso);
+  };
 
   return (
     <div style={{ padding: "20px 22px", maxWidth: 1180, margin: "0 auto" }}>
@@ -500,18 +566,39 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
         <div>
           <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a" }}>🚚 Despatch Log</div>
           <div style={{ fontSize: 12.5, color: "#64748b", marginTop: 2 }}>
-            {ddmmyyyy(weekDates[0])} – {ddmmyyyy(weekDates[6])} · one row per parcel, grouped by day
+            {viewMode === "log"
+              ? `${ddmmyyyy(weekDates[0])} – ${ddmmyyyy(weekDates[6])} · one row per parcel, grouped by day`
+              : "Calendar & monthly trend"}
           </div>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button onClick={() => shiftWeek(-1)} style={pillBtnStyle}>← Previous Week</button>
-          <input type="date" value={weekAnchor} onChange={e => setWeekAnchor(e.target.value)}
-            style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, fontFamily: "inherit" }} />
-          <button onClick={() => setWeekAnchor(todayISO())} style={pillBtnStyle}>This Week</button>
-          <button onClick={() => shiftWeek(1)} style={pillBtnStyle}>Next Week →</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ display: "flex", border: "1px solid #e2e8f0", borderRadius: 8, overflow: "hidden" }}>
+            <button onClick={() => setViewMode("log")}
+              style={{ padding: "8px 14px", border: "none", background: viewMode === "log" ? "#0f172a" : "white", color: viewMode === "log" ? "white" : "#475569", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>
+              📋 Log
+            </button>
+            <button onClick={() => setViewMode("calendar")}
+              style={{ padding: "8px 14px", border: "none", background: viewMode === "calendar" ? "#0f172a" : "white", color: viewMode === "calendar" ? "white" : "#475569", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>
+              📅 Calendar
+            </button>
+          </div>
+          {viewMode === "log" && (
+            <>
+              <button onClick={() => shiftWeek(-1)} style={pillBtnStyle}>← Previous Week</button>
+              <input type="date" value={weekAnchor} max={todayISO()} onChange={e => setWeekAnchor(e.target.value)}
+                style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, fontFamily: "inherit" }} />
+              <button onClick={() => setWeekAnchor(todayISO())} style={pillBtnStyle}>This Week</button>
+              <button onClick={() => !atCurrentWeekOrLater && shiftWeek(1)} disabled={atCurrentWeekOrLater}
+                style={{ ...pillBtnStyle, opacity: atCurrentWeekOrLater ? 0.4 : 1, cursor: atCurrentWeekOrLater ? "not-allowed" : "pointer" }}>
+                Next Week →
+              </button>
+            </>
+          )}
         </div>
       </div>
 
+      {viewMode === "log" && (
+      <>
       {/* Summary strip */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         <SummaryChip label="Rows this week" value={summary.total} bg="#f1f5f9" color="#334155" />
@@ -566,27 +653,40 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
         </div>
         <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "#64748b", fontWeight: 700, flexShrink: 0 }}>
           Add to
-          <input type="date" value={addDate} onChange={e => setAddDate(e.target.value)}
+          <input type="date" value={addDate} max={todayISO()} onChange={e => setAddDate(e.target.value)}
             style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, fontFamily: "inherit" }} />
         </label>
       </div>
 
       {loading ? (
         <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", border: "1px solid #e2e8f0", borderRadius: 12 }}>Loading…</div>
-      ) : weekDates.map(d => {
+      ) : visibleWeekDates.length === 0 ? (
+        <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", border: "1px dashed #e2e8f0", borderRadius: 12 }}>
+          No despatches recorded this week yet.
+        </div>
+      ) : visibleWeekDates.map(d => {
         const dayList = entriesByDate[d];
         const isToday = d === todayISO();
         return (
           <div key={d} style={{ marginBottom: 22 }}>
-            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8, paddingLeft: 2 }}>
-              <span style={{ fontSize: 14, fontWeight: 800, color: "#0f172a" }}>{ddmmyyyy(d)}</span>
-              <span style={{ fontSize: 12, color: "#94a3b8" }}>{weekdayName(d)}</span>
+            {/* Strong date header — the whole point is to spot the day at
+                a glance, so it gets its own high-contrast band rather than
+                blending into the table below. */}
+            <div style={{
+              display: "flex", alignItems: "center", gap: 10, marginBottom: 0,
+              padding: "10px 16px", borderRadius: "12px 12px 0 0",
+              background: isToday ? "#0f172a" : "#eef2ff",
+            }}>
+              <span style={{ fontSize: 17, fontWeight: 900, color: isToday ? "white" : "#1e293b", letterSpacing: "0.01em" }}>{ddmmyyyy(d)}</span>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: isToday ? "rgba(255,255,255,0.75)" : "#4338ca" }}>{weekdayName(d)}</span>
               {isToday && (
-                <span style={{ fontSize: 10, fontWeight: 800, color: "#166534", background: "#dcfce7", borderRadius: 999, padding: "2px 8px" }}>TODAY</span>
+                <span style={{ fontSize: 10, fontWeight: 800, color: "#0f172a", background: "#dcfce7", borderRadius: 999, padding: "2px 8px" }}>TODAY</span>
               )}
-              <span style={{ fontSize: 11.5, color: "#94a3b8" }}>· {dayList.length} item{dayList.length !== 1 ? "s" : ""}</span>
+              <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 700, color: isToday ? "rgba(255,255,255,0.75)" : "#64748b" }}>
+                {dayList.length} item{dayList.length !== 1 ? "s" : ""}
+              </span>
             </div>
-            <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 12 }}>
+            <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderTop: "none", borderRadius: "0 0 12px 12px" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 920, fontSize: 12.5 }}>
                 <thead>
                   <tr style={{ background: "#f8fafc" }}>
@@ -665,6 +765,83 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
           </div>
         );
       })}
+      </>
+      )}
+
+      {viewMode === "calendar" && (
+        <div style={{ display: "flex", gap: 20, flexWrap: "wrap", alignItems: "flex-start" }}>
+          {/* Month grid — each day shows its despatch count as a badge */}
+          <div style={{ flex: "1 1 380px", minWidth: 320, border: "1px solid #e2e8f0", borderRadius: 12, padding: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+              <button onClick={() => shiftMonth(-1)} style={pillBtnStyle}>←</button>
+              <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{monthLabel(calMonth)}</div>
+              <button onClick={() => !atCurrentMonthOrLater && shiftMonth(1)} disabled={atCurrentMonthOrLater}
+                style={{ ...pillBtnStyle, opacity: atCurrentMonthOrLater ? 0.4 : 1, cursor: atCurrentMonthOrLater ? "not-allowed" : "pointer" }}>→</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4, marginBottom: 6 }}>
+              {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(d => (
+                <div key={d} style={{ textAlign: "center", fontSize: 10.5, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase" }}>{d}</div>
+              ))}
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 4 }}>
+              {calCells.map((iso, i) => {
+                if (!iso) return <div key={"blank" + i} />;
+                const count = calendarCounts[iso] || 0;
+                const isFuture = iso > todayISO();
+                const isToday = iso === todayISO();
+                const dayNum = Number(iso.slice(-2));
+                return (
+                  <button key={iso} onClick={() => count > 0 && !isFuture && jumpToDay(iso)}
+                    disabled={isFuture || count === 0}
+                    title={isFuture ? "Future date" : count ? `${count} despatched — click to view` : "Nothing despatched"}
+                    style={{
+                      aspectRatio: "1", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
+                      borderRadius: 8, border: isToday ? "2px solid #0f172a" : "1px solid #f1f5f9",
+                      background: isFuture ? "#fafafa" : count > 0 ? "#eef2ff" : "white",
+                      cursor: (!isFuture && count > 0) ? "pointer" : "default",
+                      fontFamily: "inherit",
+                    }}>
+                    <span style={{ fontSize: 11.5, fontWeight: 700, color: isFuture ? "#cbd5e1" : "#334155" }}>{dayNum}</span>
+                    {!isFuture && count > 0 && (
+                      <span style={{ fontSize: 10, fontWeight: 800, color: "#4338ca", background: "#e0e7ff", borderRadius: 999, padding: "1px 6px" }}>{count}</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Monthly totals — business growth trend across the whole log */}
+          <div style={{ flex: "1 1 320px", minWidth: 280, border: "1px solid #e2e8f0", borderRadius: 12, padding: 16 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: "#0f172a", marginBottom: 4 }}>📈 Monthly Despatch Totals</div>
+            <div style={{ fontSize: 11.5, color: "#94a3b8", marginBottom: 14 }}>Track volume month to month to gauge growth</div>
+            {monthlyTotals.length === 0 ? (
+              <div style={{ padding: "20px 0", textAlign: "center", color: "#94a3b8", fontSize: 12.5 }}>No despatch history yet.</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                {monthlyTotals.map(mt => (
+                  <div key={mt.key}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 700, color: "#334155" }}>{mt.label}</span>
+                      <span style={{ fontSize: 12.5, fontWeight: 800, color: "#0f172a" }}>
+                        {mt.count}
+                        {mt.delta !== null && (
+                          <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 700, color: mt.delta >= 0 ? "#166534" : "#991b1b" }}>
+                            {mt.delta >= 0 ? "▲" : "▼"} {Math.abs(mt.delta)}%
+                          </span>
+                        )}
+                      </span>
+                    </div>
+                    <div style={{ height: 6, borderRadius: 999, background: "#f1f5f9", overflow: "hidden" }}>
+                      <div style={{ width: `${mt.pct}%`, height: "100%", background: "#4338ca", borderRadius: 999 }} />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
