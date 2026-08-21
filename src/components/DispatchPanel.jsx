@@ -316,6 +316,12 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
   const [viewMode, setViewMode] = useState("log"); // "log" | "calendar"
   const [calMonth, setCalMonth] = useState(currentMonthKey()); // "YYYY-MM" shown in Calendar view
   const [dismissedSaleIds, setDismissedSaleIds] = useState({}); // sale id -> true, blocks auto-re-add after a manual delete
+  // Per-day collapse state for the Log view — only holds entries the user
+  // has explicitly toggled THIS session; any date not in here just falls
+  // back to the default (today expanded, every other day collapsed), and
+  // that default is what you get again on the next page load/refresh —
+  // collapse state is intentionally not persisted.
+  const [collapsedDates, setCollapsedDates] = useState({});
 
   useEffect(() => {
     let cancelled = false;
@@ -892,25 +898,52 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
       ) : visibleWeekDates.map(d => {
         const dayList = entriesByDate[d];
         const isToday = d === todayISO();
+        // Default: today expanded, every other day collapsed — unless the
+        // user has explicitly toggled this date already this session.
+        const isCollapsed = collapsedDates[d] !== undefined ? collapsedDates[d] : !isToday;
+        const noTrackingCount = dayList.filter(e => !e.trackingNo).length;
+        const notNotifiedCount = dayList.filter(e => !e.notified).length;
         return (
           <div key={d} style={{ marginBottom: 22 }}>
             {/* Strong date header — the whole point is to spot the day at
                 a glance, so it gets its own high-contrast band rather than
-                blending into the table below. */}
-            <div style={{
-              display: "flex", alignItems: "center", gap: 10, marginBottom: 0,
-              padding: "10px 16px", borderRadius: "12px 12px 0 0",
-              background: isToday ? "#0f172a" : "#eef2ff",
-            }}>
+                blending into the table below. Click to collapse/expand;
+                collapsed days show date + item count (+ a small badge for
+                anything still unfinished) with no table beneath. */}
+            <div
+              onClick={() => setCollapsedDates(prev => ({ ...prev, [d]: !isCollapsed }))}
+              title={isCollapsed ? "Click to expand" : "Click to collapse"}
+              style={{
+                display: "flex", alignItems: "center", gap: 10, marginBottom: 0,
+                padding: "10px 16px", borderRadius: isCollapsed ? 12 : "12px 12px 0 0",
+                background: isToday ? "#0f172a" : "#eef2ff",
+                cursor: "pointer", userSelect: "none",
+              }}>
+              <span style={{ fontSize: 11, width: 12, textAlign: "center", display: "inline-block", color: isToday ? "rgba(255,255,255,0.75)" : "#64748b" }}>
+                {isCollapsed ? "▶" : "▼"}
+              </span>
               <span style={{ fontSize: 17, fontWeight: 900, color: isToday ? "white" : "#1e293b", letterSpacing: "0.01em" }}>{ddmmyyyy(d)}</span>
               <span style={{ fontSize: 12.5, fontWeight: 700, color: isToday ? "rgba(255,255,255,0.75)" : "#4338ca" }}>{weekdayName(d)}</span>
               {isToday && (
                 <span style={{ fontSize: 10, fontWeight: 800, color: "#0f172a", background: "#dcfce7", borderRadius: 999, padding: "2px 8px" }}>TODAY</span>
               )}
-              <span style={{ marginLeft: "auto", fontSize: 12, fontWeight: 700, color: isToday ? "rgba(255,255,255,0.75)" : "#64748b" }}>
-                {dayList.length} item{dayList.length !== 1 ? "s" : ""}
+              <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
+                {isCollapsed && noTrackingCount > 0 && (
+                  <span style={{ fontSize: 10.5, fontWeight: 800, color: "#92400e", background: "#fef3c7", borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>
+                    ⏳ {noTrackingCount} awaiting tracking
+                  </span>
+                )}
+                {isCollapsed && notNotifiedCount > 0 && (
+                  <span style={{ fontSize: 10.5, fontWeight: 800, color: "#9a3412", background: "#ffedd5", borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>
+                    📨 {notNotifiedCount} not notified
+                  </span>
+                )}
+                <span style={{ fontSize: 12, fontWeight: 700, color: isToday ? "rgba(255,255,255,0.75)" : "#64748b" }}>
+                  {dayList.length} item{dayList.length !== 1 ? "s" : ""}
+                </span>
               </span>
             </div>
+            {!isCollapsed && (
             <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderTop: "none", borderRadius: "0 0 12px 12px" }}>
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 920, fontSize: 12.5 }}>
                 <thead>
@@ -989,6 +1022,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
                 </tbody>
               </table>
             </div>
+            )}
           </div>
         );
       })}
