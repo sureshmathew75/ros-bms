@@ -304,7 +304,12 @@ const getAllowedStatuses = (currentStatus, shopId) => {
   const FEEDBACK = isIndia ? ["GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"] : ["GOOD FEEDBACK"];
   switch (cur) {
     case "PENDING":
-      return ["PENDING","FULFILLED"];
+      // FULFILLED is deliberately left out here — now that tracking +
+      // shipper entered in the Despatch Log marks a sale Fulfilled
+      // automatically, a manual Pending → Fulfilled jump is locked behind
+      // the admin-only override in the Status cell below (see isAdminRole /
+      // unlockedFulfil), rather than being a normal dropdown option.
+      return ["PENDING"];
     case "FULFILLED":
       return ["FULFILLED",RETURN_RQSTD,RETURN_RCVD,...FEEDBACK];
     case RETURN_RQSTD:
@@ -455,6 +460,11 @@ export default function SalesPanel({
   onMarkDeliveryInformed,
 }) {
   const [hovR,    setHovR]    = useState(null);
+  // Manually marking a sale Fulfilled straight from Pending is now an
+  // admin-only override (normal despatches auto-fulfil from the Despatch
+  // Log once tracking + shipper are entered) — reserved for edge cases
+  // like a no-tracking local delivery/pickup, or fixing a mistake.
+  const isAdminRole = user?.role === "admin" || user?.role === "superadmin";
   /* Drag-to-reorder (month view only) */
   const [dragId, setDragId] = useState(null);
   const [waModal, setWaModal] = useState(null); // {phone,customerName,message} | null
@@ -2413,6 +2423,52 @@ We hope you enjoy your purchase! 💜
                             <option key={t.key} value={t.key}>{t.label}</option>
                           ))}
                         </select>
+                      ) : ful === "PENDING" && !(user?.id === "suresh" && statusOverride) ? (
+                        // Manually jumping Pending → Fulfilled is locked by default now that
+                        // the Despatch Log does this automatically once tracking + shipper are
+                        // entered. Admin/superadmin can still unlock it for edge cases (a sale
+                        // that won't get a tracking number, or fixing a mistake) — everyone
+                        // else just sees it locked. (Suresh's separate Status Override toggle,
+                        // when on, still bypasses this entirely — same as before.)
+                        isAdminRole ? (
+                          <div
+                            onClick={() => {
+                              if (!window.confirm(
+                                "This bypasses the normal flow — the Despatch Log marks a sale " +
+                                "Fulfilled automatically once tracking + shipper are entered. Only " +
+                                "use this for a sale that won't get a tracking number (e.g. local " +
+                                "pickup/delivery), or to fix a mistake.\n\nMark " +
+                                (s.customer || "this sale") + " Fulfilled now?"
+                              )) return;
+                              const gKey = getInstalmentKey(s);
+                              const group = gKey ? (instalmentGroups[gKey] || []) : [];
+                              const groupIds = group.length > 1 ? group.map(x => x.id) : [];
+                              if (group.length > 0) {
+                                const balInfo = getGroupBalanceInfo(group);
+                                if (balInfo && balInfo.balance > 0) {
+                                  setBalanceBlockInfo({ sale: s, ...balInfo });
+                                  return;
+                                }
+                              }
+                              if (groupIds.length > 1) {
+                                applyCascade(s.id, "FULFILLED", groupIds);
+                              } else if (onInlineEdit) {
+                                onInlineEdit(s.id, { ful: "FULFILLED", status: "FULFILLED" });
+                              }
+                            }}
+                            title="Locked — normally set automatically from the Despatch Log. Click to unlock and mark Fulfilled manually (admin only)."
+                            style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
+                            <Badge l={ful} />
+                            <span style={{ fontSize: 11 }}>🔓</span>
+                          </div>
+                        ) : (
+                          <div
+                            title="Locked — tracking + shipper entered in the Despatch Log will mark this Fulfilled automatically. Only an admin can override this manually."
+                            style={{ cursor: "default", display: "inline-flex", alignItems: "center", gap: 4, opacity: 0.85 }}>
+                            <Badge l={ful} />
+                            <span style={{ fontSize: 11 }}>🔒</span>
+                          </div>
+                        )
                       ) : (
                         <div
                           onClick={() => setEditStatusId(s.id)}
