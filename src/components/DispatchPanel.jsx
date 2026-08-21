@@ -293,6 +293,9 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
   }, [shopId]);
 
   const allSales = sales || [];
+  // Only admins/superadmins can delete a row — despatch staff can add,
+  // edit, and notify, but not remove entries from the log.
+  const isAdmin = user?.role === "admin" || user?.role === "superadmin";
 
   // The 7 dates (Mon→Sun) of the week currently in view.
   const weekDates = useMemo(() => {
@@ -483,7 +486,8 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
   };
 
   const removeEntry = async (uuid) => {
-    if (!window.confirm("Remove this row from the despatch log?")) return;
+    if (!isAdmin) return; // guarded here too, not just in the UI
+    if (!window.confirm("Remove this row from the despatch log? This cannot be undone.")) return;
     setEntries(prev => prev.filter(e => e.uuid !== uuid));
     await dbDeleteDispatchEntry(uuid, shopId);
   };
@@ -795,8 +799,10 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
                             style={cellInputStyle} />
                         </td>
                         <td style={{ padding: "8px 12px" }}>
-                          <button onClick={() => removeEntry(e.uuid)} title="Remove row"
-                            style={{ border: "none", background: "transparent", color: "#94a3b8", cursor: "pointer", fontSize: 14 }}>✕</button>
+                          {isAdmin && (
+                            <button onClick={() => removeEntry(e.uuid)} title="Remove row"
+                              style={{ border: "none", background: "transparent", color: "#94a3b8", cursor: "pointer", fontSize: 14 }}>✕</button>
+                          )}
                         </td>
                       </tr>
                     );
