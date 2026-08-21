@@ -1,5 +1,4 @@
 import { useState, useEffect, useMemo } from "react";
-import { formatDate } from "../utils";
 import { dbSaveDispatchEntry, dbLoadDispatchLog, dbDeleteDispatchEntry } from "../db";
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -243,13 +242,35 @@ const WaModal = ({ data, onClose }) => {
   );
 };
 
+/* ── Week helpers ─────────────────────────────────────────────────────
+   Monday–Sunday, mirroring the "week" period convention used elsewhere
+   in this app (see the header comment in SalesPanel.jsx). ─────────────── */
+function mondayOf(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  const day = dt.getDay(); // 0=Sun..6=Sat
+  const diff = day === 0 ? -6 : 1 - day;
+  dt.setDate(dt.getDate() + diff);
+  return dt;
+}
+function ddmmyyyy(iso) {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-");
+  return `${d}-${m}-${y}`;
+}
+function weekdayName(iso) {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(y, m - 1, d).toLocaleDateString("en-GB", { weekday: "long" });
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    DISPATCH PANEL
    ═══════════════════════════════════════════════════════════════════════ */
 export default function DispatchPanel({ shop, shopId, user, sales }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [selectedDate, setSelectedDate] = useState(todayISO());
+  const [weekAnchor, setWeekAnchor] = useState(todayISO()); // any date within the visible week
+  const [addDate, setAddDate] = useState(todayISO());       // which day new adds land on
   const [search, setSearch] = useState("");
   const [waModal, setWaModal] = useState(null);
   const [savingIds, setSavingIds] = useState({}); // uuid -> true while a save is in flight
@@ -265,6 +286,16 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
   }, [shopId]);
 
   const allSales = sales || [];
+
+  // The 7 dates (Mon→Sun) of the week currently in view.
+  const weekDates = useMemo(() => {
+    const mon = mondayOf(weekAnchor);
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(mon);
+      d.setDate(d.getDate() + i);
+      return localISO(d);
+    });
+  }, [weekAnchor]);
 
   // Sale ids already present anywhere in the log — used to badge search
   // results as "already added" (still addable again, e.g. multi-parcel).
@@ -285,14 +316,23 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
     }).slice(0, 12);
   }, [allSales, search]);
 
-  const dayEntries = useMemo(() => {
-    return entries
-      .filter(e => e.dispatchDate === selectedDate)
-      .sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || ""));
-  }, [entries, selectedDate]);
+  // Entries for the visible week, grouped by date — every date in
+  // weekDates gets an array (empty ones included) so each day block
+  // always renders, matching the "show the date even if nothing shipped"
+  // layout.
+  const entriesByDate = useMemo(() => {
+    const m = {};
+    weekDates.forEach(d => { m[d] = []; });
+    entries.forEach(e => { if (m[e.dispatchDate]) m[e.dispatchDate].push(e); });
+    weekDates.forEach(d => { m[d].sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || "")); });
+    return m;
+  }, [entries, weekDates]);
 
-  // Tracking numbers already used elsewhere (any date) — for the duplicate
-  // guard. Keyed by uppercased, whitespace-stripped tracking number.
+  const weekEntries = useMemo(() => weekDates.flatMap(d => entriesByDate[d]), [weekDates, entriesByDate]);
+
+  // Tracking numbers already used ANYWHERE in the log (not just this
+  // week) — for the duplicate guard. Keyed by uppercased, whitespace-
+  // stripped tracking number.
   const trackingIndex = useMemo(() => {
     const m = {};
     entries.forEach(e => {
@@ -304,11 +344,11 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
   }, [entries]);
 
   const summary = useMemo(() => {
-    const total = dayEntries.length;
-    const noTracking = dayEntries.filter(e => !e.trackingNo).length;
-    const notNotified = dayEntries.filter(e => !e.notified).length;
+    const total = weekEntries.length;
+    const noTracking = weekEntries.filter(e => !e.trackingNo).length;
+    const notNotified = weekEntries.filter(e => !e.notified).length;
     return { total, noTracking, notNotified };
-  }, [dayEntries]);
+  }, [weekEntries]);
 
   const persist = async (uuidOrNull, payload) => {
     setSavingIds(p => ({ ...p, [uuidOrNull || "__new__"]: true }));
@@ -320,7 +360,7 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
   const addFromSale = async (sale) => {
     const draft = {
       saleId: sale.id,
-      dispatchDate: selectedDate,
+      dispatchDate: addDate,
       customer: sale.customer || "",
       phone: sale.phone || sale.contact || "",
       address: sale.address || "",
@@ -333,6 +373,9 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
     if (res?.error) { alert("Could not add to dispatch log: " + res.error); return; }
     setEntries(prev => [...prev, { ...draft, uuid: res.uuid, createdAt: new Date().toISOString() }]);
     setSearch("");
+    // Jump the visible week to wherever the new row landed, so it's
+    // immediately visible even if addDate falls outside the current view.
+    setWeekAnchor(addDate);
   };
 
   const updateEntry = (uuid, patch) => {
@@ -364,71 +407,89 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
     });
   };
 
-  const copyDayList = async () => {
-    const lines = dayEntries.map((e, i) =>
-      `${i + 1}. ${e.customer || "—"} — ${e.phone || "—"} — ${e.trackingNo || "no tracking yet"} (${e.shipper || "no shipper"})`
-    );
-    const text = `Despatch — ${formatDate ? formatDate(selectedDate) : selectedDate}\n\n${lines.join("\n")}`;
-    try { await navigator.clipboard.writeText(text); alert("Day's despatch list copied."); }
+  const copyWeekList = async () => {
+    const lines = [`Despatch — ${ddmmyyyy(weekDates[0])} to ${ddmmyyyy(weekDates[6])}`, ""];
+    weekDates.forEach(d => {
+      const dayList = entriesByDate[d];
+      lines.push(`${ddmmyyyy(d)} (${dayList.length})`);
+      if (!dayList.length) lines.push("  —");
+      dayList.forEach((e, i) => lines.push(
+        `  ${i + 1}. ${e.customer || "—"} — ${e.phone || "—"} — ${e.trackingNo || "no tracking yet"} (${e.shipper || "no shipper"})`
+      ));
+      lines.push("");
+    });
+    const text = lines.join("\n").trim();
+    try { await navigator.clipboard.writeText(text); alert("Week's despatch list copied."); }
     catch { alert(text); }
   };
 
-  /* Bulk WhatsApp — bundles the whole day's sheet into one message with no
-     fixed recipient, for pinging an internal despatch group chat. Mirrors
-     the old Dispatch Sheet's "Send via WhatsApp" button in SalesPanel.jsx. */
+  /* Bulk WhatsApp — bundles the whole visible week into one message,
+     grouped by day, with no fixed recipient — for pinging an internal
+     despatch group chat. Mirrors the old Dispatch Sheet's "Send via
+     WhatsApp" button in SalesPanel.jsx. */
   const sendBulkWhatsApp = () => {
-    const dateLabel = formatDate ? formatDate(selectedDate) : selectedDate;
-    const lines = [`🚚 *Despatch Log* — ${dateLabel}`, `${dayEntries.length} item${dayEntries.length !== 1 ? "s" : ""}`, ""];
-    dayEntries.forEach((e, i) => {
-      lines.push(`${i + 1}. ${e.customer || "—"}`);
-      lines.push(e.address || "No address on file");
-      lines.push(`Phone: ${e.phone || "—"}`);
-      lines.push(`Tracking: ${e.trackingNo || "—"} (${e.shipper || "no shipper"})`);
-      if (e.remarks) lines.push(`Remarks: ${e.remarks}`);
-      lines.push("");
+    const lines = [`🚚 *Despatch Log* — ${ddmmyyyy(weekDates[0])} to ${ddmmyyyy(weekDates[6])}`, `${weekEntries.length} item${weekEntries.length !== 1 ? "s" : ""}`, ""];
+    weekDates.forEach(d => {
+      const dayList = entriesByDate[d];
+      if (!dayList.length) return;
+      lines.push(`*${ddmmyyyy(d)}*`);
+      dayList.forEach((e, i) => {
+        lines.push(`${i + 1}. ${e.customer || "—"}`);
+        lines.push(e.address || "No address on file");
+        lines.push(`Phone: ${e.phone || "—"}`);
+        lines.push(`Tracking: ${e.trackingNo || "—"} (${e.shipper || "no shipper"})`);
+        if (e.remarks) lines.push(`Remarks: ${e.remarks}`);
+        lines.push("");
+      });
     });
     setWaModal({ phone: "", customerName: "", message: lines.join("\n").trim() });
   };
 
-  /* Print — clean tabular printout of the selected day's sheet. Mirrors
-     the old Dispatch Sheet's "Print / Export" button in SalesPanel.jsx,
-     extended with the extra columns this page tracks (phone, tracking,
-     shipper, remarks). */
+  /* Print — clean tabular printout of the visible week, one table per
+     day (empty days shown with a "no despatches" note so the date still
+     appears). Mirrors the old Dispatch Sheet's "Print / Export" button
+     in SalesPanel.jsx, extended with this page's extra columns. */
   const handlePrint = () => {
     const w = window.open("", "_blank");
     if (!w) return;
-    const dateLabel = formatDate ? formatDate(selectedDate) : selectedDate;
-    const rows = dayEntries.map((e, i) => `
-      <tr>
-        <td>${i + 1}</td>
-        <td>${e.customer || "—"}</td>
-        <td style="white-space:pre-line">${e.address || "—"}</td>
-        <td>${e.phone || "—"}</td>
-        <td>${e.trackingNo || "—"}</td>
-        <td>${e.shipper || "—"}</td>
-        <td>${e.remarks || "—"}</td>
-      </tr>`).join("");
-    w.document.write(`<!DOCTYPE html><html><head><title>Despatch Log — ${dateLabel}</title>
+    const sections = weekDates.map(d => {
+      const dayList = entriesByDate[d];
+      const rows = dayList.map((e, i) => `
+        <tr>
+          <td>${i + 1}</td>
+          <td>${e.customer || "—"}</td>
+          <td style="white-space:pre-line">${e.address || "—"}</td>
+          <td>${e.phone || "—"}</td>
+          <td>${e.trackingNo || "—"}</td>
+          <td>${e.shipper || "—"}</td>
+          <td>${e.remarks || "—"}</td>
+        </tr>`).join("");
+      return `
+        <h2>${weekdayName(d)}, ${ddmmyyyy(d)} — ${dayList.length} item${dayList.length !== 1 ? "s" : ""}</h2>
+        ${dayList.length
+          ? `<table><thead><tr><th>#</th><th>Customer</th><th>Address</th><th>Phone</th><th>Tracking No.</th><th>Shipper</th><th>Remarks</th></tr></thead><tbody>${rows}</tbody></table>`
+          : `<p style="color:#94a3b8;font-size:12px;">No despatches.</p>`}`;
+    }).join("");
+    w.document.write(`<!DOCTYPE html><html><head><title>Despatch Log — ${ddmmyyyy(weekDates[0])} to ${ddmmyyyy(weekDates[6])}</title>
       <style>
         body{font-family:Arial,sans-serif;padding:24px;color:#0f172a;}
         h1{font-size:18px;margin-bottom:4px;} p{color:#64748b;font-size:12px;margin-top:0;}
-        table{width:100%;border-collapse:collapse;margin-top:14px;}
-        th,td{border:1px solid #e2e8f0;padding:8px 10px;font-size:12px;text-align:left;vertical-align:top;}
+        h2{font-size:13px;margin:20px 0 6px;text-transform:uppercase;letter-spacing:0.04em;color:#475569;}
+        table{width:100%;border-collapse:collapse;} th,td{border:1px solid #e2e8f0;padding:8px 10px;font-size:12px;text-align:left;vertical-align:top;}
         th{background:#f8fafc;text-transform:uppercase;letter-spacing:0.04em;font-size:10px;}
       </style></head><body>
       <h1>🚚 Despatch Log</h1>
-      <p>${dateLabel} · ${dayEntries.length} item${dayEntries.length !== 1 ? "s" : ""}</p>
-      <table><thead><tr><th>#</th><th>Customer</th><th>Address</th><th>Phone</th><th>Tracking No.</th><th>Shipper</th><th>Remarks</th></tr></thead>
-      <tbody>${rows}</tbody></table>
+      <p>${ddmmyyyy(weekDates[0])} – ${ddmmyyyy(weekDates[6])} · ${weekEntries.length} item${weekEntries.length !== 1 ? "s" : ""}</p>
+      ${sections}
       </body></html>`);
     w.document.close();
     setTimeout(() => w.print(), 300);
   };
 
-  const quickDate = (offsetDays) => {
-    const d = new Date();
-    d.setDate(d.getDate() + offsetDays);
-    setSelectedDate(localISO(d));
+  const shiftWeek = (offsetWeeks) => {
+    const mon = mondayOf(weekAnchor);
+    mon.setDate(mon.getDate() + offsetWeeks * 7);
+    setWeekAnchor(localISO(mon));
   };
 
   return (
@@ -438,148 +499,172 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
         <div>
           <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a" }}>🚚 Despatch Log</div>
-          <div style={{ fontSize: 12.5, color: "#64748b", marginTop: 2 }}>Daily despatch sheet — tracking, shipper &amp; customer notification</div>
+          <div style={{ fontSize: 12.5, color: "#64748b", marginTop: 2 }}>
+            {ddmmyyyy(weekDates[0])} – {ddmmyyyy(weekDates[6])} · one row per parcel, grouped by day
+          </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button onClick={() => quickDate(-1)} style={pillBtnStyle}>← Yesterday</button>
-          <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
+          <button onClick={() => shiftWeek(-1)} style={pillBtnStyle}>← Previous Week</button>
+          <input type="date" value={weekAnchor} onChange={e => setWeekAnchor(e.target.value)}
             style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, fontFamily: "inherit" }} />
-          <button onClick={() => quickDate(0)} style={pillBtnStyle}>Today</button>
-          <button onClick={() => quickDate(1)} style={pillBtnStyle}>Tomorrow →</button>
+          <button onClick={() => setWeekAnchor(todayISO())} style={pillBtnStyle}>This Week</button>
+          <button onClick={() => shiftWeek(1)} style={pillBtnStyle}>Next Week →</button>
         </div>
       </div>
 
       {/* Summary strip */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
-        <SummaryChip label="Rows today" value={summary.total} bg="#f1f5f9" color="#334155" />
+        <SummaryChip label="Rows this week" value={summary.total} bg="#f1f5f9" color="#334155" />
         <SummaryChip label="Awaiting tracking" value={summary.noTracking} bg={summary.noTracking ? "#fef3c7" : "#f1f5f9"} color={summary.noTracking ? "#92400e" : "#334155"} />
         <SummaryChip label="Not yet notified" value={summary.notNotified} bg={summary.notNotified ? "#fee2e2" : "#f1f5f9"} color={summary.notNotified ? "#991b1b" : "#334155"} />
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button onClick={handlePrint} disabled={!dayEntries.length}
-            style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #e2e8f0", background: "white", color: "#334155", fontWeight: 700, fontSize: 12.5, cursor: dayEntries.length ? "pointer" : "not-allowed", opacity: dayEntries.length ? 1 : 0.5, fontFamily: "inherit" }}>
+          <button onClick={handlePrint} disabled={!weekEntries.length}
+            style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #e2e8f0", background: "white", color: "#334155", fontWeight: 700, fontSize: 12.5, cursor: weekEntries.length ? "pointer" : "not-allowed", opacity: weekEntries.length ? 1 : 0.5, fontFamily: "inherit" }}>
             🖨️ Print / Export
           </button>
-          <button onClick={sendBulkWhatsApp} disabled={!dayEntries.length}
-            title="Send the whole day's sheet as one message — no fixed recipient, for your despatch team chat"
-            style={{ padding: "8px 14px", borderRadius: 10, border: "none", background: dayEntries.length ? "#25D366" : "#f1f5f9", color: dayEntries.length ? "white" : "#94a3b8", fontWeight: 700, fontSize: 12.5, cursor: dayEntries.length ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
+          <button onClick={sendBulkWhatsApp} disabled={!weekEntries.length}
+            title="Send the whole week's sheet as one message, grouped by day — no fixed recipient, for your despatch team chat"
+            style={{ padding: "8px 14px", borderRadius: 10, border: "none", background: weekEntries.length ? "#25D366" : "#f1f5f9", color: weekEntries.length ? "white" : "#94a3b8", fontWeight: 700, fontSize: 12.5, cursor: weekEntries.length ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
             💬 Send Sheet via WhatsApp
           </button>
-          <button onClick={copyDayList} disabled={!dayEntries.length}
-            style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #e2e8f0", background: "white", color: "#334155", fontWeight: 700, fontSize: 12.5, cursor: dayEntries.length ? "pointer" : "not-allowed", opacity: dayEntries.length ? 1 : 0.5, fontFamily: "inherit" }}>
-            📋 Copy Day's List
+          <button onClick={copyWeekList} disabled={!weekEntries.length}
+            style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #e2e8f0", background: "white", color: "#334155", fontWeight: 700, fontSize: 12.5, cursor: weekEntries.length ? "pointer" : "not-allowed", opacity: weekEntries.length ? 1 : 0.5, fontFamily: "inherit" }}>
+            📋 Copy Week's List
           </button>
         </div>
       </div>
 
       {/* Search-to-add */}
-      <div style={{ marginBottom: 18, position: "relative" }}>
-        <input
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="🔍 Search customer name or phone to add to today's despatch…"
-          style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #e2e8f0", fontSize: 13.5, fontFamily: "inherit", boxSizing: "border-box" }}
-        />
-        {searchResults.length > 0 && (
-          <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: "white", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 10px 30px rgba(15,23,42,0.12)", zIndex: 50, maxHeight: 320, overflowY: "auto" }}>
-            {searchResults.map(s => (
-              <div key={s.id} onClick={() => addFromSale(s)}
-                style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}
-                onMouseEnter={e => e.currentTarget.style.background = "#f8fafc"}
-                onMouseLeave={e => e.currentTarget.style.background = "white"}>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{s.customer || "—"}</div>
-                  <div style={{ fontSize: 11.5, color: "#64748b" }}>{s.phone || s.contact || "No phone"} · {s.item || "—"}</div>
+      <div style={{ marginBottom: 22, display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 320px", minWidth: 260, position: "relative" }}>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="🔍 Search customer name or phone to add to the despatch log…"
+            style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #e2e8f0", fontSize: 13.5, fontFamily: "inherit", boxSizing: "border-box" }}
+          />
+          {searchResults.length > 0 && (
+            <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: "white", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 10px 30px rgba(15,23,42,0.12)", zIndex: 50, maxHeight: 320, overflowY: "auto" }}>
+              {searchResults.map(s => (
+                <div key={s.id} onClick={() => addFromSale(s)}
+                  style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#f8fafc"}
+                  onMouseLeave={e => e.currentTarget.style.background = "white"}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{s.customer || "—"}</div>
+                    <div style={{ fontSize: 11.5, color: "#64748b" }}>{s.phone || s.contact || "No phone"} · {s.item || "—"}</div>
+                  </div>
+                  {loggedSaleIds[s.id] && (
+                    <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: "#92400e", background: "#fef3c7", borderRadius: 999, padding: "2px 8px" }}>
+                      already on log ×{loggedSaleIds[s.id]}
+                    </span>
+                  )}
                 </div>
-                {loggedSaleIds[s.id] && (
-                  <span style={{ flexShrink: 0, fontSize: 10.5, fontWeight: 700, color: "#92400e", background: "#fef3c7", borderRadius: 999, padding: "2px 8px" }}>
-                    already on log ×{loggedSaleIds[s.id]}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+              ))}
+            </div>
+          )}
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "#64748b", fontWeight: 700, flexShrink: 0 }}>
+          Add to
+          <input type="date" value={addDate} onChange={e => setAddDate(e.target.value)}
+            style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, fontFamily: "inherit" }} />
+        </label>
       </div>
 
-      {/* Spreadsheet */}
-      <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 12 }}>
-        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 920, fontSize: 12.5 }}>
-          <thead>
-            <tr style={{ background: "#f8fafc" }}>
-              {["#", "Customer", "Address", "Phone", "Tracking No.", "Shipper", "Notify", "Remarks", ""].map(h => (
-                <th key={h} style={{ textAlign: "left", padding: "10px 12px", fontWeight: 800, color: "#475569", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap" }}>{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {loading ? (
-              <tr><td colSpan={9} style={{ padding: 24, textAlign: "center", color: "#94a3b8" }}>Loading…</td></tr>
-            ) : dayEntries.length === 0 ? (
-              <tr><td colSpan={9} style={{ padding: 24, textAlign: "center", color: "#94a3b8" }}>Nothing on the despatch log for this date yet — add someone above.</td></tr>
-            ) : dayEntries.map((e, idx) => {
-              const dupKey = (e.trackingNo || "").replace(/\s+/g, "").toUpperCase();
-              const isDup = dupKey && (trackingIndex[dupKey] || []).length > 1;
-              const canNotify = !!(e.trackingNo && e.shipper);
-              const shipperColor = SHIPPER_COLORS[e.shipper] || SHIPPER_COLORS.Others;
-              return (
-                <tr key={e.uuid} style={{ borderBottom: "1px solid #f1f5f9", background: idx % 2 ? "#fdfbf3" : "white" }}>
-                  <td style={{ padding: "8px 12px", color: "#94a3b8", fontWeight: 700 }}>{idx + 1}</td>
-                  <td style={{ padding: "8px 12px", fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap" }}>{e.customer || "—"}</td>
-                  <td style={{ padding: "8px 12px", minWidth: 180 }}>
-                    <textarea value={e.address} rows={1}
-                      onChange={ev => updateEntry(e.uuid, { address: ev.target.value })}
-                      onBlur={ev => saveEntry(e.uuid, { address: ev.target.value })}
-                      style={cellInputStyle} />
-                  </td>
-                  <td style={{ padding: "8px 12px", minWidth: 120 }}>
-                    <input value={e.phone}
-                      onChange={ev => updateEntry(e.uuid, { phone: ev.target.value })}
-                      onBlur={ev => saveEntry(e.uuid, { phone: ev.target.value })}
-                      style={cellInputStyle} />
-                  </td>
-                  <td style={{ padding: "8px 12px", minWidth: 140 }}>
-                    <input value={e.trackingNo} placeholder="Tracking no."
-                      onChange={ev => updateEntry(e.uuid, { trackingNo: ev.target.value.toUpperCase() })}
-                      onBlur={ev => saveEntry(e.uuid, { trackingNo: ev.target.value.toUpperCase() })}
-                      style={{ ...cellInputStyle, borderColor: isDup ? "#fca5a5" : "#e2e8f0", background: isDup ? "#fef2f2" : "white" }} />
-                    {isDup && <div style={{ fontSize: 10, color: "#dc2626", fontWeight: 700, marginTop: 2 }}>⚠ used on another row</div>}
-                  </td>
-                  <td style={{ padding: "8px 12px", minWidth: 130 }}>
-                    <select value={e.shipper}
-                      onChange={ev => saveEntry(e.uuid, { shipper: ev.target.value })}
-                      style={{ ...cellInputStyle, fontWeight: 700, color: e.shipper ? shipperColor.color : "#94a3b8", background: e.shipper ? shipperColor.bg : "white" }}>
-                      <option value="">Select…</option>
-                      {SHIPPERS.map(s => <option key={s} value={s}>{s}</option>)}
-                    </select>
-                  </td>
-                  <td style={{ padding: "8px 12px", textAlign: "center" }}>
-                    <button onClick={() => canNotify && notify(e)} disabled={!canNotify}
-                      title={canNotify ? (e.notified ? "Notified — click to resend" : "Send tracking to customer") : "Add tracking number + shipper first"}
-                      style={{
-                        border: "none", borderRadius: 8, padding: "7px 10px", fontSize: 12, fontWeight: 700, cursor: canNotify ? "pointer" : "not-allowed",
-                        background: !canNotify ? "#f1f5f9" : e.notified ? "#dcfce7" : "#25D366",
-                        color: !canNotify ? "#94a3b8" : e.notified ? "#166534" : "white",
-                        fontFamily: "inherit",
-                      }}>
-                      {e.notified ? "✅" : "💬"}
-                    </button>
-                  </td>
-                  <td style={{ padding: "8px 12px", minWidth: 160 }}>
-                    <input value={e.remarks} placeholder="Remarks"
-                      onChange={ev => updateEntry(e.uuid, { remarks: ev.target.value })}
-                      onBlur={ev => saveEntry(e.uuid, { remarks: ev.target.value })}
-                      style={cellInputStyle} />
-                  </td>
-                  <td style={{ padding: "8px 12px" }}>
-                    <button onClick={() => removeEntry(e.uuid)} title="Remove row"
-                      style={{ border: "none", background: "transparent", color: "#94a3b8", cursor: "pointer", fontSize: 14 }}>✕</button>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
+      {loading ? (
+        <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", border: "1px solid #e2e8f0", borderRadius: 12 }}>Loading…</div>
+      ) : weekDates.map(d => {
+        const dayList = entriesByDate[d];
+        const isToday = d === todayISO();
+        return (
+          <div key={d} style={{ marginBottom: 22 }}>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 8, paddingLeft: 2 }}>
+              <span style={{ fontSize: 14, fontWeight: 800, color: "#0f172a" }}>{ddmmyyyy(d)}</span>
+              <span style={{ fontSize: 12, color: "#94a3b8" }}>{weekdayName(d)}</span>
+              {isToday && (
+                <span style={{ fontSize: 10, fontWeight: 800, color: "#166534", background: "#dcfce7", borderRadius: 999, padding: "2px 8px" }}>TODAY</span>
+              )}
+              <span style={{ fontSize: 11.5, color: "#94a3b8" }}>· {dayList.length} item{dayList.length !== 1 ? "s" : ""}</span>
+            </div>
+            <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 12 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 920, fontSize: 12.5 }}>
+                <thead>
+                  <tr style={{ background: "#f8fafc" }}>
+                    {["#", "Customer", "Address", "Phone", "Tracking No.", "Shipper", "Notify", "Remarks", ""].map(h => (
+                      <th key={h} style={{ textAlign: "left", padding: "10px 12px", fontWeight: 800, color: "#475569", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap" }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {dayList.length === 0 ? (
+                    <tr><td colSpan={9} style={{ padding: 18, textAlign: "center", color: "#94a3b8" }}>Nothing despatched this day.</td></tr>
+                  ) : dayList.map((e, idx) => {
+                    const dupKey = (e.trackingNo || "").replace(/\s+/g, "").toUpperCase();
+                    const isDup = dupKey && (trackingIndex[dupKey] || []).length > 1;
+                    const canNotify = !!(e.trackingNo && e.shipper);
+                    const shipperColor = SHIPPER_COLORS[e.shipper] || SHIPPER_COLORS.Others;
+                    return (
+                      <tr key={e.uuid} style={{ borderBottom: "1px solid #f1f5f9", background: idx % 2 ? "#fdfbf3" : "white" }}>
+                        <td style={{ padding: "8px 12px", color: "#94a3b8", fontWeight: 700 }}>{idx + 1}</td>
+                        <td style={{ padding: "8px 12px", fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap" }}>{e.customer || "—"}</td>
+                        <td style={{ padding: "8px 12px", minWidth: 180 }}>
+                          <textarea value={e.address} rows={1}
+                            onChange={ev => updateEntry(e.uuid, { address: ev.target.value })}
+                            onBlur={ev => saveEntry(e.uuid, { address: ev.target.value })}
+                            style={cellInputStyle} />
+                        </td>
+                        <td style={{ padding: "8px 12px", minWidth: 120 }}>
+                          <input value={e.phone}
+                            onChange={ev => updateEntry(e.uuid, { phone: ev.target.value })}
+                            onBlur={ev => saveEntry(e.uuid, { phone: ev.target.value })}
+                            style={cellInputStyle} />
+                        </td>
+                        <td style={{ padding: "8px 12px", minWidth: 140 }}>
+                          <input value={e.trackingNo} placeholder="Tracking no."
+                            onChange={ev => updateEntry(e.uuid, { trackingNo: ev.target.value.toUpperCase() })}
+                            onBlur={ev => saveEntry(e.uuid, { trackingNo: ev.target.value.toUpperCase() })}
+                            style={{ ...cellInputStyle, borderColor: isDup ? "#fca5a5" : "#e2e8f0", background: isDup ? "#fef2f2" : "white" }} />
+                          {isDup && <div style={{ fontSize: 10, color: "#dc2626", fontWeight: 700, marginTop: 2 }}>⚠ used on another row</div>}
+                        </td>
+                        <td style={{ padding: "8px 12px", minWidth: 130 }}>
+                          <select value={e.shipper}
+                            onChange={ev => saveEntry(e.uuid, { shipper: ev.target.value })}
+                            style={{ ...cellInputStyle, fontWeight: 700, color: e.shipper ? shipperColor.color : "#94a3b8", background: e.shipper ? shipperColor.bg : "white" }}>
+                            <option value="">Select…</option>
+                            {SHIPPERS.map(s => <option key={s} value={s}>{s}</option>)}
+                          </select>
+                        </td>
+                        <td style={{ padding: "8px 12px", textAlign: "center" }}>
+                          <button onClick={() => canNotify && notify(e)} disabled={!canNotify}
+                            title={canNotify ? (e.notified ? "Notified — click to resend" : "Send tracking to customer") : "Add tracking number + shipper first"}
+                            style={{
+                              border: "none", borderRadius: 8, padding: "7px 10px", fontSize: 12, fontWeight: 700, cursor: canNotify ? "pointer" : "not-allowed",
+                              background: !canNotify ? "#f1f5f9" : e.notified ? "#dcfce7" : "#25D366",
+                              color: !canNotify ? "#94a3b8" : e.notified ? "#166534" : "white",
+                              fontFamily: "inherit",
+                            }}>
+                            {e.notified ? "✅" : "💬"}
+                          </button>
+                        </td>
+                        <td style={{ padding: "8px 12px", minWidth: 160 }}>
+                          <input value={e.remarks} placeholder="Remarks"
+                            onChange={ev => updateEntry(e.uuid, { remarks: ev.target.value })}
+                            onBlur={ev => saveEntry(e.uuid, { remarks: ev.target.value })}
+                            style={cellInputStyle} />
+                        </td>
+                        <td style={{ padding: "8px 12px" }}>
+                          <button onClick={() => removeEntry(e.uuid)} title="Remove row"
+                            style={{ border: "none", background: "transparent", color: "#94a3b8", cursor: "pointer", fontSize: 14 }}>✕</button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
