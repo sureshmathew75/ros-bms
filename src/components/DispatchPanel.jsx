@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from "react";
 import { dbSaveDispatchEntry, dbLoadDispatchLog, dbDeleteDispatchEntry } from "../db";
 
 /* ─────────────────────────────────────────────────────────────────────────
-   DISPATCH PANEL  (ROS India — daily despatch log)
+   DISPATCH PANEL  (all three shops — daily despatch log)
 
    Independent of the Sales table: entries live in their own `dispatch_log`
    Supabase table (see db.js) so one sale can be despatched in more than one
@@ -27,27 +27,43 @@ function localISO(dt) {
 }
 const todayISO = () => localISO(new Date());
 
-/* ── Shipper config ───────────────────────────────────────────────────── */
-const SHIPPERS = ["DTDC", "SPEEDPOST", "FEDEX", "DHL", "UPS", "Others"];
+/* ── Shipper config — India and UK shops use different carrier lists,
+   mirroring the same IN_CARRIERS/UK_CARRIERS split already used for the
+   per-sale tracking field in SalesPanel.jsx. ────────────────────────── */
+const IN_SHIPPERS = ["DTDC", "SPEEDPOST", "FEDEX", "DHL", "UPS", "Others"];
+const UK_SHIPPERS = ["Royal Mail", "Evri", "DPD", "Parcelforce", "FedEx", "UPS", "Other"];
+
+// Keyed uppercase and looked up uppercase so "FedEx" (UK) and "FEDEX"
+// (India) share one color regardless of casing.
 const SHIPPER_COLORS = {
-  DTDC:      { bg: "#fef3c7", color: "#92400e" },
-  SPEEDPOST: { bg: "#dbeafe", color: "#1e40af" },
-  FEDEX:     { bg: "#fee2e2", color: "#991b1b" },
-  DHL:       { bg: "#fef9c3", color: "#854d0e" },
-  UPS:       { bg: "#e0e7ff", color: "#3730a3" },
-  Others:    { bg: "#f1f5f9", color: "#475569" },
+  DTDC:         { bg: "#fef3c7", color: "#92400e" },
+  SPEEDPOST:    { bg: "#dbeafe", color: "#1e40af" },
+  FEDEX:        { bg: "#fee2e2", color: "#991b1b" },
+  DHL:          { bg: "#fef9c3", color: "#854d0e" },
+  UPS:          { bg: "#e0e7ff", color: "#3730a3" },
+  "ROYAL MAIL": { bg: "#e0f2fe", color: "#075985" },
+  EVRI:         { bg: "#fce7f3", color: "#9d174d" },
+  DPD:          { bg: "#ecfccb", color: "#3f6212" },
+  PARCELFORCE:  { bg: "#ede9fe", color: "#5b21b6" },
+  OTHERS:       { bg: "#f1f5f9", color: "#475569" },
+  OTHER:        { bg: "#f1f5f9", color: "#475569" },
 };
+const shipperColorFor = (shipper) => SHIPPER_COLORS[(shipper || "").toUpperCase()] || SHIPPER_COLORS.OTHERS;
 
 const trackingURL = (shipper, trackNo) => {
   const cleanNo = (trackNo || "").replace(/\s+/g, "");
   if (!cleanNo) return null;
-  switch ((shipper || "").toUpperCase()) {
-    case "DTDC":      return `https://www.dtdc.com/track-your-shipment/`;
-    case "SPEEDPOST":  return `https://www.indiapost.gov.in/_layouts/15/dop.portal.tracking/trackconsignment.aspx`;
-    case "FEDEX":     return `https://www.fedex.com/wtrk/track/?trknbr=${cleanNo}`;
-    case "DHL":       return `https://www.dhl.com/in-en/home/tracking.html?tracking-id=${cleanNo}&tracking-type=shipment`;
-    case "UPS":       return `https://www.ups.com/track?tracknum=${cleanNo}`;
-    default:          return null; // "Others" — no deep tracking link available
+  switch ((shipper || "").toLowerCase()) {
+    case "dtdc":         return `https://www.dtdc.com/track-your-shipment/`;
+    case "speedpost":    return `https://www.indiapost.gov.in/_layouts/15/dop.portal.tracking/trackconsignment.aspx`;
+    case "fedex":        return `https://www.fedex.com/wtrk/track/?trknbr=${cleanNo}`;
+    case "dhl":          return `https://www.dhl.com/in-en/home/tracking.html?tracking-id=${cleanNo}&tracking-type=shipment`;
+    case "ups":          return `https://www.ups.com/track?tracknum=${cleanNo}`;
+    case "royal mail":   return `https://www.royalmail.com/track-your-item#/tracking-results/${cleanNo}`;
+    case "evri":         return `https://www.evri.com/track/${cleanNo}`;
+    case "dpd":          return `https://track.dpd.co.uk/parcels/${cleanNo}`;
+    case "parcelforce":  return `https://www.parcelforce.com/track-trace?trackNumber=${cleanNo}`;
+    default:             return null; // "Others"/"Other" — no deep tracking link available
   }
 };
 
@@ -192,7 +208,9 @@ const WaModal = ({ data, onClose }) => {
   if (!data) return null;
   const { phone, customerName, message } = data;
   const clean = (phone || "").replace(/\D/g, "");
-  const e164 = clean.startsWith("0") ? "91" + clean.slice(1) : clean;
+  // Matches the WaModal in SalesPanel.jsx exactly — same "0" -> "44"
+  // heuristic used there across all three shops.
+  const e164 = clean.startsWith("0") ? "44" + clean.slice(1) : clean;
   const handleCopy = async () => {
     try { await navigator.clipboard.writeText(message); }
     catch {
@@ -314,6 +332,8 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
   // Only admins/superadmins can delete a row — despatch staff can add,
   // edit, and notify, but not remove entries from the log.
   const isAdmin = user?.role === "admin" || user?.role === "superadmin";
+  const isIndiaShop = shopId === "ros-india" || shopId === "ros-india-staff";
+  const SHIPPERS = isIndiaShop ? IN_SHIPPERS : UK_SHIPPERS;
 
   // The 7 dates (Mon→Sun) of the week currently in view.
   const weekDates = useMemo(() => {
@@ -776,31 +796,31 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
                     const dupKey = (e.trackingNo || "").replace(/\s+/g, "").toUpperCase();
                     const isDup = dupKey && (trackingIndex[dupKey] || []).length > 1;
                     const canNotify = !!(e.trackingNo && e.shipper);
-                    const shipperColor = SHIPPER_COLORS[e.shipper] || SHIPPER_COLORS.Others;
+                    const shipperColor = shipperColorFor(e.shipper);
                     return (
                       <tr key={e.uuid} style={{ borderBottom: "1px solid #f1f5f9", background: idx % 2 ? "#fdfbf3" : "white" }}>
-                        <td style={{ padding: "8px 12px", color: "#94a3b8", fontWeight: 700 }}>{idx + 1}</td>
-                        <td style={{ padding: "8px 12px", fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap" }}>{e.customer || "—"}</td>
-                        <td style={{ padding: "8px 12px", minWidth: 180 }}>
-                          <textarea value={e.address} rows={1}
+                        <td style={{ padding: "8px 12px", color: "#94a3b8", fontWeight: 700, verticalAlign: "top" }}>{idx + 1}</td>
+                        <td style={{ padding: "8px 12px", fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap", verticalAlign: "top" }}>{e.customer || "—"}</td>
+                        <td style={{ padding: "8px 12px", minWidth: 180, verticalAlign: "top" }}>
+                          <textarea value={e.address} rows={5}
                             onChange={ev => updateEntry(e.uuid, { address: ev.target.value })}
                             onBlur={ev => saveEntry(e.uuid, { address: ev.target.value })}
-                            style={cellInputStyle} />
+                            style={{ ...cellInputStyle, resize: "vertical" }} />
                         </td>
-                        <td style={{ padding: "8px 12px", minWidth: 120 }}>
+                        <td style={{ padding: "8px 12px", minWidth: 120, verticalAlign: "top" }}>
                           <input value={e.phone}
                             onChange={ev => updateEntry(e.uuid, { phone: ev.target.value })}
                             onBlur={ev => saveEntry(e.uuid, { phone: ev.target.value })}
                             style={cellInputStyle} />
                         </td>
-                        <td style={{ padding: "8px 12px", minWidth: 140 }}>
+                        <td style={{ padding: "8px 12px", minWidth: 140, verticalAlign: "top" }}>
                           <input value={e.trackingNo} placeholder="Tracking no."
                             onChange={ev => updateEntry(e.uuid, { trackingNo: ev.target.value.toUpperCase() })}
                             onBlur={ev => saveEntry(e.uuid, { trackingNo: ev.target.value.toUpperCase() })}
                             style={{ ...cellInputStyle, borderColor: isDup ? "#fca5a5" : "#e2e8f0", background: isDup ? "#fef2f2" : "white" }} />
                           {isDup && <div style={{ fontSize: 10, color: "#dc2626", fontWeight: 700, marginTop: 2 }}>⚠ used on another row</div>}
                         </td>
-                        <td style={{ padding: "8px 12px", minWidth: 130 }}>
+                        <td style={{ padding: "8px 12px", minWidth: 130, verticalAlign: "top" }}>
                           <select value={e.shipper}
                             onChange={ev => saveEntry(e.uuid, { shipper: ev.target.value })}
                             style={{ ...cellInputStyle, fontWeight: 700, color: e.shipper ? shipperColor.color : "#94a3b8", background: e.shipper ? shipperColor.bg : "white" }}>
@@ -808,7 +828,7 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
                             {SHIPPERS.map(s => <option key={s} value={s}>{s}</option>)}
                           </select>
                         </td>
-                        <td style={{ padding: "8px 12px", textAlign: "center" }}>
+                        <td style={{ padding: "8px 12px", textAlign: "center", verticalAlign: "top" }}>
                           <button onClick={() => canNotify && notify(e)} disabled={!canNotify}
                             title={canNotify ? (e.notified ? "Notified — click to resend" : "Send tracking to customer") : "Add tracking number + shipper first"}
                             style={{
@@ -820,13 +840,13 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
                             {e.notified ? "✅" : "💬"}
                           </button>
                         </td>
-                        <td style={{ padding: "8px 12px", minWidth: 160 }}>
+                        <td style={{ padding: "8px 12px", minWidth: 160, verticalAlign: "top" }}>
                           <input value={e.remarks} placeholder="Remarks"
                             onChange={ev => updateEntry(e.uuid, { remarks: ev.target.value })}
                             onBlur={ev => saveEntry(e.uuid, { remarks: ev.target.value })}
                             style={cellInputStyle} />
                         </td>
-                        <td style={{ padding: "8px 12px" }}>
+                        <td style={{ padding: "8px 12px", verticalAlign: "top" }}>
                           {isAdmin && (
                             <button onClick={() => removeEntry(e.uuid)} title="Remove row"
                               style={{ border: "none", background: "transparent", color: "#94a3b8", cursor: "pointer", fontSize: 14 }}>✕</button>

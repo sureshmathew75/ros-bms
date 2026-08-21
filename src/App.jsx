@@ -6491,7 +6491,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"attendance",l:"Attendance",ic:"🕐"},
     {id:"inventory",l:"Inventory",ic:"📦"},
     {id:"dispatch", l:"Despatch Log", ic:"📤"},
-  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india").filter(n=>n.id!=="dispatch"||shopId==="ros-india");
+  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india");
 
   const filtSales=sales.filter(s=>{
     const q=search.toLowerCase();
@@ -8086,8 +8086,8 @@ return(
             <InventoryPage shopId={shopId} shop={shop} user={user} sales={sales} />
           )}
 
-          {/* ── DESPATCH LOG (ROS India only) ── */}
-          {tab==="dispatch"&&shopId==="ros-india"&&(
+          {/* ── DESPATCH LOG (all shops) ── */}
+          {tab==="dispatch"&&(
             <DispatchPanel shopId={shopId} shop={shop} user={user} sales={sales} />
           )}
 
