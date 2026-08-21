@@ -2021,6 +2021,7 @@ We hope you enjoy your purchase! 💜
                       ...(cardLeftBorder ? { "--row-left-border": cardLeftBorder } : {}),
                     }}>
                     {/* Invoice */}
+                    {showCol("Invoice") && (
                     <td style={{ padding: "12px 16px" }}>
                       {reorderEnabled && (
                         <span title="Drag to reorder" style={{ marginRight: 6, color: "#cbd5e1", fontSize: 12, cursor: "grab" }}>⠿</span>
@@ -2090,6 +2091,7 @@ We hope you enjoy your purchase! 💜
                         );
                       })()}
                     </td>
+                    )}
                     {showCol("Date")&&(
                     <td style={{ padding: "12px 16px" }}>
                       <span style={{ fontSize: 12, color: "#64748b", whiteSpace: "nowrap" }}>
@@ -2098,6 +2100,7 @@ We hope you enjoy your purchase! 💜
                     </td>
                     )}
                     {/* Customer */}
+                    {showCol("Customer") && (
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ fontWeight: 700, fontSize: 13, color: "#0f172a", textTransform: "uppercase" }}>{s.customer}</div>
                       {s.phone && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>{s.phone}</div>}
@@ -2185,7 +2188,9 @@ We hope you enjoy your purchase! 💜
                         );
                       })()}
                     </td>
+                    )}
                     {/* Item */}
+                    {showCol("Item") && (
                     <td style={{ padding: "12px 16px" }}>
                       <span style={{ fontSize: 12, color: "#374151" }}>
                         {s.item || "—"}
@@ -2194,7 +2199,9 @@ We hope you enjoy your purchase! 💜
                         )}
                       </span>
                     </td>
+                    )}
                     {/* Amount — inline editable */}
+                    {showCol("Amount") && (
                     <td style={{ padding: "8px 10px", textAlign: "right" }} onClick={e => e.stopPropagation()}>
                       {editAmountId === s.id ? (
                         <div style={{ display: "flex", gap: 4, alignItems: "center", justifyContent: "flex-end" }}>
@@ -2281,6 +2288,7 @@ We hope you enjoy your purchase! 💜
                         </div>
                       )}
                     </td>
+                    )}
 
                     {isIndiaShop && (
                     <td style={{ padding: "8px 6px", textAlign: "center" }} onClick={e => e.stopPropagation()}>
