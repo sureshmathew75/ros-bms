@@ -2159,7 +2159,7 @@ We hope you enjoy your purchase! 💜
                           🔗+ Link
                         </div>
                       )}
-                      {isIndiaShop && onInlineEdit && (
+                      {onInlineEdit && (
                         <div
                           onClick={(e) => { e.stopPropagation(); onInlineEdit(s.id, { readyToShip: !s.readyToShip }); }}
                           title={s.readyToShip ? "Remove from Ready to Dispatch" : "Mark ready to ship — surfaces it on the Despatch Log page"}
