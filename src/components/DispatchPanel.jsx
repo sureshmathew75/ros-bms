@@ -305,7 +305,7 @@ function saveDismissed(shopId, map) {
 /* ═══════════════════════════════════════════════════════════════════════
    DISPATCH PANEL
    ═══════════════════════════════════════════════════════════════════════ */
-export default function DispatchPanel({ shop, shopId, user, sales }) {
+export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [weekAnchor, setWeekAnchor] = useState(todayISO()); // any date within the visible week
@@ -520,7 +520,14 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
     const merged = { ...current, ...patch };
     updateEntry(uuid, patch);
     const res = await persist(uuid, merged);
-    if (res?.error) alert("Could not save change: " + res.error);
+    if (res?.error) { alert("Could not save change: " + res.error); return; }
+    // Once both tracking number and shipper are on the row — the same
+    // point that unlocks the "Send Notification" button — push it back
+    // to the linked sale (tracking + carrier) and mark that sale Fulfilled.
+    const touchedTrackingOrShipper = ("trackingNo" in patch) || ("shipper" in patch);
+    if (touchedTrackingOrShipper && merged.saleId && merged.trackingNo && merged.shipper && onSaleUpdate) {
+      onSaleUpdate(merged.saleId, { trackingNo: merged.trackingNo, carrier: merged.shipper });
+    }
   };
 
   const removeEntry = async (uuid) => {

@@ -8088,7 +8088,43 @@ return(
 
           {/* ── DESPATCH LOG (all shops) ── */}
           {tab==="dispatch"&&(
-            <DispatchPanel shopId={shopId} shop={shop} user={user} sales={sales} />
+            <DispatchPanel
+              shopId={shopId}
+              shop={shop}
+              user={user}
+              sales={sales}
+              onSaleUpdate={async (saleId, changes) => {
+                const sale = sales.find(s => s.id === saleId);
+                if (!sale) return;
+                // Same auto-fulfil behaviour as the Sales page's own tracking
+                // entry (onSaveTracking above) — tracking arriving from the
+                // Despatch Log marks the sale FULFILLED unless it has already
+                // moved further down the status chain (returns/refunds/etc).
+                const today = new Date().toISOString().slice(0,10);
+                const currentStatus = sale.ful || sale.status || "";
+                const isFulfilled = ["FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD",
+                  "EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD",
+                  "RETURN RQSTD","RETURN RCVD"].includes(currentStatus);
+                const updated = {
+                  ...sale,
+                  ...changes,
+                  ful:      isFulfilled ? currentStatus : "FULFILLED",
+                  status:   isFulfilled ? currentStatus : "FULFILLED",
+                  sentDate: sale.sentDate || today,
+                };
+                await dbSaveSale(shopId, updated);
+                setSalesData(prev => ({
+                  ...prev,
+                  [shopId]: (prev[shopId] || []).map(s => s.id === saleId ? {
+                    ...s,
+                    ...changes,
+                    ful:      updated.ful,
+                    status:   updated.status,
+                    sentDate: updated.sentDate,
+                  } : s),
+                }));
+              }}
+            />
           )}
 
           {/* ── CASH FLOW ── */}

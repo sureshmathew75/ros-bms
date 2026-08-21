@@ -2159,20 +2159,31 @@ We hope you enjoy your purchase! 💜
                           🔗+ Link
                         </div>
                       )}
-                      {onInlineEdit && (
-                        <div
-                          onClick={(e) => { e.stopPropagation(); onInlineEdit(s.id, { readyToShip: !s.readyToShip }); }}
-                          title={s.readyToShip ? "Remove from Ready to Dispatch" : "Mark ready to ship — surfaces it on the Despatch Log page"}
-                          style={{
-                            marginTop: 4, display: "inline-flex", alignItems: "center", gap: 3,
-                            fontSize: 9, fontWeight: 700, padding: "1px 7px", borderRadius: 999,
-                            color: s.readyToShip ? "#065f46" : "#64748b",
-                            background: s.readyToShip ? "#d1fae5" : "transparent",
-                            border: "1px "+(s.readyToShip?"solid #6ee7b7":"dashed #cbd5e1"), cursor: "pointer",
-                          }}>
-                          📦 {s.readyToShip ? "Ready to Ship" : "Mark Ready"}
-                        </div>
-                      )}
+                      {onInlineEdit && (() => {
+                        // Once tracking has been entered from the Despatch Log and the
+                        // sale is Fulfilled, the chip reflects that instead of "Ready to
+                        // Ship" — it stays clickable so it can still be toggled if needed.
+                        const despatched = !!s.trackingNo && ful === "FULFILLED";
+                        return (
+                          <div
+                            onClick={(e) => { e.stopPropagation(); onInlineEdit(s.id, { readyToShip: !s.readyToShip }); }}
+                            title={
+                              despatched
+                                ? "Despatched — tracking is on file (entered from the Despatch Log page)"
+                                : (s.readyToShip ? "Remove from Ready to Dispatch" : "Mark ready to ship — surfaces it on the Despatch Log page")
+                            }
+                            style={{
+                              marginTop: 4, display: "inline-flex", alignItems: "center", gap: 3,
+                              fontSize: 9, fontWeight: 700, padding: "1px 7px", borderRadius: 999,
+                              color: despatched ? "#1e40af" : (s.readyToShip ? "#065f46" : "#64748b"),
+                              background: despatched ? "#dbeafe" : (s.readyToShip ? "#d1fae5" : "transparent"),
+                              border: "1px " + (despatched ? "solid #93c5fd" : (s.readyToShip ? "solid #6ee7b7" : "dashed #cbd5e1")),
+                              cursor: "pointer",
+                            }}>
+                            📦 {despatched ? "Despatched" : (s.readyToShip ? "Ready to Ship" : "Mark Ready")}
+                          </div>
+                        );
+                      })()}
                     </td>
                     {/* Item */}
                     <td style={{ padding: "12px 16px" }}>
@@ -2463,39 +2474,10 @@ We hope you enjoy your purchase! 💜
                         })()}
                       </td>
                     )}
-                    {/* Tracking */}
+                    {/* Tracking — read-only here now; entered + notified from the Despatch Log page */}
                     <td style={{ padding: "8px 10px", minWidth: 180 }} onClick={e => e.stopPropagation()}>
-                      {editTrackingId === s.id ? (
-                        <div style={{ display: "flex", flexDirection:"column", gap: 5 }}>
-                          <input
-                            autoFocus
-                            value={trackingInput}
-                            onChange={e => setTrackingInput(e.target.value.toUpperCase())}
-                            onKeyDown={e => {
-                              if (e.key === "Enter") {
-                                if (onSaveTracking) onSaveTracking(s.id, trackingInput.trim());
-                                setEditTrackingId(null);
-                              }
-                              if (e.key === "Escape") setEditTrackingId(null);
-                            }}
-                            placeholder="Tracking no."
-                            style={{
-                              width: "100%", padding: "5px 8px", borderRadius: 7,
-                              border: "1.5px solid #7dd3fc", fontSize: 11,
-                              fontFamily: "DM Mono,monospace", outline: "none",
-                              textTransform: "uppercase", boxSizing:"border-box",
-                            }}
-                          />
-                          <div style={{display:"flex",gap:4}}>
-                            <button onClick={() => { if (onSaveTracking) onSaveTracking(s.id, trackingInput.trim()); setEditTrackingId(null); }}
-                              style={{ flex:1, padding: "5px 8px", borderRadius: 7, border: "none", background: "#0369a1", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>✓ Save</button>
-                            <button onClick={() => setEditTrackingId(null)}
-                              style={{ padding: "5px 8px", borderRadius: 7, border: "1px solid #e2e8f0", background: "white", color: "#94a3b8", fontSize: 11, cursor: "pointer" }}>✕</button>
-                          </div>
-                        </div>
-                      ) : s.trackingNo ? (
+                      {s.trackingNo ? (
                         <div style={{ display: "flex", flexDirection:"column", gap: 4 }}>
-                          {/* Tracking number + edit */}
                           <div style={{display:"flex",alignItems:"center",gap:4}}>
                             {(()=>{
                               const url = trackingURL(s.carrier, s.trackingNo);
@@ -2513,49 +2495,15 @@ We hope you enjoy your purchase! 💜
                                   title={s.trackingNo}>{s.trackingNo}</span>
                               );
                             })()}
-                            <button onClick={() => { setEditTrackingId(s.id); setTrackingInput(s.trackingNo || ""); }}
-                              style={{ width: 20, height: 20, borderRadius: 5, border: "1px solid #e2e8f0", background: "white", color: "#94a3b8", fontSize: 10, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", flexShrink:0 }}>✏️</button>
                           </div>
-                          {/* Carrier selector */}
-                          <div style={{display:"flex",alignItems:"center",gap:4}}>
-                            <select
-                              value={s.carrier||""}
-                              onChange={e => { if(onInlineEdit) onInlineEdit(s.id,{carrier:e.target.value}); }}
-                              style={{flex:1,padding:"3px 6px",borderRadius:6,border:"1px solid #e2e8f0",
-                                fontSize:10,fontFamily:"inherit",outline:"none",color:"#64748b",background:"#f8fafc"}}>
-                              <option value="">— Carrier —</option>
-                              {CARRIERS.map(c=><option key={c} value={c}>{c}</option>)}
-                            </select>
-                            {/* Copy tracking */}
-                            <button onClick={()=>navigator.clipboard.writeText(s.trackingNo)}
-                              title="Copy tracking number"
-                              style={{width:22,height:22,borderRadius:5,border:"1px solid #e2e8f0",background:"white",
-                                color:"#94a3b8",fontSize:10,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
-                              📋
-                            </button>
-                          </div>
-                          {/* WhatsApp button */}
-                          <button
-                            onClick={async()=>{
-                              openTrackingWA(s, s.carrier||CARRIERS[0], s.trackingNo);
-                              if(onInlineEdit) await onInlineEdit(s.id,{trackingNotified:true});
-                            }}
-                            style={{
-                              display:"flex",alignItems:"center",gap:5,padding:"4px 9px",
-                              borderRadius:7,border:"none",
-                              background:s.trackingNotified?"#dcfce7":"#25d366",
-                              color:s.trackingNotified?"#166534":"white",
-                              fontSize:10,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
-                              width:"100%",justifyContent:"center",
-                            }}>
-                            {s.trackingNotified ? "✅ Notified" : "💬 Send Tracking"}
-                          </button>
+                          {s.carrier && (
+                            <span style={{ fontSize: 10, fontWeight: 600, color: "#64748b" }}>{s.carrier}</span>
+                          )}
                         </div>
                       ) : (
-                        <button onClick={() => { setEditTrackingId(s.id); setTrackingInput(""); }}
-                          style={{ padding: "4px 10px", borderRadius: 7, border: "1px dashed #bae6fd", background: "#f0f9ff", color: "#0369a1", fontSize: 11, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
-                          + Add Tracking
-                        </button>
+                        <span style={{ fontSize: 11, color: "#94a3b8", fontStyle: "italic" }}>
+                          Entered from Despatch Log
+                        </span>
                       )}
                     </td>
 
