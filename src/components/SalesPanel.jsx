@@ -471,6 +471,10 @@ export default function SalesPanel({
   /* Status cascade across instalment groups (Advance/Part/Final payment) */
   const [cascadeConfirm, setCascadeConfirm] = useState(null); // {saleId, newStatus, groupIds} | null
   const [balanceBlockInfo, setBalanceBlockInfo] = useState(null); // {sale, expectedTotal, received, balance} | null
+  // Sale id currently unlocked for a manual Pending -> Fulfilled override
+  // (admin only, after the two-step confirm below) — cleared again as soon
+  // as the status dropdown closes, so the unlock never lingers.
+  const [fulfilUnlockedId, setFulfilUnlockedId] = useState(null);
   const [flashIds, setFlashIds] = useState(new Set());
   const [linkedGroupView, setLinkedGroupView] = useState(null); // array of sales in the group | null
   const [manualLinkSale, setManualLinkSale] = useState(null); // sale being manually linked | null
@@ -2393,6 +2397,7 @@ We hope you enjoy your purchase! 💜
                           onChange={e => {
                             const newStatus = e.target.value;
                             setEditStatusId(null);
+                            setFulfilUnlockedId(null);
                             const gKey = getInstalmentKey(s);
                             const group = gKey ? (instalmentGroups[gKey] || []) : [];
                             const groupIds = group.length > 1 ? group.map(x => x.id) : [];
@@ -2409,13 +2414,16 @@ We hope you enjoy your purchase! 💜
                               onInlineEdit(s.id, { ful: newStatus, status: newStatus });
                             }
                           }}
-                          onBlur={() => setEditStatusId(null)}
+                          onBlur={() => { setEditStatusId(null); setFulfilUnlockedId(null); }}
                           style={{ padding: "5px 8px", borderRadius: 8, border: "1.5px solid #7dd3fc",
                             fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer",
                             background: "white", minWidth: 130 }}>
                           {(statusTabs || STATUS_TABS).filter(t => {
                             if (t.key === "ALL") return false;
                             if (user?.id==="suresh" && statusOverride) return true; // Suresh override active
+                            // Just unlocked via the two-step confirm below — Fulfilled
+                            // becomes pickable for this row only, this once.
+                            if (ful === "PENDING" && t.key === "FULFILLED" && fulfilUnlockedId === s.id) return true;
                             const allowed = getAllowedStatuses(ful, shopId);
                             if (!allowed) return true; // unrecognised legacy status — fail open
                             return allowed.includes(t.key);
@@ -2424,49 +2432,38 @@ We hope you enjoy your purchase! 💜
                           ))}
                         </select>
                       ) : ful === "PENDING" && !(user?.id === "suresh" && statusOverride) ? (
-                        // Manually jumping Pending → Fulfilled is locked by default now that
-                        // the Despatch Log does this automatically once tracking + shipper are
-                        // entered. Admin/superadmin can still unlock it for edge cases (a sale
-                        // that won't get a tracking number, or fixing a mistake) — everyone
-                        // else just sees it locked. (Suresh's separate Status Override toggle,
-                        // when on, still bypasses this entirely — same as before.)
+                        // Manually overriding Pending → Fulfilled is admin-only and now goes
+                        // through a two-step confirm (unlock, then confirm) before the normal
+                        // status dropdown opens — normal despatches don't need this at all
+                        // since the Despatch Log auto-fulfils once tracking + shipper are
+                        // entered. (Suresh's separate Status Override toggle, when on, still
+                        // bypasses this entirely — same as before.)
                         isAdminRole ? (
                           <div
                             onClick={() => {
                               if (!window.confirm(
-                                "This bypasses the normal flow — the Despatch Log marks a sale " +
-                                "Fulfilled automatically once tracking + shipper are entered. Only " +
-                                "use this for a sale that won't get a tracking number (e.g. local " +
-                                "pickup/delivery), or to fix a mistake.\n\nMark " +
-                                (s.customer || "this sale") + " Fulfilled now?"
+                                "This sale's status is locked — the Despatch Log marks it " +
+                                "Fulfilled automatically once tracking + shipper are entered.\n\n" +
+                                "Unlock to override manually?"
                               )) return;
-                              const gKey = getInstalmentKey(s);
-                              const group = gKey ? (instalmentGroups[gKey] || []) : [];
-                              const groupIds = group.length > 1 ? group.map(x => x.id) : [];
-                              if (group.length > 0) {
-                                const balInfo = getGroupBalanceInfo(group);
-                                if (balInfo && balInfo.balance > 0) {
-                                  setBalanceBlockInfo({ sale: s, ...balInfo });
-                                  return;
-                                }
-                              }
-                              if (groupIds.length > 1) {
-                                applyCascade(s.id, "FULFILLED", groupIds);
-                              } else if (onInlineEdit) {
-                                onInlineEdit(s.id, { ful: "FULFILLED", status: "FULFILLED" });
-                              }
+                              if (!window.confirm(
+                                "Confirm: you're about to manually change the status of " +
+                                (s.customer || "this sale") + " outside the normal Despatch Log flow.\n\n" +
+                                "Continue?"
+                              )) return;
+                              setFulfilUnlockedId(s.id);
+                              setEditStatusId(s.id);
                             }}
-                            title="Locked — normally set automatically from the Despatch Log. Click to unlock and mark Fulfilled manually (admin only)."
+                            title="Click to change status"
                             style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
                             <Badge l={ful} />
-                            <span style={{ fontSize: 11 }}>🔓</span>
+                            <span style={{ fontSize: 9, color: "#94a3b8" }}>▼</span>
                           </div>
                         ) : (
                           <div
-                            title="Locked — tracking + shipper entered in the Despatch Log will mark this Fulfilled automatically. Only an admin can override this manually."
-                            style={{ cursor: "default", display: "inline-flex", alignItems: "center", gap: 4, opacity: 0.85 }}>
+                            title="Tracking + shipper entered in the Despatch Log will mark this Fulfilled automatically. Only an admin can override this manually."
+                            style={{ cursor: "default", display: "inline-flex", alignItems: "center", gap: 4 }}>
                             <Badge l={ful} />
-                            <span style={{ fontSize: 11 }}>🔒</span>
                           </div>
                         )
                       ) : (
