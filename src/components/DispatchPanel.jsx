@@ -268,6 +268,22 @@ function monthLabel(ym) {
 }
 const currentMonthKey = () => todayISO().slice(0, 7);
 
+/* ── Dismissed-sale tracking ──────────────────────────────────────────
+   Auto-add (below) creates a row for any "Ready to Ship" sale that isn't
+   on the log. Deleting that row doesn't un-flag the sale in Sales, so
+   without this, auto-add would immediately recreate the row it was just
+   deleted — kept in localStorage (per shop) so an admin's deletion
+   sticks across reloads. Manually re-adding via search still works;
+   this only stops the AUTOMATIC re-add. ───────────────────────────────── */
+function dismissedKey(shopId) { return `ros_dispatch_dismissed_${shopId}`; }
+function loadDismissed(shopId) {
+  try { return JSON.parse(localStorage.getItem(dismissedKey(shopId)) || "{}"); }
+  catch { return {}; }
+}
+function saveDismissed(shopId, map) {
+  try { localStorage.setItem(dismissedKey(shopId), JSON.stringify(map)); } catch {}
+}
+
 /* ═══════════════════════════════════════════════════════════════════════
    DISPATCH PANEL
    ═══════════════════════════════════════════════════════════════════════ */
@@ -281,6 +297,7 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
   const [savingIds, setSavingIds] = useState({}); // uuid -> true while a save is in flight
   const [viewMode, setViewMode] = useState("log"); // "log" | "calendar"
   const [calMonth, setCalMonth] = useState(currentMonthKey()); // "YYYY-MM" shown in Calendar view
+  const [dismissedSaleIds, setDismissedSaleIds] = useState({}); // sale id -> true, blocks auto-re-add after a manual delete
 
   useEffect(() => {
     let cancelled = false;
@@ -289,6 +306,7 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
       const rows = await dbLoadDispatchLog(shopId);
       if (!cancelled) { setEntries(rows || []); setLoading(false); }
     })();
+    setDismissedSaleIds(loadDismissed(shopId));
     return () => { cancelled = true; };
   }, [shopId]);
 
@@ -446,7 +464,7 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
   // hand with the row's ✕ if it was added in error.
   useEffect(() => {
     if (loading) return;
-    const toAdd = allSales.filter(s => s.readyToShip && !loggedSaleIds[s.id]);
+    const toAdd = allSales.filter(s => s.readyToShip && !loggedSaleIds[s.id] && !dismissedSaleIds[s.id]);
     if (!toAdd.length) return;
     let cancelled = false;
     (async () => {
@@ -470,7 +488,7 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
       }
     })();
     return () => { cancelled = true; };
-  }, [loading, allSales, loggedSaleIds]);
+  }, [loading, allSales, loggedSaleIds, dismissedSaleIds]);
 
   const updateEntry = (uuid, patch) => {
     setEntries(prev => prev.map(e => e.uuid === uuid ? { ...e, ...patch } : e));
@@ -488,8 +506,18 @@ export default function DispatchPanel({ shop, shopId, user, sales }) {
   const removeEntry = async (uuid) => {
     if (!isAdmin) return; // guarded here too, not just in the UI
     if (!window.confirm("Remove this row from the despatch log? This cannot be undone.")) return;
+    const removed = entries.find(e => e.uuid === uuid);
     setEntries(prev => prev.filter(e => e.uuid !== uuid));
     await dbDeleteDispatchEntry(uuid, shopId);
+    // Stop auto-add from immediately recreating this row — the linked
+    // sale is likely still flagged "Ready to Ship" in Sales.
+    if (removed?.saleId) {
+      setDismissedSaleIds(prev => {
+        const next = { ...prev, [removed.saleId]: true };
+        saveDismissed(shopId, next);
+        return next;
+      });
+    }
   };
 
   const notify = (entry) => {
