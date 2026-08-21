@@ -916,14 +916,19 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
               style={{
                 display: "flex", alignItems: "center", gap: 10, marginBottom: 0,
                 padding: "10px 16px", borderRadius: isCollapsed ? 12 : "12px 12px 0 0",
-                background: isToday ? "#0f172a" : "#eef2ff",
+                // Themed per shop — today gets the shop's solid accent color
+                // (same "accent bg + white text" pattern used everywhere else
+                // in the app), other days get its soft tint instead of a
+                // fixed indigo, so the whole log matches whichever shop it's
+                // for rather than looking the same for all three.
+                background: isToday ? (shop?.accent || "#0f172a") : (shop?.accentBg || "#eef2ff"),
                 cursor: "pointer", userSelect: "none",
               }}>
               <span style={{ fontSize: 11, width: 12, textAlign: "center", display: "inline-block", color: isToday ? "rgba(255,255,255,0.75)" : "#64748b" }}>
                 {isCollapsed ? "▶" : "▼"}
               </span>
               <span style={{ fontSize: 17, fontWeight: 900, color: isToday ? "white" : "#1e293b", letterSpacing: "0.01em" }}>{ddmmyyyy(d)}</span>
-              <span style={{ fontSize: 12.5, fontWeight: 700, color: isToday ? "rgba(255,255,255,0.75)" : "#4338ca" }}>{weekdayName(d)}</span>
+              <span style={{ fontSize: 12.5, fontWeight: 700, color: isToday ? "rgba(255,255,255,0.75)" : (shop?.accentText || "#4338ca") }}>{weekdayName(d)}</span>
               {isToday && (
                 <span style={{ fontSize: 10, fontWeight: 800, color: "#0f172a", background: "#dcfce7", borderRadius: 999, padding: "2px 8px" }}>TODAY</span>
               )}
