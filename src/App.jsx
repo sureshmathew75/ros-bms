@@ -14554,10 +14554,12 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
   const [delCust,setDelCust]=useState(null);   // customer staged for deletion
   const [hovR,setHovR]=useState(null);
   const [tagFilter,setTagFilter]=useState(null); // must be declared before filtered
+  const [pageSearch,setPageSearch]=useState(""); // in-page search box, separate from the topbar search
   const ALL_TAGS=["VIP","Wholesale","New Customer","Regular","Not Good","Regular Return","Banned"];
   const filtered=(customers||[]).filter(c=>{
-    const matchSearch=!search||c.name.toLowerCase().includes(search.toLowerCase())||
-      (c.phone||"").includes(search)||(c.tag||"").toLowerCase().includes(search.toLowerCase());
+    const matches=q=>!q||c.name.toLowerCase().includes(q.toLowerCase())||
+      (c.phone||"").includes(q)||(c.tag||"").toLowerCase().includes(q.toLowerCase());
+    const matchSearch=matches(search)&&matches(pageSearch);
     const matchTag=!tagFilter||(c.tag||"")===tagFilter;
     return matchSearch&&matchTag;
   });
@@ -14742,7 +14744,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
 
       {/* ══ TABLE HEADER + TAG FILTERS ══ */}
       <div style={{marginBottom:20}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12,gap:12,flexWrap:"wrap"}}>
           <div>
             <h2 style={{margin:"0 0 2px",fontSize:20,fontWeight:800,color:"#0f172a"}}>Customers</h2>
             <p style={{margin:0,fontSize:12,color:"#94a3b8"}}>
@@ -14750,14 +14752,31 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
               {tagFilter&&<span style={{color:"#64748b"}}> · filtered by <strong>{tagFilter}</strong></span>}
             </p>
           </div>
-          {tagFilter&&(
-            <button onClick={()=>setTagFilter(null)}
-              style={{fontSize:11,fontWeight:700,color:"#64748b",background:"#f1f5f9",
-                border:"1px solid #e2e8f0",borderRadius:999,padding:"4px 12px",
-                cursor:"pointer",fontFamily:"inherit"}}>
-              ✕ Clear filter
-            </button>
-          )}
+          <div style={{display:"flex",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+            <div style={{display:"flex",alignItems:"center",gap:8,background:"white",
+              border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"8px 14px",
+              transition:"all 0.2s"}}
+              onFocus={e=>{e.currentTarget.style.border="1px solid "+shop.accent+"66";e.currentTarget.style.boxShadow="0 0 0 3px "+shop.accent+"15";}}
+              onBlur={e=>{e.currentTarget.style.border="1px solid "+shop.accent+"33";e.currentTarget.style.boxShadow="none";}}>
+              <span style={{color:shop.accent,fontSize:13}}>🔍</span>
+              <input value={pageSearch} onChange={e=>setPageSearch(e.target.value)}
+                placeholder="Search name, phone or tag…"
+                style={{border:"none",background:"transparent",outline:"none",fontSize:13,
+                  color:"#374151",width:190,fontFamily:"inherit"}}/>
+              {pageSearch&&(
+                <span onClick={()=>setPageSearch("")}
+                  style={{cursor:"pointer",color:"#94a3b8",fontSize:14,lineHeight:1}}>×</span>
+              )}
+            </div>
+            {tagFilter&&(
+              <button onClick={()=>setTagFilter(null)}
+                style={{fontSize:11,fontWeight:700,color:"#64748b",background:"#f1f5f9",
+                  border:"1px solid #e2e8f0",borderRadius:999,padding:"4px 12px",
+                  cursor:"pointer",fontFamily:"inherit"}}>
+                ✕ Clear filter
+              </button>
+            )}
+          </div>
         </div>
         {/* Tag filter pills */}
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
@@ -15684,7 +15703,7 @@ export default function App(){
   };
   const [settingsOpen,setSettingsOpen]=useState(false);
   const [salesData,setSalesData]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
-  const [customers,setCustomers]=useState([]);
+  const [customersAll,setCustomersAll]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
   const [shopItems,setShopItems]=useState({"ros-selections":[],"ros-hairlines":[],"ros-india":[]});
   useEffect(()=>{dbLoadShopItems().then(data=>{if(data)setShopItems({"ros-selections":data["ros-selections"]||[],"ros-hairlines":data["ros-hairlines"]||[],"ros-india":data["ros-india"]||[]});});},[]);
   const saveShopItems=(updated)=>setShopItems(updated);
@@ -15718,9 +15737,11 @@ export default function App(){
         setSalesData(prev=>({...prev,[sid]:data.map(normaliseSale)}));
       }).catch(()=>{});
     });
-    dbLoadCustomers().then(data=>{
-      if(data&&data.length>0) setCustomers(data);
-    }).catch(()=>{});
+    shops.forEach(sid=>{
+      dbLoadCustomers(sid).then(data=>{
+        if(data) setCustomersAll(prev=>({...prev,[sid]:data}));
+      }).catch(()=>{});
+    });
   },[]);
 
   const handleLogin=u=>{
@@ -15747,7 +15768,7 @@ export default function App(){
   const activeShop = shop || (user.role==="staff" && allowedShops.length===1 ? allowedShops[0] : null);
 
   if(activeShop&&allowedShops.includes(activeShop))
-    return <ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);setInitialTab("sales");try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={updateSalesData} customers={customers} setCustomers={setCustomers} shopItems={shopItems} saveShopItems={saveShopItems} initialTab={initialTab} users={users}/>;
+    return <ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);setInitialTab("sales");try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={updateSalesData} customers={customersAll[activeShop]||[]} setCustomers={(updater)=>setCustomersAll(prev=>({...prev,[activeShop]:typeof updater==="function"?updater(prev[activeShop]||[]):updater}))} shopItems={shopItems} saveShopItems={saveShopItems} initialTab={initialTab} users={users}/>;
 
   return(
     <>
