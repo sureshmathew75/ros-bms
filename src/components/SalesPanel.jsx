@@ -596,7 +596,7 @@ export default function SalesPanel({
   /* Payment channel quick filter — Bank vs Shop/Shopify. "ALL" = no filter.
      Independent of status tabs, same pattern as flaggedOnly above. */
   const [payFilter, setPayFilter] = useState("ALL"); // "ALL" | "BANK" | "SHOP"
-  const isBankPay = (s) => { const p = (s.pay || "SHOP").toUpperCase(); return p === "BANK" || p === "SIB"; };
+  const isBankPay = (s) => { const p = (s.pay || "SHOP").toUpperCase(); return p === "BANK" || p === "SIB" || p === "HDFC"; };
 
   const accent   = shop?.accent   || "#059669";
   const accentBg = shop?.accentBg || "#ecfdf5";
@@ -1678,7 +1678,7 @@ We hope you enjoy your purchase! 💜
         <div style={{ display: "flex", alignItems: "stretch", flexShrink: 0 }}>
           {[
             { key: "SHOP", icon: "🛍️", label: isIndiaShop ? "Shop" : "Shopify", color: "#059669", bg: "#d1fae5", chip: "#a7f3d0" },
-            { key: "BANK", icon: "🏦",  label: isIndiaShop ? "SIB / Bank" : "Bank", color: "#2563eb", bg: "#dbeafe", chip: "#93c5fd" },
+            { key: "BANK", icon: "🏦",  label: "Bank", color: "#2563eb", bg: "#dbeafe", chip: "#93c5fd" },
           ].map(p => {
             const isActive = payFilter === p.key;
             return (
@@ -2352,11 +2352,12 @@ We hope you enjoy your purchase! 💜
                       {editPayId === s.id ? (
                         <select
                           autoFocus
-                          value={isBankPay(s) ? "BANK" : "SHOP"}
+                          value={isIndiaShop && s.pay === "HDFC" ? "HDFC" : (isBankPay(s) ? "BANK" : "SHOP")}
                           onChange={e => {
                             const newPay = e.target.value;
+                            const currentVal = isIndiaShop && s.pay === "HDFC" ? "HDFC" : (isBankPay(s) ? "BANK" : "SHOP");
                             setEditPayId(null);
-                            if (newPay !== (isBankPay(s) ? "BANK" : "SHOP") && onInlineEdit) {
+                            if (newPay !== currentVal && onInlineEdit) {
                               onInlineEdit(s.id, { pay: newPay });
                             }
                           }}
@@ -2365,7 +2366,8 @@ We hope you enjoy your purchase! 💜
                             fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer",
                             background: "white", minWidth: 110 }}>
                           <option value="SHOP">🛍️ {isIndiaShop ? "Shop" : "Shopify"}</option>
-                          <option value="BANK">🏦 {isIndiaShop ? "SIB / Bank" : "Bank"}</option>
+                          <option value="BANK">🏦 {isIndiaShop ? "SIB" : "Bank"}</option>
+                          {isIndiaShop && <option value="HDFC">🏦 HDFC</option>}
                         </select>
                       ) : (
                         <div
@@ -2857,7 +2859,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
             // Build amount cell — instalment breakdown or single amount
             let amountCell = "";
             const payLabelP = (isIndiaShop&&(s.pay==="BANK"||s.pay==="SIB"))?"SIB":(s.pay||"SHOP");
-            const payColorP = (s.pay==="BANK"||s.pay==="SIB")?"#2563eb":"#059669";
+            const payColorP = (s.pay==="BANK"||s.pay==="SIB"||s.pay==="HDFC")?"#2563eb":"#059669";
             const paymentCell = colOn("Payment")
               ? `<td style="vertical-align:top"><span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;background:${payColorP}18;color:${payColorP}">${payLabelP}</span></td>`
               : "";
