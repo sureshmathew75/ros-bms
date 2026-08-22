@@ -595,8 +595,20 @@ export default function SalesPanel({
   const [flaggedOnly, setFlaggedOnly] = useState(false);
   /* Payment channel quick filter — Bank vs Shop/Shopify. "ALL" = no filter.
      Independent of status tabs, same pattern as flaggedOnly above. */
-  const [payFilter, setPayFilter] = useState("ALL"); // "ALL" | "BANK" | "SHOP"
+  const [payFilter, setPayFilter] = useState("ALL"); // "ALL" | "SHOP" | "BANK" (non-India) | "SIB" | "HDFC" (India)
   const isBankPay = (s) => { const p = (s.pay || "SHOP").toUpperCase(); return p === "BANK" || p === "SIB" || p === "HDFC"; };
+  // Which payment-channel pill a sale falls under. India splits its bank
+  // payments into SIB vs HDFC specifically; other shops keep the simpler
+  // Shop vs Bank split. The legacy "BANK" value (from before HDFC existed
+  // as its own option) is treated as SIB for India, same as the badge
+  // display already does.
+  const payBucket = (s) => {
+    const p = (s.pay || "SHOP").toUpperCase();
+    if (p === "HDFC") return "HDFC";
+    if (p === "SIB") return "SIB";
+    if (p === "BANK") return isIndiaShop ? "SIB" : "BANK";
+    return "SHOP";
+  };
 
   const accent   = shop?.accent   || "#059669";
   const accentBg = shop?.accentBg || "#ecfdf5";
@@ -708,15 +720,15 @@ export default function SalesPanel({
       : periodFiltSales.filter(s => (s.ful || s.status || "PENDING").toUpperCase() === statusTab.toUpperCase());
     const flagFiltered = flaggedOnly ? base.filter(s => s.flagged) : base;
     if (payFilter === "ALL") return flagFiltered;
-    return flagFiltered.filter(s => payFilter === "BANK" ? isBankPay(s) : !isBankPay(s));
+    return flagFiltered.filter(s => payBucket(s) === payFilter);
   }, [periodFiltSales, statusTab, flaggedOnly, payFilter]);
 
   /* ── Payment channel counts (from period+search filtered, pre-payFilter) ── */
   const payCounts = useMemo(() => {
-    let bank = 0, shop = 0;
-    periodFiltSales.forEach(s => { if (isBankPay(s)) bank++; else shop++; });
-    return { BANK: bank, SHOP: shop };
-  }, [periodFiltSales]);
+    const c = { SHOP: 0, BANK: 0, SIB: 0, HDFC: 0 };
+    periodFiltSales.forEach(s => { c[payBucket(s)]++; });
+    return c;
+  }, [periodFiltSales, isIndiaShop]);
 
   const flaggedCount = useMemo(
     () => periodFiltSales.filter(s => s.flagged).length,
@@ -1673,13 +1685,19 @@ We hope you enjoy your purchase! 💜
           </button>
         )}
 
-        {/* Payment channel quick filter — Bank vs Shop/Shopify.
+        {/* Payment channel quick filter. India splits its bank payments into
+            SIB vs HDFC specifically (matching each row's own badge colors);
+            other shops keep the simpler Shop vs Bank split.
             Click a pill to filter to that channel; click again to clear. */}
         <div style={{ display: "flex", alignItems: "stretch", flexShrink: 0 }}>
-          {[
-            { key: "SHOP", icon: "🛍️", label: isIndiaShop ? "Shop" : "Shopify", color: "#059669", bg: "#d1fae5", chip: "#a7f3d0" },
-            { key: "BANK", icon: "🏦",  label: "Bank", color: "#2563eb", bg: "#dbeafe", chip: "#93c5fd" },
-          ].map(p => {
+          {(isIndiaShop ? [
+            { key: "SHOP", icon: "🛍️", label: "Shop", color: "#059669", bg: "#d1fae5" },
+            { key: "SIB",  icon: "🏦", label: "SIB",  color: "#b91c1c", bg: "#fef2f2" },
+            { key: "HDFC", icon: "🏦", label: "HDFC", color: "#1d4ed8", bg: "#eff6ff" },
+          ] : [
+            { key: "SHOP", icon: "🛍️", label: "Shopify", color: "#059669", bg: "#d1fae5" },
+            { key: "BANK", icon: "🏦",  label: "Bank", color: "#2563eb", bg: "#dbeafe" },
+          ]).map(p => {
             const isActive = payFilter === p.key;
             return (
               <button key={p.key}
