@@ -6527,8 +6527,8 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"dashboard",l:"Dashboard",ic:"⊞"},
     {id:"sales",    l:"Sales",    ic:"🛒"},
     {id:"customers",l:"Customers",ic:"👥"},
-    {id:"returns",  l:"Returns & Refunds",  ic:"↩️"},
     {id:"dispatch", l:"Despatch Log", ic:"📤"},
+    {id:"returns",  l:"Returns & Refunds",  ic:"↩️"},
     {id:"purchases",l:"Purchases",ic:"📦"},
     {id:"suppliers",l:"Suppliers",ic:"🏭"},
     {id:"logistics",l:"Logistics",ic:"🚚"},
@@ -15463,7 +15463,7 @@ const INITIAL_USERS=[
 const ROLE_NAV={
   superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","inventory","dispatch","settings"],
   admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","inventory","dispatch"],
-  staff:["sales","returns","attendance","inventory","dispatch"],
+  staff:["sales","customers","returns","attendance","inventory","dispatch"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
 
