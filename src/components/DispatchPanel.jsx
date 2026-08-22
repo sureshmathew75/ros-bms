@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { dbSaveDispatchEntry, dbLoadDispatchLog, dbDeleteDispatchEntry } from "../db";
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -322,6 +322,16 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
   // that default is what you get again on the next page load/refresh —
   // collapse state is intentionally not persisted.
   const [collapsedDates, setCollapsedDates] = useState({});
+  // Keys (see despatchKeyOf) currently in the middle of being written to
+  // the despatch log by the auto-add effect below. React state only
+  // reflects a new row once its insert has actually returned, so if the
+  // effect re-runs (a re-render, a tab remount, etc.) while an earlier
+  // insert for the same sale is still in flight, `entries` won't show it
+  // yet and the effect would otherwise queue a second insert for the same
+  // sale — a real duplicate row, not just a display glitch. This ref is a
+  // synchronous lock that closes that gap; it isn't state on purpose,
+  // since it must be checked and set before the next render, not after.
+  const addingKeysRef = useRef(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -624,13 +634,18 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
       if (!s.readyToShip) return;
       const key = despatchKeyOf(s);
       if (loggedGroupKeys.has(key) || dismissedSaleIds[key] || seenKeys.has(key)) return;
+      // Already being inserted by a run of this same effect that hasn't
+      // come back from the database yet — skip, don't queue a second
+      // insert for it (see addingKeysRef above for why this check exists).
+      if (addingKeysRef.current.has(key)) return;
       seenKeys.add(key);
-      toAdd.push(anchorSaleForGroup(groupMembers[key]) || s);
+      toAdd.push({ key, sale: anchorSaleForGroup(groupMembers[key]) || s });
     });
     if (!toAdd.length) return;
+    toAdd.forEach(({ key }) => addingKeysRef.current.add(key));
     let cancelled = false;
     (async () => {
-      for (const sale of toAdd) {
+      for (const { key, sale } of toAdd) {
         const draft = {
           saleId: sale.id,
           dispatchDate: todayISO(),
@@ -643,6 +658,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
           remarks: "",
         };
         const res = await persist(null, draft);
+        addingKeysRef.current.delete(key);
         if (cancelled) return;
         if (!res?.error) {
           setEntries(prev => [...prev, { ...draft, uuid: res.uuid, createdAt: new Date().toISOString() }]);
