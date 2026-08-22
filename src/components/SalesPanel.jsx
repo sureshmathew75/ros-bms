@@ -2459,16 +2459,28 @@ We hope you enjoy your purchase! 💜
                                 groupIds.forEach(id => onInlineEdit(id, { readyToShip: true }));
                               }
                             }}
-                            title={s.readyToShip ? "Ready to ship — click to undo" : "Click to mark ready to despatch — surfaces it on the Despatch Log page"}
+                            title={s.readyToShip ? "Ready to ship — click to undo" : "Click here when the item is ready to despatch — surfaces it on the Despatch Log page"}
                             style={{
-                              display: "inline-flex", alignItems: "center", gap: 5,
-                              fontSize: 11.5, fontWeight: 800, padding: "4px 12px", borderRadius: 999,
+                              display: "inline-flex", flexDirection: "column", alignItems: "center",
+                              justifyContent: "center", width: 92, textAlign: "center",
+                              fontSize: 10.5, fontWeight: 800, lineHeight: 1.25, padding: "6px 8px",
+                              borderRadius: 10,
                               color: s.readyToShip ? "#065f46" : "#64748b",
                               background: s.readyToShip ? "#d1fae5" : "#f1f5f9",
                               border: "1.5px " + (s.readyToShip ? "solid #6ee7b7" : "dashed #cbd5e1"),
-                              cursor: "pointer", whiteSpace: "nowrap",
+                              cursor: "pointer",
                             }}>
-                            📦 {s.readyToShip ? "Ready to Ship" : "Mark ready to despatch"}
+                            {s.readyToShip ? (
+                              <>
+                                <span>✅ Ready</span>
+                                <span>to Ship</span>
+                              </>
+                            ) : (
+                              <>
+                                <span>📦 Mark here —</span>
+                                <span>ready to despatch</span>
+                              </>
+                            )}
                           </div>
                           {isAdminRole && (
                             <div
