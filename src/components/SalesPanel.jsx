@@ -2432,40 +2432,67 @@ We hope you enjoy your purchase! 💜
                           ))}
                         </select>
                       ) : ful === "PENDING" && !(user?.id === "suresh" && statusOverride) ? (
-                        // Manually overriding Pending → Fulfilled is admin-only and now goes
-                        // through a two-step confirm (unlock, then confirm) before the normal
-                        // status dropdown opens — normal despatches don't need this at all
-                        // since the Despatch Log auto-fulfils once tracking + shipper are
-                        // entered. (Suresh's separate Status Override toggle, when on, still
-                        // bypasses this entirely — same as before.)
-                        isAdminRole ? (
+                        // Merged progressive control: while a sale is Pending, this single
+                        // pill IS the status — "Mark ready to despatch" → confirm → "Ready
+                        // to Ship" → the Despatch Log takes it from here (entering tracking +
+                        // shipper auto-flips it to Fulfilled, at which point this cell falls
+                        // through to the normal status dropdown below). Ready-state cascades
+                        // across linked/instalment transactions, same as an actual status
+                        // change would. Manual Pending → Fulfilled stays admin-only, two-step
+                        // confirm, tucked under the pill instead of replacing it.
+                        <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
                           <div
-                            onClick={() => {
-                              if (!window.confirm(
-                                "This sale's status is locked — the Despatch Log marks it " +
-                                "Fulfilled automatically once tracking + shipper are entered.\n\n" +
-                                "Unlock to override manually?"
-                              )) return;
-                              if (!window.confirm(
-                                "Confirm: you're about to manually change the status of " +
-                                (s.customer || "this sale") + " outside the normal Despatch Log flow.\n\n" +
-                                "Continue?"
-                              )) return;
-                              setFulfilUnlockedId(s.id);
-                              setEditStatusId(s.id);
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (!onInlineEdit) return;
+                              const gKey = getInstalmentKey(s);
+                              const group = gKey ? (instalmentGroups[gKey] || []) : [];
+                              const groupIds = group.length > 1 ? group.map(x => x.id) : [s.id];
+                              if (s.readyToShip) {
+                                if (!window.confirm("Remove " + (s.customer || "this sale") + " from Ready to Ship?")) return;
+                                groupIds.forEach(id => onInlineEdit(id, { readyToShip: false }));
+                              } else {
+                                if (!window.confirm(
+                                  "Mark " + (s.customer || "this sale") + " ready to despatch?\n\n" +
+                                  "This will surface it on the Despatch Log page."
+                                )) return;
+                                groupIds.forEach(id => onInlineEdit(id, { readyToShip: true }));
+                              }
                             }}
-                            title="Click to change status"
-                            style={{ cursor: "pointer", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                            <Badge l={ful} />
-                            <span style={{ fontSize: 9, color: "#94a3b8" }}>▼</span>
+                            title={s.readyToShip ? "Ready to ship — click to undo" : "Click to mark ready to despatch — surfaces it on the Despatch Log page"}
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: 5,
+                              fontSize: 11.5, fontWeight: 800, padding: "4px 12px", borderRadius: 999,
+                              color: s.readyToShip ? "#065f46" : "#64748b",
+                              background: s.readyToShip ? "#d1fae5" : "#f1f5f9",
+                              border: "1.5px " + (s.readyToShip ? "solid #6ee7b7" : "dashed #cbd5e1"),
+                              cursor: "pointer", whiteSpace: "nowrap",
+                            }}>
+                            📦 {s.readyToShip ? "Ready to Ship" : "Mark ready to despatch"}
                           </div>
-                        ) : (
-                          <div
-                            title="Tracking + shipper entered in the Despatch Log will mark this Fulfilled automatically. Only an admin can override this manually."
-                            style={{ cursor: "default", display: "inline-flex", alignItems: "center", gap: 4 }}>
-                            <Badge l={ful} />
-                          </div>
-                        )
+                          {isAdminRole && (
+                            <div
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (!window.confirm(
+                                  "This sale's status is locked — the Despatch Log marks it " +
+                                  "Fulfilled automatically once tracking + shipper are entered.\n\n" +
+                                  "Unlock to override manually?"
+                                )) return;
+                                if (!window.confirm(
+                                  "Confirm: you're about to manually change the status of " +
+                                  (s.customer || "this sale") + " outside the normal Despatch Log flow.\n\n" +
+                                  "Continue?"
+                                )) return;
+                                setFulfilUnlockedId(s.id);
+                                setEditStatusId(s.id);
+                              }}
+                              title="Admin: override status manually"
+                              style={{ fontSize: 9.5, color: "#94a3b8", cursor: "pointer", textDecoration: "underline dotted" }}>
+                              override status
+                            </div>
+                          )}
+                        </div>
                       ) : (
                         <div
                           onClick={() => setEditStatusId(s.id)}
@@ -2475,31 +2502,6 @@ We hope you enjoy your purchase! 💜
                           <span style={{ fontSize: 9, color: "#94a3b8" }}>▼</span>
                         </div>
                       )}
-                      {onInlineEdit && (() => {
-                        // Once tracking has been entered from the Despatch Log and the
-                        // sale is Fulfilled, the chip reflects that instead of "Ready to
-                        // Ship" — it stays clickable so it can still be toggled if needed.
-                        const despatched = !!s.trackingNo && ful === "FULFILLED";
-                        return (
-                          <div
-                            onClick={(e) => { e.stopPropagation(); onInlineEdit(s.id, { readyToShip: !s.readyToShip }); }}
-                            title={
-                              despatched
-                                ? "Despatched — tracking is on file (entered from the Despatch Log page)"
-                                : (s.readyToShip ? "Remove from Ready to Dispatch" : "Mark ready to ship — surfaces it on the Despatch Log page")
-                            }
-                            style={{
-                              display: "inline-flex", alignItems: "center", gap: 5,
-                              fontSize: 11.5, fontWeight: 800, padding: "4px 12px", borderRadius: 999,
-                              color: despatched ? "#1e40af" : (s.readyToShip ? "#065f46" : "#64748b"),
-                              background: despatched ? "#dbeafe" : (s.readyToShip ? "#d1fae5" : "#f1f5f9"),
-                              border: "1.5px " + (despatched ? "solid #93c5fd" : (s.readyToShip ? "solid #6ee7b7" : "dashed #cbd5e1")),
-                              cursor: "pointer", whiteSpace: "nowrap",
-                            }}>
-                            📦 {despatched ? "Despatched" : (s.readyToShip ? "Ready to Ship" : "Mark Ready")}
-                          </div>
-                        );
-                      })()}
                       </div>
                     </td>
                     {showCol("Tags")&&(
