@@ -737,6 +737,8 @@ export const dbSaveReturn = async (ret) => {
     refund_method:          ret.refundMethod || '',
     refund_to_name:         ret.refundToName || '',
     stock_status:           ret.stockStatus || 'in_office',
+    resold_to:              ret.resoldTo || '',
+    resold_date:            ret.resoldDate || null,
   };
   const { data: existing } = await sb.from('returns').select('id').eq('id', ret.id).maybeSingle();
   const { error } = existing
@@ -781,6 +783,8 @@ export const dbLoadReturns = async (shopId) => {
     refundMethod:         r.refund_method || '',
     refundToName:         r.refund_to_name || '',
     stockStatus:          r.stock_status || 'in_office',
+    resoldTo:             r.resold_to || '',
+    resoldDate:           r.resold_date || '',
   }));
 };
 

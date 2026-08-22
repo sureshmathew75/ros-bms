@@ -2589,6 +2589,7 @@ const ReturnedStockList = ({ returns, setReturns, search, sales }) => {
         <td>${(r.item||"—").toUpperCase()}</td>
         <td>${getSaleDate(r)?fmtDate(getSaleDate(r)):"—"}</td>
         <td>${STOCK_STATUS_OPTIONS.find(s=>s.key===r.stockStatus)?.label||"In Office"}</td>
+        <td>${r.stockStatus==="resold" ? `${r.resoldTo||"—"}${r.resoldDate?" · "+fmtDate(r.resoldDate):""}` : "—"}</td>
         <td>${r.staffNotes||"—"}</td>
       </tr>`).join("");
     w.document.write(`<!DOCTYPE html><html><head><title>Returned Items Stock List</title>
@@ -2600,7 +2601,7 @@ const ReturnedStockList = ({ returns, setReturns, search, sales }) => {
       </style></head><body>
       <h1>📦 Returned Items Stock List</h1>
       <p>Generated ${new Date().toLocaleString("en-GB")} · ${sorted.length} item${sorted.length!==1?"s":""}</p>
-      <table><thead><tr><th>Refunded Date</th><th>Refunded Amount</th><th>Customer</th><th>Item</th><th>Sale Date</th><th>Stock Status</th><th>Remarks</th></tr></thead><tbody>${rows}</tbody></table>
+      <table><thead><tr><th>Refunded Date</th><th>Refunded Amount</th><th>Customer</th><th>Item</th><th>Sale Date</th><th>Stock Status</th><th>Resold To</th><th>Remarks</th></tr></thead><tbody>${rows}</tbody></table>
       </body></html>`);
     w.document.close();
     setTimeout(()=>w.print(), 300);
@@ -2622,14 +2623,14 @@ const ReturnedStockList = ({ returns, setReturns, search, sales }) => {
         <table style={{width:"100%",borderCollapse:"collapse",minWidth:900}}>
           <thead>
             <tr style={{background:"#f8fafc"}}>
-              {["Refunded Date","Refunded Amount","Customer","Item","Sale Date","Stock Status","Remarks"].map(h=>(
+              {["Refunded Date","Refunded Amount","Customer","Item","Sale Date","Stock Status","Resold To","Remarks"].map(h=>(
                 <th key={h} style={{padding:"9px 10px",fontSize:10.5,fontWeight:800,color:"#64748b",textAlign:"left",textTransform:"uppercase",letterSpacing:"0.04em",borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap"}}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {sorted.length===0 && (
-              <tr><td colSpan={7} style={{padding:"40px 20px",textAlign:"center",color:"#94a3b8",fontSize:13}}>Nothing here yet — items appear once a return is Received, Exchanged, Refunded, or Refund/Exchange.</td></tr>
+              <tr><td colSpan={8} style={{padding:"40px 20px",textAlign:"center",color:"#94a3b8",fontSize:13}}>Nothing here yet — items appear once a return is Received, Exchanged, Refunded, or Refund/Exchange.</td></tr>
             )}
             {sorted.map(r => {
               const st = STOCK_STATUS_OPTIONS.find(s=>s.key===r.stockStatus) || STOCK_STATUS_OPTIONS[0];
@@ -2650,6 +2651,20 @@ const ReturnedStockList = ({ returns, setReturns, search, sales }) => {
                       style={{...inputStyle,fontWeight:700,color:st.color,background:st.bg,border:"1px solid "+st.color+"33"}}>
                       {STOCK_STATUS_OPTIONS.map(s=>(<option key={s.key} value={s.key}>{s.label}</option>))}
                     </select>
+                  </td>
+                  <td style={cellStyle}>
+                    {r.stockStatus==="resold" ? (
+                      <div style={{display:"flex",flexDirection:"column",gap:2,minWidth:130}}>
+                        <input defaultValue={r.resoldTo||""} placeholder="Who bought it"
+                          onBlur={e=>saveField(r,"resoldTo",e.target.value)}
+                          style={{...inputStyle,fontWeight:600,color:"#7c3aed"}} onFocus={e=>e.target.style.border="1px solid #e2e8f0"}/>
+                        <input type="date" defaultValue={r.resoldDate||""}
+                          onBlur={e=>saveField(r,"resoldDate",e.target.value)}
+                          style={{...inputStyle,fontSize:11,color:"#94a3b8"}} onFocus={e=>e.target.style.border="1px solid #e2e8f0"}/>
+                      </div>
+                    ) : (
+                      <span style={{fontSize:12,color:"#cbd5e1"}}>—</span>
+                    )}
                   </td>
                   <td style={cellStyle}>
                     <input defaultValue={r.staffNotes||""} placeholder="—"
@@ -3205,8 +3220,6 @@ const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,on
   const [filter,setFilter]=React.useState("ACTIVE");
   const [waModal,setWaModal]=React.useState(null); // {phone,customerName,message} | null
   const [manualReturnModal,setManualReturnModal]=React.useState(false);
-  const [viewMode,setViewMode]=React.useState("list"); // "list" | "stock"
-  const [stockSearch,setStockSearch]=React.useState("");
   const [upfrontRefunds,setUpfrontRefunds]=React.useState([]);
   const [upfrontLoaded,setUpfrontLoaded]=React.useState(false);
   const [showLogRefund,setShowLogRefund]=React.useState(false);
@@ -3337,28 +3350,10 @@ Thank you for your cooperation.`,
     );
   }
 
-  if(viewMode==="stock"&&shopId==="ros-india"){
-    return(
-      <div style={{padding:"0 0 40px"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10,marginBottom:14}}>
-          <div>
-            <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>📦 Returned Items Stock List</h2>
-            <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>Item, refund, and stock status for every return that's come back</p>
-          </div>
-          <div style={{display:"flex",gap:8,alignItems:"center"}}>
-            <button onClick={()=>setViewMode("list")}
-              style={{padding:"8px 14px",borderRadius:10,border:"1px solid "+shop.accent,background:shop.accentBg,color:shop.accentText,fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
-              ↩️ Back to Returns & Refunds
-            </button>
-            <input value={stockSearch} onChange={e=>setStockSearch(e.target.value)}
-              placeholder="Search item or customer…"
-              style={{padding:"8px 14px",borderRadius:10,border:"1px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",width:200}}/>
-          </div>
-        </div>
-        <ReturnedStockList returns={returns} setReturns={setReturns} search={stockSearch} sales={salesData[shopId]||[]} />
-      </div>
-    );
-  }
+  // Note: the Returned Items Stock List used to have its own toggle here.
+  // It's now a tab on the combined "📦 Stock" page (sidebar) alongside
+  // Fresh Stock, so both kinds of stock live in one place instead of being
+  // split between here and Inventory.
 
   return(
     <div style={{padding:"0 0 40px"}}>
@@ -3375,12 +3370,6 @@ Thank you for your cooperation.`,
               style={{padding:"8px 14px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
               📥 Log a Return
             </button>
-            {shopId==="ros-india"&&(
-              <button onClick={()=>setViewMode(viewMode==="stock"?"list":"stock")}
-                style={{padding:"8px 14px",borderRadius:10,border:"1px solid "+(viewMode==="stock"?shop.accent:"#e2e8f0"),background:viewMode==="stock"?shop.accentBg:"white",color:viewMode==="stock"?shop.accentText:"#374151",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
-                📦 {viewMode==="stock"?"Back to Returns":"Stock List"}
-              </button>
-            )}
             <input value={search} onChange={e=>setSearch(e.target.value)}
               placeholder="Search returns…"
               style={{padding:"8px 14px",borderRadius:10,border:"1px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",width:200}}/>
@@ -6546,7 +6535,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"agents",   l:"Agents",   ic:"🤝"},
     {id:"products", l:"Products", ic:"🏷️"},
     {id:"attendance",l:"Attendance",ic:"🕐"},
-    {id:"inventory",l:"Inventory",ic:"📦"},
+    {id:"inventory",l:"Stock",ic:"📦"},
     {id:"expenses", l:"Expenses", ic:"💳"},
     {id:"documents",l:"Documents",ic:"📎"},
     {id:"analytics",l:"Analytics",ic:"📊"},
@@ -8150,7 +8139,7 @@ return(
 
           {/* ── INVENTORY (ROS India only) ── */}
           {tab==="inventory"&&shopId==="ros-india"&&(
-            <InventoryPage shopId={shopId} shop={shop} user={user} sales={sales} />
+            <InventoryPage shopId={shopId} shop={shop} user={user} sales={sales} returns={returns} setReturns={setReturns} />
           )}
 
           {/* ── DESPATCH LOG (all shops) ── */}
@@ -10915,8 +10904,16 @@ const AttendanceCalendar = ({ year, month, records, accent, onDayClick, holidayS
    logged as its own movement — sale-out or restock-in — so clicking an
    item shows a real ledger of who bought each unit, not just a count.
    Adding items / restocking is admin-only; everyone can view. ───────── */
-const InventoryPage = ({ shopId, shop, user }) => {
+const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) => {
   const isAdmin = user?.role === "superadmin" || user?.role === "admin";
+  // "Stock" combines two separate ledgers behind one page: Fresh Stock is
+  // this component's own inventory items/movements below; Returned Stock is
+  // the existing ReturnedStockList (pulled from the Returns & Refunds data,
+  // passed in via the `returns`/`setReturns` props) — kept as its own list
+  // rather than merged in, since a customer return isn't the same thing as
+  // a fresh purchase and shouldn't be counted as one.
+  const [stockSection, setStockSection] = React.useState("fresh"); // "fresh" | "returned"
+  const [returnedStockSearch, setReturnedStockSearch] = React.useState("");
   const [items, setItems] = React.useState([]);
   const [movements, setMovements] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
@@ -10965,6 +10962,47 @@ const InventoryPage = ({ shopId, shop, user }) => {
   }, [movements]);
 
   if (loading) return <div style={{padding:60,textAlign:"center",color:"#94a3b8"}}>Loading inventory…</div>;
+
+  // Shared Fresh/Returned tab toggle — shown at the top of both list-level
+  // views (not inside an item's own detail page, which already has its own
+  // "← Back" breadcrumb).
+  const sectionToggle = (
+    <div style={{display:"flex",gap:6,marginBottom:16}}>
+      <button onClick={()=>setStockSection("fresh")}
+        style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+          border:"1px solid "+(stockSection==="fresh"?shop.accent:"#e2e8f0"),
+          background:stockSection==="fresh"?shop.accent:"white",
+          color:stockSection==="fresh"?"white":"#64748b"}}>
+        🆕 Fresh Stock
+      </button>
+      <button onClick={()=>setStockSection("returned")}
+        style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+          border:"1px solid "+(stockSection==="returned"?shop.accent:"#e2e8f0"),
+          background:stockSection==="returned"?shop.accent:"white",
+          color:stockSection==="returned"?"white":"#64748b"}}>
+        ↩️ Returned Stock
+      </button>
+    </div>
+  );
+
+  /* ── RETURNED STOCK SECTION ── */
+  if (stockSection === "returned") {
+    return (
+      <div style={{padding:"0 0 40px"}}>
+        <div style={{marginBottom:18}}>
+          <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>📦 Stock</h2>
+          <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>Items that came back from customers — refund, resale, and current whereabouts</p>
+        </div>
+        {sectionToggle}
+        <div style={{display:"flex",justifyContent:"flex-end",marginBottom:12}}>
+          <input value={returnedStockSearch} onChange={e=>setReturnedStockSearch(e.target.value)}
+            placeholder="Search item or customer…"
+            style={{padding:"8px 14px",borderRadius:10,border:"1px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",width:220}}/>
+        </div>
+        <ReturnedStockList returns={returns} setReturns={setReturns} search={returnedStockSearch} sales={sales||[]} />
+      </div>
+    );
+  }
 
   const selectedItem = items.find(i => i.id === selectedItemId);
 
@@ -11081,8 +11119,8 @@ const InventoryPage = ({ shopId, shop, user }) => {
     <div style={{padding:"0 0 40px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:18}}>
         <div>
-          <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>📦 Inventory</h2>
-          <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>Stock tracking for the product lines you keep on hand</p>
+          <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>📦 Stock</h2>
+          <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>Fresh stock — product lines you keep on hand and restock yourself</p>
         </div>
         {isAdmin && (
           <button onClick={()=>setShowAddItem(true)}
@@ -11091,6 +11129,8 @@ const InventoryPage = ({ shopId, shop, user }) => {
           </button>
         )}
       </div>
+
+      {sectionToggle}
 
       {/* ── Stock dashboard — current totals across every tracked item ── */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:18}}>
