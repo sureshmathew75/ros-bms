@@ -2194,31 +2194,6 @@ We hope you enjoy your purchase! 💜
                           🔗+ Link
                         </div>
                       )}
-                      {onInlineEdit && (() => {
-                        // Once tracking has been entered from the Despatch Log and the
-                        // sale is Fulfilled, the chip reflects that instead of "Ready to
-                        // Ship" — it stays clickable so it can still be toggled if needed.
-                        const despatched = !!s.trackingNo && ful === "FULFILLED";
-                        return (
-                          <div
-                            onClick={(e) => { e.stopPropagation(); onInlineEdit(s.id, { readyToShip: !s.readyToShip }); }}
-                            title={
-                              despatched
-                                ? "Despatched — tracking is on file (entered from the Despatch Log page)"
-                                : (s.readyToShip ? "Remove from Ready to Dispatch" : "Mark ready to ship — surfaces it on the Despatch Log page")
-                            }
-                            style={{
-                              marginTop: 4, display: "inline-flex", alignItems: "center", gap: 3,
-                              fontSize: 9, fontWeight: 700, padding: "1px 7px", borderRadius: 999,
-                              color: despatched ? "#1e40af" : (s.readyToShip ? "#065f46" : "#64748b"),
-                              background: despatched ? "#dbeafe" : (s.readyToShip ? "#d1fae5" : "transparent"),
-                              border: "1px " + (despatched ? "solid #93c5fd" : (s.readyToShip ? "solid #6ee7b7" : "dashed #cbd5e1")),
-                              cursor: "pointer",
-                            }}>
-                            📦 {despatched ? "Despatched" : (s.readyToShip ? "Ready to Ship" : "Mark Ready")}
-                          </div>
-                        );
-                      })()}
                     </td>
                     )}
                     {/* Item */}
@@ -2408,8 +2383,13 @@ We hope you enjoy your purchase! 💜
                       )}
                     </td>
                     )}
-                    {/* Status — inline editable dropdown */}
+                    {/* Status — inline editable dropdown, plus the Ready-to-Ship /
+                        Despatched chip (moved here from the Customer cell — it's a
+                        pre-despatch signal so it reads more naturally alongside the
+                        actual fulfilment status, and there's room to make it bigger
+                        and easier to hit here than buried under the customer name). */}
                     <td style={{ padding: "8px 10px", textAlign: "right" }} onClick={e => e.stopPropagation()}>
+                      <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
                       {editStatusId === s.id ? (
                         <select
                           autoFocus
@@ -2495,6 +2475,32 @@ We hope you enjoy your purchase! 💜
                           <span style={{ fontSize: 9, color: "#94a3b8" }}>▼</span>
                         </div>
                       )}
+                      {onInlineEdit && (() => {
+                        // Once tracking has been entered from the Despatch Log and the
+                        // sale is Fulfilled, the chip reflects that instead of "Ready to
+                        // Ship" — it stays clickable so it can still be toggled if needed.
+                        const despatched = !!s.trackingNo && ful === "FULFILLED";
+                        return (
+                          <div
+                            onClick={(e) => { e.stopPropagation(); onInlineEdit(s.id, { readyToShip: !s.readyToShip }); }}
+                            title={
+                              despatched
+                                ? "Despatched — tracking is on file (entered from the Despatch Log page)"
+                                : (s.readyToShip ? "Remove from Ready to Dispatch" : "Mark ready to ship — surfaces it on the Despatch Log page")
+                            }
+                            style={{
+                              display: "inline-flex", alignItems: "center", gap: 5,
+                              fontSize: 11.5, fontWeight: 800, padding: "4px 12px", borderRadius: 999,
+                              color: despatched ? "#1e40af" : (s.readyToShip ? "#065f46" : "#64748b"),
+                              background: despatched ? "#dbeafe" : (s.readyToShip ? "#d1fae5" : "#f1f5f9"),
+                              border: "1.5px " + (despatched ? "solid #93c5fd" : (s.readyToShip ? "solid #6ee7b7" : "dashed #cbd5e1")),
+                              cursor: "pointer", whiteSpace: "nowrap",
+                            }}>
+                            📦 {despatched ? "Despatched" : (s.readyToShip ? "Ready to Ship" : "Mark Ready")}
+                          </div>
+                        );
+                      })()}
+                      </div>
                     </td>
                     {showCol("Tags")&&(
                     <td style={{ padding: "8px 16px" }}>
