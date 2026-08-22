@@ -2462,7 +2462,7 @@ We hope you enjoy your purchase! 💜
                             title={s.readyToShip ? "Ready to ship — click to undo" : "Click here when the item is ready to despatch — surfaces it on the Despatch Log page"}
                             style={{
                               display: "inline-flex", flexDirection: "column", alignItems: "center",
-                              justifyContent: "center", width: 92, textAlign: "center",
+                              justifyContent: "center", width: 120, textAlign: "center",
                               fontSize: 10.5, fontWeight: 800, lineHeight: 1.25, padding: "6px 8px",
                               borderRadius: 10,
                               color: s.readyToShip ? "#065f46" : "#64748b",
@@ -2477,8 +2477,8 @@ We hope you enjoy your purchase! 💜
                               </>
                             ) : (
                               <>
-                                <span>📦 Mark here —</span>
-                                <span>ready to despatch</span>
+                                <span>📦 Mark here, when</span>
+                                <span>it's ready to despatch</span>
                               </>
                             )}
                           </div>
