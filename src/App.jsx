@@ -1730,9 +1730,10 @@ const ReturnsPortal=()=>{
       const lastNum=lastRet&&lastRet.length>0?parseInt(lastRet[0].id.split("-")[2]||"0",10):0;
       const retId=`RET-${year}-${String(lastNum+1).padStart(4,"0")}`;
 
-      // 7. Calculate return deadline (14 days from today)
-      const deadline=new Date();deadline.setDate(deadline.getDate()+14);
-      const deadlineStr=deadline.toISOString().split("T")[0];
+      // 7. Calculate return deadline — 14 days from the order's DELIVERY
+      // date (return policy), not from today. sale.delivery_date is
+      // guaranteed present here — validated in step 3 above.
+      const deadlineStr=computeReturnDeadline(sale.delivery_date);
 
       // 8. Save return record
       const {error:retErr}=await sb.from("returns").insert({
@@ -2207,6 +2208,23 @@ If you experience any delays, please let us know.
 We look forward to serving you again in the future.
 
 Thank you`;
+
+// ── Return window policy ────────────────────────────────────────────────
+// A return must reach us within RETURN_WINDOW_DAYS of the item's DELIVERY
+// date — never from the day the return was requested/logged. Every place
+// that computes or displays a return deadline should go through this one
+// helper so the rule can't drift out of sync between screens again. Pass
+// the linked sale's deliveryDate; if there isn't one (no linked sale, or
+// delivery not yet recorded), the caller's fallback is used as-is — there's
+// nothing better to compute it from in that case.
+const RETURN_WINDOW_DAYS=14;
+const computeReturnDeadline=(deliveryDate,fallback)=>{
+  if(!deliveryDate)return fallback||"";
+  const d=new Date(deliveryDate);
+  if(isNaN(d.getTime()))return fallback||"";
+  d.setDate(d.getDate()+RETURN_WINDOW_DAYS);
+  return d.toISOString().slice(0,10);
+};
 
 const daysRemaining=(deadlineStr)=>{
   if(!deadlineStr)return null;
@@ -3230,7 +3248,12 @@ const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,on
 
       for(const ret of returns){
         if(["REFUNDED","EXCHANGED","EXCHANGE_REFUND","RETURN_EXPIRED"].includes(ret.status))continue;
-        if(!ret.returnDeadline)continue;
+        // Correct deadline — 14 days from the linked sale's delivery date,
+        // not whatever was stored on the return record (older records may
+        // have been saved with a wrong value before this was fixed).
+        const linkedSale=ret.saleId?allSales.find(s=>s.id===ret.saleId):null;
+        const correctedDeadline=computeReturnDeadline(linkedSale?.deliveryDate,ret.returnDeadline);
+        if(!correctedDeadline)continue;
 
         const created=new Date(ret.createdAt);created.setHours(0,0,0,0);
         const daysFromCreated=Math.floor((today-created)/(1000*60*60*24));
@@ -3255,7 +3278,7 @@ We have not yet received your returned item or tracking information. Please ensu
 
 If you have already sent the item, please contact us with your tracking number so we can update your case.
 
-Your return deadline is ${new Date(ret.returnDeadline).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}.
+Your return deadline is ${new Date(correctedDeadline).toLocaleDateString("en-GB",{day:"numeric",month:"long",year:"numeric"})}.
 
 Thank you for your cooperation.`,
             });
@@ -3614,12 +3637,18 @@ Thank you for your cooperation.`,
                       that matters most while a return is still awaited back. */}
                   {["RETURN_APPROVED","MSG_SENT","RETURN_IN_TRANSIT"].includes(ret.status) && (()=>{
                     const delivDate=getDeliveryDate(ret.saleId);
-                    const days=daysRemaining(ret.returnDeadline);
+                    // Always derive the window-closes date from the delivery
+                    // date (return policy: 14 days from delivery) rather than
+                    // trusting the stored value, which may have been saved
+                    // wrong before this was fixed — this self-corrects on
+                    // display without needing to touch old records.
+                    const windowCloses=computeReturnDeadline(delivDate,ret.returnDeadline);
+                    const days=daysRemaining(windowCloses);
                     return (
                       <div style={{marginTop:8,paddingLeft:27,display:"flex",flexWrap:"wrap",alignItems:"center",gap:"4px 14px"}}>
                         <span style={{fontSize:11,color:"#374151"}}>🚚 <span style={{color:"#94a3b8"}}>Delivered:</span> <strong>{delivDate?fmtShort(delivDate):"—"}</strong></span>
                         <span style={{fontSize:11,color:"#374151"}}>📋 <span style={{color:"#94a3b8"}}>Requested:</span> <strong>{ret.createdAt?fmtShort(ret.createdAt):"—"}</strong></span>
-                        <span style={{fontSize:11,color:"#374151"}}>⏳ <span style={{color:"#94a3b8"}}>Window closes:</span> <strong>{ret.returnDeadline?fmtShort(ret.returnDeadline):"—"}</strong></span>
+                        <span style={{fontSize:11,color:"#374151"}}>⏳ <span style={{color:"#94a3b8"}}>Window closes:</span> <strong>{windowCloses?fmtShort(windowCloses):"—"}</strong></span>
                         <DaysChip days={days}/>
                       </div>
                     );
@@ -3740,7 +3769,7 @@ Thank you for your cooperation.`,
       {/* Detail modal */}
       {selectedReturn&&(
         <ReturnDetailModal
-          ret={selectedReturn}
+          ret={{...selectedReturn, returnDeadline: computeReturnDeadline(getDeliveryDate(selectedReturn.saleId), selectedReturn.returnDeadline)}}
           shop={shop}
           user={user}
           onClose={()=>setSelectedReturn(null)}
@@ -3844,8 +3873,14 @@ Thank you for your cooperation.`,
               item: form.item,
             };
             if (isExpecting) {
-              const deadline = new Date(); deadline.setDate(deadline.getDate()+14);
-              record.returnDeadline = deadline.toISOString().slice(0,10);
+              // Prefer the linked sale's actual delivery date (return policy:
+              // 14 days from delivery). Only manual entries with no linked
+              // sale — or a linked sale with no delivery date on file — fall
+              // back to "logged today + 14", since there's nothing better to
+              // go on for those.
+              const linkedSale = form.saleId ? (salesData[shopId]||[]).find(s=>s.id===form.saleId) : null;
+              const todayPlus14 = (()=>{ const d=new Date(); d.setDate(d.getDate()+14); return d.toISOString().slice(0,10); })();
+              record.returnDeadline = computeReturnDeadline(linkedSale?.deliveryDate, todayPlus14);
             }
             const ok = await dbSaveReturn(record);
             if(!ok){
@@ -7145,8 +7180,14 @@ return(
             const activeReturns=returns.filter(r=>["RETURN_APPROVED","RETURN_IN_TRANSIT"].includes(r.status));
             const returnsNeedReview=activeReturns.length;
             const returnsExpiringSoon=activeReturns.filter(r=>{
-              if(!r.returnDeadline)return false;
-              const dl=new Date(r.returnDeadline);dl.setHours(0,0,0,0);
+              // Corrected deadline — 14 days from the linked sale's delivery
+              // date, not whatever is stored on the return (see the Returns
+              // panel for the fuller explanation of why this is computed
+              // rather than trusted as-is).
+              const linkedSale=r.saleId?sales.find(s=>s.id===r.saleId):null;
+              const dlStr=computeReturnDeadline(linkedSale?.deliveryDate,r.returnDeadline);
+              if(!dlStr)return false;
+              const dl=new Date(dlStr);dl.setHours(0,0,0,0);
               const diff=Math.ceil((dl-today2)/(1000*60*60*24));
               return diff>=0&&diff<=2;
             }).length;
