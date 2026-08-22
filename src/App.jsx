@@ -3569,7 +3569,7 @@ Thank you for your cooperation.`,
 
               return(
                 <div key={ret.id}
-                  style={{padding:"14px 16px",
+                  style={{padding:"12px 16px",
                     borderRadius:12,border:"1px solid "+(isSelected?shop.accent:"#e2e8f0"),marginBottom:8,
                     background:isClosed?"#fafafa":isSelected?shop.accent+"08":"white",
                     transition:"box-shadow 0.15s",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}
@@ -3608,6 +3608,22 @@ Thank you for your cooperation.`,
                       {statusStyle.label}
                     </span>
                   </div>
+
+                  {/* Expecting-stage summary: delivered / requested / return-window
+                      dates right on the card, no need to expand — this is the info
+                      that matters most while a return is still awaited back. */}
+                  {["RETURN_APPROVED","MSG_SENT","RETURN_IN_TRANSIT"].includes(ret.status) && (()=>{
+                    const delivDate=getDeliveryDate(ret.saleId);
+                    const days=daysRemaining(ret.returnDeadline);
+                    return (
+                      <div style={{marginTop:8,paddingLeft:27,display:"flex",flexWrap:"wrap",alignItems:"center",gap:"4px 14px"}}>
+                        <span style={{fontSize:11,color:"#374151"}}>🚚 <span style={{color:"#94a3b8"}}>Delivered:</span> <strong>{delivDate?fmtShort(delivDate):"—"}</strong></span>
+                        <span style={{fontSize:11,color:"#374151"}}>📋 <span style={{color:"#94a3b8"}}>Requested:</span> <strong>{ret.createdAt?fmtShort(ret.createdAt):"—"}</strong></span>
+                        <span style={{fontSize:11,color:"#374151"}}>⏳ <span style={{color:"#94a3b8"}}>Window closes:</span> <strong>{ret.returnDeadline?fmtShort(ret.returnDeadline):"—"}</strong></span>
+                        <DaysChip days={days}/>
+                      </div>
+                    );
+                  })()}
 
                   {(() => {
                     const isExpanded = expandedIds.has(ret.id);
@@ -3689,7 +3705,7 @@ Thank you for your cooperation.`,
                   })()}
 
                   {/* Details toggle */}
-                  <div style={{marginTop:10,paddingLeft:27}}>
+                  <div style={{marginTop:8,paddingLeft:27}}>
                     <button onClick={e=>{e.stopPropagation();
                         setExpandedIds(prev=>{const s=new Set(prev);s.has(ret.id)?s.delete(ret.id):s.add(ret.id);return s;});
                       }}
@@ -3699,7 +3715,7 @@ Thank you for your cooperation.`,
                   </div>
 
                   {/* Footer: next action + view/delete */}
-                  <div style={{marginTop:12,paddingLeft:27,paddingTop:10,borderTop:"1px solid #f1f5f9",
+                  <div style={{marginTop:10,paddingLeft:27,paddingTop:8,borderTop:"1px solid #f1f5f9",
                     display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:10}}>
                     <div onClick={e=>e.stopPropagation()}>{nextAction()}</div>
                     <div style={{display:"flex",alignItems:"center",gap:8}} onClick={e=>e.stopPropagation()}>
