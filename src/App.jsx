@@ -10926,6 +10926,8 @@ const InventoryPage = ({ shopId, shop, user }) => {
   const [soldFor, setSoldFor] = React.useState(null); // {id, name} | null — Log Sale modal
   const [correctFor, setCorrectFor] = React.useState(null); // {id, name, currentStock} | null — admin-only stock correction
   const [confirmDeleteId, setConfirmDeleteId] = React.useState(null);
+  const [invView, setInvView] = React.useState("items"); // "items" | "log" — list view only
+  const [collapsedLogDates, setCollapsedLogDates] = React.useState({}); // date -> bool, daily-log view
 
   const load = React.useCallback(() => {
     setLoading(true);
@@ -10936,9 +10938,31 @@ const InventoryPage = ({ shopId, shop, user }) => {
   React.useEffect(() => { load(); }, [load]);
 
   const fmtDate = (d) => { try { return new Date(d+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}); } catch { return d; } };
+  const todayISOInv = () => new Date().toISOString().slice(0,10);
 
   const stockColor = (stock) => stock<=0 ? "#dc2626" : stock<=2 ? "#d97706" : "#166534";
   const stockBg = (stock) => stock<=0 ? "#fef2f2" : stock<=2 ? "#fffbeb" : "#f0fdf4";
+
+  // Shop-wide stock dashboard — totals across every tracked item, not just
+  // one. Shown above both the item grid and the daily log so "how much do
+  // we have right now" is always visible regardless of which view you're in.
+  const stockDashboard = {
+    trackedItems: items.length,
+    totalInStock: items.reduce((s,i)=>s+(i.currentStock||0),0),
+    totalSoldAllTime: items.reduce((s,i)=>s+((i.totalStocked||0)-(i.currentStock||0)),0),
+    lowStock: items.filter(i=>i.currentStock>0 && i.currentStock<=2).length,
+    outOfStock: items.filter(i=>i.currentStock<=0).length,
+  };
+
+  // Every stock change, across every item, grouped by day — newest day
+  // first, newest change within a day first. This is the "how we used the
+  // stock, day by day, with who and when" log, distinct from an item's own
+  // History (which is scoped to just that one item).
+  const movementsByDate = React.useMemo(() => {
+    const groups = {};
+    movements.forEach(m => { (groups[m.date] ||= []).push(m); });
+    return Object.entries(groups).sort((a,b)=>b[0].localeCompare(a[0]));
+  }, [movements]);
 
   if (loading) return <div style={{padding:60,textAlign:"center",color:"#94a3b8"}}>Loading inventory…</div>;
 
@@ -11068,7 +11092,50 @@ const InventoryPage = ({ shopId, shop, user }) => {
         )}
       </div>
 
-      {items.length===0 ? (
+      {/* ── Stock dashboard — current totals across every tracked item ── */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:18}}>
+        <div style={{padding:"12px 14px",borderRadius:12,background:shop.accentBg,border:"1px solid "+shop.accent+"33"}}>
+          <div style={{fontSize:20,fontWeight:900,color:shop.accentText||shop.accent}}>{stockDashboard.trackedItems}</div>
+          <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Items Tracked</div>
+        </div>
+        <div style={{padding:"12px 14px",borderRadius:12,background:"#f0fdf4",border:"1px solid #86efac"}}>
+          <div style={{fontSize:20,fontWeight:900,color:"#166534"}}>{stockDashboard.totalInStock}</div>
+          <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Units In Stock</div>
+        </div>
+        <div style={{padding:"12px 14px",borderRadius:12,background:"#f8fafc",border:"1px solid #e2e8f0"}}>
+          <div style={{fontSize:20,fontWeight:900,color:"#0f172a"}}>{stockDashboard.totalSoldAllTime}</div>
+          <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Sold All-Time</div>
+        </div>
+        <div style={{padding:"12px 14px",borderRadius:12,background:"#fffbeb",border:"1px solid #fcd34d"}}>
+          <div style={{fontSize:20,fontWeight:900,color:"#b45309"}}>{stockDashboard.lowStock}</div>
+          <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Low Stock</div>
+        </div>
+        <div style={{padding:"12px 14px",borderRadius:12,background:"#fef2f2",border:"1px solid #fca5a5"}}>
+          <div style={{fontSize:20,fontWeight:900,color:"#dc2626"}}>{stockDashboard.outOfStock}</div>
+          <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Out Of Stock</div>
+        </div>
+      </div>
+
+      {/* ── View toggle: item grid vs. day-by-day movement log ── */}
+      <div style={{display:"flex",gap:6,marginBottom:16}}>
+        <button onClick={()=>setInvView("items")}
+          style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+            border:"1px solid "+(invView==="items"?shop.accent:"#e2e8f0"),
+            background:invView==="items"?shop.accent:"white",
+            color:invView==="items"?"white":"#64748b"}}>
+          📦 Items
+        </button>
+        <button onClick={()=>setInvView("log")}
+          style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+            border:"1px solid "+(invView==="log"?shop.accent:"#e2e8f0"),
+            background:invView==="log"?shop.accent:"white",
+            color:invView==="log"?"white":"#64748b"}}>
+          🗓️ Daily Log
+        </button>
+      </div>
+
+      {invView==="items" ? (
+      items.length===0 ? (
         <div style={{textAlign:"center",padding:"60px 20px",color:"#94a3b8",fontSize:13}}>
           No inventory items yet. {isAdmin ? 'Click "+ Add Item" to start tracking your first stocked product.' : "Check back once your admin has added tracked items."}
         </div>
@@ -11100,6 +11167,67 @@ const InventoryPage = ({ shopId, shop, user }) => {
             </div>
           ))}
         </div>
+      )
+      ) : (
+        /* ── Daily Log — every stock change across every item, grouped by
+           day, newest first. Same collapse pattern as the Despatch Log:
+           today expanded by default, other days just show a summary bar
+           until clicked. This is the "how we used the stock, day by day,
+           with who and when" view the item-by-item History can't give. ── */
+        movementsByDate.length===0 ? (
+          <div style={{textAlign:"center",padding:"60px 20px",color:"#94a3b8",fontSize:13}}>
+            No stock changes recorded yet.
+          </div>
+        ) : (
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            {movementsByDate.map(([date, dayMoves]) => {
+              const isToday = date === todayISOInv();
+              const isCollapsed = collapsedLogDates[date] !== undefined ? collapsedLogDates[date] : !isToday;
+              const netChange = dayMoves.reduce((s,m)=> s + (m.type==="correction" ? (Number(m.qty)||0) : m.type==="restock" ? (Number(m.qty)||0) : -(Number(m.qty)||0)), 0);
+              return (
+                <div key={date} style={{borderRadius:12,border:"1px solid #e2e8f0",overflow:"hidden"}}>
+                  <div onClick={()=>setCollapsedLogDates(prev=>({...prev,[date]:!isCollapsed}))}
+                    style={{padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6,
+                      background:isToday?(shop.accent||"#0f172a"):(shop.accentBg||"#eef2ff"),
+                      color:isToday?"white":(shop.accentText||"#4338ca")}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:11}}>{isCollapsed?"▶":"▼"}</span>
+                      <span style={{fontSize:13,fontWeight:800}}>{fmtDate(date)}{isToday?" · Today":""}</span>
+                    </div>
+                    <div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <span style={{fontSize:11,fontWeight:700,opacity:0.85}}>{dayMoves.length} change{dayMoves.length!==1?"s":""}</span>
+                      <span style={{fontSize:12,fontWeight:800}}>{netChange>0?"+":""}{netChange} net</span>
+                    </div>
+                  </div>
+                  {!isCollapsed && (
+                    <div>
+                      {dayMoves.map(m => {
+                        const it = items.find(i=>i.id===m.itemId);
+                        const isCorrection = m.type==="correction";
+                        const signedQty = isCorrection ? (Number(m.qty)||0) : (m.type==="restock" ? (Number(m.qty)||0) : -(Number(m.qty)||0));
+                        const amountColor = signedQty>0?"#166534":signedQty<0?"#991b1b":"#64748b";
+                        return (
+                          <div key={m.id} style={{padding:"10px 14px",borderTop:"1px solid #f1f5f9",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,background:"white"}}>
+                            <div style={{minWidth:0}}>
+                              <div style={{fontSize:12.5,fontWeight:700,color:"#0f172a"}}>
+                                {m.type==="restock"?"🟢 Restocked":isCorrection?"⚖️ Corrected":"🔴 Sold"} · {it?.name||"(deleted item)"}
+                                {m.type==="sale" && m.customer && <span style={{color:"#64748b",fontWeight:600}}> — {m.customer}</span>}
+                              </div>
+                              {m.note && <div style={{fontSize:10.5,color:"#94a3b8",marginTop:1}}>{m.note}</div>}
+                            </div>
+                            <div style={{fontSize:13,fontWeight:800,color:amountColor,whiteSpace:"nowrap"}}>
+                              {signedQty>0?"+":""}{signedQty}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )
       )}
 
       {showAddItem && (
