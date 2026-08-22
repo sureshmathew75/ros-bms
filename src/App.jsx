@@ -3466,6 +3466,12 @@ Thank you for your cooperation.`,
               <span style={{fontSize:11,fontWeight:700,color:"#94a3b8"}}>Select all ({filtered.length})</span>
             </div>
 
+            {/* Card grid — wraps into as many ~360px columns as fit, instead
+                of one full-width card per row, so a wide screen shows many
+                more cases at once instead of mostly empty space either side
+                of each row. Falls back to a single column automatically on
+                narrow/mobile screens. */}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(360px, 1fr))",gap:10}}>
             {filtered.map(ret=>{
               const statusStyle=RETURN_STATUS_STYLE[ret.status]||{bg:"#f8fafc",border:"#e2e8f0",text:"#374151",label:ret.status};
               const isClosed=["REFUNDED","EXCHANGED","EXCHANGE_REFUND"].includes(ret.status);
@@ -3593,7 +3599,7 @@ Thank you for your cooperation.`,
               return(
                 <div key={ret.id}
                   style={{padding:"12px 16px",
-                    borderRadius:12,border:"1px solid "+(isSelected?shop.accent:"#e2e8f0"),marginBottom:8,
+                    borderRadius:12,border:"1px solid "+(isSelected?shop.accent:"#e2e8f0"),
                     background:isClosed?"#fafafa":isSelected?shop.accent+"08":"white",
                     transition:"box-shadow 0.15s",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}
                   onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.10)"}
@@ -3762,6 +3768,7 @@ Thank you for your cooperation.`,
                 </div>
               );
             })}
+            </div>
           </div>
         )}
       </div>
