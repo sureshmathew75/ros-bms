@@ -2954,9 +2954,11 @@ const UpfrontRefundsView = ({ shopId, shop, allSales, upfrontRefunds, setUpfront
           No upfront refunds logged yet. Click "+ Log Refund" when you need to refund a customer before dispatch.
         </div>
       ) : (
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(360px, 1fr))",gap:10}}>
           {upfrontRefunds.map(r => (
-            <div key={r.id} style={{padding:"14px 16px",borderRadius:12,border:"1px solid #e2e8f0",background:"white",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+            <div key={r.id} style={{padding:"14px 16px",borderRadius:12,
+              border:"1px solid #fecdd3",borderLeft:"4px solid #be123c",
+              background:"#fff1f2",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
                 <div>
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
@@ -3599,10 +3601,12 @@ Thank you for your cooperation.`,
               return(
                 <div key={ret.id}
                   style={{padding:"12px 16px",
-                    borderRadius:12,border:"1px solid "+(isSelected?shop.accent:"#e2e8f0"),
-                    background:isClosed?"#fafafa":isSelected?shop.accent+"08":"white",
+                    borderRadius:12,
+                    border:"1px solid "+(isSelected?shop.accent:statusStyle.border),
+                    borderLeft:"4px solid "+(isSelected?shop.accent:statusStyle.text),
+                    background:isSelected?shop.accent+"10":statusStyle.bg,
                     transition:"box-shadow 0.15s",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}
-                  onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 16px rgba(0,0,0,0.10)"}
+                  onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 16px "+shop.accent+"26"}
                   onMouseLeave={e=>e.currentTarget.style.boxShadow="0 1px 3px rgba(0,0,0,0.04)"}>
 
                   {/* Top row: checkbox, ID/customer, status pill */}
