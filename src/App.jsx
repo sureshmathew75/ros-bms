@@ -6450,7 +6450,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     if((tab==="fulfilment"||tab==="dashboard")&&!messagesLoaded){
       dbLoadMessages(shopId).then(data=>{setMessages(data||[]);setMessagesLoaded(true);}).catch(()=>{});
     }
-    if((tab==="fulfilment"||tab==="returns"||tab==="dashboard")&&!returnsLoaded){
+    if((tab==="fulfilment"||tab==="returns"||tab==="dashboard"||tab==="inventory")&&!returnsLoaded){
       dbLoadReturns(shopId).then(data=>{setReturns(data||[]);setReturnsLoaded(true);}).catch(()=>{});
     }
   },[tab]);
