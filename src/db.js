@@ -1314,7 +1314,13 @@ export const dbAddInventoryMovement = async (shopId, itemId, type, qty, date, sa
   const { data: item, error: fetchErr } = await sb.from('inventory_items').select('current_stock,total_stocked').eq('id', itemId).maybeSingle();
   if (fetchErr || !item) { console.error('Fetch inventory item for stock update error:', fetchErr); return false; }
 
-  const delta = type === 'restock' ? qty : -qty;
+  // 'restock' and 'sale' both carry a positive qty (in / out respectively).
+  // 'correction' carries a signed qty — the admin-entered adjustment after
+  // a physical stock count — applied to current_stock as-is, same as a
+  // restock's qty is added as-is. Only a real restock counts toward
+  // total_stocked; a correction is fixing an error, not new stock arriving,
+  // so it must not inflate "Total Ever Stocked" / skew "Total Sold".
+  const delta = type === 'restock' ? qty : type === 'correction' ? qty : -qty;
   const newStock = Number(item.current_stock || 0) + delta;
   const newTotal = type === 'restock' ? Number(item.total_stocked || 0) + qty : Number(item.total_stocked || 0);
   const { error: updateErr } = await sb.from('inventory_items').update({ current_stock: newStock, total_stocked: newTotal }).eq('id', itemId);

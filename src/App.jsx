@@ -10923,6 +10923,8 @@ const InventoryPage = ({ shopId, shop, user }) => {
   const [selectedItemId, setSelectedItemId] = React.useState(null);
   const [showAddItem, setShowAddItem] = React.useState(false);
   const [restockFor, setRestockFor] = React.useState(null); // {id, name} | null
+  const [soldFor, setSoldFor] = React.useState(null); // {id, name} | null — Log Sale modal
+  const [correctFor, setCorrectFor] = React.useState(null); // {id, name, currentStock} | null — admin-only stock correction
   const [confirmDeleteId, setConfirmDeleteId] = React.useState(null);
 
   const load = React.useCallback(() => {
@@ -10957,12 +10959,24 @@ const InventoryPage = ({ shopId, shop, user }) => {
             <h2 style={{margin:0,fontSize:19,fontWeight:800,color:"#0f172a"}}>{selectedItem.name}</h2>
             <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>Stock ledger — every unit in and out</p>
           </div>
-          {isAdmin && (
-            <button onClick={()=>setRestockFor({id:selectedItem.id,name:selectedItem.name})}
-              style={{padding:"9px 16px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-              + Restock
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={()=>setSoldFor({id:selectedItem.id,name:selectedItem.name})}
+              style={{padding:"9px 16px",borderRadius:10,border:"1.5px solid #fca5a5",background:"#fef2f2",color:"#b91c1c",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              − Log Sale
             </button>
-          )}
+            {isAdmin && (
+              <button onClick={()=>setCorrectFor({id:selectedItem.id,name:selectedItem.name,currentStock:selectedItem.currentStock})}
+                style={{padding:"9px 16px",borderRadius:10,border:"1.5px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                ⚖️ Correct Stock
+              </button>
+            )}
+            {isAdmin && (
+              <button onClick={()=>setRestockFor({id:selectedItem.id,name:selectedItem.name})}
+                style={{padding:"9px 16px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                + Restock
+              </button>
+            )}
+          </div>
         </div>
 
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:24}}>
@@ -10985,28 +10999,52 @@ const InventoryPage = ({ shopId, shop, user }) => {
           {itemMovements.length===0 && (
             <div style={{textAlign:"center",padding:"30px 0",color:"#94a3b8",fontSize:13}}>No movements recorded yet.</div>
           )}
-          {itemMovements.map(m => (
+          {itemMovements.map(m => {
+            // Correction qty is stored signed (can be + or −); restock/sale
+            // qty is always stored as a positive magnitude with the sign
+            // implied by type.
+            const isCorrection = m.type==="correction";
+            const signedQty = isCorrection ? Number(m.qty)||0 : (m.type==="restock" ? Number(m.qty)||0 : -(Number(m.qty)||0));
+            const amountColor = signedQty>0 ? "#166534" : signedQty<0 ? "#991b1b" : "#64748b";
+            return (
             <div key={m.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 14px",borderRadius:10,border:"1px solid #e2e8f0",background:"white"}}>
               <div>
                 <div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}>
-                  {m.type==="restock" ? "🟢 Restocked" : "🔴 Sold"}
+                  {m.type==="restock" ? "🟢 Restocked" : isCorrection ? "⚖️ Stock Corrected" : "🔴 Sold"}
                   {m.type==="sale" && m.customer && <span style={{color:"#64748b",fontWeight:600}}> to {m.customer}</span>}
                 </div>
                 <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>
                   {fmtDate(m.date)}{m.saleId?` · Invoice ${m.saleId}`:""}{m.note?` · ${m.note}`:""}
                 </div>
               </div>
-              <div style={{fontSize:14,fontWeight:800,color:m.type==="restock"?"#166534":"#991b1b"}}>
-                {m.type==="restock"?"+":"-"}{m.qty}
+              <div style={{fontSize:14,fontWeight:800,color:amountColor}}>
+                {signedQty>0?"+":""}{signedQty}
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
 
         {restockFor && (
           <RestockModal item={restockFor} onClose={()=>setRestockFor(null)} onSave={async(qty,note)=>{
             const ok = await dbAddInventoryMovement(shopId, restockFor.id, "restock", qty, new Date().toISOString().slice(0,10), null, null, note);
             if (ok) { setRestockFor(null); load(); }
+            else alert("Couldn't save — please check your connection and try again.");
+          }}/>
+        )}
+
+        {soldFor && (
+          <LogSaleModal item={soldFor} onClose={()=>setSoldFor(null)} onSave={async(qty,customer,date,note)=>{
+            const ok = await dbAddInventoryMovement(shopId, soldFor.id, "sale", qty, date, null, customer, note);
+            if (ok) { setSoldFor(null); load(); }
+            else alert("Couldn't save — please check your connection and try again.");
+          }}/>
+        )}
+
+        {correctFor && (
+          <CorrectStockModal item={correctFor} onClose={()=>setCorrectFor(null)} onSave={async(delta,note)=>{
+            const ok = await dbAddInventoryMovement(shopId, correctFor.id, "correction", delta, new Date().toISOString().slice(0,10), null, null, note);
+            if (ok) { setCorrectFor(null); load(); }
             else alert("Couldn't save — please check your connection and try again.");
           }}/>
         )}
@@ -11035,7 +11073,7 @@ const InventoryPage = ({ shopId, shop, user }) => {
           No inventory items yet. {isAdmin ? 'Click "+ Add Item" to start tracking your first stocked product.' : "Check back once your admin has added tracked items."}
         </div>
       ) : (
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(220px,1fr))",gap:14}}>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:14}}>
           {items.map(item => (
             <div key={item.id} onClick={()=>setSelectedItemId(item.id)}
               style={{padding:"16px 18px",borderRadius:14,border:"1px solid #e2e8f0",background:"white",cursor:"pointer",position:"relative"}}>
@@ -11050,7 +11088,15 @@ const InventoryPage = ({ shopId, shop, user }) => {
               <div style={{display:"inline-block",padding:"5px 12px",borderRadius:999,background:stockBg(item.currentStock),color:stockColor(item.currentStock),fontWeight:900,fontSize:18}}>
                 {item.currentStock}
               </div>
-              <div style={{fontSize:10.5,color:"#94a3b8",marginTop:6}}>in stock · {item.totalStocked - item.currentStock} sold total</div>
+              <div style={{fontSize:10.5,color:"#94a3b8",marginTop:6,marginBottom:12}}>in stock · {item.totalStocked - item.currentStock} sold total</div>
+              {/* Log a sale right from the card — no need to open the item
+                  first. Staff and admin both get this; it's the everyday
+                  action here, unlike Restock/Correct which stay one click
+                  further in, inside the item's own page. */}
+              <button onClick={(e)=>{e.stopPropagation();setSoldFor({id:item.id,name:item.name});}}
+                style={{width:"100%",padding:"7px 0",borderRadius:8,border:"1.5px solid #fca5a5",background:"#fef2f2",color:"#b91c1c",fontWeight:700,fontSize:11.5,cursor:"pointer",fontFamily:"inherit"}}>
+                − Log Sale
+              </button>
             </div>
           ))}
         </div>
@@ -11061,6 +11107,14 @@ const InventoryPage = ({ shopId, shop, user }) => {
           const id = await dbAddInventoryItem(shopId, name, stock);
           if (id) { setShowAddItem(false); load(); }
           else alert("Couldn't add this item — please check your connection and try again.");
+        }}/>
+      )}
+
+      {soldFor && (
+        <LogSaleModal item={soldFor} onClose={()=>setSoldFor(null)} onSave={async(qty,customer,date,note)=>{
+          const ok = await dbAddInventoryMovement(shopId, soldFor.id, "sale", qty, date, null, customer, note);
+          if (ok) { setSoldFor(null); load(); }
+          else alert("Couldn't save — please check your connection and try again.");
         }}/>
       )}
 
@@ -11166,6 +11220,118 @@ const RestockModal = ({ item, onClose, onSave }) => {
             disabled={!(Number(qty)>0)||saving}
             style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#1e293b",color:"white",fontWeight:700,fontSize:13,cursor:(!(Number(qty)>0)||saving)?"default":"pointer",fontFamily:"inherit",opacity:(!(Number(qty)>0)||saving)?0.6:1}}>
             {saving?"Saving…":"Add Stock"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Logs a unit (or several) sold from this item's stock, with who bought it
+// and when — separate from the formal Sales panel, for a quick counter-sale
+// record. Available to staff and admin alike; this is an everyday action.
+const LogSaleModal = ({ item, onClose, onSave }) => {
+  const [qty, setQty] = React.useState("1");
+  const [customer, setCustomer] = React.useState("");
+  const [date, setDate] = React.useState(() => new Date().toISOString().slice(0,10));
+  const [note, setNote] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const inp = {width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
+  const lbl = {display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
+  const canSave = Number(qty)>0 && customer.trim() && date;
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"white",borderRadius:16,padding:22,maxWidth:340,width:"92%"}}>
+        <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:4}}>− Log Sale · {item.name}</div>
+        <p style={{fontSize:11,color:"#94a3b8",marginBottom:16}}>Records who bought it and when, and removes it from current stock.</p>
+        <div style={{marginBottom:12}}>
+          <label style={lbl}>Quantity Sold</label>
+          <input type="number" value={qty} onChange={e=>setQty(e.target.value)} placeholder="e.g. 1" style={inp} autoFocus/>
+        </div>
+        <div style={{marginBottom:12}}>
+          <label style={lbl}>Customer Name</label>
+          <input value={customer} onChange={e=>setCustomer(e.target.value)} placeholder="Who bought it" style={inp}/>
+        </div>
+        <div style={{marginBottom:12}}>
+          <label style={lbl}>Date Sold</label>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/>
+        </div>
+        <div style={{marginBottom:18}}>
+          <label style={lbl}>Note (optional)</label>
+          <input value={note} onChange={e=>setNote(e.target.value)} placeholder="e.g. Paid cash at counter" style={inp}/>
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={onClose}
+            style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            Cancel
+          </button>
+          <button
+            onClick={async()=>{
+              if(!canSave) return;
+              setSaving(true);
+              await onSave(Number(qty)||0, customer.trim(), date, note);
+              setSaving(false);
+            }}
+            disabled={!canSave||saving}
+            style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#b91c1c",color:"white",fontWeight:700,fontSize:13,cursor:(!canSave||saving)?"default":"pointer",fontFamily:"inherit",opacity:(!canSave||saving)?0.6:1}}>
+            {saving?"Saving…":"Log Sale"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Admin-only: fix current_stock after a physical count, without it being
+// mistaken for either a real restock (which would inflate Total Ever
+// Stocked) or a sale (which would misreport it as sold-to-a-customer).
+// The admin enters what they actually counted; the signed difference from
+// the system's current number is what gets logged and applied.
+const CorrectStockModal = ({ item, onClose, onSave }) => {
+  const [counted, setCounted] = React.useState(String(item.currentStock));
+  const [note, setNote] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const inp = {width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
+  const lbl = {display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
+  const countedNum = counted===""?null:Number(counted);
+  const delta = countedNum===null||isNaN(countedNum) ? null : countedNum - item.currentStock;
+  const canSave = delta!==null && delta!==0 && countedNum>=0;
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"white",borderRadius:16,padding:22,maxWidth:340,width:"92%"}}>
+        <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:4}}>⚖️ Correct Stock · {item.name}</div>
+        <p style={{fontSize:11,color:"#94a3b8",marginBottom:16}}>For fixing a miscount — not a sale or a real restock. Logged separately so the sold/restocked totals stay accurate.</p>
+        <div style={{marginBottom:12,padding:"9px 12px",borderRadius:9,background:"#f8fafc",border:"1px solid #e2e8f0",fontSize:12,color:"#64748b"}}>
+          System currently shows <strong style={{color:"#0f172a"}}>{item.currentStock}</strong> in stock.
+        </div>
+        <div style={{marginBottom:12}}>
+          <label style={lbl}>Actual Counted Stock</label>
+          <input type="number" value={counted} onChange={e=>setCounted(e.target.value)} placeholder="What you physically counted" style={inp} autoFocus/>
+        </div>
+        {delta!==null && !isNaN(delta) && delta!==0 && (
+          <div style={{marginBottom:12,fontSize:12,fontWeight:700,color:delta>0?"#166534":"#991b1b"}}>
+            This will log a {delta>0?"+":""}{delta} correction.
+          </div>
+        )}
+        <div style={{marginBottom:18}}>
+          <label style={lbl}>Reason</label>
+          <input value={note} onChange={e=>setNote(e.target.value)} placeholder="e.g. Physical stock count, Damaged, Lost" style={inp}/>
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={onClose}
+            style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            Cancel
+          </button>
+          <button
+            onClick={async()=>{
+              if(!canSave) return;
+              setSaving(true);
+              await onSave(delta, note);
+              setSaving(false);
+            }}
+            disabled={!canSave||saving}
+            style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#1e293b",color:"white",fontWeight:700,fontSize:13,cursor:(!canSave||saving)?"default":"pointer",fontFamily:"inherit",opacity:(!canSave||saving)?0.6:1}}>
+            {saving?"Saving…":"Save Correction"}
           </button>
         </div>
       </div>
