@@ -2459,7 +2459,7 @@ We hope you enjoy your purchase! 💜
                                 groupIds.forEach(id => onInlineEdit(id, { readyToShip: true }));
                               }
                             }}
-                            title={s.readyToShip ? "Ready to ship — click to undo" : "Click here when the item is ready to despatch — surfaces it on the Despatch Log page"}
+                            title={s.readyToShip ? "Awaiting Tracking — click to undo" : "Click here when the item is ready to despatch — surfaces it on the Despatch Log page"}
                             style={{
                               display: "inline-flex", flexDirection: "column", alignItems: "center",
                               justifyContent: "center", width: 120, textAlign: "center",
@@ -2472,8 +2472,8 @@ We hope you enjoy your purchase! 💜
                             }}>
                             {s.readyToShip ? (
                               <>
-                                <span>✅ Ready</span>
-                                <span>to Ship</span>
+                                <span>✅ Awaiting</span>
+                                <span>Tracking</span>
                               </>
                             ) : (
                               <>
@@ -2603,7 +2603,7 @@ We hope you enjoy your purchase! 💜
                         </div>
                       ) : (
                         <span style={{ fontSize: 11, color: "#94a3b8", fontStyle: "italic" }}>
-                          Entered from Despatch Log
+                          Enter in Despatch Log
                         </span>
                       )}
                     </td>
