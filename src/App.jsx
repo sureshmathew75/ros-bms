@@ -9956,15 +9956,24 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
   });
 
   const handleImport = async () => {
+    // Order oldest → newest by Shopify's own order number (not date/createdAt)
+    // before handing out invoice numbers below. Shopify order numbers are a
+    // strict, unambiguous sequence — two orders can share the same calendar
+    // date (or arrive with no time-of-day at all), but their order numbers
+    // never tie, so this is what keeps the newest Shopify sale landing on
+    // top of the Sales list every time, in the same order Shopify placed them.
     const chosen = orders
       .filter(o => selected.has(o.shopifyOrderId))
-      .sort((a,b) => (a.createdAt||a.date||"").localeCompare(b.createdAt||b.date||""));
+      .sort((a,b) => (parseInt(normalizeOrderNo(a.orderNumber))||0) - (parseInt(normalizeOrderNo(b.orderNumber))||0));
     if (chosen.length === 0) return;
     setImporting(true);
 
     // Sequential invoice numbers matching the same scheme New Sale uses
     // (ROS#### + FY digit), so imported orders slot into the normal
     // numbering series instead of a separate Shopify-prefixed one.
+    // Assigned in the order-number order above, so the Sales list's
+    // invoice-number tiebreak (used whenever two sales share a date)
+    // always resolves in Shopify's true chronological order.
     const _now = new Date();
     const _yr = _now.getMonth() >= 3 ? _now.getFullYear() : _now.getFullYear() - 1;
     const _fySuffix = String(_yr + 1).slice(-1);
