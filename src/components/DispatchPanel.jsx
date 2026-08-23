@@ -350,6 +350,8 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
   const isAdmin = user?.role === "admin" || user?.role === "superadmin";
   const isIndiaShop = shopId === "ros-india" || shopId === "ros-india-staff";
   const SHIPPERS = isIndiaShop ? IN_SHIPPERS : UK_SHIPPERS;
+  // Default shipper pre-filled on new despatch rows — DTDC for India, Royal Mail for the UK shops.
+  const DEFAULT_SHIPPER = isIndiaShop ? "DTDC" : "Royal Mail";
 
   /* ── Linked-transaction grouping ──────────────────────────────────────
      A single customer parcel can be split across several sale rows
@@ -601,7 +603,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
       phone: sale.phone || sale.contact || "",
       address: sale.address || "",
       trackingNo: "",
-      shipper: "",
+      shipper: DEFAULT_SHIPPER,
       notified: false,
       remarks: "",
     };
@@ -653,7 +655,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
           phone: sale.phone || sale.contact || "",
           address: sale.address || "",
           trackingNo: "",
-          shipper: "",
+          shipper: DEFAULT_SHIPPER,
           notified: false,
           remarks: "",
         };
