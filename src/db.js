@@ -711,7 +711,7 @@ export const dbNextReturnId = async () => {
 
 export const dbSaveReturn = async (ret) => {
   if (!sb) return false;
-  const payload = {
+  const basePayload = {
     id:                     ret.id,
     shop_id:                ret.shopId,
     sale_id:                ret.saleId,
@@ -737,14 +737,27 @@ export const dbSaveReturn = async (ret) => {
     refund_method:          ret.refundMethod || '',
     refund_to_name:         ret.refundToName || '',
     stock_status:           ret.stockStatus || 'in_office',
-    resold_to:              ret.resoldTo || '',
-    resold_date:            ret.resoldDate || null,
   };
+  // resold_to/resold_date are an optional migration — until "alter table
+  // returns add column ..." has been run on the live database, sending
+  // these two fields makes Supabase reject the WHOLE save with a schema
+  // error, blocking every return (not just resold ones). So: try with
+  // them first, and if that specific save fails, silently retry without
+  // them rather than losing the return entirely.
+  const fullPayload = { ...basePayload, resold_to: ret.resoldTo || '', resold_date: ret.resoldDate || null };
   const { data: existing } = await sb.from('returns').select('id').eq('id', ret.id).maybeSingle();
   const { error } = existing
-    ? await sb.from('returns').update(payload).eq('id', ret.id)
-    : await sb.from('returns').insert(payload);
-  if (error) { console.error('Save return error:', error); return false; }
+    ? await sb.from('returns').update(fullPayload).eq('id', ret.id)
+    : await sb.from('returns').insert(fullPayload);
+  if (error) {
+    console.warn('Save return failed with resold_to/resold_date — retrying without them (run the pending ALTER TABLE to enable that field):', error.message);
+    const { error: error2 } = existing
+      ? await sb.from('returns').update(basePayload).eq('id', ret.id)
+      : await sb.from('returns').insert(basePayload);
+    if (error2) { console.error('Save return error:', error2); return false; }
+    console.log('✅ Return saved (without resold_to/resold_date):', ret.id);
+    return true;
+  }
   console.log('✅ Return saved:', ret.id);
   return true;
 };
