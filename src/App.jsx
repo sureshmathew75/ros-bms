@@ -1647,7 +1647,12 @@ const ReturnsPortal=()=>{
   const [form,setForm]=React.useState({
     name:"",phone:"",reason:"",resolution:"exchange",
   });
-  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const set=(k,v)=>{
+    // Editing any field (e.g. fixing a typo'd phone number) should re-attempt
+    // normal matching on the next Submit, not stay locked into the override.
+    if(unmatched){setUnmatched(false);setErrorMsg("");}
+    setForm(f=>({...f,[k]:v}));
+  };
 
   const REASONS=[
     "Item damaged or defective",
@@ -1783,7 +1788,8 @@ const ReturnsPortal=()=>{
         staff_notes:"",
       });
       if(retErr){
-        setErrorMsg("Something went wrong saving your return. Please try again or contact us.");
+        console.error("Return insert failed:",retErr);
+        setErrorMsg(`Something went wrong saving your return${retErr.message?`: ${retErr.message}`:""}. Please try again or contact us.`);
         setLoading(false);return;
       }
 
@@ -1846,7 +1852,11 @@ const ReturnsPortal=()=>{
         staff_notes:`⚠️ Submitted via the online form but we couldn't auto-match it to an order (checked phone "${form.phone}" and name "${form.name}"). Please verify this is a genuine order within the return window and link the correct sale above before proceeding.`,
       });
       if(retErr){
-        setErrorMsg("Something went wrong saving your return. Please try again or contact us.");
+        console.error("Return insert failed (unmatched path):",retErr);
+        // Surfacing the raw message on-screen (temporary, for diagnosis) —
+        // easier for a non-technical customer/staff member to screenshot
+        // than asking them to open the browser console.
+        setErrorMsg(`Something went wrong saving your return${retErr.message?`: ${retErr.message}`:""}. Please try again or contact us.`);
         setLoading(false);return;
       }
 
@@ -1954,30 +1964,26 @@ const ReturnsPortal=()=>{
             </div>
           )}
 
-          {/* Manual-verification override — only offered when the failure was
+          {/* Manual-verification note — shown only when the failure was
               specifically "couldn't auto-match an order", never for other
-              validation errors. */}
+              validation errors. The Submit button below switches to the
+              override action in this state; there is only ever one button. */}
           {unmatched&&(
-            <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"12px 14px",marginBottom:16}}>
-              <p style={{margin:"0 0 8px",fontSize:12.5,color:"#92400e",lineHeight:1.5}}>
-                Sure the details are right? You can still submit — our team will verify your order manually and confirm with you.
-              </p>
-              <button onClick={submitUnmatched} disabled={loading}
-                style={{width:"100%",padding:"10px 0",borderRadius:9,border:"1.5px solid #d97706",
-                  background:"white",color:"#92400e",fontWeight:800,fontSize:13,
-                  cursor:loading?"default":"pointer",fontFamily:"inherit"}}>
-                {loading?"Submitting…":"Submit anyway — for manual verification"}
-              </button>
-            </div>
+            <p style={{margin:"0 0 10px",fontSize:12.5,color:"#92400e",lineHeight:1.5,
+              background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"10px 14px"}}>
+              Sure the details are right? You can still submit — our team will verify your order manually and confirm with you.
+            </p>
           )}
 
-          {/* Submit */}
-          <button onClick={handleSubmit} disabled={loading}
-            style={{width:"100%",padding:"14px 0",borderRadius:12,border:"none",
-              background:loading?"#94a3b8":"linear-gradient(135deg,#166534,#15803d)",
-              color:"white",fontWeight:800,fontSize:15,cursor:loading?"default":"pointer",
-              fontFamily:"inherit",boxShadow:loading?"none":"0 4px 20px rgba(22,101,52,0.30)"}}>
-            {loading?"Submitting…":"Submit Return Request →"}
+          {/* Submit — one button, whose action and label switch depending on
+              whether we're in the unmatched-override state. */}
+          <button onClick={unmatched?submitUnmatched:handleSubmit} disabled={loading}
+            style={{width:"100%",padding:"14px 0",borderRadius:12,
+              border:unmatched?"1.5px solid #d97706":"none",
+              background:loading?"#94a3b8":unmatched?"white":"linear-gradient(135deg,#166534,#15803d)",
+              color:unmatched?"#92400e":"white",fontWeight:800,fontSize:15,cursor:loading?"default":"pointer",
+              fontFamily:"inherit",boxShadow:(loading||unmatched)?"none":"0 4px 20px rgba(22,101,52,0.30)"}}>
+            {loading?"Submitting…":unmatched?"Submit for Manual Verification":"Submit Return Request →"}
           </button>
 
           <p style={{margin:"16px 0 0",fontSize:11,color:"#94a3b8",textAlign:"center",lineHeight:1.5}}>
