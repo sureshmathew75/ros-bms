@@ -2329,16 +2329,31 @@ We look forward to serving you again in the future.
 
 Thank you`;
 
-const MSG_VOUCHER_ISSUED = (customer, code, amount, symbol) =>
-`Dear ${customer},
+// Expiry shown here is informational only (encourages the customer to use
+// it, gives support a reference point) — the voucher itself has no expiry
+// policy in the system; staff can still redeem it at any time regardless
+// of this date.
+const MSG_VOUCHER_ISSUED = (customer, code, amount, symbol, issuedDate) => {
+  const expiry = (() => {
+    try {
+      const d = new Date((issuedDate || new Date().toISOString().slice(0,10)) + "T00:00:00");
+      d.setFullYear(d.getFullYear() + 1);
+      return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    } catch { return ""; }
+  })();
+  return `Dear ${customer},
 
 A *Gift Voucher* worth ${symbol}${Number(amount).toLocaleString()} has been issued to you 🎁
 
 Your Voucher Code: *${code}*
+Valid until: *${expiry}*
 
-Please quote this code when you next shop with us to redeem it.
+Please keep this code safe and use it whenever you're ready — no rush.
+
+If you have any trouble using it at checkout, just message us on WhatsApp and we'll sort it out for you.
 
 Thank you`;
+};
 
 // ── Return window policy ────────────────────────────────────────────────
 // A return must reach us within RETURN_WINDOW_DAYS of the item's DELIVERY
@@ -3425,7 +3440,7 @@ const GiftVouchersView = ({ shopId, shop, allSales, allReturns, giftVouchers, se
     setGiftVouchers(prev => [record, ...prev]);
     setShowIssueVoucher(false);
     if (data.phone && setWaModal) {
-      setWaModal({ phone: data.phone, customerName: data.customer, message: MSG_VOUCHER_ISSUED(data.customer, id, data.amount, shop.symbol) });
+      setWaModal({ phone: data.phone, customerName: data.customer, message: MSG_VOUCHER_ISSUED(data.customer, id, data.amount, shop.symbol, data.issuedDate) });
     }
   };
 
@@ -3527,7 +3542,7 @@ const GiftVouchersView = ({ shopId, shop, allSales, allReturns, giftVouchers, se
               <div style={{marginTop:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                 <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
                   {v.phone && (
-                    <button onClick={()=>setWaModal({phone:v.phone,customerName:v.customer,message:MSG_VOUCHER_ISSUED(v.customer,v.id,v.amount,shop.symbol)})}
+                    <button onClick={()=>setWaModal({phone:v.phone,customerName:v.customer,message:MSG_VOUCHER_ISSUED(v.customer,v.id,v.amount,shop.symbol,v.issuedDate)})}
                       style={{border:"1px solid #bbf7d0",background:"#f0fdf4",color:"#166534",fontSize:11,fontWeight:700,cursor:"pointer",padding:"5px 12px",borderRadius:8,fontFamily:"inherit"}}>
                       💬 Notify
                     </button>
@@ -3754,7 +3769,7 @@ const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,on
     } else {
       alert("Voucher was issued, but the return case couldn't be closed automatically — please close it manually.");
     }
-    if(data.phone) setWaModal({phone:data.phone,customerName:data.customer,message:MSG_VOUCHER_ISSUED(data.customer,id,data.amount,shop.symbol)});
+    if(data.phone) setWaModal({phone:data.phone,customerName:data.customer,message:MSG_VOUCHER_ISSUED(data.customer,id,data.amount,shop.symbol,data.issuedDate)});
   };
 
   React.useEffect(()=>{
