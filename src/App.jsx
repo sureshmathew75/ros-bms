@@ -1669,6 +1669,7 @@ const ReturnsPortal=()=>{
       // 1. Find sale by phone number (most recent fulfilled/delivered sale)
       const cleanPhone=p=>String(p||"").replace(/\D/g,"").slice(-10);
       const phoneClean=cleanPhone(form.phone);
+      const normName=s=>s.toLowerCase().replace(/\s+/g," ").trim();
 
       const {data:saleRows,error:saleErr}=await sb
         .from("sales").select("*")
@@ -1677,20 +1678,46 @@ const ReturnsPortal=()=>{
 
       // Also try cleaned phone
       let allRows=saleRows||[];
+      let rowsFetchedOnce=null;
       if(allRows.length===0){
         const {data:rows2}=await sb.from("sales").select("*").order("date",{ascending:false});
-        allRows=(rows2||[]).filter(r=>cleanPhone(r.phone||r.contact)===phoneClean);
+        rowsFetchedOnce=rows2||[];
+        allRows=rowsFetchedOnce.filter(r=>cleanPhone(r.phone||r.contact)===phoneClean);
       } else {
         allRows=allRows.filter(r=>cleanPhone(r.phone||r.contact)===phoneClean);
       }
 
-      if(saleErr||allRows.length===0){
+      // Fallback: some Shopify orders import with no usable phone on the sale
+      // (e.g. the customer only gave a phone at the shipping-address step of
+      // checkout, not the order-level contact field the importer reads) — so
+      // a genuine order can exist with a phone that never matches what the
+      // customer types here. If phone matching found nothing, fall back to
+      // matching on the full name instead. Requires at least first + last
+      // name and every typed word to appear in the stored customer name, so
+      // a common first name alone can't surface the wrong person's order;
+      // also scoped to this shop's link when one was specified.
+      if(allRows.length===0){
+        const typedTokens=normName(form.name).split(" ").filter(Boolean);
+        if(typedTokens.length>=2){
+          const allSalesRows=rowsFetchedOnce!==null?rowsFetchedOnce:(await sb.from("sales").select("*").order("date",{ascending:false})).data||[];
+          allRows=allSalesRows.filter(r=>{
+            if(urlShop&&r.shop_id&&r.shop_id!==urlShop) return false;
+            const stored=normName(r.customer||"");
+            return typedTokens.every(t=>stored.includes(t));
+          });
+        }
+      }
+
+      // Note: saleErr (from the very first phone query) isn't treated as fatal
+      // on its own — the broader re-fetch and name fallback above run their
+      // own separate queries and may still have found a match. Only an
+      // empty final result actually blocks the request.
+      if(allRows.length===0){
         setErrorMsg("We could not find an order with this WhatsApp number. Please check your number or contact us directly.");
         setLoading(false);return;
       }
 
       // 2. Name match — find best matching sale
-      const normName=s=>s.toLowerCase().replace(/\s+/g," ").trim();
       const firstName=normName(form.name).split(" ")[0];
       let sale=allRows.find(r=>normName(r.customer||"").includes(firstName));
       if(!sale) sale=allRows[0]; // fallback to most recent
