@@ -2514,7 +2514,7 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user,sales=
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
             <div style={{background:"#f8fafc",borderRadius:10,padding:"10px 12px",border:"1px solid #e2e8f0"}}>
               <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>Requested</p>
-              <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ret.resolution==="exchange"?"🔄 Exchange":ret.resolution==="exchange_refund"?"🔄💰 Refund/Exchange":"💰 Refund"}</p>
+              <p style={{margin:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ret.resolution==="exchange"?"🔄 Exchange":ret.resolution==="exchange_refund"?"🔄💰 Refund/Exchange":ret.resolution==="voucher"?"🎁 Gift Voucher":"💰 Refund"}</p>
             </div>
             {/* Show deadline only for Expecting stage */}
             {(form.status==="RETURN_APPROVED"||form.status==="MSG_SENT"||form.status==="RETURN_IN_TRANSIT")?(
@@ -3582,11 +3582,11 @@ const GiftVouchersView = ({ shopId, shop, allSales, allReturns, giftVouchers, se
   );
 };
 
-const IssueVoucherModal = ({ shopId, shop, allSales, allReturns, onClose, onSave }) => {
+const IssueVoucherModal = ({ shopId, shop, allSales, allReturns, presetLink, onClose, onSave }) => {
   const [linkSearch, setLinkSearch] = React.useState("");
-  const [linked, setLinked] = React.useState(null); // {type:"sale"|"return", id, customer, phone}
-  const [customer, setCustomer] = React.useState("");
-  const [phone, setPhone] = React.useState("");
+  const [linked, setLinked] = React.useState(presetLink || null); // {type:"sale"|"return", id, customer, phone}
+  const [customer, setCustomer] = React.useState(presetLink?.customer || "");
+  const [phone, setPhone] = React.useState(presetLink?.phone || "");
   const [amount, setAmount] = React.useState("");
   const [reason, setReason] = React.useState(VOUCHER_REASONS[0]);
   const [reasonNote, setReasonNote] = React.useState("");
@@ -3730,6 +3730,32 @@ const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,on
   const [vouchersLoaded,setVouchersLoaded]=React.useState(false);
   const [showIssueVoucher,setShowIssueVoucher]=React.useState(false);
   const [confirmDeleteVoucher,setConfirmDeleteVoucher]=React.useState(null); // {id, customer}
+  const [voucherForReturn,setVoucherForReturn]=React.useState(null); // return record currently issuing a voucher for, from the card quick-action
+
+  // Issue a gift voucher directly from a return card's "🎁 Voucher" quick
+  // action — creates the voucher exactly like the Gift Vouchers tab does,
+  // then closes the return case the same way Refund does (so it leaves the
+  // active list), tagging it resolution:"voucher" so the card/detail labels
+  // read "🎁 Gift Voucher" instead of defaulting to "💰 Refund".
+  const handleIssueVoucherFromReturn=async(data)=>{
+    const ret=voucherForReturn;
+    if(!ret)return;
+    const id=await dbAddGiftVoucher(shopId,data);
+    if(!id){ alert("Couldn't save — please check your connection and try again."); return; }
+    setGiftVouchers(prev=>[{...data,id,status:"ACTIVE",issuedDate:data.issuedDate,redeemedDate:"",redeemedNote:""},...prev]);
+    setVoucherForReturn(null);
+
+    const today=new Date().toISOString().slice(0,10);
+    const updated={...ret,status:"REFUNDED",resolution:"voucher",refundDate:today,refundAmount:Number(data.amount)||0};
+    const ok=await dbSaveReturn(updated);
+    if(ok){
+      setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
+      if(onSyncSaleStatus) await onSyncSaleStatus(ret.saleId,"REFUNDED",{refundAmt:Number(data.amount)||0,adjType:"Return Refund"});
+    } else {
+      alert("Voucher was issued, but the return case couldn't be closed automatically — please close it manually.");
+    }
+    if(data.phone) setWaModal({phone:data.phone,customerName:data.customer,message:MSG_VOUCHER_ISSUED(data.customer,id,data.amount,shop.symbol)});
+  };
 
   React.useEffect(()=>{
     if(filter==="UPFRONT_REFUNDS"&&!upfrontLoaded){
@@ -4113,6 +4139,12 @@ Thank you for your cooperation.`,
                       color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
                       🔄💰 Refund/Exchange
                     </button>
+                    <button onClick={e=>{e.stopPropagation();
+                      setVoucherForReturn(ret);
+                    }} style={{padding:"4px 8px",borderRadius:7,border:"none",background:"#db2777",
+                      color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
+                      🎁 Voucher
+                    </button>
                   </div>
                 );
                 return <span style={{fontSize:11,color:"#94a3b8"}}>—</span>;
@@ -4138,7 +4170,7 @@ Thank you for your cooperation.`,
                     <div style={{flex:1,minWidth:0,cursor:"pointer"}} onClick={()=>setSelectedReturn(ret)}>
                       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
                         <span style={{fontSize:12,fontWeight:800,color:shop.accent,fontFamily:"DM Mono,monospace"}}>{ret.id}</span>
-                        <span style={{fontSize:10,color:"#94a3b8"}}>{ret.resolution==="exchange"?"🔄":ret.resolution==="exchange_refund"?"🔄💰":"💰"} {ret.resolution==="exchange_refund"?"return/exchange":ret.resolution}</span>
+                        <span style={{fontSize:10,color:"#94a3b8"}}>{ret.resolution==="exchange"?"🔄":ret.resolution==="exchange_refund"?"🔄💰":ret.resolution==="voucher"?"🎁":"💰"} {ret.resolution==="exchange_refund"?"return/exchange":ret.resolution==="voucher"?"gift voucher":ret.resolution}</span>
                         {(()=>{
                           if(ret.status!=="MSG_SENT"&&ret.status!=="RETURN_IN_TRANSIT")return null;
                           if(ret.reminderSentAt)return null;
@@ -4385,6 +4417,14 @@ Thank you for your cooperation.`,
         </div>
       )}
       <WaModal data={waModal} onClose={()=>setWaModal(null)}/>
+      {voucherForReturn && (
+        <IssueVoucherModal
+          shopId={shopId} shop={shop} allSales={allSales} allReturns={returns}
+          presetLink={{type:"return", id:voucherForReturn.id, saleId:voucherForReturn.saleId||null, customer:voucherForReturn.customer||"", phone:voucherForReturn.phone||""}}
+          onClose={()=>setVoucherForReturn(null)}
+          onSave={handleIssueVoucherFromReturn}
+        />
+      )}
       {manualReturnModal && (
         <ManualReturnModal
           shopId={shopId} shop={shop} sales={salesData[shopId]||[]}
