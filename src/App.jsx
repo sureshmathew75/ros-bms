@@ -35,7 +35,8 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadAttendanceRecords, dbClockIn, dbClockOut, dbSetAttendanceRecord,
   dbLoadAttendanceHolidays, dbAddAttendanceHoliday, dbRemoveAttendanceHoliday,
   dbLoadInventoryItems, dbAddInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement,
-  dbLoadUpfrontRefunds, dbAddUpfrontRefund, dbDeleteUpfrontRefund } from "./db";
+  dbLoadUpfrontRefunds, dbAddUpfrontRefund, dbDeleteUpfrontRefund,
+  dbLoadGiftVouchers, dbAddGiftVoucher, dbUpdateGiftVoucher, dbDeleteGiftVoucher } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -2328,6 +2329,17 @@ We look forward to serving you again in the future.
 
 Thank you`;
 
+const MSG_VOUCHER_ISSUED = (customer, code, amount, symbol) =>
+`Dear ${customer},
+
+A *Gift Voucher* worth ${symbol}${Number(amount).toLocaleString()} has been issued to you 🎁
+
+Your Voucher Code: *${code}*
+
+Please quote this code when you next shop with us to redeem it.
+
+Thank you`;
+
 // ── Return window policy ────────────────────────────────────────────────
 // A return must reach us within RETURN_WINDOW_DAYS of the item's DELIVERY
 // date — never from the day the return was requested/logged. Every place
@@ -3030,7 +3042,7 @@ const ManualReturnModal = ({ shopId, shop, sales, onClose, onSave }) => {
 const REFUND_REASONS = ["Customer Cancelled", "Out of Stock", "Price or Payment Issue", "Other"];
 
 const UpfrontRefundsView = ({ shopId, shop, allSales, upfrontRefunds, setUpfrontRefunds, onSyncSaleStatus, setWaModal,
-  showLogRefund, setShowLogRefund, confirmDeleteRefund, setConfirmDeleteRefund, filter, setFilter, counts }) => {
+  showLogRefund, setShowLogRefund, confirmDeleteRefund, setConfirmDeleteRefund, filter, setFilter, counts, giftVouchers=[] }) => {
 
   const fmtDate = (d) => { try { return new Date(d+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}); } catch { return d; } };
   const totalRefunded = upfrontRefunds.reduce((a,r)=>a+(Number(r.amount)||0),0);
@@ -3111,15 +3123,19 @@ const UpfrontRefundsView = ({ shopId, shop, allSales, upfrontRefunds, setUpfront
           {key:"REFUNDED",  label:"Refunded"},
           {key:"EXCHANGE_REFUND", label:"Refund/Exchange"},
           {key:"UPFRONT_REFUNDS", label:"💸 Upfront Refunds"},
-        ].map(f=>(
+          {key:"GIFT_VOUCHERS", label:"🎁 Gift Vouchers"},
+        ].map(f=>{
+          const n = f.key==="UPFRONT_REFUNDS" ? upfrontRefunds.length : f.key==="GIFT_VOUCHERS" ? giftVouchers.length : counts[f.key];
+          return (
           <button key={f.key} onClick={()=>setFilter(f.key)}
             style={{padding:"5px 14px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
               border:"1px solid "+(filter===f.key?shop.accent:"#e2e8f0"),
               background:filter===f.key?shop.accent:"white",
               color:filter===f.key?"white":"#64748b"}}>
-            {f.label}{f.key==="UPFRONT_REFUNDS"?(upfrontRefunds.length>0?` (${upfrontRefunds.length})`:""):(counts[f.key]>0?` (${counts[f.key]})`:"")}
+            {f.label}{n>0?` (${n})`:""}
           </button>
-        ))}
+          );
+        })}
       </div>
 
       {upfrontRefunds.length>0 && (
@@ -3381,6 +3397,327 @@ const LogRefundModal = ({ shopId, shop, allSales, onClose, onSave }) => {
   );
 };
 
+/* ── GiftVouchersView: store credit issued instead of cash — a return
+   resolution the customer prefers over waiting for a refund, or a
+   standalone goodwill gesture. Tracked separately from the returns ledger
+   for the same reason Upfront Refunds is: a voucher stays open (a real
+   liability on the books) long after any linked return case is closed,
+   and it doesn't always come from a return at all. No expiry by policy —
+   a voucher stays Active until redeemed or cancelled by hand. ─────────── */
+const VOUCHER_REASONS = ["Return Resolution", "Goodwill Gesture", "Price Adjustment", "Loyalty / Referral", "Other"];
+const VOUCHER_STATUS_STYLE = {
+  ACTIVE:    { bg:"#f5f3ff", border:"#ddd6fe", text:"#5b21b6", label:"🎁 Active" },
+  REDEEMED:  { bg:"#f0fdf4", border:"#86efac", text:"#166534", label:"✅ Redeemed" },
+  CANCELLED: { bg:"#f8fafc", border:"#e2e8f0", text:"#64748b", label:"✕ Cancelled" },
+};
+
+const GiftVouchersView = ({ shopId, shop, allSales, allReturns, giftVouchers, setGiftVouchers, setWaModal,
+  showIssueVoucher, setShowIssueVoucher, confirmDeleteVoucher, setConfirmDeleteVoucher, filter, setFilter, counts, upfrontRefunds }) => {
+
+  const fmtDate = (d) => { if(!d) return ""; try { return new Date(d+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}); } catch { return d; } };
+  const activeVouchers = giftVouchers.filter(v=>v.status==="ACTIVE");
+  const openLiability = activeVouchers.reduce((a,v)=>a+(Number(v.amount)||0),0);
+
+  const handleSave = async (data) => {
+    const id = await dbAddGiftVoucher(shopId, data);
+    if (!id) { alert("Couldn't save — please check your connection and try again."); return; }
+    const record = { ...data, id, status:"ACTIVE", issuedDate: data.issuedDate, redeemedDate:"", redeemedNote:"" };
+    setGiftVouchers(prev => [record, ...prev]);
+    setShowIssueVoucher(false);
+    if (data.phone && setWaModal) {
+      setWaModal({ phone: data.phone, customerName: data.customer, message: MSG_VOUCHER_ISSUED(data.customer, id, data.amount, shop.symbol) });
+    }
+  };
+
+  const updateStatus = async (v, newStatus) => {
+    const patch = newStatus==="REDEEMED" ? { status:newStatus, redeemedDate:new Date().toISOString().slice(0,10) } : { status:newStatus };
+    const ok = await dbUpdateGiftVoucher(shopId, v.id, patch);
+    if (!ok) { alert("Couldn't update — please check your connection and try again."); return; }
+    setGiftVouchers(prev => prev.map(x=>x.id===v.id?{...x,...patch}:x));
+  };
+
+  const handleDelete = async (id) => {
+    const ok = await dbDeleteGiftVoucher(shopId, id);
+    setConfirmDeleteVoucher(null);
+    if (ok) setGiftVouchers(prev => prev.filter(v => v.id !== id));
+    else alert("Couldn't delete — please check your connection and try again.");
+  };
+
+  const tabCount = (key) => key==="UPFRONT_REFUNDS" ? upfrontRefunds.length : key==="GIFT_VOUCHERS" ? giftVouchers.length : counts[key];
+
+  return (
+    <div style={{padding:"0 12px 40px"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:14}}>
+        <div>
+          <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>🎁 Gift Vouchers</h2>
+          <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>Store credit issued instead of cash — return resolutions and goodwill gestures.</p>
+        </div>
+        <button onClick={()=>setShowIssueVoucher(true)}
+          style={{padding:"9px 16px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+          + Issue Voucher
+        </button>
+      </div>
+
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
+        {[
+          {key:"ACTIVE",    label:"Expecting"},
+          {key:"RETURN_RECEIVED", label:"Received"},
+          {key:"EXCHANGED", label:"Exchanged"},
+          {key:"REFUNDED",  label:"Refunded"},
+          {key:"EXCHANGE_REFUND", label:"Refund/Exchange"},
+          {key:"UPFRONT_REFUNDS", label:"💸 Upfront Refunds"},
+          {key:"GIFT_VOUCHERS", label:"🎁 Gift Vouchers"},
+        ].map(f=>(
+          <button key={f.key} onClick={()=>setFilter(f.key)}
+            style={{padding:"5px 14px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+              border:"1px solid "+(filter===f.key?shop.accent:"#e2e8f0"),
+              background:filter===f.key?shop.accent:"white",
+              color:filter===f.key?"white":"#64748b"}}>
+            {f.label}{tabCount(f.key)>0?` (${tabCount(f.key)})`:""}
+          </button>
+        ))}
+      </div>
+
+      {giftVouchers.length>0 && (
+        <div style={{padding:"12px 16px",borderRadius:12,background:"#f5f3ff",border:"1px solid #ddd6fe",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
+          <span style={{fontSize:12,color:"#5b21b6",fontWeight:600}}>Open voucher liability ({activeVouchers.length} active of {giftVouchers.length} total)</span>
+          <span style={{fontSize:16,fontWeight:900,color:"#5b21b6"}}>{shop.symbol}{openLiability.toLocaleString()}</span>
+        </div>
+      )}
+
+      {giftVouchers.length===0 ? (
+        <div style={{textAlign:"center",padding:"60px 20px",color:"#94a3b8",fontSize:13}}>
+          No gift vouchers issued yet. Click "+ Issue Voucher" when a customer takes store credit instead of a refund.
+        </div>
+      ) : (
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill, minmax(360px, 1fr))",gap:10}}>
+          {giftVouchers.map(v => {
+            const st = VOUCHER_STATUS_STYLE[v.status] || VOUCHER_STATUS_STYLE.ACTIVE;
+            return (
+            <div key={v.id} style={{padding:"14px 16px",borderRadius:12,
+              border:"1px solid "+st.border,borderLeft:"4px solid "+st.text,
+              background:st.bg,boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
+                <div>
+                  <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                    <span style={{fontSize:13,fontWeight:700,color:"#0f172a"}}>{v.customer}</span>
+                    <span style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:999,
+                      background:"white",color:st.text,border:"1px solid "+st.border}}>
+                      {st.label}
+                    </span>
+                  </div>
+                  <div style={{fontSize:12,fontWeight:700,color:st.text,fontFamily:"DM Mono,monospace",marginTop:3,letterSpacing:0.5}}>{v.id}</div>
+                  <div style={{fontSize:11,color:"#64748b",marginTop:2}}>
+                    {v.phone && <>{v.phone} · </>}
+                    {v.returnId?`Return ${v.returnId}`:v.saleId?`Sale ${v.saleId}`:"No link"} · Issued {fmtDate(v.issuedDate)}
+                  </div>
+                </div>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:17,fontWeight:900,color:st.text}}>{shop.symbol}{Number(v.amount).toLocaleString()}</div>
+                  <div style={{fontSize:10,color:"#94a3b8"}}>{v.reason}</div>
+                </div>
+              </div>
+              {(v.reasonNote || v.staffNotes || v.redeemedDate) && (
+                <div style={{marginTop:10,paddingTop:10,borderTop:"1px solid rgba(0,0,0,0.06)",fontSize:11,color:"#64748b",display:"flex",flexDirection:"column",gap:3}}>
+                  {v.reasonNote && <div>📝 {v.reasonNote}</div>}
+                  {v.redeemedDate && <div>✅ Redeemed {fmtDate(v.redeemedDate)}</div>}
+                  {v.staffNotes && <div>🗒️ {v.staffNotes}</div>}
+                </div>
+              )}
+              <div style={{marginTop:10,display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  {v.phone && (
+                    <button onClick={()=>setWaModal({phone:v.phone,customerName:v.customer,message:MSG_VOUCHER_ISSUED(v.customer,v.id,v.amount,shop.symbol)})}
+                      style={{border:"1px solid #bbf7d0",background:"#f0fdf4",color:"#166534",fontSize:11,fontWeight:700,cursor:"pointer",padding:"5px 12px",borderRadius:8,fontFamily:"inherit"}}>
+                      💬 Notify
+                    </button>
+                  )}
+                  {v.status==="ACTIVE" && (
+                    <>
+                      <button onClick={()=>updateStatus(v,"REDEEMED")}
+                        style={{border:"1px solid #bbf7d0",background:"white",color:"#166534",fontSize:11,fontWeight:700,cursor:"pointer",padding:"5px 12px",borderRadius:8,fontFamily:"inherit"}}>
+                        Mark Redeemed
+                      </button>
+                      <button onClick={()=>updateStatus(v,"CANCELLED")}
+                        style={{border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontSize:11,fontWeight:700,cursor:"pointer",padding:"5px 12px",borderRadius:8,fontFamily:"inherit"}}>
+                        Cancel
+                      </button>
+                    </>
+                  )}
+                </div>
+                <button onClick={()=>setConfirmDeleteVoucher({id:v.id,customer:v.customer})}
+                  style={{border:"none",background:"transparent",color:"#dc2626",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                  Delete
+                </button>
+              </div>
+            </div>
+            );
+          })}
+        </div>
+      )}
+
+      {showIssueVoucher && (
+        <IssueVoucherModal shopId={shopId} shop={shop} allSales={allSales} allReturns={allReturns} onClose={()=>setShowIssueVoucher(false)} onSave={handleSave} />
+      )}
+
+      {confirmDeleteVoucher && (
+        <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:"white",borderRadius:16,padding:22,maxWidth:320,width:"92%"}}>
+            <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:8}}>Delete this voucher record?</div>
+            <p style={{fontSize:12,color:"#64748b",marginBottom:18}}>This removes the record for {confirmDeleteVoucher.customer}. If the voucher is still Active, make sure it's genuinely void before deleting — this doesn't notify the customer.</p>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setConfirmDeleteVoucher(null)}
+                style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                Cancel
+              </button>
+              <button onClick={()=>handleDelete(confirmDeleteVoucher.id)}
+                style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#dc2626",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
+const IssueVoucherModal = ({ shopId, shop, allSales, allReturns, onClose, onSave }) => {
+  const [linkSearch, setLinkSearch] = React.useState("");
+  const [linked, setLinked] = React.useState(null); // {type:"sale"|"return", id, customer, phone}
+  const [customer, setCustomer] = React.useState("");
+  const [phone, setPhone] = React.useState("");
+  const [amount, setAmount] = React.useState("");
+  const [reason, setReason] = React.useState(VOUCHER_REASONS[0]);
+  const [reasonNote, setReasonNote] = React.useState("");
+  const [issuedDate, setIssuedDate] = React.useState(() => new Date().toISOString().slice(0,10));
+  const [staffNotes, setStaffNotes] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+
+  const inp = {width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
+  const lbl = {display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
+
+  // Search across both sales and returns — a voucher issued to resolve a
+  // return is usually easier to find by the return case, while a
+  // standalone goodwill voucher is usually found by the sale.
+  const q = linkSearch.trim().toLowerCase();
+  const saleMatches = q.length>=2 ? (allSales||[]).filter(s=>(s.customer||"").toLowerCase().includes(q)||(s.id||"").toLowerCase().includes(q)).slice(0,5) : [];
+  const returnMatches = q.length>=2 ? (allReturns||[]).filter(r=>(r.customer||"").toLowerCase().includes(q)||(r.id||"").toLowerCase().includes(q)).slice(0,5) : [];
+
+  const pickSale = (s) => {
+    setLinked({ type:"sale", id:s.id, customer:s.customer||"", phone:s.phone||s.contact||"" });
+    setCustomer(s.customer||""); setPhone(s.phone||s.contact||"");
+    setLinkSearch("");
+  };
+  const pickReturn = (r) => {
+    setLinked({ type:"return", id:r.id, saleId:r.saleId||null, customer:r.customer||"", phone:r.phone||"" });
+    setCustomer(r.customer||""); setPhone(r.phone||"");
+    setLinkSearch("");
+  };
+
+  const canSave = customer.trim() && Number(amount)>0;
+
+  const handleSave = async () => {
+    if (!canSave) return;
+    setSaving(true);
+    await onSave({
+      saleId: linked?.type==="sale" ? linked.id : (linked?.type==="return" ? linked.saleId||null : null),
+      returnId: linked?.type==="return" ? linked.id : null,
+      customer: customer.trim(), phone: phone.trim(),
+      amount: Number(amount)||0,
+      reason, reasonNote: reasonNote.trim(),
+      issuedDate, staffNotes: staffNotes.trim(),
+    });
+    setSaving(false);
+  };
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"white",borderRadius:16,padding:24,maxWidth:420,width:"94%",maxHeight:"88vh",overflowY:"auto"}}>
+        <div style={{fontSize:15,fontWeight:800,color:"#0f172a",marginBottom:4}}>🎁 Issue a Gift Voucher</div>
+        <p style={{fontSize:11,color:"#94a3b8",marginBottom:16}}>Store credit instead of cash — no expiry, stays Active until redeemed or cancelled.</p>
+
+        <div style={{marginBottom:14}}>
+          <label style={lbl}>Link to a Sale or Return (optional)</label>
+          {linked ? (
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",borderRadius:9,background:"#f5f3ff",border:"1px solid #ddd6fe"}}>
+              <span style={{fontSize:12,fontWeight:700,color:"#5b21b6"}}>{linked.type==="return"?"↩️":"🛒"} {linked.id} — {linked.customer}</span>
+              <button onClick={()=>setLinked(null)} style={{border:"none",background:"transparent",color:"#5b21b6",cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
+            </div>
+          ) : (
+            <>
+              <input value={linkSearch} onChange={e=>setLinkSearch(e.target.value)} placeholder="Search by customer name, invoice, or return ID…" style={inp}/>
+              {(saleMatches.length>0||returnMatches.length>0) && (
+                <div style={{marginTop:4,border:"1px solid #e2e8f0",borderRadius:9,overflow:"hidden"}}>
+                  {returnMatches.map(r=>(
+                    <div key={"r_"+r.id} onClick={()=>pickReturn(r)}
+                      style={{padding:"8px 12px",fontSize:12,cursor:"pointer",borderBottom:"1px solid #f1f5f9"}}
+                      onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
+                      onMouseLeave={e=>e.currentTarget.style.background="white"}>
+                      ↩️ <strong>{r.id}</strong> — {r.customer}
+                    </div>
+                  ))}
+                  {saleMatches.map(s=>(
+                    <div key={"s_"+s.id} onClick={()=>pickSale(s)}
+                      style={{padding:"8px 12px",fontSize:12,cursor:"pointer",borderBottom:"1px solid #f1f5f9"}}
+                      onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
+                      onMouseLeave={e=>e.currentTarget.style.background="white"}>
+                      🛒 <strong>{s.id}</strong> — {s.customer} · {shop.symbol}{Number(s.amount||0).toLocaleString()}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+          <div><label style={lbl}>Customer</label><input value={customer} onChange={e=>setCustomer(e.target.value)} placeholder="Customer name" style={inp} disabled={!!linked}/></div>
+          <div><label style={lbl}>Phone</label><input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Optional" style={inp} disabled={!!linked}/></div>
+        </div>
+
+        <div style={{marginBottom:14}}>
+          <label style={lbl}>Voucher Amount ({shop.symbol})</label>
+          <input type="number" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0.00" style={inp}/>
+        </div>
+
+        <div style={{marginBottom:14}}>
+          <label style={lbl}>Reason</label>
+          <select value={reason} onChange={e=>setReason(e.target.value)} style={inp}>
+            {VOUCHER_REASONS.map(r=><option key={r} value={r}>{r}</option>)}
+          </select>
+        </div>
+
+        <div style={{marginBottom:14}}>
+          <label style={lbl}>Reason Note (optional)</label>
+          <input value={reasonNote} onChange={e=>setReasonNote(e.target.value)} placeholder="Any extra detail…" style={inp}/>
+        </div>
+
+        <div style={{marginBottom:14}}>
+          <label style={lbl}>Date Issued</label>
+          <input type="date" value={issuedDate} onChange={e=>setIssuedDate(e.target.value)} style={inp}/>
+        </div>
+
+        <div style={{marginBottom:18}}>
+          <label style={lbl}>Staff Notes (optional)</label>
+          <input value={staffNotes} onChange={e=>setStaffNotes(e.target.value)} placeholder="Any extra context…" style={inp}/>
+        </div>
+
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={onClose}
+            style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            Cancel
+          </button>
+          <button onClick={handleSave} disabled={!canSave||saving}
+            style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#7c3aed",color:"white",fontWeight:700,fontSize:13,cursor:(!canSave||saving)?"default":"pointer",fontFamily:"inherit",opacity:(!canSave||saving)?0.6:1}}>
+            {saving?"Saving…":"Issue Voucher"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,onSyncSaleStatus,salesData={},pushDeleted})=>{
   const [filter,setFilter]=React.useState("ACTIVE");
   const [waModal,setWaModal]=React.useState(null); // {phone,customerName,message} | null
@@ -3389,12 +3726,19 @@ const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,on
   const [upfrontLoaded,setUpfrontLoaded]=React.useState(false);
   const [showLogRefund,setShowLogRefund]=React.useState(false);
   const [confirmDeleteRefund,setConfirmDeleteRefund]=React.useState(null); // {id, customer}
+  const [giftVouchers,setGiftVouchers]=React.useState([]);
+  const [vouchersLoaded,setVouchersLoaded]=React.useState(false);
+  const [showIssueVoucher,setShowIssueVoucher]=React.useState(false);
+  const [confirmDeleteVoucher,setConfirmDeleteVoucher]=React.useState(null); // {id, customer}
 
   React.useEffect(()=>{
     if(filter==="UPFRONT_REFUNDS"&&!upfrontLoaded){
       dbLoadUpfrontRefunds(shopId).then(data=>{setUpfrontRefunds(data||[]);setUpfrontLoaded(true);});
     }
-  },[filter,shopId,upfrontLoaded]);
+    if(filter==="GIFT_VOUCHERS"&&!vouchersLoaded){
+      dbLoadGiftVouchers(shopId).then(data=>{setGiftVouchers(data||[]);setVouchersLoaded(true);});
+    }
+  },[filter,shopId,upfrontLoaded,vouchersLoaded]);
 
   // Flatten all sales for delivery date lookup
   const allSales=React.useMemo(()=>{
@@ -3509,6 +3853,24 @@ Thank you for your cooperation.`,
         showLogRefund={showLogRefund} setShowLogRefund={setShowLogRefund}
         confirmDeleteRefund={confirmDeleteRefund} setConfirmDeleteRefund={setConfirmDeleteRefund}
         filter={filter} setFilter={setFilter} counts={counts}
+        giftVouchers={giftVouchers}
+      />
+      <WaModal data={waModal} onClose={()=>setWaModal(null)}/>
+      </>
+    );
+  }
+
+  if(filter==="GIFT_VOUCHERS"){
+    return(
+      <>
+      <GiftVouchersView
+        shopId={shopId} shop={shop} allSales={allSales} allReturns={returns}
+        giftVouchers={giftVouchers} setGiftVouchers={setGiftVouchers}
+        setWaModal={setWaModal}
+        showIssueVoucher={showIssueVoucher} setShowIssueVoucher={setShowIssueVoucher}
+        confirmDeleteVoucher={confirmDeleteVoucher} setConfirmDeleteVoucher={setConfirmDeleteVoucher}
+        filter={filter} setFilter={setFilter} counts={counts}
+        upfrontRefunds={upfrontRefunds}
       />
       <WaModal data={waModal} onClose={()=>setWaModal(null)}/>
       </>
@@ -3570,15 +3932,19 @@ Thank you for your cooperation.`,
             {key:"REFUNDED",  label:"Refunded"},
             {key:"EXCHANGE_REFUND", label:"Refund/Exchange"},
             {key:"UPFRONT_REFUNDS", label:"💸 Upfront Refunds"},
-          ].map(f=>(
+            {key:"GIFT_VOUCHERS", label:"🎁 Gift Vouchers"},
+          ].map(f=>{
+            const n = f.key==="UPFRONT_REFUNDS" ? upfrontRefunds.length : f.key==="GIFT_VOUCHERS" ? giftVouchers.length : counts[f.key];
+            return (
             <button key={f.key} onClick={()=>setFilter(f.key)}
               style={{padding:"5px 14px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
                 border:"1px solid "+(filter===f.key?shop.accent:"#e2e8f0"),
                 background:filter===f.key?shop.accent:"white",
                 color:filter===f.key?"white":"#64748b"}}>
-              {f.label}{f.key==="UPFRONT_REFUNDS"?(upfrontRefunds.length>0?` (${upfrontRefunds.length})`:""):(counts[f.key]>0?` (${counts[f.key]})`:"")}
+              {f.label}{n>0?` (${n})`:""}
             </button>
-          ))}
+            );
+          })}
         </div>
       </div>
 

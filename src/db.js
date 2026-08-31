@@ -1389,6 +1389,73 @@ export const dbDeleteUpfrontRefund = async (shopId, id) => {
 };
 
 /* ═══════════════════════════════════════════════════════════
+   GIFT VOUCHERS  (shop-isolated) — store credit issued instead of
+   cash, e.g. as a return resolution or a goodwill gesture. Tracked
+   separately from `returns`: a voucher stays open (a real
+   liability) long after any return case is closed, and it may not
+   be tied to a return at all.
+   ═══════════════════════════════════════════════════════════ */
+const VOUCHER_SHOP_PREFIX = { 'ros-selections': 'SEL', 'ros-hairlines': 'HL', 'ros-india': 'IND' };
+
+export const dbLoadGiftVouchers = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('gift_vouchers').select('*').eq('shop_id', shopId).order('issued_date', { ascending: false });
+  if (error) { console.error('Load gift vouchers error:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id, saleId: r.sale_id || null, returnId: r.return_id || null,
+    customer: r.customer || '', phone: r.phone || '',
+    amount: Number(r.amount) || 0,
+    reason: r.reason || 'Other', reasonNote: r.reason_note || '',
+    status: r.status || 'ACTIVE',
+    issuedDate: r.issued_date, redeemedDate: r.redeemed_date || '',
+    redeemedNote: r.redeemed_note || '', staffNotes: r.staff_notes || '',
+  }));
+};
+
+export const dbAddGiftVoucher = async (shopId, v) => {
+  if (!sb) return null;
+  const prefix = VOUCHER_SHOP_PREFIX[shopId] || 'GV';
+  // Timestamp-tail rather than a sequential counter — no race between two
+  // staff issuing a voucher at the same moment, at the cost of the code
+  // not being a clean running number. Still short enough to read off a
+  // receipt or type into WhatsApp.
+  const id = `GV-${prefix}-${Date.now().toString().slice(-7)}`;
+  const { error } = await sb.from('gift_vouchers').insert({
+    id, shop_id: shopId,
+    sale_id: v.saleId || null,
+    return_id: v.returnId || null,
+    customer: v.customer || '',
+    phone: v.phone || '',
+    amount: Number(v.amount) || 0,
+    reason: v.reason || 'Other',
+    reason_note: v.reasonNote || '',
+    status: 'ACTIVE',
+    issued_date: v.issuedDate || new Date().toISOString().slice(0,10),
+    staff_notes: v.staffNotes || '',
+  });
+  if (error) { console.error('Add gift voucher error:', error); return null; }
+  return id;
+};
+
+export const dbUpdateGiftVoucher = async (shopId, id, patch) => {
+  if (!sb) return false;
+  const payload = {};
+  if ('status' in patch) payload.status = patch.status;
+  if ('redeemedDate' in patch) payload.redeemed_date = patch.redeemedDate || null;
+  if ('redeemedNote' in patch) payload.redeemed_note = patch.redeemedNote || '';
+  const { error } = await sb.from('gift_vouchers').update(payload).eq('id', id).eq('shop_id', shopId);
+  if (error) { console.error('Update gift voucher error:', error); return false; }
+  return true;
+};
+
+export const dbDeleteGiftVoucher = async (shopId, id) => {
+  if (!sb) return false;
+  const { error } = await sb.from('gift_vouchers').delete().eq('id', id).eq('shop_id', shopId);
+  if (error) { console.error('Delete gift voucher error:', error); return false; }
+  return true;
+};
+
+/* ═══════════════════════════════════════════════════════════
    DISPATCH LOG  (ROS India — daily despatch sheet)
    Independent of `sales`: one row per parcel, soft-linked back to the
    sale via sale_id so the same order can appear more than once if it
