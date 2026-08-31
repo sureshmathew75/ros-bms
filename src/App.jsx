@@ -1639,6 +1639,11 @@ const ReturnsPortal=()=>{
   const [loading,setLoading]=React.useState(false);
   const [generatedId,setGeneratedId]=React.useState("");
   const [errorMsg,setErrorMsg]=React.useState("");
+  // Set only when the reason we couldn't proceed is specifically "no order
+  // matched" — surfaces a manual-override button so the customer isn't
+  // hard-blocked by an import/matching gap on our end. Any other error
+  // (validation, expired window, duplicate request) has no override.
+  const [unmatched,setUnmatched]=React.useState(false);
   const [form,setForm]=React.useState({
     name:"",phone:"",reason:"",resolution:"exchange",
   });
@@ -1658,7 +1663,7 @@ const ReturnsPortal=()=>{
     if(!form.name.trim()||!form.phone.trim()||!form.reason||!form.resolution){
       setErrorMsg("Please fill in all fields.");return;
     }
-    setErrorMsg("");setLoading(true);
+    setErrorMsg("");setUnmatched(false);setLoading(true);
     try{
       const {createClient}=await import("https://esm.sh/@supabase/supabase-js@2");
       const sb=createClient(
@@ -1714,6 +1719,7 @@ const ReturnsPortal=()=>{
       // empty final result actually blocks the request.
       if(allRows.length===0){
         setErrorMsg("We could not find an order with this WhatsApp number. Please check your number or contact us directly.");
+        setUnmatched(true);
         setLoading(false);return;
       }
 
@@ -1802,6 +1808,69 @@ const ReturnsPortal=()=>{
     setLoading(false);
   };
 
+  // Override path — shown only after an automatic "no order found" failure.
+  // Lets the customer submit anyway (no linked sale, no delivery-date/
+  // 14-day-window check possible) so an import/matching gap on our end
+  // never blocks a legitimate return. Clearly flagged in staff notes so
+  // admin knows to verify eligibility and link the right sale by hand
+  // (Returns & Refunds → open the case → Linked Sale).
+  const submitUnmatched=async()=>{
+    setErrorMsg("");setLoading(true);
+    try{
+      const {createClient}=await import("https://esm.sh/@supabase/supabase-js@2");
+      const sb=createClient(
+        "https://fssyvdxqtruacauwygjj.supabase.co",
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZzc3l2ZHhxdHJ1YWNhdXd5Z2pqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzM0MDYwODQsImV4cCI6MjA4ODk4MjA4NH0.O8Mp89s2AXCZyvykzLmpiUeC34Hl4LV3NtLgzffJRY4"
+      );
+
+      const year=new Date().getFullYear();
+      const {data:lastRet}=await sb.from("returns")
+        .select("id").like("id",`RET-${year}-%`)
+        .order("id",{ascending:false}).limit(1);
+      const lastNum=lastRet&&lastRet.length>0?parseInt(lastRet[0].id.split("-")[2]||"0",10):0;
+      const retId=`RET-${year}-${String(lastNum+1).padStart(4,"0")}`;
+
+      const todayPlus14=(()=>{const d=new Date();d.setDate(d.getDate()+14);return d.toISOString().slice(0,10);})();
+
+      const {error:retErr}=await sb.from("returns").insert({
+        id:retId,
+        shop_id:urlShop||"",
+        sale_id:null,
+        customer:form.name,
+        phone:form.phone,
+        reason:form.reason,
+        resolution:form.resolution,
+        status:"RETURN_APPROVED",
+        return_deadline:todayPlus14,
+        return_address_version:"v1",
+        staff_notes:`⚠️ Submitted via the online form but we couldn't auto-match it to an order (checked phone "${form.phone}" and name "${form.name}"). Please verify this is a genuine order within the return window and link the correct sale above before proceeding.`,
+      });
+      if(retErr){
+        setErrorMsg("Something went wrong saving your return. Please try again or contact us.");
+        setLoading(false);return;
+      }
+
+      const msgBody=RETURN_APPROVAL_MESSAGE(retId,form.name,"v1");
+      await sb.from("message_queue").insert({
+        shop_id:urlShop||"",
+        sale_id:null,
+        customer:form.name,
+        phone:form.phone,
+        message_type:"RETURN_APPROVED",
+        message_body:msgBody,
+        status:"READY",
+      });
+
+      setGeneratedId(retId);
+      setUnmatched(false);
+      setStep("success");
+    }catch(e){
+      console.error(e);
+      setErrorMsg("An unexpected error occurred. Please try again or contact us directly.");
+    }
+    setLoading(false);
+  };
+
   const inputStyle={width:"100%",padding:"11px 14px",borderRadius:10,border:"1.5px solid #e2e8f0",fontSize:14,fontFamily:"inherit",outline:"none",boxSizing:"border-box",background:"white",transition:"border 0.15s"};
   const labelStyle={display:"block",fontSize:12,fontWeight:700,color:"#374151",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
 
@@ -1880,8 +1949,25 @@ const ReturnsPortal=()=>{
 
           {/* Error */}
           {errorMsg&&(
-            <div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:13,color:"#dc2626",fontWeight:600}}>
+            <div style={{background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:10,padding:"10px 14px",marginBottom:unmatched?8:16,fontSize:13,color:"#dc2626",fontWeight:600}}>
               ⚠️ {errorMsg}
+            </div>
+          )}
+
+          {/* Manual-verification override — only offered when the failure was
+              specifically "couldn't auto-match an order", never for other
+              validation errors. */}
+          {unmatched&&(
+            <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"12px 14px",marginBottom:16}}>
+              <p style={{margin:"0 0 8px",fontSize:12.5,color:"#92400e",lineHeight:1.5}}>
+                Sure the details are right? You can still submit — our team will verify your order manually and confirm with you.
+              </p>
+              <button onClick={submitUnmatched} disabled={loading}
+                style={{width:"100%",padding:"10px 0",borderRadius:9,border:"1.5px solid #d97706",
+                  background:"white",color:"#92400e",fontWeight:800,fontSize:13,
+                  cursor:loading?"default":"pointer",fontFamily:"inherit"}}>
+                {loading?"Submitting…":"Submit anyway — for manual verification"}
+              </button>
             </div>
           )}
 
@@ -2269,7 +2355,7 @@ const DaysChip=({days})=>{
   return <span style={{fontSize:11,fontWeight:600,padding:"2px 8px",borderRadius:999,background:"#f0fdf4",color:"#166534",border:"1px solid #86efac"}}>🟢 {days}d left</span>;
 };
 
-const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
+const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user,sales=[]})=>{
   const [form,setForm]=React.useState({
     status:ret.status,
     trackingNo:ret.trackingNo||"",
@@ -2278,10 +2364,23 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
     refundDate:ret.refundDate||"",
     exchangeDate:ret.exchangeDate||"",
     staffNotes:ret.staffNotes||"",
+    saleId:ret.saleId||null,
   });
   const [saving,setSaving]=React.useState(false);
   const [waModal,setWaModal]=React.useState(null); // {phone,customerName,message} | null
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+
+  // ── Link to a sale (used when the customer portal couldn't auto-match the
+  // order and the return came in unlinked — lets admin search and attach the
+  // right sale after the fact, same search pattern as "Log a Return"). ──
+  const [linkQuery,setLinkQuery]=React.useState("");
+  const linkMatches=linkQuery.trim().length>0
+    ? (sales||[]).filter(s=>
+        (s.customer||"").toLowerCase().includes(linkQuery.trim().toLowerCase())||
+        String(s.id||"").toLowerCase().includes(linkQuery.trim().toLowerCase())
+      ).slice(0,8)
+    : [];
+  const linkedSaleObj=form.saleId?(sales||[]).find(s=>s.id===form.saleId):null;
   const days=daysRemaining(ret.returnDeadline);
   const isClosed=["REFUNDED","EXCHANGED","EXCHANGE_REFUND"].includes(form.status);
 
@@ -2310,9 +2409,9 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
       return;
     }
     // Sync sale status
-    if(onSyncSaleStatus){
+    if(onSyncSaleStatus&&form.saleId){
       const saleStatus=newStatus==="RETURN_RECEIVED"?"RETRN RCVD":newStatus==="REFUNDED"?"REFUNDED":(newStatus==="EXCHANGED"||newStatus==="EXCHANGE_REFUND")?"EXCHANGED":null;
-      if(saleStatus) await onSyncSaleStatus(ret.saleId,saleStatus);
+      if(saleStatus) await onSyncSaleStatus(form.saleId,saleStatus);
     }
     setForm(f=>({...f,...updates}));
     onUpdate({...updated});
@@ -2346,7 +2445,7 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
             <div>
               <p style={{margin:"0 0 2px",fontSize:11,fontWeight:700,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.06em"}}>Return Case</p>
               <h3 style={{margin:"0 0 2px",fontSize:17,fontWeight:900,color:"#0f172a",fontFamily:"DM Mono,monospace"}}>{ret.id}</h3>
-              <p style={{margin:0,fontSize:12,color:"#64748b"}}>{ret.customer} · {ret.phone}{ret.item?` · ${ret.item}`:""} · {ret.saleId?`Sale: ${ret.saleId}`:"📥 Manual entry, no linked sale"}</p>
+              <p style={{margin:0,fontSize:12,color:"#64748b"}}>{ret.customer} · {ret.phone}{ret.item?` · ${ret.item}`:""} · {form.saleId?`Sale: ${form.saleId}`:"📥 No linked sale"}</p>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:999,
@@ -2359,6 +2458,39 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user})=>{
         </div>
 
         <div style={{flex:1,overflowY:"auto",padding:"16px 20px",display:"flex",flexDirection:"column",gap:14}}>
+
+          {/* Link to a sale — shown so admin can attach the right order to a
+              return that came in without one (e.g. the customer portal
+              couldn't auto-match it). Already-linked returns just show a
+              compact confirmation with an Unlink option. */}
+          <div>
+            <p style={{margin:"0 0 4px",fontSize:11,fontWeight:700,color:"#374151",textTransform:"uppercase",letterSpacing:"0.05em"}}>Linked Sale</p>
+            {form.saleId?(
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 12px",borderRadius:9,border:"1px solid #bbf7d0",background:"#f0fdf4"}}>
+                <div style={{fontSize:12.5,fontWeight:700,color:"#166534"}}>{form.saleId}{linkedSaleObj?` · ${linkedSaleObj.customer}`:""}</div>
+                <button onClick={()=>set("saleId",null)}
+                  style={{border:"none",background:"transparent",color:"#166534",cursor:"pointer",fontSize:12,fontWeight:700}}>
+                  Unlink
+                </button>
+              </div>
+            ):(
+              <>
+                <input value={linkQuery} onChange={e=>setLinkQuery(e.target.value)}
+                  placeholder="⚠️ Not linked — search by customer name or invoice to attach the sale…"
+                  style={inp}/>
+                {linkMatches.length>0&&(
+                  <div style={{marginTop:6,border:"1px solid #e2e8f0",borderRadius:9,overflow:"hidden"}}>
+                    {linkMatches.map(s=>(
+                      <div key={s.id} onClick={()=>{set("saleId",s.id);setLinkQuery("");}}
+                        style={{padding:"8px 12px",fontSize:12.5,cursor:"pointer",borderBottom:"1px solid #f1f5f9"}}>
+                        <strong>{s.customer}</strong> — {s.id}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
 
           {/* Key info */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
@@ -3799,6 +3931,7 @@ Thank you for your cooperation.`,
           ret={{...selectedReturn, returnDeadline: computeReturnDeadline(getDeliveryDate(selectedReturn.saleId), selectedReturn.returnDeadline)}}
           shop={shop}
           user={user}
+          sales={salesData[shopId]||[]}
           onClose={()=>setSelectedReturn(null)}
           onSyncSaleStatus={onSyncSaleStatus}
           onUpdate={(updated)=>{
