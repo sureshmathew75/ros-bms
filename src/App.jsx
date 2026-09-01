@@ -7534,7 +7534,7 @@ return(
               transition:"max-width 0.28s cubic-bezier(0.4,0,0.2,1),opacity 0.18s",
               whiteSpace:"nowrap",
             }}>
-              <p style={{margin:0,fontSize:12,fontWeight:700,color:"white",lineHeight:1.3}}>{user?.name||"Admin"}</p>
+              <p style={{margin:0,fontSize:12,fontWeight:700,color:"white",lineHeight:1.3}}>{user?.fullName||user?.name||"Admin"}</p>
               <p style={{margin:0,fontSize:9,color:"rgba(255,255,255,0.45)",textTransform:"capitalize",fontWeight:500}}>{user?.role==="staff"?"Staff":"Administrator"}</p>
             </div>
           </div>
@@ -7674,7 +7674,7 @@ return(
                 {user?.initials||"A"}
               </div>
               <div className="mob-hide">
-                <p style={{margin:0,fontSize:12,fontWeight:700,color:"#0f172a",lineHeight:1.2}}>{user?.name||"Admin"}</p>
+                <p style={{margin:0,fontSize:12,fontWeight:700,color:"#0f172a",lineHeight:1.2}}>{user?.fullName||user?.name||"Admin"}</p>
                 <p style={{margin:0,fontSize:9,color:shop.accent,fontWeight:600,textTransform:"capitalize"}}>{user?.role==="staff"?"Staff":"Admin"} · Logout</p>
               </div>
             </div>
@@ -12152,6 +12152,9 @@ const AttendancePage = ({ shopId, shop, user, users=[] }) => {
     () => users.filter(u => u.role==="staff" && (u.shops||[]).includes("ros-india")),
     [users]
   );
+  // display-only lookup — the short name (u.name) stays the key used to
+  // match attendance/payroll records; this is purely for what's shown
+  const fullNameOf = (shortName) => staffAccounts.find(u=>u.name===shortName)?.fullName || shortName;
 
   const load = React.useCallback(() => {
     setLoading(true);
@@ -12219,6 +12222,7 @@ const AttendancePage = ({ shopId, shop, user, users=[] }) => {
   };
 
   const handlePrint = (staffName, year, month) => {
+    const displayName = fullNameOf(staffName);
     const recs = recordsFor(staffName).filter(r => r.date.startsWith(`${year}-${String(month+1).padStart(2,"0")}`)).sort((a,b)=>a.date.localeCompare(b.date));
     const monthLabel = new Date(year, month, 1).toLocaleDateString("en-GB",{month:"long",year:"numeric"});
     const w = window.open("", "_blank");
@@ -12226,14 +12230,14 @@ const AttendancePage = ({ shopId, shop, user, users=[] }) => {
       const status = classifyAttendanceDay(r.date, r.clockIn, r.clockOut, holidaySet);
       return `<tr><td>${r.date}</td><td>${fmtTime(r.clockIn)||"—"}</td><td>${fmtTime(r.clockOut)||"—"}</td><td>${computeHours(r.clockIn,r.clockOut)||"—"}</td><td>${DAY_STATUS_STYLE[status]?.label||""}</td></tr>`;
     }).join("");
-    w.document.write(`<!DOCTYPE html><html><head><title>Attendance — ${staffName} — ${monthLabel}</title>
+    w.document.write(`<!DOCTYPE html><html><head><title>Attendance — ${displayName} — ${monthLabel}</title>
       <style>
         body{font-family:Arial,sans-serif;padding:24px;color:#0f172a;}
         h1{font-size:18px;margin-bottom:4px;} p{color:#64748b;font-size:12px;margin-top:0;}
         table{width:100%;border-collapse:collapse;margin-top:16px;} th,td{border:1px solid #e2e8f0;padding:8px 10px;font-size:11px;text-align:left;}
         th{background:#f8fafc;text-transform:uppercase;letter-spacing:0.04em;font-size:10px;}
       </style></head><body>
-      <h1>🕐 Attendance — ${staffName}</h1>
+      <h1>🕐 Attendance — ${displayName}</h1>
       <p>${monthLabel} · Total worked: ${monthTotalHours(staffName,year,month)}</p>
       <table><thead><tr><th>Date</th><th>Clock In</th><th>Clock Out</th><th>Hours</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>
       </body></html>`);
@@ -12326,7 +12330,7 @@ const AttendancePage = ({ shopId, shop, user, users=[] }) => {
   if (!isAdminView) {
     return (
       <div style={{maxWidth:420,margin:"0 auto",padding:"10px 0 40px"}}>
-        <h2 style={{fontSize:18,fontWeight:800,color:"#0f172a",marginBottom:2,textAlign:"center"}}>🕐 Hi {myName}!</h2>
+        <h2 style={{fontSize:18,fontWeight:800,color:"#0f172a",marginBottom:2,textAlign:"center"}}>🕐 Hi {fullNameOf(myName)}!</h2>
         <p style={{fontSize:12,color:"#64748b",marginBottom:6,textAlign:"center"}}>Tap the button below to clock in or out.</p>
 
         <BigClockButton staffName={myName} />
@@ -12428,7 +12432,7 @@ const AttendancePage = ({ shopId, shop, user, users=[] }) => {
           {staffAccounts.map(s=>(
             <button key={s.id} onClick={()=>setAdminSelected(s.name)}
               style={{padding:"8px 14px",borderRadius:9,border:"1px solid "+(adminSelected===s.name?shop.accent:"#e2e8f0"),background:adminSelected===s.name?shop.accentBg:"white",color:adminSelected===s.name?shop.accentText:"#374151",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>
-              👤 {s.name}
+              👤 {s.fullName||s.name}
             </button>
           ))}
           <button onClick={()=>setShowHolidayManager(true)}
@@ -12452,20 +12456,20 @@ const AttendancePage = ({ shopId, shop, user, users=[] }) => {
               const eh = Math.floor(elapsedMs/3600000), em = Math.floor((elapsedMs%3600000)/60000);
               return (
                 <div key={s.id} style={{fontSize:13,color:"#166534",fontWeight:700}}>
-                  🟢 {s.name} — clocked in since {fmtTime(rec.clockIn)} ({eh}h {em}m so far)
+                  🟢 {s.fullName||s.name} — clocked in since {fmtTime(rec.clockIn)} ({eh}h {em}m so far)
                 </div>
               );
             }
             if(rec && rec.clockOut){
               return (
                 <div key={s.id} style={{fontSize:13,color:"#64748b",fontWeight:600}}>
-                  ⚪ {s.name} — done for today ({fmtTime(rec.clockIn)} → {fmtTime(rec.clockOut)})
+                  ⚪ {s.fullName||s.name} — done for today ({fmtTime(rec.clockIn)} → {fmtTime(rec.clockOut)})
                 </div>
               );
             }
             return (
               <div key={s.id} style={{fontSize:13,color:"#94a3b8",fontWeight:600}}>
-                ⚪ {s.name} — not clocked in yet today
+                ⚪ {s.fullName||s.name} — not clocked in yet today
               </div>
             );
           })}
@@ -12495,7 +12499,7 @@ const AttendancePage = ({ shopId, shop, user, users=[] }) => {
       {dayEdit && (
         <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center"}}>
           <div style={{background:"white",borderRadius:16,padding:24,maxWidth:320,width:"92%"}}>
-            <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:4}}>{dayEdit.staffName} — {dayEdit.date}</div>
+            <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:4}}>{fullNameOf(dayEdit.staffName)} — {dayEdit.date}</div>
             <div style={{fontSize:11,color:"#94a3b8",marginBottom:16}}>Correct the clock-in/out times below (24-hour, IST).</div>
             <div style={{marginBottom:12}}>
               <label style={{display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Clock In</label>
@@ -12773,7 +12777,7 @@ const PayslipDocument = ({ shop, staffName, monthLabel, breakdown, netPay, domId
         <div style={{display:"grid",gridTemplateColumns:"1.3fr 1fr",gap:12,marginBottom:20}}>
           <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"55",borderRadius:10,padding:"14px 16px"}}>
             <div style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:shop.accentText,marginBottom:6}}>Employee</div>
-            <div style={{fontSize:15.5,fontWeight:800,color:"#0f172a"}}>{staffName}</div>
+            <div style={{fontSize:15.5,fontWeight:800,color:"#0f172a"}}>{b.fullName || staffName}</div>
             <div style={{fontSize:11.5,color:"#64748b",marginTop:2}}>{b.position || "Staff"} · {shop.name}</div>
           </div>
           <div style={{border:"1px solid #e2e8f0",borderRadius:10,padding:"14px 16px"}}>
@@ -12902,7 +12906,7 @@ const AddAdvanceModal = ({ shop, staffList, onClose, onSave }) => {
         <div style={{marginBottom:14}}>
           <label style={lbl}>Staff Member</label>
           <select value={staffName} onChange={e=>setStaffName(e.target.value)} style={inp}>
-            {staffList.map(u=><option key={u.id} value={u.name}>{u.name}</option>)}
+            {staffList.map(u=><option key={u.id} value={u.name}>{u.fullName||u.name}</option>)}
           </select>
         </div>
         <div style={{marginBottom:14}}>
@@ -12947,7 +12951,7 @@ const AddLoanModal = ({ shop, staffList, onClose, onSave }) => {
         <div style={{marginBottom:14}}>
           <label style={lbl}>Staff Member</label>
           <select value={staffName} onChange={e=>setStaffName(e.target.value)} style={inp}>
-            {staffList.map(u=><option key={u.id} value={u.name}>{u.name}</option>)}
+            {staffList.map(u=><option key={u.id} value={u.name}>{u.fullName||u.name}</option>)}
           </select>
         </div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
@@ -13044,6 +13048,10 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
   const holidaySet = new Set(holidays.map(h=>h.date));
   const basicSalary = salaries[selectedStaff] ?? 13000;
   const position = positions[selectedStaff] || "Staff";
+  // display-only lookup — selectedStaff (the short name) stays the key
+  // used to match attendance/advances/loans; this is purely for display
+  const fullNameOf = (shortName) => staffList.find(u=>u.name===shortName)?.fullName || shortName;
+  const staffFullName = fullNameOf(selectedStaff);
   const monthKey = `${selYear}-${String(selMonth).padStart(2,"0")}`;
   const monthLabel = `${PAYROLL_MONTH_NAMES[selMonth-1]} ${selYear}`;
   const staffRecords = attendanceRecords.filter(r=>r.staffName===selectedStaff);
@@ -13073,7 +13081,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
   // Whatever is still negative here becomes next month's carry-forward.
   const netPay = computed.grossPay + bonusAmt - computed.absenceDeduction - advanceDeduction - loanDeduction - carryForwardOpening;
   const carryForwardClosing = netPay<0 ? -netPay : 0;
-  const previewBreakdown = { ...computed, basicSalary, position, advanceDeduction, loanDeduction, loanBalanceAfter, bonusLabel: bonusLabel.trim(), bonusAmount: bonusAmt, carryForwardApplied: carryForwardOpening, carryForwardBalance: carryForwardClosing };
+  const previewBreakdown = { ...computed, basicSalary, position, fullName: staffFullName, advanceDeduction, loanDeduction, loanBalanceAfter, bonusLabel: bonusLabel.trim(), bonusAmount: bonusAmt, carryForwardApplied: carryForwardOpening, carryForwardBalance: carryForwardClosing };
 
   const saveSalary = async () => {
     const val = Number(salaryInput);
@@ -13161,7 +13169,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
           <div>
             <label style={{fontSize:10,fontWeight:800,color:shop.accentText,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Staff</label>
             <select value={selectedStaff} onChange={e=>{setSelectedStaff(e.target.value);setEditingSalary(false);setEditingPosition(false);}} style={inp}>
-              {staffList.map(u=><option key={u.id} value={u.name}>{u.name}</option>)}
+              {staffList.map(u=><option key={u.id} value={u.name}>{u.fullName||u.name}</option>)}
             </select>
           </div>
           <div>
@@ -13281,7 +13289,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
                     <span style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{PAYROLL_MONTH_NAMES[Number(rec.month.split("-")[1])-1]} {rec.month.split("-")[0]}</span>
                     <div style={{display:"flex",gap:8,alignItems:"center"}}>
                       <span style={{fontWeight:800,fontSize:13,color:shop.accent}}>{shop.symbol}{rec.netPay.toLocaleString()}</span>
-                      <button onClick={()=>downloadElementAsPdf(`payslip-hist-${rec.id}`, `Payslip-${rec.staffName}-${rec.month}.pdf`)}
+                      <button onClick={()=>downloadElementAsPdf(`payslip-hist-${rec.id}`, `Payslip-${rec.breakdown?.fullName||rec.staffName}-${rec.month}.pdf`)}
                         style={{padding:"5px 10px",borderRadius:7,border:"1px solid #e2e8f0",background:"white",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>⬇ PDF</button>
                       <button onClick={()=>setConfirmDeletePayslip(rec)}
                         style={{padding:"5px 10px",borderRadius:7,border:"1px solid #fecaca",background:"#fef2f2",color:"#dc2626",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Delete</button>
@@ -13320,7 +13328,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
               {advances.map(a=>(
                 <div key={a.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",border:"1px solid #e2e8f0",borderRadius:10}}>
                   <div>
-                    <span style={{fontWeight:700,fontSize:13}}>{a.staffName}</span>
+                    <span style={{fontWeight:700,fontSize:13}}>{fullNameOf(a.staffName)}</span>
                     <span style={{fontSize:11,color:"#94a3b8",marginLeft:8}}>{fmtDate(a.dateGiven)}{a.notes?" · "+a.notes:""}</span>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -13346,7 +13354,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
               {loans.map(l=>(
                 <div key={l.id} style={{padding:"12px 14px",border:"1px solid #e2e8f0",borderRadius:10}}>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <span style={{fontWeight:700,fontSize:13}}>{l.staffName}</span>
+                    <span style={{fontWeight:700,fontSize:13}}>{fullNameOf(l.staffName)}</span>
                     <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:999,
                       color:l.status==="ACTIVE"?"#92400e":"#166534",
                       background:l.status==="ACTIVE"?"#fffbeb":"#f0fdf4",
@@ -13412,7 +13420,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
               </div>
               <div style={{borderTop:"2px solid #0f172a",marginBottom:16}}/>
               <div style={{marginBottom:16}}>
-                <span style={{fontWeight:700,fontSize:14}}>{selectedStaff}</span> · <span style={{color:"#64748b"}}>{shop.name}</span>
+                <span style={{fontWeight:700,fontSize:14}}>{staffFullName}</span> · <span style={{color:"#64748b"}}>{shop.name}</span>
               </div>
               <table style={{width:"100%",borderCollapse:"collapse",marginBottom:18}}>
                 <thead>
@@ -14018,7 +14026,7 @@ const RosieTasksModal = ({ tasks, users, currentUser, onClose, onSave, onDelete 
             <div>
               <label style={lbl}>Assign To</label>
               <select value={assignedTo} onChange={e=>setAssignedTo(e.target.value)} style={inp}>
-                {users.map(u=>(<option key={u.id} value={u.id}>{u.name}</option>))}
+                {users.map(u=>(<option key={u.id} value={u.id}>{u.fullName||u.name}</option>))}
               </select>
             </div>
             <div>
@@ -16546,6 +16554,7 @@ const SettingsPanel=({users,setUsers,currentUser,onClose})=>{
   const [hovR,setHovR]=useState(null);
   // new user form
   const [newName,setNewName]=useState("");
+  const [newFullName,setNewFullName]=useState("");
   const [newPin,setNewPin]=useState("");
   const [newRole,setNewRole]=useState("staff");
   const [newShops,setNewShops]=useState([]);
@@ -16554,6 +16563,9 @@ const SettingsPanel=({users,setUsers,currentUser,onClose})=>{
   // edit PIN form
   const [editPin,setEditPin]=useState("");
   const [editPinErr,setEditPinErr]=useState("");
+  // edit full name (inline, per row)
+  const [editFullNameId,setEditFullNameId]=useState(null);
+  const [fullNameInput,setFullNameInput]=useState("");
 
   const SHOP_LABELS={
     "ros-selections":"ROS Selections UK",
@@ -16583,6 +16595,11 @@ const SettingsPanel=({users,setUsers,currentUser,onClose})=>{
     dbDeleteUser(id).catch(err=>console.error("Delete user failed:",err));
   };
 
+  const saveFullName=id=>{
+    setUsers(prev=>prev.map(u=>u.id===id?{...u,fullName:fullNameInput.trim()}:u));
+    setEditFullNameId(null);setFullNameInput("");flash();
+  };
+
   const addUser=()=>{
     setFormErr("");
     if(!newName.trim()){setFormErr("Name is required.");return;}
@@ -16592,11 +16609,11 @@ const SettingsPanel=({users,setUsers,currentUser,onClose})=>{
     const initials=newName.trim().split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
     const av=AVATARS[users.length%AVATARS.length];
     setUsers(prev=>[...prev,{
-      id, name:newName.trim(), initials, role:newRole, pin:newPin,
+      id, name:newName.trim(), fullName:newFullName.trim(), initials, role:newRole, pin:newPin,
       avatar:av,
       shops:newRole==="staff"?newShops:SHOP_IDS,
     }]);
-    setNewName("");setNewPin("");setNewRole("staff");setNewShops([]);setFormErr("");
+    setNewName("");setNewFullName("");setNewPin("");setNewRole("staff");setNewShops([]);setFormErr("");
     flash();
   };
 
@@ -16746,8 +16763,19 @@ const SettingsPanel=({users,setUsers,currentUser,onClose})=>{
                                 "ros-selections":"UK Sel","ros-hairlines":"UK Hair","ros-india":"India"
                               }[s]||s)).join(", ")||"None"}
                           </span>
+                          <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>
+                            Full Name: {u.fullName ? <span style={{color:"#374151",fontWeight:600}}>{u.fullName}</span> : <span style={{fontStyle:"italic"}}>not set — falls back to "{u.name}"</span>}
+                          </div>
                         </div>
                         <div style={{display:"flex",gap:8}}>
+                          {editFullNameId!==u.id&&(
+                            <button onClick={()=>{setEditFullNameId(u.id);setFullNameInput(u.fullName||"");}}
+                              style={{padding:"6px 14px",borderRadius:8,border:"1px solid #e2e8f0",
+                                background:"#f8fafc",fontSize:12,fontWeight:700,color:"#374151",
+                                cursor:"pointer",fontFamily:"inherit"}}>
+                              ✏️ Full Name
+                            </button>
+                          )}
                           {!isEdit&&(
                             <button onClick={()=>{setEditId(u.id);setEditPin("");setEditPinErr("");}}
                               style={{padding:"6px 14px",borderRadius:8,border:"1px solid #e2e8f0",
@@ -16766,6 +16794,38 @@ const SettingsPanel=({users,setUsers,currentUser,onClose})=>{
                           )}
                         </div>
                       </div>
+
+                      {/* Full Name edit row */}
+                      {editFullNameId===u.id&&(
+                        <div style={{marginTop:12,paddingTop:12,borderTop:"1px solid #f1f5f9",
+                          display:"flex",alignItems:"flex-end",gap:10}}>
+                          <div style={{flex:1}}>
+                            <label style={{fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:4}}>
+                              Full name for {u.name} (shown on payslips & documents)
+                            </label>
+                            <input
+                              value={fullNameInput}
+                              onChange={e=>setFullNameInput(e.target.value)}
+                              placeholder={`e.g. ${u.name} …`}
+                              style={{...inp,width:"100%"}}
+                              autoFocus
+                            />
+                          </div>
+                          <button onClick={()=>saveFullName(u.id)}
+                            style={{padding:"9px 18px",borderRadius:9,border:"none",
+                              background:"linear-gradient(135deg,#1d4ed8,#7c3aed)",
+                              color:"white",fontWeight:700,fontSize:13,cursor:"pointer",
+                              fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                            ✓ Save
+                          </button>
+                          <button onClick={()=>{setEditFullNameId(null);setFullNameInput("");}}
+                            style={{padding:"9px 14px",borderRadius:9,border:"1px solid #e2e8f0",
+                              background:"white",color:"#64748b",fontWeight:600,fontSize:13,
+                              cursor:"pointer",fontFamily:"inherit"}}>
+                            Cancel
+                          </button>
+                        </div>
+                      )}
 
                       {/* PIN edit row */}
                       {isEdit&&(
@@ -16815,10 +16875,19 @@ const SettingsPanel=({users,setUsers,currentUser,onClose})=>{
               <div style={{display:"flex",flexDirection:"column",gap:14}}>
                 <div>
                   <label style={{fontSize:11,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>
-                    FULL NAME
+                    DISPLAY / LOGIN NAME
                   </label>
                   <input value={newName} onChange={e=>setNewName(e.target.value)}
-                    placeholder="e.g. Alex Johnson" style={inp}/>
+                    placeholder="e.g. Swapna" style={inp}/>
+                  <p style={{margin:"4px 0 0",fontSize:10.5,color:"#94a3b8"}}>Used on the login screen and to link attendance/payroll records — keep this the same once set.</p>
+                </div>
+                <div>
+                  <label style={{fontSize:11,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>
+                    FULL NAME <span style={{fontWeight:500,color:"#94a3b8",textTransform:"none"}}>(optional)</span>
+                  </label>
+                  <input value={newFullName} onChange={e=>setNewFullName(e.target.value)}
+                    placeholder="e.g. Swapna Kunjumon" style={inp}/>
+                  <p style={{margin:"4px 0 0",fontSize:10.5,color:"#94a3b8"}}>Shown on payslips, attendance sheets and other formal documents. Falls back to the name above if left blank.</p>
                 </div>
                 <div>
                   <label style={{fontSize:11,fontWeight:700,color:"#374151",display:"block",marginBottom:5}}>
@@ -16923,7 +16992,7 @@ const SettingsPanel=({users,setUsers,currentUser,onClose})=>{
                         {u.initials}
                       </div>
                       <div>
-                        <p style={{margin:0,fontWeight:700,fontSize:14,color:"#0f172a"}}>{u.name}</p>
+                        <p style={{margin:0,fontWeight:700,fontSize:14,color:"#0f172a"}}>{u.fullName||u.name}</p>
                         <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>Staff · Sales tab only per assigned shop</p>
                       </div>
                     </div>
@@ -17130,7 +17199,7 @@ const LoginScreen=({onLogin,users})=>{
                       {u.initials}
                     </div>
                     <div style={{flex:1}}>
-                      <p style={{margin:"0 0 2px",fontWeight:700,fontSize:14,color:"white"}}>{u.name}</p>
+                      <p style={{margin:"0 0 2px",fontWeight:700,fontSize:14,color:"white"}}>{u.fullName||u.name}</p>
                       <p style={{margin:0,fontSize:11,fontWeight:500,color:"rgba(255,255,255,0.30)",textTransform:"capitalize"}}>{ROLE_LABELS[u.role]||u.role}</p>
                     </div>
                     <div style={{width:28,height:28,borderRadius:9,background:"rgba(255,255,255,0.05)",display:"flex",alignItems:"center",justifyContent:"center",color:"rgba(255,255,255,0.30)",fontSize:14}}>›</div>
@@ -17151,7 +17220,7 @@ const LoginScreen=({onLogin,users})=>{
                 <div style={{width:66,height:66,borderRadius:20,background:selUser.avatar,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:24,margin:"0 auto 12px",boxShadow:"0 8px 32px rgba(0,0,0,0.50)",transition:"all 0.3s",animation:success?"ros-pulse 0.6s ease":"none"}}>
                   {success?"✓":selUser.initials}
                 </div>
-                <p style={{margin:"0 0 6px",fontWeight:700,fontSize:18,color:"white",fontFamily:"'Syne',sans-serif"}}>{selUser.name}</p>
+                <p style={{margin:"0 0 6px",fontWeight:700,fontSize:18,color:"white",fontFamily:"'Syne',sans-serif"}}>{selUser.fullName||selUser.name}</p>
                 <span style={{display:"inline-block",fontSize:10,fontWeight:700,letterSpacing:"0.08em",textTransform:"uppercase",color:"rgba(255,255,255,0.40)",background:"rgba(255,255,255,0.07)",border:"1px solid rgba(255,255,255,0.10)",borderRadius:999,padding:"3px 12px"}}>
                   {ROLE_LABELS[selUser.role]||selUser.role}
                 </span>

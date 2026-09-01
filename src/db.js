@@ -634,6 +634,7 @@ export const dbLoadUsers = async () => {
   return data.map(r => ({
     id:       r.id,
     name:     r.name || '',
+    fullName: r.full_name || '',
     initials: r.initials || '',
     role:     r.role || 'staff',
     pin:      r.pin || '',
@@ -647,6 +648,7 @@ export const dbSaveUser = async (u) => {
   const payload = {
     id:       u.id,
     name:     u.name || '',
+    full_name: u.fullName || '',
     initials: u.initials || '',
     role:     u.role || 'staff',
     pin:      u.pin || '',
