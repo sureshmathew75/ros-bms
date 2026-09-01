@@ -37,7 +37,7 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadInventoryItems, dbAddInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement,
   dbLoadUpfrontRefunds, dbAddUpfrontRefund, dbDeleteUpfrontRefund,
   dbLoadGiftVouchers, dbAddGiftVoucher, dbUpdateGiftVoucher, dbDeleteGiftVoucher,
-  dbLoadStaffSalaries, dbSaveStaffSalary, dbLoadCarryForward, dbUpdateCarryForward,
+  dbLoadStaffSalaries, dbSaveStaffSalary, dbLoadStaffPositions, dbSaveStaffPosition, dbLoadCarryForward, dbUpdateCarryForward,
   dbLoadSalaryAdvances, dbAddSalaryAdvance, dbMarkAdvanceApplied, dbUnmarkAdvanceApplied, dbDeleteSalaryAdvance,
   dbLoadLoans, dbAddLoan, dbUpdateLoanBalance, dbDeleteLoan,
   dbLoadPayrollRecords, dbSavePayrollRecord, dbDeletePayrollRecord } from "./db";
@@ -12630,6 +12630,28 @@ const HolidayManagerModal = ({ shopId, holidays, onClose, onAdd, onRemove }) => 
    ═══════════════════════════════════════════════════════════ */
 const PAYROLL_MONTH_NAMES=["January","February","March","April","May","June","July","August","September","October","November","December"];
 
+// Amount-in-words, Indian numbering (lakh/crore) — used on the payslip's
+// net pay banner, a standard touch on formal payslips.
+const numberToWordsIndian = (num) => {
+  num = Math.round(Math.abs(Number(num) || 0));
+  if (num === 0) return "Zero Rupees Only";
+  const ones = ["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten",
+    "Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];
+  const tens = ["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
+  const twoDigits = (n) => n < 20 ? ones[n] : tens[Math.floor(n/10)] + (n%10 ? " " + ones[n%10] : "");
+  const threeDigits = (n) => n < 100 ? twoDigits(n) : ones[Math.floor(n/100)] + " Hundred" + (n%100 ? " " + twoDigits(n%100) : "");
+  const crore = Math.floor(num / 10000000); num %= 10000000;
+  const lakh = Math.floor(num / 100000); num %= 100000;
+  const thousand = Math.floor(num / 1000); num %= 1000;
+  const rest = num;
+  const parts = [];
+  if (crore) parts.push(threeDigits(crore) + " Crore");
+  if (lakh) parts.push(threeDigits(lakh) + " Lakh");
+  if (thousand) parts.push(threeDigits(thousand) + " Thousand");
+  if (rest) parts.push(threeDigits(rest));
+  return parts.join(" ") + " Rupees Only";
+};
+
 const computeMonthPayroll = (year, month /* 1-indexed */, records=[], holidaySet, basicSalary) => {
   const daysInMonth = new Date(year, month, 0).getDate();
   const todayStr = new Date().toISOString().slice(0,10);
@@ -12702,134 +12724,158 @@ const downloadElementAsPdf = (elementId, filename) => {
 
 /* ── PayslipDocument: the printable payslip itself, shared between the
    single-month "Generate" preview and "History" view. ───────────────── */
-const PayslipDocument = ({ shop, staffName, monthLabel, breakdown, netPay, domId }) => {
+const PayslipDocument = ({ shop, staffName, monthLabel, breakdown, netPay, domId, payslipId, generatedDate, isPreview }) => {
   const sym = shop.symbol;
   const b = breakdown || {};
   const totalDeductions = Number(b.absenceDeduction||0) + Number(b.advanceDeduction||0) + Number(b.loanDeduction||0) + Number(b.carryForwardApplied||0);
+  const grossEarnings = Number(b.basicSalary||0) + Number(b.travelAllowance||0) + Number(b.bonusAmount||0);
+  const isNeg = Number(netPay||0) < 0;
+  const words = numberToWordsIndian(netPay) + (isNeg ? " (shortfall)" : "");
+  const stats = [
+    ["Working Days", b.workingDays, "#94a3b8"],
+    ["Full Days", b.fullDays, "#16a34a"],
+    ["Half Days", b.halfDays, "#b45309"],
+    ["Absent", b.absentDays, "#dc2626"],
+  ];
+  const fmtGenDate = (() => { try { return new Date((generatedDate||"")+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}); } catch { return generatedDate||""; } })();
   return (
-    <div id={domId} style={{maxWidth:794,margin:"0 auto",padding:"40px 48px",fontFamily:"Arial,sans-serif",fontSize:13,color:"#0f172a",background:"white"}}>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
-        <div>
-          <img src={shop.logo} alt={shop.name} style={{height:48,objectFit:"contain",marginBottom:6}}/>
-          <div style={{fontSize:11,color:"#64748b"}}>Kottayam, Kerala, India</div>
-        </div>
-        <div style={{textAlign:"right"}}>
-          <div style={{fontSize:24,fontWeight:900,color:"#0f172a",letterSpacing:"-0.03em"}}>PAYSLIP</div>
-          <div style={{fontSize:13,fontWeight:700,color:shop.accent}}>{monthLabel}</div>
-        </div>
-      </div>
-      <div style={{borderTop:"2px solid #0f172a",marginBottom:20}}/>
-
-      <div style={{background:shop.accentBg,borderRadius:10,padding:14,marginBottom:20}}>
-        <div style={{fontSize:10,fontWeight:800,color:shop.accentText,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Employee</div>
-        <div style={{fontWeight:700,fontSize:15}}>{staffName}</div>
-        <div style={{fontSize:12,color:"#64748b",marginTop:2}}>{shop.name}</div>
+    <div id={domId} style={{maxWidth:794,margin:"0 auto",fontFamily:"Arial,Helvetica,sans-serif",fontSize:13,color:"#0f172a",background:"white",position:"relative",overflow:"hidden",border:"1px solid #e5e7eb",borderRadius:4}}>
+      <div style={{height:7,background:`linear-gradient(90deg, ${shop.accent}, ${shop.accentText})`}}/>
+      {/* faint background watermark */}
+      <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none",zIndex:0}}>
+        <span style={{fontSize:120,fontWeight:900,color:"#0f172a",opacity:0.025,transform:"rotate(-28deg)",whiteSpace:"nowrap"}}>{shop.name}</span>
       </div>
 
-      <div style={{fontSize:11,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Attendance Summary</div>
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}}>
-        {[["Working Days",b.workingDays],["Full Days",b.fullDays],["Half Days",b.halfDays],["Absent",b.absentDays]].map(([l,v])=>(
-          <div key={l} style={{border:"1px solid #e2e8f0",borderRadius:9,padding:"10px 8px",textAlign:"center"}}>
-            <div style={{fontSize:18,fontWeight:900}}>{v ?? 0}</div>
-            <div style={{fontSize:9,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",marginTop:2}}>{l}</div>
-          </div>
-        ))}
-      </div>
+      <div style={{position:"relative",zIndex:1,padding:"40px 48px 34px"}}>
 
-      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:20}}>
-        <thead>
-          <tr style={{background:"#0f172a",color:"white"}}>
-            <th style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:800,letterSpacing:"0.06em"}}>DESCRIPTION</th>
-            <th style={{padding:"10px 14px",textAlign:"right",fontSize:11,fontWeight:800,letterSpacing:"0.06em"}}>EARNINGS</th>
-            <th style={{padding:"10px 14px",textAlign:"right",fontSize:11,fontWeight:800,letterSpacing:"0.06em"}}>DEDUCTIONS</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr style={{borderBottom:"1px solid #e2e8f0"}}>
-            <td style={{padding:"10px 14px"}}>Basic Salary</td>
-            <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700}}>{sym}{Number(b.basicSalary||0).toLocaleString()}</td>
-            <td style={{padding:"10px 14px",textAlign:"right",color:"#cbd5e1"}}>—</td>
-          </tr>
-          <tr style={{borderBottom:"1px solid #e2e8f0"}}>
-            <td style={{padding:"10px 14px"}}>
-              Travel Allowance
-              {(b.fullDays||0)<20 && <span style={{color:"#94a3b8",fontSize:11}}> ({b.fullDays||0}/20 full days)</span>}
-            </td>
-            <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700}}>{sym}{Number(b.travelAllowance||0).toLocaleString()}</td>
-            <td style={{padding:"10px 14px",textAlign:"right",color:"#cbd5e1"}}>—</td>
-          </tr>
-          {(b.bonusAmount||0)>0 && (
-            <tr style={{borderBottom:"1px solid #e2e8f0"}}>
-              <td style={{padding:"10px 14px"}}>{b.bonusLabel || "Festival Bonus"}</td>
-              <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:"#16a34a"}}>{sym}{Number(b.bonusAmount||0).toLocaleString()}</td>
-              <td style={{padding:"10px 14px",textAlign:"right",color:"#cbd5e1"}}>—</td>
-            </tr>
-          )}
-          {(b.absenceDeduction||0)>0 && (
-            <tr style={{borderBottom:"1px solid #e2e8f0"}}>
-              <td style={{padding:"10px 14px"}}>
-                Absence Deduction
-                {b.freeDayUsed && <span style={{color:"#94a3b8",fontSize:11}}> (1 free day applied)</span>}
-              </td>
-              <td style={{padding:"10px 14px",textAlign:"right",color:"#cbd5e1"}}>—</td>
-              <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:"#dc2626"}}>{sym}{Number(b.absenceDeduction||0).toLocaleString()}</td>
-            </tr>
-          )}
-          {(b.advanceDeduction||0)>0 && (
-            <tr style={{borderBottom:"1px solid #e2e8f0"}}>
-              <td style={{padding:"10px 14px"}}>Salary Advance Recovered</td>
-              <td style={{padding:"10px 14px",textAlign:"right",color:"#cbd5e1"}}>—</td>
-              <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:"#dc2626"}}>{sym}{Number(b.advanceDeduction||0).toLocaleString()}</td>
-            </tr>
-          )}
-          {(b.loanDeduction||0)>0 && (
-            <tr style={{borderBottom:"1px solid #e2e8f0"}}>
-              <td style={{padding:"10px 14px"}}>
-                Loan Instalment
-                {b.loanBalanceAfter!=null && <span style={{color:"#94a3b8",fontSize:11}}> (Balance remaining: {sym}{Number(b.loanBalanceAfter||0).toLocaleString()}, carried to next month)</span>}
-              </td>
-              <td style={{padding:"10px 14px",textAlign:"right",color:"#cbd5e1"}}>—</td>
-              <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:"#dc2626"}}>{sym}{Number(b.loanDeduction||0).toLocaleString()}</td>
-            </tr>
-          )}
-          {(b.carryForwardApplied||0)>0 && (
-            <tr style={{borderBottom:"1px solid #e2e8f0"}}>
-              <td style={{padding:"10px 14px"}}>Previous Month Balance Recovered</td>
-              <td style={{padding:"10px 14px",textAlign:"right",color:"#cbd5e1"}}>—</td>
-              <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:"#dc2626"}}>{sym}{Number(b.carryForwardApplied||0).toLocaleString()}</td>
-            </tr>
-          )}
-        </tbody>
-      </table>
-
-      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:24}}>
-        <div style={{width:300}}>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}>
-            <span style={{color:"#64748b"}}>Gross Pay</span><span style={{fontWeight:600}}>{sym}{(Number(b.grossPay||0)+Number(b.bonusAmount||0)).toLocaleString()}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}>
-            <span style={{color:"#64748b"}}>Total Deductions</span><span style={{fontWeight:600,color:"#dc2626"}}>{sym}{totalDeductions.toLocaleString()}</span>
-          </div>
-          <div style={{borderTop:"2px solid #0f172a",paddingTop:10,marginTop:4}}>
-            <div style={{display:"flex",justifyContent:"space-between"}}>
-              <span style={{fontSize:16,fontWeight:900}}>NET PAY</span>
-              <span style={{fontSize:18,fontWeight:900,color:Number(netPay||0)<0?"#dc2626":shop.accent}}>{sym}{Number(netPay||0).toLocaleString()}</span>
+        {/* header */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:22}}>
+          <div style={{display:"flex",alignItems:"center",gap:12}}>
+            <img src={shop.logo} alt={shop.name} style={{height:46,objectFit:"contain"}}/>
+            <div>
+              <div style={{fontSize:19,fontWeight:900,letterSpacing:"-0.01em",color:"#0f172a",lineHeight:1.15}}>{shop.name}</div>
+              <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Kottayam, Kerala, India</div>
             </div>
-            {(b.carryForwardBalance||0)>0 && (
-              <div style={{textAlign:"right",fontSize:10.5,color:"#dc2626",marginTop:3}}>
-                {sym}{Number(b.carryForwardBalance||0).toLocaleString()} shortfall carried to next month
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.16em",color:"#94a3b8",textTransform:"uppercase",marginBottom:4}}>Payslip</div>
+            <div style={{fontSize:21,fontWeight:900,color:"#0f172a",letterSpacing:"-0.02em"}}>{monthLabel}</div>
+            <div style={{fontSize:10.5,color:"#94a3b8",marginTop:3}}>
+              {payslipId && <>Ref: {payslipId}<br/></>}
+              {isPreview ? "Preview — not yet saved" : (generatedDate ? `Generated ${fmtGenDate}` : "")}
+            </div>
+          </div>
+        </div>
+
+        <div style={{height:2,background:"#0f172a",marginBottom:20}}/>
+
+        {/* info strip */}
+        <div style={{display:"grid",gridTemplateColumns:"1.3fr 1fr",gap:12,marginBottom:20}}>
+          <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"55",borderRadius:10,padding:"14px 16px"}}>
+            <div style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:shop.accentText,marginBottom:6}}>Employee</div>
+            <div style={{fontSize:15.5,fontWeight:800,color:"#0f172a"}}>{staffName}</div>
+            <div style={{fontSize:11.5,color:"#64748b",marginTop:2}}>{b.position || "Staff"} · {shop.name}</div>
+          </div>
+          <div style={{border:"1px solid #e2e8f0",borderRadius:10,padding:"14px 16px"}}>
+            <div style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"#94a3b8",marginBottom:6}}>Pay Details</div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:11.5,padding:"2.5px 0"}}><span style={{color:"#64748b"}}>Pay Period</span><span style={{fontWeight:700}}>{monthLabel}</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:11.5,padding:"2.5px 0"}}><span style={{color:"#64748b"}}>Payment Basis</span><span style={{fontWeight:700}}>Monthly</span></div>
+            <div style={{
+              display:"inline-flex",alignItems:"center",gap:5,marginTop:8,borderRadius:20,padding:"3px 10px",fontSize:10.5,fontWeight:800,
+              background:isPreview?"#fffbeb":"#ecfdf5", color:isPreview?"#92400e":"#166534", border:"1px solid "+(isPreview?"#fde68a":"#bbf7d0"),
+            }}>{isPreview ? "PREVIEW — NOT SAVED" : "PAYSLIP GENERATED"}</div>
+          </div>
+        </div>
+
+        {/* attendance stats */}
+        <div style={{fontSize:10.5,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:9}}>Attendance Summary</div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:24}}>
+          {stats.map(([l,v,dot])=>(
+            <div key={l} style={{border:"1px solid #e2e8f0",borderRadius:10,padding:"11px 8px 10px",textAlign:"center"}}>
+              <div style={{width:6,height:6,borderRadius:"50%",margin:"0 auto 6px",background:dot}}/>
+              <div style={{fontSize:19,fontWeight:900,color:"#0f172a",lineHeight:1}}>{v ?? 0}</div>
+              <div style={{fontSize:8.7,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em",marginTop:4}}>{l}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* earnings / deductions ledger */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:16}}>
+          <div>
+            <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",margin:"0 0 10px",paddingBottom:8,borderBottom:"2px solid #166534",color:"#166534"}}>Earnings</div>
+            <div style={{display:"flex",justifyContent:"space-between",gap:8,padding:"7px 0",borderBottom:"1px dashed #e5e7eb",fontSize:12.5}}>
+              <span>Basic Salary</span><span style={{fontWeight:700,color:"#166534",whiteSpace:"nowrap"}}>{sym}{Number(b.basicSalary||0).toLocaleString()}</span>
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",gap:8,padding:"7px 0",borderBottom:"1px dashed #e5e7eb",fontSize:12.5}}>
+              <span>Travel Allowance{(b.fullDays||0)<20 && <small style={{display:"block",color:"#94a3b8",fontSize:10,fontWeight:500,marginTop:1}}>{b.fullDays||0}/20 full days</small>}</span>
+              <span style={{fontWeight:700,color:"#166534",whiteSpace:"nowrap"}}>{sym}{Number(b.travelAllowance||0).toLocaleString()}</span>
+            </div>
+            {(b.bonusAmount||0)>0 && (
+              <div style={{display:"flex",justifyContent:"space-between",gap:8,padding:"7px 0",borderBottom:"1px dashed #e5e7eb",fontSize:12.5}}>
+                <span>{b.bonusLabel || "Festival Bonus"}</span><span style={{fontWeight:700,color:"#166534",whiteSpace:"nowrap"}}>{sym}{Number(b.bonusAmount||0).toLocaleString()}</span>
               </div>
             )}
+            <div style={{display:"flex",justifyContent:"space-between",paddingTop:10,marginTop:4,borderTop:"1.5px solid #0f172a",fontSize:13,fontWeight:800}}>
+              <span>Gross Earnings</span><span>{sym}{grossEarnings.toLocaleString()}</span>
+            </div>
+          </div>
+          <div>
+            <div style={{fontSize:11,fontWeight:800,letterSpacing:"0.08em",textTransform:"uppercase",margin:"0 0 10px",paddingBottom:8,borderBottom:"2px solid #dc2626",color:"#dc2626"}}>Deductions</div>
+            {totalDeductions<=0 && <div style={{fontSize:11.5,color:"#cbd5e1",fontStyle:"italic",padding:"7px 0"}}>No deductions this month</div>}
+            {(b.absenceDeduction||0)>0 && (
+              <div style={{display:"flex",justifyContent:"space-between",gap:8,padding:"7px 0",borderBottom:"1px dashed #e5e7eb",fontSize:12.5}}>
+                <span>Absence Deduction{b.freeDayUsed && <small style={{display:"block",color:"#94a3b8",fontSize:10,fontWeight:500,marginTop:1}}>1 free day applied</small>}</span>
+                <span style={{fontWeight:700,color:"#dc2626",whiteSpace:"nowrap"}}>{sym}{Number(b.absenceDeduction||0).toLocaleString()}</span>
+              </div>
+            )}
+            {(b.advanceDeduction||0)>0 && (
+              <div style={{display:"flex",justifyContent:"space-between",gap:8,padding:"7px 0",borderBottom:"1px dashed #e5e7eb",fontSize:12.5}}>
+                <span>Salary Advance Recovered</span><span style={{fontWeight:700,color:"#dc2626",whiteSpace:"nowrap"}}>{sym}{Number(b.advanceDeduction||0).toLocaleString()}</span>
+              </div>
+            )}
+            {(b.loanDeduction||0)>0 && (
+              <div style={{display:"flex",justifyContent:"space-between",gap:8,padding:"7px 0",borderBottom:"1px dashed #e5e7eb",fontSize:12.5}}>
+                <span>Loan Instalment{b.loanBalanceAfter!=null && <small style={{display:"block",color:"#94a3b8",fontSize:10,fontWeight:500,marginTop:1}}>Balance {sym}{Number(b.loanBalanceAfter||0).toLocaleString()} → next month</small>}</span>
+                <span style={{fontWeight:700,color:"#dc2626",whiteSpace:"nowrap"}}>{sym}{Number(b.loanDeduction||0).toLocaleString()}</span>
+              </div>
+            )}
+            {(b.carryForwardApplied||0)>0 && (
+              <div style={{display:"flex",justifyContent:"space-between",gap:8,padding:"7px 0",borderBottom:"1px dashed #e5e7eb",fontSize:12.5}}>
+                <span>Previous Month Recovered{<small style={{display:"block",color:"#94a3b8",fontSize:10,fontWeight:500,marginTop:1}}>Prior shortfall</small>}</span>
+                <span style={{fontWeight:700,color:"#dc2626",whiteSpace:"nowrap"}}>{sym}{Number(b.carryForwardApplied||0).toLocaleString()}</span>
+              </div>
+            )}
+            <div style={{display:"flex",justifyContent:"space-between",paddingTop:10,marginTop:4,borderTop:"1.5px solid #0f172a",fontSize:13,fontWeight:800}}>
+              <span>Total Deductions</span><span>{sym}{totalDeductions.toLocaleString()}</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div style={{borderTop:"1px solid #e2e8f0",paddingTop:14,display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
-        <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>This is a computer-generated payslip from {shop.name}.</p>
-        <div style={{textAlign:"right"}}>
-          <div style={{height:40,borderBottom:"1px solid #0f172a",width:140,marginBottom:4}}/>
-          <p style={{margin:0,fontSize:11,color:"#64748b"}}>Authorised Signature</p>
+        {/* net pay banner */}
+        <div style={{
+          marginTop:22,borderRadius:12,padding:"18px 22px",color:"white",
+          display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,
+          background: isNeg ? "linear-gradient(135deg,#7f1d1d,#450a0a)" : `linear-gradient(135deg, ${shop.accentText}, #4a0a2b)`,
+        }}>
+          <div>
+            <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",opacity:0.8}}>Net Payable</div>
+            <div style={{fontSize:11,opacity:0.85,marginTop:4,maxWidth:420}}>{words}</div>
+            {(b.carryForwardBalance||0)>0 && (
+              <div style={{fontSize:11,opacity:0.95,marginTop:3,fontWeight:700}}>{sym}{Number(b.carryForwardBalance||0).toLocaleString()} shortfall carried to next month</div>
+            )}
+          </div>
+          <div style={{fontSize:28,fontWeight:900,letterSpacing:"-0.02em"}}>{isNeg?"−":""}{sym}{Math.abs(Number(netPay||0)).toLocaleString()}</div>
         </div>
+
+        {/* footer */}
+        <div style={{marginTop:26,paddingTop:16,borderTop:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:20}}>
+          <p style={{margin:0,fontSize:10.5,color:"#94a3b8",lineHeight:1.6,maxWidth:380}}>This is a system-generated payslip issued by {shop.name} and does not require a physical signature. For any query regarding this payslip, please contact HR/Admin.</p>
+          <div style={{textAlign:"right"}}>
+            <div style={{width:150,height:36,borderBottom:"1px solid #0f172a",marginBottom:5,marginLeft:"auto"}}/>
+            <span style={{fontSize:10.5,color:"#64748b"}}>Authorised Signatory</span>
+          </div>
+        </div>
+
       </div>
     </div>
   );
@@ -12932,6 +12978,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
 
   const [loaded, setLoaded] = React.useState(false);
   const [salaries, setSalaries] = React.useState({});
+  const [positions, setPositions] = React.useState({}); // staffName -> job position/designation
   const [carryForward, setCarryForward] = React.useState({}); // staffName -> unrecovered shortfall from a prior month
   const [advances, setAdvances] = React.useState([]);
   const [loans, setLoans] = React.useState([]);
@@ -12950,6 +12997,8 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
   const [showAddLoan, setShowAddLoan] = React.useState(false);
   const [confirmDeletePayslip, setConfirmDeletePayslip] = React.useState(null);
   const [fyStartYear, setFyStartYear] = React.useState(now.getMonth()+1 >= 4 ? now.getFullYear() : now.getFullYear()-1);
+  const [editingPosition, setEditingPosition] = React.useState(false);
+  const [positionInput, setPositionInput] = React.useState("");
   const [bonusLabel, setBonusLabel] = React.useState("");
   const [bonusAmount, setBonusAmount] = React.useState("");
   const [loanInstalmentOverrides, setLoanInstalmentOverrides] = React.useState({}); // loanId -> this-month-only override
@@ -12957,14 +13006,15 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
   const refreshAll = React.useCallback(()=>{
     return Promise.all([
       dbLoadStaffSalaries(shopId),
+      dbLoadStaffPositions(shopId),
       dbLoadCarryForward(shopId),
       dbLoadSalaryAdvances(shopId),
       dbLoadLoans(shopId),
       dbLoadPayrollRecords(shopId),
       dbLoadAttendanceHolidays(shopId),
       dbLoadAttendanceRecords(shopId),
-    ]).then(([sal, cf, adv, ln, pr, hol, att])=>{
-      setSalaries(sal); setCarryForward(cf); setAdvances(adv); setLoans(ln); setPayrollRecords(pr);
+    ]).then(([sal, pos, cf, adv, ln, pr, hol, att])=>{
+      setSalaries(sal); setPositions(pos); setCarryForward(cf); setAdvances(adv); setLoans(ln); setPayrollRecords(pr);
       setHolidays(hol); setAttendanceRecords(att);
     });
   }, [shopId]);
@@ -12991,6 +13041,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
 
   const holidaySet = new Set(holidays.map(h=>h.date));
   const basicSalary = salaries[selectedStaff] ?? 13000;
+  const position = positions[selectedStaff] || "Staff";
   const monthKey = `${selYear}-${String(selMonth).padStart(2,"0")}`;
   const monthLabel = `${PAYROLL_MONTH_NAMES[selMonth-1]} ${selYear}`;
   const staffRecords = attendanceRecords.filter(r=>r.staffName===selectedStaff);
@@ -13020,13 +13071,21 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
   // Whatever is still negative here becomes next month's carry-forward.
   const netPay = computed.grossPay + bonusAmt - computed.absenceDeduction - advanceDeduction - loanDeduction - carryForwardOpening;
   const carryForwardClosing = netPay<0 ? -netPay : 0;
-  const previewBreakdown = { ...computed, basicSalary, advanceDeduction, loanDeduction, loanBalanceAfter, bonusLabel: bonusLabel.trim(), bonusAmount: bonusAmt, carryForwardApplied: carryForwardOpening, carryForwardBalance: carryForwardClosing };
+  const previewBreakdown = { ...computed, basicSalary, position, advanceDeduction, loanDeduction, loanBalanceAfter, bonusLabel: bonusLabel.trim(), bonusAmount: bonusAmt, carryForwardApplied: carryForwardOpening, carryForwardBalance: carryForwardClosing };
 
   const saveSalary = async () => {
     const val = Number(salaryInput);
     if (!(val>=0)) return;
     const ok = await dbSaveStaffSalary(shopId, selectedStaff, val);
     if (ok) { setSalaries(prev=>({...prev,[selectedStaff]:val})); setEditingSalary(false); }
+    else alert("Couldn't save — please check your connection and try again.");
+  };
+
+  const savePosition = async () => {
+    const val = positionInput.trim();
+    if (!val) return;
+    const ok = await dbSaveStaffPosition(shopId, selectedStaff, val);
+    if (ok) { setPositions(prev=>({...prev,[selectedStaff]:val})); setEditingPosition(false); }
     else alert("Couldn't save — please check your connection and try again.");
   };
 
@@ -13099,9 +13158,25 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
         <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",marginBottom:20,padding:"14px 16px",background:shop.accentBg,borderRadius:12,border:"1px solid "+shop.accent+"33"}}>
           <div>
             <label style={{fontSize:10,fontWeight:800,color:shop.accentText,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Staff</label>
-            <select value={selectedStaff} onChange={e=>{setSelectedStaff(e.target.value);setEditingSalary(false);}} style={inp}>
+            <select value={selectedStaff} onChange={e=>{setSelectedStaff(e.target.value);setEditingSalary(false);setEditingPosition(false);}} style={inp}>
               {staffList.map(u=><option key={u.id} value={u.name}>{u.name}</option>)}
             </select>
+          </div>
+          <div>
+            <label style={{fontSize:10,fontWeight:800,color:shop.accentText,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Position</label>
+            {editingPosition ? (
+              <div style={{display:"flex",gap:6}}>
+                <input type="text" value={positionInput} onChange={e=>setPositionInput(e.target.value)} placeholder="e.g. Customer Care Executive" style={{...inp,width:190}} autoFocus/>
+                <button onClick={savePosition} style={{padding:"8px 12px",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✓</button>
+                <button onClick={()=>setEditingPosition(false)} style={{padding:"8px 10px",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+              </div>
+            ) : (
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>{position}</span>
+                <button onClick={()=>{setPositionInput(position==="Staff"?"":position);setEditingPosition(true);}}
+                  style={{border:"none",background:"transparent",color:shop.accent,cursor:"pointer",fontSize:12,fontWeight:700}}>✏️ Edit</button>
+              </div>
+            )}
           </div>
           <div>
             <label style={{fontSize:10,fontWeight:800,color:shop.accentText,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Basic Salary</label>
@@ -13178,7 +13253,8 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
                   })}
                 </div>
               )}
-              <PayslipDocument shop={shop} staffName={selectedStaff} monthLabel={monthLabel} breakdown={previewBreakdown} netPay={netPay} domId="payslip-preview-content"/>
+              <PayslipDocument shop={shop} staffName={selectedStaff} monthLabel={monthLabel} breakdown={previewBreakdown} netPay={netPay} domId="payslip-preview-content"
+                payslipId={`PAY-${selectedStaff}-${monthKey}`} generatedDate={new Date().toISOString().slice(0,10)} isPreview/>
               <div style={{display:"flex",justifyContent:"center",marginTop:16}}>
                 <button onClick={handleGenerate}
                   style={{padding:"12px 28px",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 16px "+shop.accent+"55"}}>
@@ -13211,7 +13287,8 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
                   </div>
                   <div style={{padding:12,overflowX:"auto"}}>
                     <div style={{transform:"scale(0.6)",transformOrigin:"top left",width:"166.67%"}}>
-                      <PayslipDocument shop={shop} staffName={rec.staffName} monthLabel={`${PAYROLL_MONTH_NAMES[Number(rec.month.split("-")[1])-1]} ${rec.month.split("-")[0]}`} breakdown={rec.breakdown} netPay={rec.netPay} domId={`payslip-hist-${rec.id}`}/>
+                      <PayslipDocument shop={shop} staffName={rec.staffName} monthLabel={`${PAYROLL_MONTH_NAMES[Number(rec.month.split("-")[1])-1]} ${rec.month.split("-")[0]}`} breakdown={rec.breakdown} netPay={rec.netPay} domId={`payslip-hist-${rec.id}`}
+                        payslipId={rec.id} generatedDate={rec.generatedDate} isPreview={false}/>
                     </div>
                   </div>
                 </div>

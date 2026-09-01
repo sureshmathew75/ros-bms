@@ -1324,6 +1324,27 @@ export const dbUpdateCarryForward = async (shopId, staffName, balance) => {
   return true;
 };
 
+// Position/designation shown on the payslip (e.g. "Customer Care
+// Executive"). Defaults to "Staff" if never set for that person.
+export const dbLoadStaffPositions = async (shopId) => {
+  if (!sb) return {};
+  const { data, error } = await sb.from('staff_salaries').select('staff_name, position').eq('shop_id', shopId);
+  if (error) { console.error('Load staff positions error:', error); return {}; }
+  const map = {};
+  (data || []).forEach(r => { map[r.staff_name] = r.position || 'Staff'; });
+  return map;
+};
+
+export const dbSaveStaffPosition = async (shopId, staffName, position) => {
+  if (!sb) return false;
+  const { error } = await sb.from('staff_salaries').upsert(
+    { shop_id: shopId, staff_name: staffName, position: String(position || '').trim() || 'Staff' },
+    { onConflict: 'shop_id,staff_name' }
+  );
+  if (error) { console.error('Save staff position error:', error); return false; }
+  return true;
+};
+
 export const dbLoadSalaryAdvances = async (shopId) => {
   if (!sb) return [];
   const { data, error } = await sb.from('salary_advances').select('*').eq('shop_id', shopId).order('date_given', { ascending: false });
