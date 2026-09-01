@@ -1272,6 +1272,146 @@ export const dbRemoveAttendanceHoliday = async (shopId, date) => {
   return true;
 };
 
+/* ═══════════════════════════════════════════════════════════
+   PAYROLL (ROS India only) — basic salary per staff member, monthly
+   payslips computed from the attendance records above, plus salary
+   advances (deducted in full on the next payslip) and loans (repaid
+   by a fixed monthly instalment the admin sets, tracked to a running
+   balance). A generated payslip is stored as a snapshot (`breakdown`
+   holds the full computation) so it stays accurate even if attendance
+   records are corrected later — regenerating is an explicit delete +
+   recreate, never a silent overwrite.
+   ═══════════════════════════════════════════════════════════ */
+export const dbLoadStaffSalaries = async (shopId) => {
+  if (!sb) return {};
+  const { data, error } = await sb.from('staff_salaries').select('*').eq('shop_id', shopId);
+  if (error) { console.error('Load staff salaries error:', error); return {}; }
+  const map = {};
+  (data || []).forEach(r => { map[r.staff_name] = Number(r.basic_salary) || 0; });
+  return map;
+};
+
+export const dbSaveStaffSalary = async (shopId, staffName, basicSalary) => {
+  if (!sb) return false;
+  const { error } = await sb.from('staff_salaries').upsert(
+    { shop_id: shopId, staff_name: staffName, basic_salary: Number(basicSalary) || 0 },
+    { onConflict: 'shop_id,staff_name' }
+  );
+  if (error) { console.error('Save staff salary error:', error); return false; }
+  return true;
+};
+
+export const dbLoadSalaryAdvances = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('salary_advances').select('*').eq('shop_id', shopId).order('date_given', { ascending: false });
+  if (error) { console.error('Load salary advances error:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id, staffName: r.staff_name, amount: Number(r.amount) || 0,
+    dateGiven: r.date_given, notes: r.notes || '',
+    applied: !!r.applied, appliedMonth: r.applied_month || '',
+  }));
+};
+
+export const dbAddSalaryAdvance = async (shopId, staffName, amount, dateGiven, notes) => {
+  if (!sb) return null;
+  const id = `ADV-${Date.now().toString().slice(-8)}`;
+  const { error } = await sb.from('salary_advances').insert({
+    id, shop_id: shopId, staff_name: staffName, amount: Number(amount) || 0,
+    date_given: dateGiven, notes: notes || '', applied: false, applied_month: null,
+  });
+  if (error) { console.error('Add salary advance error:', error); return null; }
+  return id;
+};
+
+export const dbMarkAdvanceApplied = async (id, appliedMonth) => {
+  if (!sb) return false;
+  const { error } = await sb.from('salary_advances').update({ applied: true, applied_month: appliedMonth }).eq('id', id);
+  if (error) { console.error('Mark advance applied error:', error); return false; }
+  return true;
+};
+
+export const dbUnmarkAdvanceApplied = async (id) => {
+  if (!sb) return false;
+  const { error } = await sb.from('salary_advances').update({ applied: false, applied_month: null }).eq('id', id);
+  if (error) { console.error('Unmark advance applied error:', error); return false; }
+  return true;
+};
+
+export const dbDeleteSalaryAdvance = async (id) => {
+  if (!sb) return false;
+  const { error } = await sb.from('salary_advances').delete().eq('id', id);
+  if (error) { console.error('Delete salary advance error:', error); return false; }
+  return true;
+};
+
+export const dbLoadLoans = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('staff_loans').select('*').eq('shop_id', shopId).order('start_date', { ascending: false });
+  if (error) { console.error('Load loans error:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id, staffName: r.staff_name, principal: Number(r.principal) || 0,
+    monthlyInstalment: Number(r.monthly_instalment) || 0, balance: Number(r.balance) || 0,
+    startDate: r.start_date, status: r.status || 'ACTIVE', notes: r.notes || '',
+  }));
+};
+
+export const dbAddLoan = async (shopId, staffName, principal, monthlyInstalment, startDate, notes) => {
+  if (!sb) return null;
+  const id = `LOAN-${Date.now().toString().slice(-8)}`;
+  const { error } = await sb.from('staff_loans').insert({
+    id, shop_id: shopId, staff_name: staffName,
+    principal: Number(principal) || 0, monthly_instalment: Number(monthlyInstalment) || 0,
+    balance: Number(principal) || 0, start_date: startDate, status: 'ACTIVE', notes: notes || '',
+  });
+  if (error) { console.error('Add loan error:', error); return null; }
+  return id;
+};
+
+export const dbUpdateLoanBalance = async (id, newBalance, status) => {
+  if (!sb) return false;
+  const { error } = await sb.from('staff_loans').update({ balance: Math.max(0, Number(newBalance) || 0), status: status || 'ACTIVE' }).eq('id', id);
+  if (error) { console.error('Update loan balance error:', error); return false; }
+  return true;
+};
+
+export const dbDeleteLoan = async (id) => {
+  if (!sb) return false;
+  const { error } = await sb.from('staff_loans').delete().eq('id', id);
+  if (error) { console.error('Delete loan error:', error); return false; }
+  return true;
+};
+
+export const dbLoadPayrollRecords = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('payroll_records').select('*').eq('shop_id', shopId).order('month', { ascending: false });
+  if (error) { console.error('Load payroll records error:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id, staffName: r.staff_name, month: r.month,
+    netPay: Number(r.net_pay) || 0, generatedDate: r.generated_date,
+    breakdown: r.breakdown_json || {},
+  }));
+};
+
+export const dbSavePayrollRecord = async (shopId, staffName, month, netPay, breakdown) => {
+  if (!sb) return null;
+  const id = `PAY-${staffName}-${month}`;
+  const { error } = await sb.from('payroll_records').upsert({
+    id, shop_id: shopId, staff_name: staffName, month,
+    net_pay: Number(netPay) || 0,
+    generated_date: new Date().toISOString().slice(0, 10),
+    breakdown_json: breakdown,
+  }, { onConflict: 'id' });
+  if (error) { console.error('Save payroll record error:', error); return null; }
+  return id;
+};
+
+export const dbDeletePayrollRecord = async (id) => {
+  if (!sb) return false;
+  const { error } = await sb.from('payroll_records').delete().eq('id', id);
+  if (error) { console.error('Delete payroll record error:', error); return false; }
+  return true;
+};
+
 /* ── Inventory management (ROS India stocked items only). Every stock
    change — sale-out or restock-in — is logged as its own movement, so
    an item's history is a real ledger, not just a running number. ────── */

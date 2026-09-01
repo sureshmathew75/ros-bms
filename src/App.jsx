@@ -36,7 +36,11 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadAttendanceHolidays, dbAddAttendanceHoliday, dbRemoveAttendanceHoliday,
   dbLoadInventoryItems, dbAddInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement,
   dbLoadUpfrontRefunds, dbAddUpfrontRefund, dbDeleteUpfrontRefund,
-  dbLoadGiftVouchers, dbAddGiftVoucher, dbUpdateGiftVoucher, dbDeleteGiftVoucher } from "./db";
+  dbLoadGiftVouchers, dbAddGiftVoucher, dbUpdateGiftVoucher, dbDeleteGiftVoucher,
+  dbLoadStaffSalaries, dbSaveStaffSalary,
+  dbLoadSalaryAdvances, dbAddSalaryAdvance, dbMarkAdvanceApplied, dbUnmarkAdvanceApplied, dbDeleteSalaryAdvance,
+  dbLoadLoans, dbAddLoan, dbUpdateLoanBalance, dbDeleteLoan,
+  dbLoadPayrollRecords, dbSavePayrollRecord, dbDeletePayrollRecord } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -7122,12 +7126,13 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"agents",   l:"Agents",   ic:"🤝"},
     {id:"products", l:"Products", ic:"🏷️"},
     {id:"attendance",l:"Attendance",ic:"🕐"},
+    {id:"payroll",  l:"Payroll",   ic:"💰"},
     {id:"inventory",l:"Stock",ic:"📦"},
     {id:"expenses", l:"Expenses", ic:"💳"},
     {id:"documents",l:"Documents",ic:"📎"},
     {id:"analytics",l:"Analytics",ic:"📊"},
     {id:"reports",  l:"Reports",  ic:"📋"},
-  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india");
+  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india").filter(n=>n.id!=="payroll"||shopId==="ros-india");
 
   const filtSales=sales.filter(s=>{
     const q=search.toLowerCase();
@@ -8722,6 +8727,11 @@ return(
           {/* ── ATTENDANCE (ROS India only) ── */}
           {tab==="attendance"&&shopId==="ros-india"&&(
             <AttendancePage shopId={shopId} shop={shop} user={user} users={users} />
+          )}
+
+          {/* ── PAYROLL (ROS India only, admin-only via ROLE_NAV) ── */}
+          {tab==="payroll"&&shopId==="ros-india"&&(
+            <PayrollPage shopId={shopId} shop={shop} user={user} users={users} />
           )}
 
           {/* ── INVENTORY (ROS India only) ── */}
@@ -12577,6 +12587,707 @@ const HolidayManagerModal = ({ shopId, holidays, onClose, onAdd, onRemove }) => 
   );
 };
 
+/* ═══════════════════════════════════════════════════════════
+   PAYROLL (ROS India only) — monthly payslips computed straight from
+   the attendance records above (classifyAttendanceDay), plus salary
+   advances and loans. Rules, as given by the business:
+     • Basic salary is set per staff member (default ₹13,000).
+     • Travel allowance: ₹50/day up to ₹1,000/month, earned in full
+       only by a Full Day at least 20 times in the month — each Full
+       Day short of 20 costs ₹50 off the allowance (floored at ₹0).
+       "Short Hours" attendance counts the same as Absent here, per an
+       explicit call from the business.
+     • Basic-salary absence deduction: the first Full-Day absence in a
+       month is free (paid); every one after costs ₹500. Every Half
+       Day absence costs ₹250, with no free day. If a staff member has
+       MORE than 4 Full-Day absences in the month, the free day is
+       revoked entirely — every Full-Day absence that month is charged.
+     • Salary advances deduct in full on the next payslip run after
+       they're given. Loans repay by a fixed monthly instalment (set
+       by admin) against a tracked balance, stopping automatically once
+       the balance reaches zero.
+   A generated payslip is stored as a full snapshot (so it stays
+   accurate even if attendance is corrected later) — regenerating is
+   an explicit delete (which also reverses its advance/loan effects)
+   followed by a fresh generate, never a silent overwrite.
+   ═══════════════════════════════════════════════════════════ */
+const PAYROLL_MONTH_NAMES=["January","February","March","April","May","June","July","August","September","October","November","December"];
+
+const computeMonthPayroll = (year, month /* 1-indexed */, records=[], holidaySet, basicSalary) => {
+  const daysInMonth = new Date(year, month, 0).getDate();
+  const todayStr = new Date().toISOString().slice(0,10);
+  const recByDate = {};
+  records.forEach(r => { recByDate[r.date] = r; });
+
+  let workingDays=0, fullDays=0, halfDays=0, absentDays=0;
+  for (let d=1; d<=daysInMonth; d++) {
+    const dateStr = `${year}-${String(month).padStart(2,"0")}-${String(d).padStart(2,"0")}`;
+    if (dateStr > todayStr) continue; // don't judge days that haven't happened yet
+    const rec = recByDate[dateStr];
+    const status = classifyAttendanceDay(dateStr, rec?.clockIn, rec?.clockOut, holidaySet);
+    if (status === "holiday") continue;
+    workingDays++;
+    // Short Hours / still-in-progress / never-clocked-in-today all fold
+    // into Absent for payroll purposes — the business asked for "under
+    // 3.5 hours treated as off".
+    if (status === "full") fullDays++;
+    else if (status === "half") halfDays++;
+    else absentDays++;
+  }
+
+  const fullDayShortfall = Math.max(0, 20 - fullDays);
+  const travelAllowance = Math.max(0, 1000 - fullDayShortfall*50);
+
+  let absenceDeduction = 0;
+  let freeDayUsed = false;
+  if (absentDays > 0) {
+    if (absentDays > 4) {
+      absenceDeduction += absentDays * 500; // free day revoked entirely
+    } else {
+      absenceDeduction += (absentDays - 1) * 500;
+      freeDayUsed = true;
+    }
+  }
+  absenceDeduction += halfDays * 250;
+
+  const grossPay = (Number(basicSalary)||0) + travelAllowance;
+
+  return { workingDays, fullDays, halfDays, absentDays, travelAllowance, absenceDeduction, grossPay, freeDayUsed };
+};
+
+const loadHtml2Pdf = () => new Promise((res,rej)=>{
+  if (window.html2pdf) { res(); return; }
+  const s=document.createElement('script');
+  s.src='https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js';
+  s.onload=res; s.onerror=rej;
+  document.head.appendChild(s);
+});
+
+const downloadElementAsPdf = (elementId, filename) => {
+  const el = document.getElementById(elementId);
+  if (!el) { alert("Nothing to download yet."); return; }
+  loadHtml2Pdf().then(()=>{
+    window.html2pdf().set({
+      margin:[10,10,10,10],
+      filename,
+      image:{type:'jpeg',quality:0.98},
+      html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false},
+      jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},
+    }).from(el).save();
+  }).catch(()=>alert('Could not load the PDF library. Check your internet connection.'));
+};
+
+/* ── PayslipDocument: the printable payslip itself, shared between the
+   single-month "Generate" preview and "History" view. ───────────────── */
+const PayslipDocument = ({ shop, staffName, monthLabel, breakdown, netPay, domId }) => {
+  const sym = shop.symbol;
+  const b = breakdown || {};
+  const totalDeductions = Number(b.absenceDeduction||0) + Number(b.advanceDeduction||0) + Number(b.loanDeduction||0);
+  return (
+    <div id={domId} style={{maxWidth:794,margin:"0 auto",padding:"40px 48px",fontFamily:"Arial,sans-serif",fontSize:13,color:"#0f172a",background:"white"}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+        <div>
+          <img src={shop.logo} alt={shop.name} style={{height:48,objectFit:"contain",marginBottom:6}}/>
+          <div style={{fontSize:11,color:"#64748b"}}>Mumbai, India</div>
+        </div>
+        <div style={{textAlign:"right"}}>
+          <div style={{fontSize:24,fontWeight:900,color:"#0f172a",letterSpacing:"-0.03em"}}>PAYSLIP</div>
+          <div style={{fontSize:13,fontWeight:700,color:shop.accent}}>{monthLabel}</div>
+        </div>
+      </div>
+      <div style={{borderTop:"2px solid #0f172a",marginBottom:20}}/>
+
+      <div style={{background:shop.accentBg,borderRadius:10,padding:14,marginBottom:20}}>
+        <div style={{fontSize:10,fontWeight:800,color:shop.accentText,textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Employee</div>
+        <div style={{fontWeight:700,fontSize:15}}>{staffName}</div>
+        <div style={{fontSize:12,color:"#64748b",marginTop:2}}>{shop.name}</div>
+      </div>
+
+      <div style={{fontSize:11,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Attendance Summary</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}}>
+        {[["Working Days",b.workingDays],["Full Days",b.fullDays],["Half Days",b.halfDays],["Absent",b.absentDays]].map(([l,v])=>(
+          <div key={l} style={{border:"1px solid #e2e8f0",borderRadius:9,padding:"10px 8px",textAlign:"center"}}>
+            <div style={{fontSize:18,fontWeight:900}}>{v ?? 0}</div>
+            <div style={{fontSize:9,color:"#94a3b8",fontWeight:700,textTransform:"uppercase",marginTop:2}}>{l}</div>
+          </div>
+        ))}
+      </div>
+
+      <table style={{width:"100%",borderCollapse:"collapse",marginBottom:20}}>
+        <thead>
+          <tr style={{background:"#0f172a",color:"white"}}>
+            <th style={{padding:"10px 14px",textAlign:"left",fontSize:11,fontWeight:800,letterSpacing:"0.06em"}}>DESCRIPTION</th>
+            <th style={{padding:"10px 14px",textAlign:"right",fontSize:11,fontWeight:800,letterSpacing:"0.06em"}}>EARNINGS</th>
+            <th style={{padding:"10px 14px",textAlign:"right",fontSize:11,fontWeight:800,letterSpacing:"0.06em"}}>DEDUCTIONS</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr style={{borderBottom:"1px solid #e2e8f0"}}>
+            <td style={{padding:"10px 14px"}}>Basic Salary</td>
+            <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700}}>{sym}{Number(b.basicSalary||0).toLocaleString()}</td>
+            <td style={{padding:"10px 14px",textAlign:"right",color:"#cbd5e1"}}>—</td>
+          </tr>
+          <tr style={{borderBottom:"1px solid #e2e8f0"}}>
+            <td style={{padding:"10px 14px"}}>
+              Travel Allowance
+              {(b.fullDays||0)<20 && <span style={{color:"#94a3b8",fontSize:11}}> ({b.fullDays||0}/20 full days)</span>}
+            </td>
+            <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700}}>{sym}{Number(b.travelAllowance||0).toLocaleString()}</td>
+            <td style={{padding:"10px 14px",textAlign:"right",color:"#cbd5e1"}}>—</td>
+          </tr>
+          {(b.absenceDeduction||0)>0 && (
+            <tr style={{borderBottom:"1px solid #e2e8f0"}}>
+              <td style={{padding:"10px 14px"}}>
+                Absence Deduction
+                {b.freeDayUsed && <span style={{color:"#94a3b8",fontSize:11}}> (1 free day applied)</span>}
+              </td>
+              <td style={{padding:"10px 14px",textAlign:"right",color:"#cbd5e1"}}>—</td>
+              <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:"#dc2626"}}>{sym}{Number(b.absenceDeduction||0).toLocaleString()}</td>
+            </tr>
+          )}
+          {(b.advanceDeduction||0)>0 && (
+            <tr style={{borderBottom:"1px solid #e2e8f0"}}>
+              <td style={{padding:"10px 14px"}}>Salary Advance Recovered</td>
+              <td style={{padding:"10px 14px",textAlign:"right",color:"#cbd5e1"}}>—</td>
+              <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:"#dc2626"}}>{sym}{Number(b.advanceDeduction||0).toLocaleString()}</td>
+            </tr>
+          )}
+          {(b.loanDeduction||0)>0 && (
+            <tr style={{borderBottom:"1px solid #e2e8f0"}}>
+              <td style={{padding:"10px 14px"}}>Loan Instalment</td>
+              <td style={{padding:"10px 14px",textAlign:"right",color:"#cbd5e1"}}>—</td>
+              <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:"#dc2626"}}>{sym}{Number(b.loanDeduction||0).toLocaleString()}</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      <div style={{display:"flex",justifyContent:"flex-end",marginBottom:24}}>
+        <div style={{width:300}}>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}>
+            <span style={{color:"#64748b"}}>Gross Pay</span><span style={{fontWeight:600}}>{sym}{Number(b.grossPay||0).toLocaleString()}</span>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}>
+            <span style={{color:"#64748b"}}>Total Deductions</span><span style={{fontWeight:600,color:"#dc2626"}}>{sym}{totalDeductions.toLocaleString()}</span>
+          </div>
+          <div style={{borderTop:"2px solid #0f172a",paddingTop:10,marginTop:4}}>
+            <div style={{display:"flex",justifyContent:"space-between"}}>
+              <span style={{fontSize:16,fontWeight:900}}>NET PAY</span>
+              <span style={{fontSize:18,fontWeight:900,color:shop.accent}}>{sym}{Number(netPay||0).toLocaleString()}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{borderTop:"1px solid #e2e8f0",paddingTop:14,display:"flex",justifyContent:"space-between",alignItems:"flex-end"}}>
+        <p style={{margin:0,fontSize:11,color:"#94a3b8"}}>This is a computer-generated payslip from {shop.name}.</p>
+        <div style={{textAlign:"right"}}>
+          <div style={{height:40,borderBottom:"1px solid #0f172a",width:140,marginBottom:4}}/>
+          <p style={{margin:0,fontSize:11,color:"#64748b"}}>Authorised Signature</p>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+/* ── AddAdvanceModal / AddLoanModal: small forms for logging a salary
+   advance or a loan against a staff member. ──────────────────────────── */
+const AddAdvanceModal = ({ shop, staffList, onClose, onSave }) => {
+  const [staffName, setStaffName] = React.useState(staffList[0]?.name || "");
+  const [amount, setAmount] = React.useState("");
+  const [dateGiven, setDateGiven] = React.useState(() => new Date().toISOString().slice(0,10));
+  const [notes, setNotes] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const inp = {width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
+  const lbl = {display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
+  const canSave = staffName && Number(amount)>0;
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"white",borderRadius:16,padding:24,maxWidth:400,width:"94%"}}>
+        <div style={{fontSize:15,fontWeight:800,color:"#0f172a",marginBottom:4}}>💵 Log a Salary Advance</div>
+        <p style={{fontSize:11,color:"#94a3b8",marginBottom:16}}>Deducted in full from this staff member's next generated payslip.</p>
+        <div style={{marginBottom:14}}>
+          <label style={lbl}>Staff Member</label>
+          <select value={staffName} onChange={e=>setStaffName(e.target.value)} style={inp}>
+            {staffList.map(u=><option key={u.id} value={u.name}>{u.name}</option>)}
+          </select>
+        </div>
+        <div style={{marginBottom:14}}>
+          <label style={lbl}>Amount ({shop.symbol})</label>
+          <input type="number" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0.00" style={inp}/>
+        </div>
+        <div style={{marginBottom:14}}>
+          <label style={lbl}>Date Given</label>
+          <input type="date" value={dateGiven} onChange={e=>setDateGiven(e.target.value)} style={inp}/>
+        </div>
+        <div style={{marginBottom:18}}>
+          <label style={lbl}>Notes (optional)</label>
+          <input value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Any extra context…" style={inp}/>
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={onClose} style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+          <button onClick={async()=>{setSaving(true);await onSave({staffName,amount:Number(amount),dateGiven,notes});setSaving(false);}} disabled={!canSave||saving}
+            style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:(!canSave||saving)?"default":"pointer",fontFamily:"inherit",opacity:(!canSave||saving)?0.6:1}}>
+            {saving?"Saving…":"Log Advance"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const AddLoanModal = ({ shop, staffList, onClose, onSave }) => {
+  const [staffName, setStaffName] = React.useState(staffList[0]?.name || "");
+  const [principal, setPrincipal] = React.useState("");
+  const [instalment, setInstalment] = React.useState("");
+  const [startDate, setStartDate] = React.useState(() => new Date().toISOString().slice(0,10));
+  const [notes, setNotes] = React.useState("");
+  const [saving, setSaving] = React.useState(false);
+  const inp = {width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
+  const lbl = {display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
+  const canSave = staffName && Number(principal)>0 && Number(instalment)>0;
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"white",borderRadius:16,padding:24,maxWidth:400,width:"94%"}}>
+        <div style={{fontSize:15,fontWeight:800,color:"#0f172a",marginBottom:4}}>🏦 Add a Loan</div>
+        <p style={{fontSize:11,color:"#94a3b8",marginBottom:16}}>Repaid by the monthly instalment below on every generated payslip, until the balance reaches zero.</p>
+        <div style={{marginBottom:14}}>
+          <label style={lbl}>Staff Member</label>
+          <select value={staffName} onChange={e=>setStaffName(e.target.value)} style={inp}>
+            {staffList.map(u=><option key={u.id} value={u.name}>{u.name}</option>)}
+          </select>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:14}}>
+          <div><label style={lbl}>Loan Amount ({shop.symbol})</label><input type="number" value={principal} onChange={e=>setPrincipal(e.target.value)} placeholder="0.00" style={inp}/></div>
+          <div><label style={lbl}>Monthly Instalment</label><input type="number" value={instalment} onChange={e=>setInstalment(e.target.value)} placeholder="0.00" style={inp}/></div>
+        </div>
+        <div style={{marginBottom:14}}>
+          <label style={lbl}>Start Date</label>
+          <input type="date" value={startDate} onChange={e=>setStartDate(e.target.value)} style={inp}/>
+        </div>
+        <div style={{marginBottom:18}}>
+          <label style={lbl}>Notes (optional)</label>
+          <input value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Any extra context…" style={inp}/>
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={onClose} style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+          <button onClick={async()=>{setSaving(true);await onSave({staffName,principal:Number(principal),instalment:Number(instalment),startDate,notes});setSaving(false);}} disabled={!canSave||saving}
+            style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:(!canSave||saving)?"default":"pointer",fontFamily:"inherit",opacity:(!canSave||saving)?0.6:1}}>
+            {saving?"Saving…":"Add Loan"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const PayrollPage = ({ shopId, shop, user, users=[] }) => {
+  const fmtDate = (d) => { if(!d) return ""; try { return new Date(d+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}); } catch { return d||""; } };
+  const staffList = React.useMemo(()=>users.filter(u=>u.role==="staff"&&(u.shops||[]).includes(shopId)), [users, shopId]);
+
+  const [loaded, setLoaded] = React.useState(false);
+  const [salaries, setSalaries] = React.useState({});
+  const [advances, setAdvances] = React.useState([]);
+  const [loans, setLoans] = React.useState([]);
+  const [payrollRecords, setPayrollRecords] = React.useState([]);
+  const [holidays, setHolidays] = React.useState([]);
+  const [attendanceRecords, setAttendanceRecords] = React.useState([]);
+
+  const [subTab, setSubTab] = React.useState("generate");
+  const now = new Date();
+  const [selectedStaff, setSelectedStaff] = React.useState("");
+  const [selYear, setSelYear] = React.useState(now.getFullYear());
+  const [selMonth, setSelMonth] = React.useState(now.getMonth()+1);
+  const [editingSalary, setEditingSalary] = React.useState(false);
+  const [salaryInput, setSalaryInput] = React.useState("");
+  const [showAddAdvance, setShowAddAdvance] = React.useState(false);
+  const [showAddLoan, setShowAddLoan] = React.useState(false);
+  const [confirmDeletePayslip, setConfirmDeletePayslip] = React.useState(null);
+  const [fyStartYear, setFyStartYear] = React.useState(now.getMonth()+1 >= 4 ? now.getFullYear() : now.getFullYear()-1);
+
+  const refreshAll = React.useCallback(()=>{
+    return Promise.all([
+      dbLoadStaffSalaries(shopId),
+      dbLoadSalaryAdvances(shopId),
+      dbLoadLoans(shopId),
+      dbLoadPayrollRecords(shopId),
+      dbLoadAttendanceHolidays(shopId),
+      dbLoadAttendanceRecords(shopId),
+    ]).then(([sal, adv, ln, pr, hol, att])=>{
+      setSalaries(sal); setAdvances(adv); setLoans(ln); setPayrollRecords(pr);
+      setHolidays(hol); setAttendanceRecords(att);
+    });
+  }, [shopId]);
+
+  React.useEffect(()=>{
+    refreshAll().then(()=>setLoaded(true));
+  }, [refreshAll]);
+
+  React.useEffect(()=>{
+    if (!selectedStaff && staffList.length>0) setSelectedStaff(staffList[0].name);
+  }, [staffList, selectedStaff]);
+
+  if (!loaded) return <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>Loading payroll…</div>;
+
+  if (staffList.length===0) return (
+    <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>
+      No staff members are assigned to {shop.name} yet. Add one under Settings → Manage Users first.
+    </div>
+  );
+
+  const holidaySet = new Set(holidays.map(h=>h.date));
+  const basicSalary = salaries[selectedStaff] ?? 13000;
+  const monthKey = `${selYear}-${String(selMonth).padStart(2,"0")}`;
+  const monthLabel = `${PAYROLL_MONTH_NAMES[selMonth-1]} ${selYear}`;
+  const staffRecords = attendanceRecords.filter(r=>r.staffName===selectedStaff);
+  const computed = computeMonthPayroll(selYear, selMonth, staffRecords, holidaySet, basicSalary);
+  const existingRecord = payrollRecords.find(p=>p.staffName===selectedStaff && p.month===monthKey);
+  const unappliedAdvances = advances.filter(a=>a.staffName===selectedStaff && !a.applied);
+  const activeLoans = loans.filter(l=>l.staffName===selectedStaff && l.status==="ACTIVE" && l.balance>0);
+  const advanceDeduction = unappliedAdvances.reduce((a,x)=>a+x.amount,0);
+  const loanDeduction = activeLoans.reduce((a,l)=>a+Math.min(l.monthlyInstalment,l.balance),0);
+  const netPay = Math.max(0, computed.grossPay - computed.absenceDeduction - advanceDeduction - loanDeduction);
+  const previewBreakdown = { ...computed, basicSalary, advanceDeduction, loanDeduction };
+
+  const saveSalary = async () => {
+    const val = Number(salaryInput);
+    if (!(val>=0)) return;
+    const ok = await dbSaveStaffSalary(shopId, selectedStaff, val);
+    if (ok) { setSalaries(prev=>({...prev,[selectedStaff]:val})); setEditingSalary(false); }
+    else alert("Couldn't save — please check your connection and try again.");
+  };
+
+  const handleGenerate = async () => {
+    if (existingRecord) return;
+    if (!window.confirm(`Generate the ${monthLabel} payslip for ${selectedStaff}? Net pay: ${shop.symbol}${netPay.toLocaleString()}.`)) return;
+    const breakdown = { ...previewBreakdown, advances: unappliedAdvances.map(a=>({id:a.id,amount:a.amount})), loanDeductions: activeLoans.map(l=>({id:l.id,amount:Math.min(l.monthlyInstalment,l.balance)})) };
+    const id = await dbSavePayrollRecord(shopId, selectedStaff, monthKey, netPay, breakdown);
+    if (!id) { alert("Couldn't save this payslip — please check your connection and try again."); return; }
+    for (const a of unappliedAdvances) await dbMarkAdvanceApplied(a.id, monthKey);
+    for (const l of activeLoans) {
+      const ded = Math.min(l.monthlyInstalment, l.balance);
+      const newBal = l.balance - ded;
+      await dbUpdateLoanBalance(l.id, newBal, newBal<=0 ? "CLOSED" : "ACTIVE");
+    }
+    await refreshAll();
+  };
+
+  const handleDeletePayslip = async (record) => {
+    const bd = record.breakdown || {};
+    for (const a of (bd.advances||[])) await dbUnmarkAdvanceApplied(a.id);
+    for (const ld of (bd.loanDeductions||[])) {
+      const loan = loans.find(x=>x.id===ld.id);
+      if (loan) await dbUpdateLoanBalance(ld.id, loan.balance + ld.amount, "ACTIVE");
+    }
+    await dbDeletePayrollRecord(record.id);
+    setConfirmDeletePayslip(null);
+    await refreshAll();
+  };
+
+  const yearOptions = Array.from({length:6}, (_,i)=>now.getFullYear()-4+i);
+
+  const inp = {padding:"8px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none"};
+
+  return (
+    <div style={{maxWidth:1000}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
+        <h2 style={{margin:0,fontSize:20,fontWeight:800,color:"#0f172a"}}>💰 Payroll</h2>
+      </div>
+
+      {/* sub-tab bar */}
+      <div style={{display:"flex",gap:6,marginBottom:20,borderBottom:"1px solid #e2e8f0",flexWrap:"wrap"}}>
+        {[
+          {key:"generate", label:"🧾 Generate Payslip"},
+          {key:"history",  label:"📚 History"},
+          {key:"advloan",  label:"💵 Advances & Loans"},
+          {key:"annual",   label:"📄 Annual Summary"},
+        ].map(t=>(
+          <button key={t.key} onClick={()=>setSubTab(t.key)}
+            style={{padding:"9px 14px",border:"none",borderBottom:subTab===t.key?"2px solid "+shop.accent:"2px solid transparent",
+              background:"transparent",color:subTab===t.key?shop.accent:"#64748b",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* staff + salary strip (shared across Generate/History/Annual) */}
+      {subTab!=="advloan" && (
+        <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",marginBottom:20,padding:"14px 16px",background:shop.accentBg,borderRadius:12,border:"1px solid "+shop.accent+"33"}}>
+          <div>
+            <label style={{fontSize:10,fontWeight:800,color:shop.accentText,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Staff</label>
+            <select value={selectedStaff} onChange={e=>{setSelectedStaff(e.target.value);setEditingSalary(false);}} style={inp}>
+              {staffList.map(u=><option key={u.id} value={u.name}>{u.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{fontSize:10,fontWeight:800,color:shop.accentText,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Basic Salary</label>
+            {editingSalary ? (
+              <div style={{display:"flex",gap:6}}>
+                <input type="number" value={salaryInput} onChange={e=>setSalaryInput(e.target.value)} style={{...inp,width:100}} autoFocus/>
+                <button onClick={saveSalary} style={{padding:"8px 12px",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✓</button>
+                <button onClick={()=>setEditingSalary(false)} style={{padding:"8px 10px",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+              </div>
+            ) : (
+              <div style={{display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>{shop.symbol}{basicSalary.toLocaleString()}</span>
+                <button onClick={()=>{setSalaryInput(String(basicSalary));setEditingSalary(true);}}
+                  style={{border:"none",background:"transparent",color:shop.accent,cursor:"pointer",fontSize:12,fontWeight:700}}>✏️ Edit</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── GENERATE ── */}
+      {subTab==="generate" && (
+        <div>
+          <div style={{display:"flex",gap:10,marginBottom:16,alignItems:"center"}}>
+            <select value={selMonth} onChange={e=>setSelMonth(Number(e.target.value))} style={inp}>
+              {PAYROLL_MONTH_NAMES.map((m,i)=><option key={m} value={i+1}>{m}</option>)}
+            </select>
+            <select value={selYear} onChange={e=>setSelYear(Number(e.target.value))} style={inp}>
+              {yearOptions.map(y=><option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+
+          {existingRecord ? (
+            <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+              <span style={{fontSize:13,color:"#166534",fontWeight:700}}>✅ {monthLabel} payslip already generated — Net Pay {shop.symbol}{existingRecord.netPay.toLocaleString()}. See it under History, or delete it there to regenerate.</span>
+            </div>
+          ) : (
+            <>
+              {(unappliedAdvances.length>0 || activeLoans.length>0) && (
+                <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:12,padding:"12px 16px",marginBottom:16,fontSize:12.5,color:"#92400e"}}>
+                  {unappliedAdvances.length>0 && <div>💵 {unappliedAdvances.length} unapplied advance{unappliedAdvances.length>1?"s":""} totalling {shop.symbol}{advanceDeduction.toLocaleString()} will be recovered on this payslip.</div>}
+                  {activeLoans.length>0 && <div>🏦 {activeLoans.length} active loan{activeLoans.length>1?"s":""} — this month's instalment{activeLoans.length>1?"s":""} total {shop.symbol}{loanDeduction.toLocaleString()}.</div>}
+                </div>
+              )}
+              <PayslipDocument shop={shop} staffName={selectedStaff} monthLabel={monthLabel} breakdown={previewBreakdown} netPay={netPay} domId="payslip-preview-content"/>
+              <div style={{display:"flex",justifyContent:"center",marginTop:16}}>
+                <button onClick={handleGenerate}
+                  style={{padding:"12px 28px",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 16px "+shop.accent+"55"}}>
+                  ✅ Generate & Save Payslip
+                </button>
+              </div>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* ── HISTORY ── */}
+      {subTab==="history" && (
+        <div>
+          {payrollRecords.filter(p=>p.staffName===selectedStaff).length===0 ? (
+            <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>No payslips generated yet for {selectedStaff}.</div>
+          ) : (
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {payrollRecords.filter(p=>p.staffName===selectedStaff).sort((a,b)=>b.month.localeCompare(a.month)).map(rec=>(
+                <div key={rec.id} style={{border:"1px solid #e2e8f0",borderRadius:12,overflow:"hidden"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:"#f8fafc"}}>
+                    <span style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{PAYROLL_MONTH_NAMES[Number(rec.month.split("-")[1])-1]} {rec.month.split("-")[0]}</span>
+                    <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                      <span style={{fontWeight:800,fontSize:13,color:shop.accent}}>{shop.symbol}{rec.netPay.toLocaleString()}</span>
+                      <button onClick={()=>downloadElementAsPdf(`payslip-hist-${rec.id}`, `Payslip-${rec.staffName}-${rec.month}.pdf`)}
+                        style={{padding:"5px 10px",borderRadius:7,border:"1px solid #e2e8f0",background:"white",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>⬇ PDF</button>
+                      <button onClick={()=>setConfirmDeletePayslip(rec)}
+                        style={{padding:"5px 10px",borderRadius:7,border:"1px solid #fecaca",background:"#fef2f2",color:"#dc2626",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Delete</button>
+                    </div>
+                  </div>
+                  <div style={{padding:12,overflowX:"auto"}}>
+                    <div style={{transform:"scale(0.6)",transformOrigin:"top left",width:"166.67%"}}>
+                      <PayslipDocument shop={shop} staffName={rec.staffName} monthLabel={`${PAYROLL_MONTH_NAMES[Number(rec.month.split("-")[1])-1]} ${rec.month.split("-")[0]}`} breakdown={rec.breakdown} netPay={rec.netPay} domId={`payslip-hist-${rec.id}`}/>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── ADVANCES & LOANS ── */}
+      {subTab==="advloan" && (
+        <div>
+          <div style={{display:"flex",gap:10,marginBottom:20}}>
+            <button onClick={()=>setShowAddAdvance(true)}
+              style={{padding:"9px 16px",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>
+              ➕ Log Advance
+            </button>
+            <button onClick={()=>setShowAddLoan(true)}
+              style={{padding:"9px 16px",borderRadius:9,border:"1px solid "+shop.accent,background:"white",color:shop.accent,fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>
+              ➕ Add Loan
+            </button>
+          </div>
+
+          <div style={{fontSize:11,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Salary Advances</div>
+          {advances.length===0 ? <p style={{fontSize:12,color:"#94a3b8",marginBottom:20}}>None logged yet.</p> : (
+            <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:24}}>
+              {advances.map(a=>(
+                <div key={a.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 14px",border:"1px solid #e2e8f0",borderRadius:10}}>
+                  <div>
+                    <span style={{fontWeight:700,fontSize:13}}>{a.staffName}</span>
+                    <span style={{fontSize:11,color:"#94a3b8",marginLeft:8}}>{fmtDate(a.dateGiven)}{a.notes?" · "+a.notes:""}</span>
+                  </div>
+                  <div style={{display:"flex",alignItems:"center",gap:10}}>
+                    <span style={{fontWeight:700,fontSize:13}}>{shop.symbol}{a.amount.toLocaleString()}</span>
+                    {a.applied ? (
+                      <span style={{fontSize:10,fontWeight:700,color:"#166534",background:"#f0fdf4",padding:"3px 9px",borderRadius:999,border:"1px solid #bbf7d0"}}>Recovered — {a.appliedMonth}</span>
+                    ) : (
+                      <>
+                        <span style={{fontSize:10,fontWeight:700,color:"#92400e",background:"#fffbeb",padding:"3px 9px",borderRadius:999,border:"1px solid #fde68a"}}>Pending</span>
+                        <button onClick={async()=>{if(window.confirm("Delete this advance record?")){await dbDeleteSalaryAdvance(a.id);await refreshAll();}}}
+                          style={{border:"none",background:"transparent",color:"#dc2626",cursor:"pointer",fontSize:11,fontWeight:700}}>Delete</button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div style={{fontSize:11,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Loans</div>
+          {loans.length===0 ? <p style={{fontSize:12,color:"#94a3b8"}}>None logged yet.</p> : (
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {loans.map(l=>(
+                <div key={l.id} style={{padding:"12px 14px",border:"1px solid #e2e8f0",borderRadius:10}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{fontWeight:700,fontSize:13}}>{l.staffName}</span>
+                    <span style={{fontSize:10,fontWeight:700,padding:"3px 9px",borderRadius:999,
+                      color:l.status==="ACTIVE"?"#92400e":"#166534",
+                      background:l.status==="ACTIVE"?"#fffbeb":"#f0fdf4",
+                      border:"1px solid "+(l.status==="ACTIVE"?"#fde68a":"#bbf7d0")}}>
+                      {l.status==="ACTIVE"?"Active":"Closed"}
+                    </span>
+                  </div>
+                  <div style={{fontSize:12,color:"#64748b",marginTop:4}}>
+                    Principal {shop.symbol}{l.principal.toLocaleString()} · Instalment {shop.symbol}{l.monthlyInstalment.toLocaleString()}/mo · Balance {shop.symbol}{l.balance.toLocaleString()} · Started {fmtDate(l.startDate)}
+                  </div>
+                  {l.notes && <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{l.notes}</div>}
+                  {l.balance===l.principal && (
+                    <button onClick={async()=>{if(window.confirm("Delete this loan record? Only do this if it was logged in error.")){await dbDeleteLoan(l.id);await refreshAll();}}}
+                      style={{border:"none",background:"transparent",color:"#dc2626",cursor:"pointer",fontSize:11,fontWeight:700,marginTop:6}}>Delete</button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── ANNUAL SUMMARY ── */}
+      {subTab==="annual" && (()=>{
+        const fyMonths = [];
+        for (let i=0;i<12;i++){
+          const m = ((3+i)%12)+1; // Apr(4)..Mar(3) sequence starting at 4
+          const y = m>=4 ? fyStartYear : fyStartYear+1;
+          fyMonths.push({year:y, month:m, key:`${y}-${String(m).padStart(2,"0")}`});
+        }
+        const fyRecords = fyMonths.map(fm => payrollRecords.find(p=>p.staffName===selectedStaff && p.month===fm.key));
+        const totals = fyRecords.reduce((a,r)=>{
+          if(!r) return a;
+          const b = r.breakdown||{};
+          a.basic += Number(b.basicSalary||0);
+          a.travel += Number(b.travelAllowance||0);
+          a.deductions += Number(b.absenceDeduction||0)+Number(b.advanceDeduction||0)+Number(b.loanDeduction||0);
+          a.net += Number(r.netPay||0);
+          return a;
+        }, {basic:0, travel:0, deductions:0, net:0});
+        const anyMissing = fyRecords.some(r=>!r);
+        return (
+          <div>
+            <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:16}}>
+              <label style={{fontSize:12,fontWeight:700,color:"#374151"}}>Financial Year</label>
+              <select value={fyStartYear} onChange={e=>setFyStartYear(Number(e.target.value))} style={inp}>
+                {yearOptions.map(y=><option key={y} value={y}>{y} – {y+1}</option>)}
+              </select>
+            </div>
+            {anyMissing && (
+              <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:12,color:"#92400e"}}>
+                ⚠️ Not every month in this financial year has a generated payslip yet — totals below only include months that were generated.
+              </div>
+            )}
+            <div id="annual-summary-content" style={{maxWidth:794,margin:"0 auto",padding:"40px 48px",fontFamily:"Arial,sans-serif",fontSize:12.5,color:"#0f172a",background:"white",border:"1px solid #e2e8f0"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                <img src={shop.logo} alt={shop.name} style={{height:44,objectFit:"contain"}}/>
+                <div style={{textAlign:"right"}}>
+                  <div style={{fontSize:22,fontWeight:900,color:"#0f172a",letterSpacing:"-0.03em"}}>ANNUAL PAY SUMMARY</div>
+                  <div style={{fontSize:12,fontWeight:700,color:shop.accent}}>FY {fyStartYear} – {fyStartYear+1} (Apr–Mar)</div>
+                </div>
+              </div>
+              <div style={{borderTop:"2px solid #0f172a",marginBottom:16}}/>
+              <div style={{marginBottom:16}}>
+                <span style={{fontWeight:700,fontSize:14}}>{selectedStaff}</span> · <span style={{color:"#64748b"}}>{shop.name}</span>
+              </div>
+              <table style={{width:"100%",borderCollapse:"collapse",marginBottom:18}}>
+                <thead>
+                  <tr style={{background:"#0f172a",color:"white"}}>
+                    {["MONTH","BASIC","TRAVEL ALLOW.","DEDUCTIONS","NET PAY"].map(h=>(
+                      <th key={h} style={{padding:"8px 10px",textAlign:h==="MONTH"?"left":"right",fontSize:10,fontWeight:800,letterSpacing:"0.05em"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {fyMonths.map((fm,i)=>{
+                    const r = fyRecords[i];
+                    const b = r?.breakdown || {};
+                    const ded = r ? Number(b.absenceDeduction||0)+Number(b.advanceDeduction||0)+Number(b.loanDeduction||0) : 0;
+                    return (
+                      <tr key={fm.key} style={{borderBottom:"1px solid #e2e8f0"}}>
+                        <td style={{padding:"7px 10px"}}>{PAYROLL_MONTH_NAMES[fm.month-1]} {fm.year}</td>
+                        <td style={{padding:"7px 10px",textAlign:"right",color:r?"#0f172a":"#cbd5e1"}}>{r?`${shop.symbol}${Number(b.basicSalary||0).toLocaleString()}`:"—"}</td>
+                        <td style={{padding:"7px 10px",textAlign:"right",color:r?"#0f172a":"#cbd5e1"}}>{r?`${shop.symbol}${Number(b.travelAllowance||0).toLocaleString()}`:"—"}</td>
+                        <td style={{padding:"7px 10px",textAlign:"right",color:r?"#dc2626":"#cbd5e1"}}>{r?`${shop.symbol}${ded.toLocaleString()}`:"—"}</td>
+                        <td style={{padding:"7px 10px",textAlign:"right",fontWeight:700,color:r?"#0f172a":"#cbd5e1"}}>{r?`${shop.symbol}${Number(r.netPay||0).toLocaleString()}`:"—"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr style={{borderTop:"2px solid #0f172a"}}>
+                    <td style={{padding:"9px 10px",fontWeight:800}}>TOTAL</td>
+                    <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800}}>{shop.symbol}{totals.basic.toLocaleString()}</td>
+                    <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800}}>{shop.symbol}{totals.travel.toLocaleString()}</td>
+                    <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800,color:"#dc2626"}}>{shop.symbol}{totals.deductions.toLocaleString()}</td>
+                    <td style={{padding:"9px 10px",textAlign:"right",fontWeight:900,color:shop.accent,fontSize:14}}>{shop.symbol}{totals.net.toLocaleString()}</td>
+                  </tr>
+                </tfoot>
+              </table>
+              <p style={{margin:0,fontSize:10,color:"#94a3b8"}}>This is an internal annual pay record for {selectedStaff}'s own reference, generated by {shop.name}. It is not a statutory tax document.</p>
+            </div>
+            <div style={{display:"flex",justifyContent:"center",marginTop:16}}>
+              <button onClick={()=>downloadElementAsPdf("annual-summary-content", `Annual-Summary-${selectedStaff}-FY${fyStartYear}-${fyStartYear+1}.pdf`)}
+                style={{padding:"12px 28px",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 16px "+shop.accent+"55"}}>
+                ⬇ Download PDF
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {showAddAdvance && (
+        <AddAdvanceModal shop={shop} staffList={staffList} onClose={()=>setShowAddAdvance(false)}
+          onSave={async(data)=>{await dbAddSalaryAdvance(shopId,data.staffName,data.amount,data.dateGiven,data.notes);setShowAddAdvance(false);await refreshAll();}}/>
+      )}
+      {showAddLoan && (
+        <AddLoanModal shop={shop} staffList={staffList} onClose={()=>setShowAddLoan(false)}
+          onSave={async(data)=>{await dbAddLoan(shopId,data.staffName,data.principal,data.instalment,data.startDate,data.notes);setShowAddLoan(false);await refreshAll();}}/>
+      )}
+      {confirmDeletePayslip && (
+        <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:"white",borderRadius:16,padding:22,maxWidth:340,width:"92%"}}>
+            <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:8}}>Delete this payslip?</div>
+            <p style={{fontSize:12,color:"#64748b",marginBottom:18}}>This also undoes any advance and loan deductions it applied, so those become available again — use this to correct a mistake and regenerate.</p>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setConfirmDeletePayslip(null)} style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+              <button onClick={()=>handleDeletePayslip(confirmDeletePayslip)} style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#dc2626",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Auditor = ({ size = 64, mood = "neutral" }) => {
   const suitColor  = "#2d3748";
   const suitShade  = "#1a202c";
@@ -16079,8 +16790,11 @@ const INITIAL_USERS=[
    avatar:"linear-gradient(135deg,#ec4899,#db2777)", shops:["ros-india"]},
 ];
 const ROLE_NAV={
-  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","inventory","dispatch","settings"],
-  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","inventory","dispatch"],
+  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","inventory","dispatch","settings"],
+  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","inventory","dispatch"],
+  // Payroll is kept admin-only (not in staff's list) — it exposes salary,
+  // advances and loan balances for every staff member, not just the
+  // person viewing it.
   staff:["sales","customers","returns","attendance","inventory","dispatch"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
