@@ -12657,6 +12657,19 @@ const numberToWordsIndian = (num) => {
   return parts.join(" ") + " Rupees Only";
 };
 
+// Sales Bonus (team-wide, monthly, released on the 15th — separate from
+// the salary payslip): who's on the team, and the sales-volume tiers.
+// Below ₹4,00,000 monthly sales, no bonus. From ₹4,00,000–5,00,000 the
+// team earns ₹4,000; each further ₹1,00,000 band adds ₹1,000 more
+// (₹5-6L→₹5,000, ₹6-7L→₹6,000, ₹7-8L→₹7,000, and so on).
+const SALES_BONUS_TEAM = ["Jiji", "Swapna"];
+const computeTeamSalesBonusTotal = (salesVolume) => {
+  const v = Number(salesVolume) || 0;
+  if (v < 400000) return 0;
+  const tier = Math.floor((v - 400000) / 100000);
+  return 4000 + tier * 1000;
+};
+
 const computeMonthPayroll = (year, month /* 1-indexed */, records=[], holidaySet, basicSalary) => {
   const daysInMonth = new Date(year, month, 0).getDate();
   const todayStr = new Date().toISOString().slice(0,10);
@@ -13102,8 +13115,12 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
   const [bonusAmount, setBonusAmount] = React.useState("");
   const [loanInstalmentOverrides, setLoanInstalmentOverrides] = React.useState({}); // loanId -> this-month-only override
   // Sales Bonus (separate feature from the festival bonus above — its own
-  // monthly statement, released on the 15th, tracked in its own table)
-  const [salesBonusAmount, setSalesBonusAmount] = React.useState("");
+  // monthly statement, released on the 15th, tracked in its own table).
+  // It's a team-wide payout (SALES_BONUS_TEAM) split by each person's
+  // attendance that month, not tied to whichever staff member happens to
+  // be selected elsewhere on this page.
+  const [teamSalesVolume, setTeamSalesVolume] = React.useState("");
+  const [salesBonusSplitOverrides, setSalesBonusSplitOverrides] = React.useState({}); // staffName -> manually-typed override amount (string)
   const [salesBonusNote, setSalesBonusNote] = React.useState("");
   const [confirmDeleteBonus, setConfirmDeleteBonus] = React.useState(null);
 
@@ -13134,7 +13151,12 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
 
   // a bonus (or a loan instalment override) typed in for one staff/month
   // shouldn't silently carry over to the next one selected
-  React.useEffect(()=>{ setBonusLabel(""); setBonusAmount(""); setLoanInstalmentOverrides({}); setSalesBonusAmount(""); setSalesBonusNote(""); }, [selectedStaff, selMonth, selYear]);
+  React.useEffect(()=>{ setBonusLabel(""); setBonusAmount(""); setLoanInstalmentOverrides({}); }, [selectedStaff, selMonth, selYear]);
+
+  // Sales Bonus is team-wide (not tied to selectedStaff) — reset it only
+  // when the month/year changes, so it isn't lost just by switching the
+  // staff selector used elsewhere on this page.
+  React.useEffect(()=>{ setTeamSalesVolume(""); setSalesBonusSplitOverrides({}); setSalesBonusNote(""); }, [selMonth, selYear]);
 
   if (!loaded) return <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>Loading payroll…</div>;
 
@@ -13156,8 +13178,36 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
   const staffRecords = attendanceRecords.filter(r=>r.staffName===selectedStaff);
   const computed = computeMonthPayroll(selYear, selMonth, staffRecords, holidaySet, basicSalary);
   const existingRecord = payrollRecords.find(p=>p.staffName===selectedStaff && p.month===monthKey);
-  const existingBonusRecord = bonusRecords.find(b=>b.staffName===selectedStaff && b.month===monthKey);
-  const salesBonusAmt = Number(salesBonusAmount)||0;
+
+  // Sales Bonus: team-wide total from this month's sales volume, split
+  // between SALES_BONUS_TEAM by attendance (full day = 1, half day = 0.5).
+  // Each person's computed share is editable before saving (an override
+  // typed into salesBonusSplitOverrides wins over the computed figure).
+  const teamBonusTotal = computeTeamSalesBonusTotal(teamSalesVolume);
+  const teamAttendance = SALES_BONUS_TEAM.map(name => {
+    const recs = attendanceRecords.filter(r=>r.staffName===name);
+    const c = computeMonthPayroll(selYear, selMonth, recs, holidaySet, salaries[name] ?? 13000);
+    return { name, fullDays: c.fullDays, halfDays: c.halfDays, presence: c.fullDays + c.halfDays*0.5 };
+  });
+  const totalPresence = teamAttendance.reduce((a,x)=>a+x.presence, 0);
+  const teamBonusSplit = teamAttendance.map((t, i) => {
+    const rawShare = totalPresence>0 ? (t.presence/totalPresence)*teamBonusTotal : teamBonusTotal/SALES_BONUS_TEAM.length;
+    // last member absorbs any rounding remainder so the shares always add up to the total exactly
+    const computedAmount = i===SALES_BONUS_TEAM.length-1
+      ? Math.max(0, teamBonusTotal - teamAttendance.slice(0,-1).reduce((a,x2,j)=>{
+          const rs = totalPresence>0 ? (x2.presence/totalPresence)*teamBonusTotal : teamBonusTotal/SALES_BONUS_TEAM.length;
+          return a + Math.round(rs);
+        }, 0))
+      : Math.round(rawShare);
+    const ov = salesBonusSplitOverrides[t.name];
+    const amount = (ov!==undefined && ov!=="") ? Math.max(0, Number(ov)||0) : computedAmount;
+    const pct = teamBonusTotal>0 ? Math.round((computedAmount/teamBonusTotal)*1000)/10 : 0;
+    return { ...t, computedAmount, amount, pct };
+  });
+  const existingBonusByName = {};
+  SALES_BONUS_TEAM.forEach(name => { existingBonusByName[name] = bonusRecords.find(b=>b.staffName===name && b.month===monthKey); });
+  const allBonusGenerated = SALES_BONUS_TEAM.every(name => existingBonusByName[name]);
+  const anyBonusGenerated = SALES_BONUS_TEAM.some(name => existingBonusByName[name]);
   const unappliedAdvances = advances.filter(a=>a.staffName===selectedStaff && !a.applied);
   const activeLoans = loans.filter(l=>l.staffName===selectedStaff && l.status==="ACTIVE" && l.balance>0);
   const advanceDeduction = unappliedAdvances.reduce((a,x)=>a+x.amount,0);
@@ -13239,12 +13289,18 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
   };
 
   const handleGenerateBonus = async () => {
-    if (existingBonusRecord) return;
-    if (!(salesBonusAmt>0)) { alert("Enter a bonus amount first."); return; }
-    if (!window.confirm(`Generate the ${monthLabel} Sales Bonus Statement for ${selectedStaff}? Amount: ${shop.symbol}${salesBonusAmt.toLocaleString()}.`)) return;
-    const breakdown = { fullName: staffFullName, position };
-    const id = await dbSaveSalesBonusRecord(shopId, selectedStaff, monthKey, salesBonusAmt, salesBonusNote.trim(), breakdown);
-    if (!id) { alert("Couldn't save this bonus statement — please check your connection and try again."); return; }
+    if (allBonusGenerated) return;
+    if (!(teamBonusTotal>0)) { alert("Enter this month's team sales volume first — sales under ₹4,00,000 don't earn a bonus."); return; }
+    const names = SALES_BONUS_TEAM.map(fullNameOf).join(" & ");
+    if (!window.confirm(`Generate ${monthLabel} Sales Bonus statements for ${names}? Team total: ${shop.symbol}${teamBonusTotal.toLocaleString()}.`)) return;
+    for (const t of teamBonusSplit) {
+      if (existingBonusByName[t.name]) continue; // this person's statement already exists for this month — leave it as-is
+      const breakdown = { fullName: fullNameOf(t.name), position: positions[t.name] || "Staff" };
+      const autoNote = `Team sales volume: ${shop.symbol}${(Number(teamSalesVolume)||0).toLocaleString()}. Total team bonus: ${shop.symbol}${teamBonusTotal.toLocaleString()}. Attendance: ${t.fullDays} full day(s)${t.halfDays?` + ${t.halfDays} half day(s)`:""} — share ${t.pct}%.`;
+      const note = [autoNote, salesBonusNote.trim()].filter(Boolean).join(" ");
+      const id = await dbSaveSalesBonusRecord(shopId, t.name, monthKey, t.amount, note, breakdown);
+      if (!id) { alert(`Couldn't save the bonus statement for ${fullNameOf(t.name)} — please check your connection and try again.`); return; }
+    }
     await refreshAll();
   };
 
@@ -13440,33 +13496,71 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
           </div>
 
           <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,padding:"12px 16px",marginBottom:20,fontSize:12.5,color:"#166534"}}>
-            🎯 Sales Bonus is a separate monthly payout tied to sales volume, released on the 15th — independent of the salary payslip and never subject to loan/advance/carry-forward deductions.
+            🎯 Sales Bonus is a team payout for {SALES_BONUS_TEAM.map(fullNameOf).join(" & ")}, tied to the month's sales volume and released on the 15th — independent of the salary payslip and never subject to loan/advance/carry-forward deductions. Below ₹4,00,000 sales, no bonus; ₹4-5L → ₹4,000 team total, ₹5-6L → ₹5,000, ₹6-7L → ₹6,000, and so on (+₹1,000 per further ₹1,00,000). The team total is split between them by attendance that month.
           </div>
 
-          {existingBonusRecord ? (
-            <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-              <span style={{fontSize:13,color:"#166534",fontWeight:700}}>✅ {monthLabel} sales bonus already generated — {shop.symbol}{existingBonusRecord.amount.toLocaleString()}. See it below, or delete it to regenerate.</span>
+          {allBonusGenerated ? (
+            <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,padding:"14px 16px",marginBottom:16}}>
+              <div style={{fontSize:13,color:"#166534",fontWeight:700,marginBottom:6}}>✅ {monthLabel} sales bonus already generated. See it below, or delete both to regenerate.</div>
+              {SALES_BONUS_TEAM.map(name=>(
+                <div key={name} style={{fontSize:12,color:"#166534"}}>{fullNameOf(name)}: {shop.symbol}{(existingBonusByName[name]?.amount||0).toLocaleString()}</div>
+              ))}
             </div>
           ) : (
             <>
+              {anyBonusGenerated && (
+                <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:12,padding:"10px 14px",marginBottom:16,fontSize:12,color:"#92400e"}}>
+                  ⚠️ {monthLabel} already has a statement generated for one team member — generating again will only fill in the missing one(s), using the figures below.
+                </div>
+              )}
               <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap",marginBottom:16,padding:"12px 14px",background:"#f8fafc",borderRadius:12,border:"1px solid #e2e8f0"}}>
                 <div>
-                  <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Bonus Amount</label>
-                  <input type="number" value={salesBonusAmount} onChange={e=>setSalesBonusAmount(e.target.value)} placeholder="0" style={{...inp,width:130}}/>
+                  <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Team Sales Volume ({monthLabel})</label>
+                  <input type="number" value={teamSalesVolume} onChange={e=>setTeamSalesVolume(e.target.value)} placeholder="0" style={{...inp,width:160}}/>
+                </div>
+                <div>
+                  <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Team Bonus Total</label>
+                  <div style={{padding:"8px 12px",fontSize:14,fontWeight:800,color:teamBonusTotal>0?"#166534":"#94a3b8"}}>{shop.symbol}{teamBonusTotal.toLocaleString()}</div>
                 </div>
                 <div style={{flex:1,minWidth:200}}>
-                  <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Calculation Note (optional)</label>
-                  <input type="text" value={salesBonusNote} onChange={e=>setSalesBonusNote(e.target.value)} placeholder="e.g. 2% of ₹85,000 sales" style={{...inp,width:"100%"}}/>
+                  <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Additional Note (optional)</label>
+                  <input type="text" value={salesBonusNote} onChange={e=>setSalesBonusNote(e.target.value)} placeholder="e.g. includes late Diwali-week sales" style={{...inp,width:"100%"}}/>
                 </div>
               </div>
-              <BonusStatementDocument shop={shop} staffName={selectedStaff} monthLabel={monthLabel}
-                breakdown={{fullName:staffFullName, position}} amount={salesBonusAmt} note={salesBonusNote.trim()}
-                domId="bonus-preview-content" bonusId={`BONUS-${selectedStaff}-${monthKey}`}
-                generatedDate={new Date().toISOString().slice(0,10)} isPreview/>
+
+              <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap",marginBottom:20,padding:"12px 14px",background:"#f8fafc",borderRadius:12,border:"1px solid #e2e8f0"}}>
+                {teamBonusSplit.map(t=>{
+                  const already = existingBonusByName[t.name];
+                  return (
+                    <div key={t.name} style={{minWidth:180}}>
+                      <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>
+                        {fullNameOf(t.name)} — {t.fullDays} full{t.halfDays?` + ${t.halfDays} half`:""} day(s) ({t.pct}%)
+                      </label>
+                      {already ? (
+                        <div style={{padding:"8px 12px",fontSize:14,fontWeight:800,color:"#166534"}}>{shop.symbol}{already.amount.toLocaleString()} (already generated)</div>
+                      ) : (
+                        <input type="number" value={salesBonusSplitOverrides[t.name] ?? (t.computedAmount||"")}
+                          onChange={e=>setSalesBonusSplitOverrides(prev=>({...prev,[t.name]:e.target.value}))}
+                          style={{...inp,width:160}}/>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              {teamBonusSplit.filter(t=>!existingBonusByName[t.name]).map(t=>(
+                <div key={t.name} style={{marginBottom:20}}>
+                  <BonusStatementDocument shop={shop} staffName={t.name} monthLabel={monthLabel}
+                    breakdown={{fullName:fullNameOf(t.name), position: positions[t.name]||"Staff"}} amount={t.amount}
+                    note={`Team sales volume: ${shop.symbol}${(Number(teamSalesVolume)||0).toLocaleString()}. Total team bonus: ${shop.symbol}${teamBonusTotal.toLocaleString()}. Attendance: ${t.fullDays} full day(s)${t.halfDays?` + ${t.halfDays} half day(s)`:""} — share ${t.pct}%. ${salesBonusNote.trim()}`.trim()}
+                    domId={`bonus-preview-${t.name}`} bonusId={`BONUS-${t.name}-${monthKey}`}
+                    generatedDate={new Date().toISOString().slice(0,10)} isPreview/>
+                </div>
+              ))}
               <div style={{display:"flex",justifyContent:"center",marginTop:16}}>
                 <button onClick={handleGenerateBonus}
                   style={{padding:"12px 28px",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 16px "+shop.accent+"55"}}>
-                  ✅ Generate & Save Bonus Statement
+                  ✅ Generate & Save Bonus Statements
                 </button>
               </div>
             </>
@@ -13474,14 +13568,14 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
 
           <div style={{marginTop:32}}>
             <div style={{fontSize:13,fontWeight:800,color:"#0f172a",marginBottom:12}}>📚 Bonus History</div>
-            {bonusRecords.filter(b=>b.staffName===selectedStaff).length===0 ? (
-              <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>No sales bonus statements generated yet for {selectedStaff}.</div>
+            {bonusRecords.length===0 ? (
+              <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>No sales bonus statements generated yet.</div>
             ) : (
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
-                {bonusRecords.filter(b=>b.staffName===selectedStaff).sort((a,b)=>b.month.localeCompare(a.month)).map(rec=>(
+                {bonusRecords.slice().sort((a,b)=> b.month.localeCompare(a.month) || a.staffName.localeCompare(b.staffName)).map(rec=>(
                   <div key={rec.id} style={{border:"1px solid #e2e8f0",borderRadius:12,overflow:"hidden"}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:"#f8fafc"}}>
-                      <span style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{PAYROLL_MONTH_NAMES[Number(rec.month.split("-")[1])-1]} {rec.month.split("-")[0]}</span>
+                      <span style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{rec.breakdown?.fullName||fullNameOf(rec.staffName)} · {PAYROLL_MONTH_NAMES[Number(rec.month.split("-")[1])-1]} {rec.month.split("-")[0]}</span>
                       <div style={{display:"flex",gap:8,alignItems:"center"}}>
                         <span style={{fontWeight:800,fontSize:13,color:"#166534"}}>{shop.symbol}{rec.amount.toLocaleString()}</span>
                         <button onClick={()=>downloadElementAsPdf(`bonus-hist-${rec.id}`, `SalesBonus-${rec.breakdown?.fullName||rec.staffName}-${rec.month}.pdf`)}
