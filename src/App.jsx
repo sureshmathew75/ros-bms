@@ -40,7 +40,8 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadStaffSalaries, dbSaveStaffSalary, dbLoadStaffPositions, dbSaveStaffPosition, dbLoadCarryForward, dbUpdateCarryForward,
   dbLoadSalaryAdvances, dbAddSalaryAdvance, dbMarkAdvanceApplied, dbUnmarkAdvanceApplied, dbDeleteSalaryAdvance,
   dbLoadLoans, dbAddLoan, dbUpdateLoanBalance, dbDeleteLoan,
-  dbLoadPayrollRecords, dbSavePayrollRecord, dbDeletePayrollRecord } from "./db";
+  dbLoadPayrollRecords, dbSavePayrollRecord, dbDeletePayrollRecord,
+  dbLoadSalesBonusRecords, dbSaveSalesBonusRecord, dbDeleteSalesBonusRecord } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -12887,6 +12888,97 @@ const PayslipDocument = ({ shop, staffName, monthLabel, breakdown, netPay, domId
   );
 };
 
+/* ── BonusStatementDocument: the printable Sales Bonus statement — a
+   separate, simpler document from the payslip above. No attendance, no
+   deductions, just a sales-tied amount released on the 15th. Snapshotted
+   the same way (fullName/position at generation time) for consistency. ── */
+const BonusStatementDocument = ({ shop, staffName, monthLabel, breakdown, amount, note, domId, bonusId, generatedDate, isPreview }) => {
+  const sym = shop.symbol;
+  const b = breakdown || {};
+  const words = numberToWordsIndian(amount);
+  const fmtGenDate = (() => { try { return new Date((generatedDate||"")+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}); } catch { return generatedDate||""; } })();
+  return (
+    <div id={domId} style={{maxWidth:794,margin:"0 auto",fontFamily:"Arial,Helvetica,sans-serif",fontSize:13,color:"#0f172a",background:"white",position:"relative",overflow:"hidden",border:"1px solid #e5e7eb",borderRadius:4}}>
+      <div style={{height:7,background:`linear-gradient(90deg, ${shop.accent}, ${shop.accentText})`}}/>
+      <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none",zIndex:0}}>
+        <span style={{fontSize:120,fontWeight:900,color:"#0f172a",opacity:0.025,transform:"rotate(-28deg)",whiteSpace:"nowrap"}}>{shop.name}</span>
+      </div>
+
+      <div style={{position:"relative",zIndex:1,padding:"40px 48px 34px"}}>
+
+        {/* header */}
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:22}}>
+          <div style={{display:"flex",alignItems:"center",gap:14}}>
+            <img src={shop.logo} alt={shop.name} style={{height:74,objectFit:"contain"}}/>
+            <div>
+              <div style={{fontSize:22,fontWeight:900,letterSpacing:"-0.01em",color:"#0f172a",lineHeight:1.15}}>{shop.name}</div>
+              <div style={{fontSize:11.5,color:"#64748b",marginTop:2}}>Kottayam, Kerala, India</div>
+            </div>
+          </div>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.16em",color:"#94a3b8",textTransform:"uppercase",marginBottom:4}}>Sales Bonus Statement</div>
+            <div style={{fontSize:21,fontWeight:900,color:"#0f172a",letterSpacing:"-0.02em"}}>{monthLabel}</div>
+            <div style={{fontSize:10.5,color:"#94a3b8",marginTop:3}}>
+              {bonusId && <>Ref: {bonusId}<br/></>}
+              {isPreview ? "Preview — not yet saved" : (generatedDate ? `Generated ${fmtGenDate}` : "")}
+            </div>
+          </div>
+        </div>
+
+        <div style={{height:2,background:"#0f172a",marginBottom:20}}/>
+
+        {/* info strip */}
+        <div style={{display:"grid",gridTemplateColumns:"1.3fr 1fr",gap:12,marginBottom:24}}>
+          <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"55",borderRadius:10,padding:"14px 16px"}}>
+            <div style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:shop.accentText,marginBottom:6}}>Employee</div>
+            <div style={{fontSize:15.5,fontWeight:800,color:"#0f172a"}}>{b.fullName || staffName}</div>
+            <div style={{fontSize:11.5,color:"#64748b",marginTop:2}}>{b.position || "Staff"} · {shop.name}</div>
+          </div>
+          <div style={{border:"1px solid #e2e8f0",borderRadius:10,padding:"14px 16px"}}>
+            <div style={{fontSize:9.5,fontWeight:800,letterSpacing:"0.09em",textTransform:"uppercase",color:"#94a3b8",marginBottom:6}}>Bonus Details</div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:11.5,padding:"2.5px 0"}}><span style={{color:"#64748b"}}>Bonus Period</span><span style={{fontWeight:700}}>{monthLabel}</span></div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:11.5,padding:"2.5px 0"}}><span style={{color:"#64748b"}}>Basis</span><span style={{fontWeight:700}}>Sales Volume</span></div>
+            <div style={{
+              display:"inline-flex",alignItems:"center",gap:5,marginTop:8,borderRadius:20,padding:"3px 10px",fontSize:10.5,fontWeight:800,
+              background:isPreview?"#fffbeb":"#ecfdf5", color:isPreview?"#92400e":"#166534", border:"1px solid "+(isPreview?"#fde68a":"#bbf7d0"),
+            }}>{isPreview ? "PREVIEW — NOT SAVED" : "STATEMENT GENERATED"}</div>
+          </div>
+        </div>
+
+        {note && (
+          <div style={{marginBottom:20}}>
+            <div style={{fontSize:10.5,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:6}}>Calculation Note</div>
+            <div style={{border:"1px solid #e2e8f0",borderRadius:10,padding:"12px 14px",fontSize:12.5,color:"#374151"}}>{note}</div>
+          </div>
+        )}
+
+        {/* net pay banner */}
+        <div style={{
+          marginTop:22,borderRadius:12,padding:"18px 22px",
+          display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,
+          background:"#ecfdf5", border:"1px solid #bbf7d0", color:"#166534",
+        }}>
+          <div>
+            <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",opacity:0.85}}>Sales Bonus Payable</div>
+            <div style={{fontSize:11,opacity:0.85,marginTop:4,maxWidth:420}}>{words}</div>
+          </div>
+          <div style={{fontSize:28,fontWeight:900,letterSpacing:"-0.02em",color:"#166534"}}>{sym}{Number(amount||0).toLocaleString()}</div>
+        </div>
+
+        {/* footer */}
+        <div style={{marginTop:26,paddingTop:16,borderTop:"1px solid #e5e7eb",display:"flex",justifyContent:"space-between",alignItems:"flex-end",gap:20}}>
+          <p style={{margin:0,fontSize:10.5,color:"#94a3b8",lineHeight:1.6,maxWidth:380}}>This is a system-generated sales bonus statement issued by {shop.name}, separate from the regular monthly payslip. For any query, please contact HR/Admin.</p>
+          <div style={{textAlign:"right"}}>
+            <div style={{width:150,height:36,borderBottom:"1px solid #0f172a",marginBottom:5,marginLeft:"auto"}}/>
+            <span style={{fontSize:10.5,color:"#64748b"}}>Authorised Signatory</span>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  );
+};
+
 /* ── AddAdvanceModal / AddLoanModal: small forms for logging a salary
    advance or a loan against a staff member. ──────────────────────────── */
 const AddAdvanceModal = ({ shop, staffList, onClose, onSave }) => {
@@ -12989,6 +13081,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
   const [advances, setAdvances] = React.useState([]);
   const [loans, setLoans] = React.useState([]);
   const [payrollRecords, setPayrollRecords] = React.useState([]);
+  const [bonusRecords, setBonusRecords] = React.useState([]); // sales bonus statements — separate from payrollRecords
   const [holidays, setHolidays] = React.useState([]);
   const [attendanceRecords, setAttendanceRecords] = React.useState([]);
 
@@ -13008,6 +13101,11 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
   const [bonusLabel, setBonusLabel] = React.useState("");
   const [bonusAmount, setBonusAmount] = React.useState("");
   const [loanInstalmentOverrides, setLoanInstalmentOverrides] = React.useState({}); // loanId -> this-month-only override
+  // Sales Bonus (separate feature from the festival bonus above — its own
+  // monthly statement, released on the 15th, tracked in its own table)
+  const [salesBonusAmount, setSalesBonusAmount] = React.useState("");
+  const [salesBonusNote, setSalesBonusNote] = React.useState("");
+  const [confirmDeleteBonus, setConfirmDeleteBonus] = React.useState(null);
 
   const refreshAll = React.useCallback(()=>{
     return Promise.all([
@@ -13017,11 +13115,12 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
       dbLoadSalaryAdvances(shopId),
       dbLoadLoans(shopId),
       dbLoadPayrollRecords(shopId),
+      dbLoadSalesBonusRecords(shopId),
       dbLoadAttendanceHolidays(shopId),
       dbLoadAttendanceRecords(shopId),
-    ]).then(([sal, pos, cf, adv, ln, pr, hol, att])=>{
+    ]).then(([sal, pos, cf, adv, ln, pr, br, hol, att])=>{
       setSalaries(sal); setPositions(pos); setCarryForward(cf); setAdvances(adv); setLoans(ln); setPayrollRecords(pr);
-      setHolidays(hol); setAttendanceRecords(att);
+      setBonusRecords(br); setHolidays(hol); setAttendanceRecords(att);
     });
   }, [shopId]);
 
@@ -13035,7 +13134,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
 
   // a bonus (or a loan instalment override) typed in for one staff/month
   // shouldn't silently carry over to the next one selected
-  React.useEffect(()=>{ setBonusLabel(""); setBonusAmount(""); setLoanInstalmentOverrides({}); }, [selectedStaff, selMonth, selYear]);
+  React.useEffect(()=>{ setBonusLabel(""); setBonusAmount(""); setLoanInstalmentOverrides({}); setSalesBonusAmount(""); setSalesBonusNote(""); }, [selectedStaff, selMonth, selYear]);
 
   if (!loaded) return <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>Loading payroll…</div>;
 
@@ -13057,6 +13156,8 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
   const staffRecords = attendanceRecords.filter(r=>r.staffName===selectedStaff);
   const computed = computeMonthPayroll(selYear, selMonth, staffRecords, holidaySet, basicSalary);
   const existingRecord = payrollRecords.find(p=>p.staffName===selectedStaff && p.month===monthKey);
+  const existingBonusRecord = bonusRecords.find(b=>b.staffName===selectedStaff && b.month===monthKey);
+  const salesBonusAmt = Number(salesBonusAmount)||0;
   const unappliedAdvances = advances.filter(a=>a.staffName===selectedStaff && !a.applied);
   const activeLoans = loans.filter(l=>l.staffName===selectedStaff && l.status==="ACTIVE" && l.balance>0);
   const advanceDeduction = unappliedAdvances.reduce((a,x)=>a+x.amount,0);
@@ -13137,6 +13238,22 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
     await refreshAll();
   };
 
+  const handleGenerateBonus = async () => {
+    if (existingBonusRecord) return;
+    if (!(salesBonusAmt>0)) { alert("Enter a bonus amount first."); return; }
+    if (!window.confirm(`Generate the ${monthLabel} Sales Bonus Statement for ${selectedStaff}? Amount: ${shop.symbol}${salesBonusAmt.toLocaleString()}.`)) return;
+    const breakdown = { fullName: staffFullName, position };
+    const id = await dbSaveSalesBonusRecord(shopId, selectedStaff, monthKey, salesBonusAmt, salesBonusNote.trim(), breakdown);
+    if (!id) { alert("Couldn't save this bonus statement — please check your connection and try again."); return; }
+    await refreshAll();
+  };
+
+  const handleDeleteBonus = async (record) => {
+    await dbDeleteSalesBonusRecord(record.id);
+    setConfirmDeleteBonus(null);
+    await refreshAll();
+  };
+
   const yearOptions = Array.from({length:6}, (_,i)=>now.getFullYear()-4+i);
 
   const inp = {padding:"8px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none"};
@@ -13152,6 +13269,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
         {[
           {key:"generate", label:"🧾 Generate Payslip"},
           {key:"history",  label:"📚 History"},
+          {key:"salesbonus", label:"🎯 Sales Bonus"},
           {key:"advloan",  label:"💵 Advances & Loans"},
           {key:"annual",   label:"📄 Annual Summary"},
         ].map(t=>(
@@ -13308,6 +13426,85 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
         </div>
       )}
 
+      {/* ── SALES BONUS (separate from the salary payslip — released on the
+          15th, no deductions, tied to sales volume) ── */}
+      {subTab==="salesbonus" && (
+        <div>
+          <div style={{display:"flex",gap:10,marginBottom:16,alignItems:"center"}}>
+            <select value={selMonth} onChange={e=>setSelMonth(Number(e.target.value))} style={inp}>
+              {PAYROLL_MONTH_NAMES.map((m,i)=><option key={m} value={i+1}>{m}</option>)}
+            </select>
+            <select value={selYear} onChange={e=>setSelYear(Number(e.target.value))} style={inp}>
+              {yearOptions.map(y=><option key={y} value={y}>{y}</option>)}
+            </select>
+          </div>
+
+          <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,padding:"12px 16px",marginBottom:20,fontSize:12.5,color:"#166534"}}>
+            🎯 Sales Bonus is a separate monthly payout tied to sales volume, released on the 15th — independent of the salary payslip and never subject to loan/advance/carry-forward deductions.
+          </div>
+
+          {existingBonusRecord ? (
+            <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+              <span style={{fontSize:13,color:"#166534",fontWeight:700}}>✅ {monthLabel} sales bonus already generated — {shop.symbol}{existingBonusRecord.amount.toLocaleString()}. See it below, or delete it to regenerate.</span>
+            </div>
+          ) : (
+            <>
+              <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap",marginBottom:16,padding:"12px 14px",background:"#f8fafc",borderRadius:12,border:"1px solid #e2e8f0"}}>
+                <div>
+                  <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Bonus Amount</label>
+                  <input type="number" value={salesBonusAmount} onChange={e=>setSalesBonusAmount(e.target.value)} placeholder="0" style={{...inp,width:130}}/>
+                </div>
+                <div style={{flex:1,minWidth:200}}>
+                  <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Calculation Note (optional)</label>
+                  <input type="text" value={salesBonusNote} onChange={e=>setSalesBonusNote(e.target.value)} placeholder="e.g. 2% of ₹85,000 sales" style={{...inp,width:"100%"}}/>
+                </div>
+              </div>
+              <BonusStatementDocument shop={shop} staffName={selectedStaff} monthLabel={monthLabel}
+                breakdown={{fullName:staffFullName, position}} amount={salesBonusAmt} note={salesBonusNote.trim()}
+                domId="bonus-preview-content" bonusId={`BONUS-${selectedStaff}-${monthKey}`}
+                generatedDate={new Date().toISOString().slice(0,10)} isPreview/>
+              <div style={{display:"flex",justifyContent:"center",marginTop:16}}>
+                <button onClick={handleGenerateBonus}
+                  style={{padding:"12px 28px",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 16px "+shop.accent+"55"}}>
+                  ✅ Generate & Save Bonus Statement
+                </button>
+              </div>
+            </>
+          )}
+
+          <div style={{marginTop:32}}>
+            <div style={{fontSize:13,fontWeight:800,color:"#0f172a",marginBottom:12}}>📚 Bonus History</div>
+            {bonusRecords.filter(b=>b.staffName===selectedStaff).length===0 ? (
+              <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>No sales bonus statements generated yet for {selectedStaff}.</div>
+            ) : (
+              <div style={{display:"flex",flexDirection:"column",gap:10}}>
+                {bonusRecords.filter(b=>b.staffName===selectedStaff).sort((a,b)=>b.month.localeCompare(a.month)).map(rec=>(
+                  <div key={rec.id} style={{border:"1px solid #e2e8f0",borderRadius:12,overflow:"hidden"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:"#f8fafc"}}>
+                      <span style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{PAYROLL_MONTH_NAMES[Number(rec.month.split("-")[1])-1]} {rec.month.split("-")[0]}</span>
+                      <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                        <span style={{fontWeight:800,fontSize:13,color:"#166534"}}>{shop.symbol}{rec.amount.toLocaleString()}</span>
+                        <button onClick={()=>downloadElementAsPdf(`bonus-hist-${rec.id}`, `SalesBonus-${rec.breakdown?.fullName||rec.staffName}-${rec.month}.pdf`)}
+                          style={{padding:"5px 10px",borderRadius:7,border:"1px solid #e2e8f0",background:"white",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>⬇ PDF</button>
+                        <button onClick={()=>setConfirmDeleteBonus(rec)}
+                          style={{padding:"5px 10px",borderRadius:7,border:"1px solid #fecaca",background:"#fef2f2",color:"#dc2626",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Delete</button>
+                      </div>
+                    </div>
+                    <div style={{padding:12,overflowX:"auto"}}>
+                      <div style={{transform:"scale(0.6)",transformOrigin:"top left",width:"166.67%"}}>
+                        <BonusStatementDocument shop={shop} staffName={rec.staffName} monthLabel={`${PAYROLL_MONTH_NAMES[Number(rec.month.split("-")[1])-1]} ${rec.month.split("-")[0]}`}
+                          breakdown={rec.breakdown} amount={rec.amount} note={rec.note} domId={`bonus-hist-${rec.id}`}
+                          bonusId={rec.id} generatedDate={rec.generatedDate} isPreview={false}/>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── ADVANCES & LOANS ── */}
       {subTab==="advloan" && (
         <div>
@@ -13386,16 +13583,20 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
           fyMonths.push({year:y, month:m, key:`${y}-${String(m).padStart(2,"0")}`});
         }
         const fyRecords = fyMonths.map(fm => payrollRecords.find(p=>p.staffName===selectedStaff && p.month===fm.key));
-        const totals = fyRecords.reduce((a,r)=>{
-          if(!r) return a;
-          const b = r.breakdown||{};
-          a.basic += Number(b.basicSalary||0);
-          a.travel += Number(b.travelAllowance||0);
-          a.bonus += Number(b.bonusAmount||0);
-          a.deductions += Number(b.absenceDeduction||0)+Number(b.advanceDeduction||0)+Number(b.loanDeduction||0)+Number(b.carryForwardApplied||0);
-          a.net += Number(r.netPay||0);
+        const fyBonusRecords = fyMonths.map(fm => bonusRecords.find(b=>b.staffName===selectedStaff && b.month===fm.key));
+        const totals = fyRecords.reduce((a,r,i)=>{
+          if(r){
+            const b = r.breakdown||{};
+            a.basic += Number(b.basicSalary||0);
+            a.travel += Number(b.travelAllowance||0);
+            a.bonus += Number(b.bonusAmount||0);
+            a.deductions += Number(b.absenceDeduction||0)+Number(b.advanceDeduction||0)+Number(b.loanDeduction||0)+Number(b.carryForwardApplied||0);
+            a.net += Number(r.netPay||0);
+          }
+          const br = fyBonusRecords[i];
+          if(br) a.salesBonus += Number(br.amount||0);
           return a;
-        }, {basic:0, travel:0, bonus:0, deductions:0, net:0});
+        }, {basic:0, travel:0, bonus:0, salesBonus:0, deductions:0, net:0});
         const anyMissing = fyRecords.some(r=>!r);
         return (
           <div>
@@ -13425,7 +13626,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
               <table style={{width:"100%",borderCollapse:"collapse",marginBottom:18}}>
                 <thead>
                   <tr style={{background:"#0f172a",color:"white"}}>
-                    {["MONTH","BASIC","TRAVEL ALLOW.","BONUS","DEDUCTIONS","NET PAY"].map(h=>(
+                    {["MONTH","BASIC","TRAVEL ALLOW.","BONUS","SALES BONUS","DEDUCTIONS","NET PAY"].map(h=>(
                       <th key={h} style={{padding:"8px 10px",textAlign:h==="MONTH"?"left":"right",fontSize:10,fontWeight:800,letterSpacing:"0.05em"}}>{h}</th>
                     ))}
                   </tr>
@@ -13434,6 +13635,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
                   {fyMonths.map((fm,i)=>{
                     const r = fyRecords[i];
                     const b = r?.breakdown || {};
+                    const br = fyBonusRecords[i];
                     const ded = r ? Number(b.absenceDeduction||0)+Number(b.advanceDeduction||0)+Number(b.loanDeduction||0)+Number(b.carryForwardApplied||0) : 0;
                     return (
                       <tr key={fm.key} style={{borderBottom:"1px solid #e2e8f0"}}>
@@ -13441,6 +13643,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
                         <td style={{padding:"7px 10px",textAlign:"right",color:r?"#0f172a":"#cbd5e1"}}>{r?`${shop.symbol}${Number(b.basicSalary||0).toLocaleString()}`:"—"}</td>
                         <td style={{padding:"7px 10px",textAlign:"right",color:r?"#0f172a":"#cbd5e1"}}>{r?`${shop.symbol}${Number(b.travelAllowance||0).toLocaleString()}`:"—"}</td>
                         <td style={{padding:"7px 10px",textAlign:"right",color:r&&(b.bonusAmount||0)>0?"#16a34a":"#cbd5e1"}}>{r&&(b.bonusAmount||0)>0?`${shop.symbol}${Number(b.bonusAmount||0).toLocaleString()}`:"—"}</td>
+                        <td style={{padding:"7px 10px",textAlign:"right",color:br?"#16a34a":"#cbd5e1"}}>{br?`${shop.symbol}${Number(br.amount||0).toLocaleString()}`:"—"}</td>
                         <td style={{padding:"7px 10px",textAlign:"right",color:r?"#dc2626":"#cbd5e1"}}>{r?`${shop.symbol}${ded.toLocaleString()}`:"—"}</td>
                         <td style={{padding:"7px 10px",textAlign:"right",fontWeight:700,color:r?(Number(r.netPay||0)<0?"#dc2626":"#0f172a"):"#cbd5e1"}}>{r?`${shop.symbol}${Number(r.netPay||0).toLocaleString()}`:"—"}</td>
                       </tr>
@@ -13453,6 +13656,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
                     <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800}}>{shop.symbol}{totals.basic.toLocaleString()}</td>
                     <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800}}>{shop.symbol}{totals.travel.toLocaleString()}</td>
                     <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800,color:"#16a34a"}}>{shop.symbol}{totals.bonus.toLocaleString()}</td>
+                    <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800,color:"#16a34a"}}>{shop.symbol}{totals.salesBonus.toLocaleString()}</td>
                     <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800,color:"#dc2626"}}>{shop.symbol}{totals.deductions.toLocaleString()}</td>
                     <td style={{padding:"9px 10px",textAlign:"right",fontWeight:900,color:totals.net<0?"#dc2626":shop.accent,fontSize:14}}>{shop.symbol}{totals.net.toLocaleString()}</td>
                   </tr>
@@ -13486,6 +13690,18 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
             <div style={{display:"flex",gap:10}}>
               <button onClick={()=>setConfirmDeletePayslip(null)} style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
               <button onClick={()=>handleDeletePayslip(confirmDeletePayslip)} style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#dc2626",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {confirmDeleteBonus && (
+        <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:"white",borderRadius:16,padding:22,maxWidth:340,width:"92%"}}>
+            <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:8}}>Delete this sales bonus statement?</div>
+            <p style={{fontSize:12,color:"#64748b",marginBottom:18}}>This cannot be undone. You can generate a new statement for this month afterwards if needed.</p>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setConfirmDeleteBonus(null)} style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+              <button onClick={()=>handleDeleteBonus(confirmDeleteBonus)} style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#dc2626",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Delete</button>
             </div>
           </div>
         </div>

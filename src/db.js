@@ -1458,6 +1458,43 @@ export const dbDeletePayrollRecord = async (id) => {
   return true;
 };
 
+/* ── Sales Bonus records — a separate, lightweight monthly payout tied to
+   sales volume, released on the 15th rather than with the regular salary
+   on the 1st. Deliberately independent of payroll_records: no attendance
+   calculation, no deductions (loans/advances/carry-forward stay attached
+   only to the salary payslip), just an admin-entered amount and an
+   optional note, snapshotted the same way a payslip is. ──────────────── */
+export const dbLoadSalesBonusRecords = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('sales_bonus_records').select('*').eq('shop_id', shopId).order('month', { ascending: false });
+  if (error) { console.error('Load sales bonus records error:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id, staffName: r.staff_name, month: r.month,
+    amount: Number(r.amount) || 0, note: r.note || '',
+    generatedDate: r.generated_date, breakdown: r.breakdown_json || {},
+  }));
+};
+
+export const dbSaveSalesBonusRecord = async (shopId, staffName, month, amount, note, breakdown) => {
+  if (!sb) return null;
+  const id = `BONUS-${staffName}-${month}`;
+  const { error } = await sb.from('sales_bonus_records').upsert({
+    id, shop_id: shopId, staff_name: staffName, month,
+    amount: Number(amount) || 0, note: note || '',
+    generated_date: new Date().toISOString().slice(0, 10),
+    breakdown_json: breakdown,
+  }, { onConflict: 'id' });
+  if (error) { console.error('Save sales bonus record error:', error); return null; }
+  return id;
+};
+
+export const dbDeleteSalesBonusRecord = async (id) => {
+  if (!sb) return false;
+  const { error } = await sb.from('sales_bonus_records').delete().eq('id', id);
+  if (error) { console.error('Delete sales bonus record error:', error); return false; }
+  return true;
+};
+
 /* ── Inventory management (ROS India stocked items only). Every stock
    change — sale-out or restock-in — is logged as its own movement, so
    an item's history is a real ledger, not just a running number. ────── */
