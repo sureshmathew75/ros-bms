@@ -7400,7 +7400,7 @@ return(
             {label:"MAIN",       ids:["dashboard"]},
             {label:"SALES",      ids:["sales","customers","returns","dispatch"]},
             {label:"PURCHASES",  ids:["purchases","suppliers","logistics","agents"]},
-            {label:"OPERATIONS", ids:["attendance","inventory"]},
+            {label:"OPERATIONS", ids:["attendance","payroll","inventory"]},
             {label:"EXPENSES",   ids:["expenses"]},
             {label:"INSIGHTS",   ids:["documents","analytics","reports"]},
           ].map(group=>{
