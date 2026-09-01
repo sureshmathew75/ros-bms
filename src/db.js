@@ -1301,6 +1301,29 @@ export const dbSaveStaffSalary = async (shopId, staffName, basicSalary) => {
   return true;
 };
 
+// Carry-forward: when a month's net pay comes out negative (deductions
+// exceeded earnings), that shortfall is stored here per staff member and
+// automatically pulled into the next payslip generated for them as its
+// own deduction line — see PayrollPage's handleGenerate.
+export const dbLoadCarryForward = async (shopId) => {
+  if (!sb) return {};
+  const { data, error } = await sb.from('staff_salaries').select('staff_name, carry_forward_balance').eq('shop_id', shopId);
+  if (error) { console.error('Load carry-forward error:', error); return {}; }
+  const map = {};
+  (data || []).forEach(r => { map[r.staff_name] = Number(r.carry_forward_balance) || 0; });
+  return map;
+};
+
+export const dbUpdateCarryForward = async (shopId, staffName, balance) => {
+  if (!sb) return false;
+  const { error } = await sb.from('staff_salaries').upsert(
+    { shop_id: shopId, staff_name: staffName, carry_forward_balance: Number(balance) || 0 },
+    { onConflict: 'shop_id,staff_name' }
+  );
+  if (error) { console.error('Update carry-forward error:', error); return false; }
+  return true;
+};
+
 export const dbLoadSalaryAdvances = async (shopId) => {
   if (!sb) return [];
   const { data, error } = await sb.from('salary_advances').select('*').eq('shop_id', shopId).order('date_given', { ascending: false });

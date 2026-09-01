@@ -37,7 +37,7 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadInventoryItems, dbAddInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement,
   dbLoadUpfrontRefunds, dbAddUpfrontRefund, dbDeleteUpfrontRefund,
   dbLoadGiftVouchers, dbAddGiftVoucher, dbUpdateGiftVoucher, dbDeleteGiftVoucher,
-  dbLoadStaffSalaries, dbSaveStaffSalary,
+  dbLoadStaffSalaries, dbSaveStaffSalary, dbLoadCarryForward, dbUpdateCarryForward,
   dbLoadSalaryAdvances, dbAddSalaryAdvance, dbMarkAdvanceApplied, dbUnmarkAdvanceApplied, dbDeleteSalaryAdvance,
   dbLoadLoans, dbAddLoan, dbUpdateLoanBalance, dbDeleteLoan,
   dbLoadPayrollRecords, dbSavePayrollRecord, dbDeletePayrollRecord } from "./db";
@@ -12609,14 +12609,24 @@ const HolidayManagerModal = ({ shopId, holidays, onClose, onAdd, onRemove }) => 
        is generated (custom label + amount) — added to earnings only
        for the month it's given, no ongoing rule.
      • Salary advances deduct in full on the next payslip run after
-       they're given. Loans repay by a fixed monthly instalment (set
-       by admin) against a tracked balance, stopping automatically once
-       the balance reaches zero; the payslip shows the balance
-       remaining after that instalment, which carries into next month.
+       they're given. Loans repay by a monthly instalment set by the
+       admin against a tracked balance, stopping automatically once the
+       balance reaches zero; the payslip shows the balance remaining
+       after that instalment, which carries into next month. The
+       instalment amount can be adjusted for any single month right on
+       the Generate tab without changing the loan's standing plan.
+     • If a month's deductions exceed its earnings, net pay is shown as
+       a negative figure (an "overpayment" — the staff effectively
+       received more than they were due) and that shortfall is stored
+       per staff member. It's automatically pulled in as its own
+       deduction line the next time a payslip is generated for them,
+       and keeps carrying forward the same way if it still isn't fully
+       recovered.
    A generated payslip is stored as a full snapshot (so it stays
    accurate even if attendance is corrected later) — regenerating is
-   an explicit delete (which also reverses its advance/loan effects)
-   followed by a fresh generate, never a silent overwrite.
+   an explicit delete (which also reverses its advance/loan/carry-
+   forward effects) followed by a fresh generate, never a silent
+   overwrite.
    ═══════════════════════════════════════════════════════════ */
 const PAYROLL_MONTH_NAMES=["January","February","March","April","May","June","July","August","September","October","November","December"];
 
@@ -12695,7 +12705,7 @@ const downloadElementAsPdf = (elementId, filename) => {
 const PayslipDocument = ({ shop, staffName, monthLabel, breakdown, netPay, domId }) => {
   const sym = shop.symbol;
   const b = breakdown || {};
-  const totalDeductions = Number(b.absenceDeduction||0) + Number(b.advanceDeduction||0) + Number(b.loanDeduction||0);
+  const totalDeductions = Number(b.absenceDeduction||0) + Number(b.advanceDeduction||0) + Number(b.loanDeduction||0) + Number(b.carryForwardApplied||0);
   return (
     <div id={domId} style={{maxWidth:794,margin:"0 auto",padding:"40px 48px",fontFamily:"Arial,sans-serif",fontSize:13,color:"#0f172a",background:"white"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
@@ -12782,6 +12792,13 @@ const PayslipDocument = ({ shop, staffName, monthLabel, breakdown, netPay, domId
               <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:"#dc2626"}}>{sym}{Number(b.loanDeduction||0).toLocaleString()}</td>
             </tr>
           )}
+          {(b.carryForwardApplied||0)>0 && (
+            <tr style={{borderBottom:"1px solid #e2e8f0"}}>
+              <td style={{padding:"10px 14px"}}>Previous Month Balance Recovered</td>
+              <td style={{padding:"10px 14px",textAlign:"right",color:"#cbd5e1"}}>—</td>
+              <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:"#dc2626"}}>{sym}{Number(b.carryForwardApplied||0).toLocaleString()}</td>
+            </tr>
+          )}
         </tbody>
       </table>
 
@@ -12798,6 +12815,11 @@ const PayslipDocument = ({ shop, staffName, monthLabel, breakdown, netPay, domId
               <span style={{fontSize:16,fontWeight:900}}>NET PAY</span>
               <span style={{fontSize:18,fontWeight:900,color:Number(netPay||0)<0?"#dc2626":shop.accent}}>{sym}{Number(netPay||0).toLocaleString()}</span>
             </div>
+            {(b.carryForwardBalance||0)>0 && (
+              <div style={{textAlign:"right",fontSize:10.5,color:"#dc2626",marginTop:3}}>
+                {sym}{Number(b.carryForwardBalance||0).toLocaleString()} shortfall carried to next month
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -12910,6 +12932,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
 
   const [loaded, setLoaded] = React.useState(false);
   const [salaries, setSalaries] = React.useState({});
+  const [carryForward, setCarryForward] = React.useState({}); // staffName -> unrecovered shortfall from a prior month
   const [advances, setAdvances] = React.useState([]);
   const [loans, setLoans] = React.useState([]);
   const [payrollRecords, setPayrollRecords] = React.useState([]);
@@ -12929,17 +12952,19 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
   const [fyStartYear, setFyStartYear] = React.useState(now.getMonth()+1 >= 4 ? now.getFullYear() : now.getFullYear()-1);
   const [bonusLabel, setBonusLabel] = React.useState("");
   const [bonusAmount, setBonusAmount] = React.useState("");
+  const [loanInstalmentOverrides, setLoanInstalmentOverrides] = React.useState({}); // loanId -> this-month-only override
 
   const refreshAll = React.useCallback(()=>{
     return Promise.all([
       dbLoadStaffSalaries(shopId),
+      dbLoadCarryForward(shopId),
       dbLoadSalaryAdvances(shopId),
       dbLoadLoans(shopId),
       dbLoadPayrollRecords(shopId),
       dbLoadAttendanceHolidays(shopId),
       dbLoadAttendanceRecords(shopId),
-    ]).then(([sal, adv, ln, pr, hol, att])=>{
-      setSalaries(sal); setAdvances(adv); setLoans(ln); setPayrollRecords(pr);
+    ]).then(([sal, cf, adv, ln, pr, hol, att])=>{
+      setSalaries(sal); setCarryForward(cf); setAdvances(adv); setLoans(ln); setPayrollRecords(pr);
       setHolidays(hol); setAttendanceRecords(att);
     });
   }, [shopId]);
@@ -12952,9 +12977,9 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
     if (!selectedStaff && staffList.length>0) setSelectedStaff(staffList[0].name);
   }, [staffList, selectedStaff]);
 
-  // a bonus typed in for one staff/month shouldn't silently carry over
-  // to the next one selected
-  React.useEffect(()=>{ setBonusLabel(""); setBonusAmount(""); }, [selectedStaff, selMonth, selYear]);
+  // a bonus (or a loan instalment override) typed in for one staff/month
+  // shouldn't silently carry over to the next one selected
+  React.useEffect(()=>{ setBonusLabel(""); setBonusAmount(""); setLoanInstalmentOverrides({}); }, [selectedStaff, selMonth, selYear]);
 
   if (!loaded) return <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>Loading payroll…</div>;
 
@@ -12974,14 +12999,28 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
   const unappliedAdvances = advances.filter(a=>a.staffName===selectedStaff && !a.applied);
   const activeLoans = loans.filter(l=>l.staffName===selectedStaff && l.status==="ACTIVE" && l.balance>0);
   const advanceDeduction = unappliedAdvances.reduce((a,x)=>a+x.amount,0);
-  const loanDeduction = activeLoans.reduce((a,l)=>a+Math.min(l.monthlyInstalment,l.balance),0);
-  const loanBalanceAfter = activeLoans.reduce((a,l)=>a+Math.max(0,l.balance-Math.min(l.monthlyInstalment,l.balance)),0);
+  // Each active loan's instalment can be overridden just for this one
+  // month (loanInstalmentOverrides) without changing the loan's standing
+  // monthlyInstalment — an override never exceeds the remaining balance.
+  const loanRows = activeLoans.map(l=>{
+    const ov = loanInstalmentOverrides[l.id];
+    const requested = (ov!==undefined && ov!=="") ? Math.max(0, Number(ov)||0) : l.monthlyInstalment;
+    const amount = Math.min(requested, l.balance);
+    return { id:l.id, amount, balanceAfter: Math.max(0, l.balance-amount) };
+  });
+  const loanDeduction = loanRows.reduce((a,x)=>a+x.amount,0);
+  const loanBalanceAfter = loanRows.reduce((a,x)=>a+x.balanceAfter,0);
   const bonusAmt = Number(bonusAmount)||0;
+  // A shortfall carried forward from a prior month (see carryForward
+  // state) is recovered in full here, same as a salary advance.
+  const carryForwardOpening = carryForward[selectedStaff] || 0;
   // Net pay is allowed to go negative (e.g. a big advance/loan recovery
   // against a month with heavy absences) — it's shown as-is, not floored
   // at zero, so the shortfall is visible rather than silently hidden.
-  const netPay = computed.grossPay + bonusAmt - computed.absenceDeduction - advanceDeduction - loanDeduction;
-  const previewBreakdown = { ...computed, basicSalary, advanceDeduction, loanDeduction, loanBalanceAfter, bonusLabel: bonusLabel.trim(), bonusAmount: bonusAmt };
+  // Whatever is still negative here becomes next month's carry-forward.
+  const netPay = computed.grossPay + bonusAmt - computed.absenceDeduction - advanceDeduction - loanDeduction - carryForwardOpening;
+  const carryForwardClosing = netPay<0 ? -netPay : 0;
+  const previewBreakdown = { ...computed, basicSalary, advanceDeduction, loanDeduction, loanBalanceAfter, bonusLabel: bonusLabel.trim(), bonusAmount: bonusAmt, carryForwardApplied: carryForwardOpening, carryForwardBalance: carryForwardClosing };
 
   const saveSalary = async () => {
     const val = Number(salaryInput);
@@ -12993,16 +13032,19 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
 
   const handleGenerate = async () => {
     if (existingRecord) return;
-    if (!window.confirm(`Generate the ${monthLabel} payslip for ${selectedStaff}? Net pay: ${shop.symbol}${netPay.toLocaleString()}.`)) return;
-    const breakdown = { ...previewBreakdown, advances: unappliedAdvances.map(a=>({id:a.id,amount:a.amount})), loanDeductions: activeLoans.map(l=>({id:l.id,amount:Math.min(l.monthlyInstalment,l.balance)})) };
+    const carryNote = carryForwardOpening>0 ? ` (includes recovering ${shop.symbol}${carryForwardOpening.toLocaleString()} carried forward)` : "";
+    if (!window.confirm(`Generate the ${monthLabel} payslip for ${selectedStaff}? Net pay: ${shop.symbol}${netPay.toLocaleString()}${carryNote}.`)) return;
+    const breakdown = { ...previewBreakdown, advances: unappliedAdvances.map(a=>({id:a.id,amount:a.amount})), loanDeductions: loanRows.map(x=>({id:x.id,amount:x.amount})) };
     const id = await dbSavePayrollRecord(shopId, selectedStaff, monthKey, netPay, breakdown);
     if (!id) { alert("Couldn't save this payslip — please check your connection and try again."); return; }
     for (const a of unappliedAdvances) await dbMarkAdvanceApplied(a.id, monthKey);
-    for (const l of activeLoans) {
-      const ded = Math.min(l.monthlyInstalment, l.balance);
-      const newBal = l.balance - ded;
-      await dbUpdateLoanBalance(l.id, newBal, newBal<=0 ? "CLOSED" : "ACTIVE");
+    for (const row of loanRows) {
+      const loan = activeLoans.find(l=>l.id===row.id);
+      if (!loan) continue;
+      const newBal = loan.balance - row.amount;
+      await dbUpdateLoanBalance(loan.id, newBal, newBal<=0 ? "CLOSED" : "ACTIVE");
     }
+    await dbUpdateCarryForward(shopId, selectedStaff, carryForwardClosing);
     await refreshAll();
   };
 
@@ -13012,6 +13054,14 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
     for (const ld of (bd.loanDeductions||[])) {
       const loan = loans.find(x=>x.id===ld.id);
       if (loan) await dbUpdateLoanBalance(ld.id, loan.balance + ld.amount, "ACTIVE");
+    }
+    // Undo this record's effect on the carry-forward chain by restoring
+    // whatever balance was in effect before it was generated. If a later
+    // month has already been generated for this staff on top of this
+    // one, delete that one first — otherwise its own carry-forward figure
+    // will no longer line up.
+    if (bd.carryForwardApplied!==undefined) {
+      await dbUpdateCarryForward(shopId, record.staffName, bd.carryForwardApplied || 0);
     }
     await dbDeletePayrollRecord(record.id);
     setConfirmDeletePayslip(null);
@@ -13100,10 +13150,32 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
                   <input type="number" value={bonusAmount} onChange={e=>setBonusAmount(e.target.value)} placeholder="0" style={{...inp,width:110}}/>
                 </div>
               </div>
-              {(unappliedAdvances.length>0 || activeLoans.length>0) && (
+              {carryForwardOpening>0 && (
+                <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:12,padding:"12px 16px",marginBottom:16,fontSize:12.5,color:"#991b1b"}}>
+                  ⚠️ {shop.symbol}{carryForwardOpening.toLocaleString()} carried forward from a previous month's shortfall will be recovered on this payslip.
+                </div>
+              )}
+              {unappliedAdvances.length>0 && (
                 <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:12,padding:"12px 16px",marginBottom:16,fontSize:12.5,color:"#92400e"}}>
-                  {unappliedAdvances.length>0 && <div>💵 {unappliedAdvances.length} unapplied advance{unappliedAdvances.length>1?"s":""} totalling {shop.symbol}{advanceDeduction.toLocaleString()} will be recovered on this payslip.</div>}
-                  {activeLoans.length>0 && <div>🏦 {activeLoans.length} active loan{activeLoans.length>1?"s":""} — this month's instalment{activeLoans.length>1?"s":""} total {shop.symbol}{loanDeduction.toLocaleString()}.</div>}
+                  💵 {unappliedAdvances.length} unapplied advance{unappliedAdvances.length>1?"s":""} totalling {shop.symbol}{advanceDeduction.toLocaleString()} will be recovered on this payslip.
+                </div>
+              )}
+              {activeLoans.length>0 && (
+                <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:12,padding:"12px 16px",marginBottom:16,fontSize:12.5,color:"#92400e"}}>
+                  <div style={{fontWeight:700,marginBottom:8}}>🏦 Active loan{activeLoans.length>1?"s":""} — this month's instalment can be adjusted below if needed:</div>
+                  {activeLoans.map(l=>{
+                    const row = loanRows.find(x=>x.id===l.id);
+                    const ov = loanInstalmentOverrides[l.id];
+                    return (
+                      <div key={l.id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
+                        <span style={{fontSize:12}}>Balance {shop.symbol}{l.balance.toLocaleString()} (usual instalment {shop.symbol}{l.monthlyInstalment.toLocaleString()})</span>
+                        <input type="number" value={ov!==undefined?ov:""} placeholder={String(l.monthlyInstalment)}
+                          onChange={e=>setLoanInstalmentOverrides(prev=>({...prev, [l.id]: e.target.value}))}
+                          style={{...inp,width:100,padding:"6px 10px"}}/>
+                        <span style={{fontSize:11.5}}>→ {shop.symbol}{(row?.amount||0).toLocaleString()} deducted this month</span>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
               <PayslipDocument shop={shop} staffName={selectedStaff} monthLabel={monthLabel} breakdown={previewBreakdown} netPay={netPay} domId="payslip-preview-content"/>
@@ -13233,7 +13305,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
           a.basic += Number(b.basicSalary||0);
           a.travel += Number(b.travelAllowance||0);
           a.bonus += Number(b.bonusAmount||0);
-          a.deductions += Number(b.absenceDeduction||0)+Number(b.advanceDeduction||0)+Number(b.loanDeduction||0);
+          a.deductions += Number(b.absenceDeduction||0)+Number(b.advanceDeduction||0)+Number(b.loanDeduction||0)+Number(b.carryForwardApplied||0);
           a.net += Number(r.netPay||0);
           return a;
         }, {basic:0, travel:0, bonus:0, deductions:0, net:0});
@@ -13275,7 +13347,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
                   {fyMonths.map((fm,i)=>{
                     const r = fyRecords[i];
                     const b = r?.breakdown || {};
-                    const ded = r ? Number(b.absenceDeduction||0)+Number(b.advanceDeduction||0)+Number(b.loanDeduction||0) : 0;
+                    const ded = r ? Number(b.absenceDeduction||0)+Number(b.advanceDeduction||0)+Number(b.loanDeduction||0)+Number(b.carryForwardApplied||0) : 0;
                     return (
                       <tr key={fm.key} style={{borderBottom:"1px solid #e2e8f0"}}>
                         <td style={{padding:"7px 10px"}}>{PAYROLL_MONTH_NAMES[fm.month-1]} {fm.year}</td>
@@ -13323,7 +13395,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
         <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:"white",borderRadius:16,padding:22,maxWidth:340,width:"92%"}}>
             <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:8}}>Delete this payslip?</div>
-            <p style={{fontSize:12,color:"#64748b",marginBottom:18}}>This also undoes any advance and loan deductions it applied, so those become available again — use this to correct a mistake and regenerate.</p>
+            <p style={{fontSize:12,color:"#64748b",marginBottom:18}}>This also undoes any advance, loan and carried-forward deductions it applied, so those become available again — use this to correct a mistake and regenerate. If a later month was already generated for this staff member, delete that one first.</p>
             <div style={{display:"flex",gap:10}}>
               <button onClick={()=>setConfirmDeletePayslip(null)} style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
               <button onClick={()=>handleDeletePayslip(confirmDeletePayslip)} style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#dc2626",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Delete</button>
