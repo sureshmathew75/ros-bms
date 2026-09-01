@@ -12597,15 +12597,22 @@ const HolidayManagerModal = ({ shopId, holidays, onClose, onAdd, onRemove }) => 
        Day short of 20 costs ₹50 off the allowance (floored at ₹0).
        "Short Hours" attendance counts the same as Absent here, per an
        explicit call from the business.
-     • Basic-salary absence deduction: the first Full-Day absence in a
-       month is free (paid); every one after costs ₹500. Every Half
-       Day absence costs ₹250, with no free day. If a staff member has
-       MORE than 4 Full-Day absences in the month, the free day is
-       revoked entirely — every Full-Day absence that month is charged.
+     • Basic-salary absence deduction: Full-Day absences and Half Days
+       both count as absence occurrences. The very first occurrence in
+       the month is free (paid) — a Full Day if there is one, otherwise
+       a Half Day; every occurrence after that costs ₹500 (Full Day) or
+       ₹250 (Half Day). If a staff member has 4 OR MORE absence
+       occurrences (Full + Half combined) in the month, the free day is
+       revoked entirely — every occurrence that month is charged from
+       the first one.
+     • Festival bonuses can be added by the admin at the point a payslip
+       is generated (custom label + amount) — added to earnings only
+       for the month it's given, no ongoing rule.
      • Salary advances deduct in full on the next payslip run after
        they're given. Loans repay by a fixed monthly instalment (set
        by admin) against a tracked balance, stopping automatically once
-       the balance reaches zero.
+       the balance reaches zero; the payslip shows the balance
+       remaining after that instalment, which carries into next month.
    A generated payslip is stored as a full snapshot (so it stays
    accurate even if attendance is corrected later) — regenerating is
    an explicit delete (which also reverses its advance/loan effects)
@@ -12638,17 +12645,23 @@ const computeMonthPayroll = (year, month /* 1-indexed */, records=[], holidaySet
   const fullDayShortfall = Math.max(0, 20 - fullDays);
   const travelAllowance = Math.max(0, 1000 - fullDayShortfall*50);
 
+  // Full-Day and Half Day absences both count toward the 4-occurrence
+  // grace threshold. Below 4 total occurrences, the very first one is
+  // free — a Full Day if there is one this month, else a Half Day. At
+  // 4 or more, the free day is revoked and every occurrence is charged.
+  const totalAbsenceUnits = absentDays + halfDays;
   let absenceDeduction = 0;
   let freeDayUsed = false;
-  if (absentDays > 0) {
-    if (absentDays > 4) {
-      absenceDeduction += absentDays * 500; // free day revoked entirely
+  if (totalAbsenceUnits >= 4) {
+    absenceDeduction = absentDays * 500 + halfDays * 250;
+  } else if (totalAbsenceUnits > 0) {
+    freeDayUsed = true;
+    if (absentDays > 0) {
+      absenceDeduction = (absentDays - 1) * 500 + halfDays * 250;
     } else {
-      absenceDeduction += (absentDays - 1) * 500;
-      freeDayUsed = true;
+      absenceDeduction = (halfDays - 1) * 250;
     }
   }
-  absenceDeduction += halfDays * 250;
 
   const grossPay = (Number(basicSalary)||0) + travelAllowance;
 
@@ -12688,7 +12701,7 @@ const PayslipDocument = ({ shop, staffName, monthLabel, breakdown, netPay, domId
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
         <div>
           <img src={shop.logo} alt={shop.name} style={{height:48,objectFit:"contain",marginBottom:6}}/>
-          <div style={{fontSize:11,color:"#64748b"}}>Mumbai, India</div>
+          <div style={{fontSize:11,color:"#64748b"}}>Kottayam, Kerala, India</div>
         </div>
         <div style={{textAlign:"right"}}>
           <div style={{fontSize:24,fontWeight:900,color:"#0f172a",letterSpacing:"-0.03em"}}>PAYSLIP</div>
@@ -12735,6 +12748,13 @@ const PayslipDocument = ({ shop, staffName, monthLabel, breakdown, netPay, domId
             <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700}}>{sym}{Number(b.travelAllowance||0).toLocaleString()}</td>
             <td style={{padding:"10px 14px",textAlign:"right",color:"#cbd5e1"}}>—</td>
           </tr>
+          {(b.bonusAmount||0)>0 && (
+            <tr style={{borderBottom:"1px solid #e2e8f0"}}>
+              <td style={{padding:"10px 14px"}}>{b.bonusLabel || "Festival Bonus"}</td>
+              <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:"#16a34a"}}>{sym}{Number(b.bonusAmount||0).toLocaleString()}</td>
+              <td style={{padding:"10px 14px",textAlign:"right",color:"#cbd5e1"}}>—</td>
+            </tr>
+          )}
           {(b.absenceDeduction||0)>0 && (
             <tr style={{borderBottom:"1px solid #e2e8f0"}}>
               <td style={{padding:"10px 14px"}}>
@@ -12754,7 +12774,10 @@ const PayslipDocument = ({ shop, staffName, monthLabel, breakdown, netPay, domId
           )}
           {(b.loanDeduction||0)>0 && (
             <tr style={{borderBottom:"1px solid #e2e8f0"}}>
-              <td style={{padding:"10px 14px"}}>Loan Instalment</td>
+              <td style={{padding:"10px 14px"}}>
+                Loan Instalment
+                {b.loanBalanceAfter!=null && <span style={{color:"#94a3b8",fontSize:11}}> (Balance remaining: {sym}{Number(b.loanBalanceAfter||0).toLocaleString()}, carried to next month)</span>}
+              </td>
               <td style={{padding:"10px 14px",textAlign:"right",color:"#cbd5e1"}}>—</td>
               <td style={{padding:"10px 14px",textAlign:"right",fontWeight:700,color:"#dc2626"}}>{sym}{Number(b.loanDeduction||0).toLocaleString()}</td>
             </tr>
@@ -12765,7 +12788,7 @@ const PayslipDocument = ({ shop, staffName, monthLabel, breakdown, netPay, domId
       <div style={{display:"flex",justifyContent:"flex-end",marginBottom:24}}>
         <div style={{width:300}}>
           <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}>
-            <span style={{color:"#64748b"}}>Gross Pay</span><span style={{fontWeight:600}}>{sym}{Number(b.grossPay||0).toLocaleString()}</span>
+            <span style={{color:"#64748b"}}>Gross Pay</span><span style={{fontWeight:600}}>{sym}{(Number(b.grossPay||0)+Number(b.bonusAmount||0)).toLocaleString()}</span>
           </div>
           <div style={{display:"flex",justifyContent:"space-between",padding:"6px 0",fontSize:13}}>
             <span style={{color:"#64748b"}}>Total Deductions</span><span style={{fontWeight:600,color:"#dc2626"}}>{sym}{totalDeductions.toLocaleString()}</span>
@@ -12773,7 +12796,7 @@ const PayslipDocument = ({ shop, staffName, monthLabel, breakdown, netPay, domId
           <div style={{borderTop:"2px solid #0f172a",paddingTop:10,marginTop:4}}>
             <div style={{display:"flex",justifyContent:"space-between"}}>
               <span style={{fontSize:16,fontWeight:900}}>NET PAY</span>
-              <span style={{fontSize:18,fontWeight:900,color:shop.accent}}>{sym}{Number(netPay||0).toLocaleString()}</span>
+              <span style={{fontSize:18,fontWeight:900,color:Number(netPay||0)<0?"#dc2626":shop.accent}}>{sym}{Number(netPay||0).toLocaleString()}</span>
             </div>
           </div>
         </div>
@@ -12904,6 +12927,8 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
   const [showAddLoan, setShowAddLoan] = React.useState(false);
   const [confirmDeletePayslip, setConfirmDeletePayslip] = React.useState(null);
   const [fyStartYear, setFyStartYear] = React.useState(now.getMonth()+1 >= 4 ? now.getFullYear() : now.getFullYear()-1);
+  const [bonusLabel, setBonusLabel] = React.useState("");
+  const [bonusAmount, setBonusAmount] = React.useState("");
 
   const refreshAll = React.useCallback(()=>{
     return Promise.all([
@@ -12927,6 +12952,10 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
     if (!selectedStaff && staffList.length>0) setSelectedStaff(staffList[0].name);
   }, [staffList, selectedStaff]);
 
+  // a bonus typed in for one staff/month shouldn't silently carry over
+  // to the next one selected
+  React.useEffect(()=>{ setBonusLabel(""); setBonusAmount(""); }, [selectedStaff, selMonth, selYear]);
+
   if (!loaded) return <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>Loading payroll…</div>;
 
   if (staffList.length===0) return (
@@ -12946,8 +12975,13 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
   const activeLoans = loans.filter(l=>l.staffName===selectedStaff && l.status==="ACTIVE" && l.balance>0);
   const advanceDeduction = unappliedAdvances.reduce((a,x)=>a+x.amount,0);
   const loanDeduction = activeLoans.reduce((a,l)=>a+Math.min(l.monthlyInstalment,l.balance),0);
-  const netPay = Math.max(0, computed.grossPay - computed.absenceDeduction - advanceDeduction - loanDeduction);
-  const previewBreakdown = { ...computed, basicSalary, advanceDeduction, loanDeduction };
+  const loanBalanceAfter = activeLoans.reduce((a,l)=>a+Math.max(0,l.balance-Math.min(l.monthlyInstalment,l.balance)),0);
+  const bonusAmt = Number(bonusAmount)||0;
+  // Net pay is allowed to go negative (e.g. a big advance/loan recovery
+  // against a month with heavy absences) — it's shown as-is, not floored
+  // at zero, so the shortfall is visible rather than silently hidden.
+  const netPay = computed.grossPay + bonusAmt - computed.absenceDeduction - advanceDeduction - loanDeduction;
+  const previewBreakdown = { ...computed, basicSalary, advanceDeduction, loanDeduction, loanBalanceAfter, bonusLabel: bonusLabel.trim(), bonusAmount: bonusAmt };
 
   const saveSalary = async () => {
     const val = Number(salaryInput);
@@ -13056,6 +13090,16 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
             </div>
           ) : (
             <>
+              <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap",marginBottom:16,padding:"12px 14px",background:"#f8fafc",borderRadius:12,border:"1px solid #e2e8f0"}}>
+                <div>
+                  <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Festival Bonus (optional)</label>
+                  <input type="text" value={bonusLabel} onChange={e=>setBonusLabel(e.target.value)} placeholder="e.g. Onam Bonus" style={{...inp,width:170}}/>
+                </div>
+                <div>
+                  <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Bonus Amount</label>
+                  <input type="number" value={bonusAmount} onChange={e=>setBonusAmount(e.target.value)} placeholder="0" style={{...inp,width:110}}/>
+                </div>
+              </div>
               {(unappliedAdvances.length>0 || activeLoans.length>0) && (
                 <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:12,padding:"12px 16px",marginBottom:16,fontSize:12.5,color:"#92400e"}}>
                   {unappliedAdvances.length>0 && <div>💵 {unappliedAdvances.length} unapplied advance{unappliedAdvances.length>1?"s":""} totalling {shop.symbol}{advanceDeduction.toLocaleString()} will be recovered on this payslip.</div>}
@@ -13188,10 +13232,11 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
           const b = r.breakdown||{};
           a.basic += Number(b.basicSalary||0);
           a.travel += Number(b.travelAllowance||0);
+          a.bonus += Number(b.bonusAmount||0);
           a.deductions += Number(b.absenceDeduction||0)+Number(b.advanceDeduction||0)+Number(b.loanDeduction||0);
           a.net += Number(r.netPay||0);
           return a;
-        }, {basic:0, travel:0, deductions:0, net:0});
+        }, {basic:0, travel:0, bonus:0, deductions:0, net:0});
         const anyMissing = fyRecords.some(r=>!r);
         return (
           <div>
@@ -13221,7 +13266,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
               <table style={{width:"100%",borderCollapse:"collapse",marginBottom:18}}>
                 <thead>
                   <tr style={{background:"#0f172a",color:"white"}}>
-                    {["MONTH","BASIC","TRAVEL ALLOW.","DEDUCTIONS","NET PAY"].map(h=>(
+                    {["MONTH","BASIC","TRAVEL ALLOW.","BONUS","DEDUCTIONS","NET PAY"].map(h=>(
                       <th key={h} style={{padding:"8px 10px",textAlign:h==="MONTH"?"left":"right",fontSize:10,fontWeight:800,letterSpacing:"0.05em"}}>{h}</th>
                     ))}
                   </tr>
@@ -13236,8 +13281,9 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
                         <td style={{padding:"7px 10px"}}>{PAYROLL_MONTH_NAMES[fm.month-1]} {fm.year}</td>
                         <td style={{padding:"7px 10px",textAlign:"right",color:r?"#0f172a":"#cbd5e1"}}>{r?`${shop.symbol}${Number(b.basicSalary||0).toLocaleString()}`:"—"}</td>
                         <td style={{padding:"7px 10px",textAlign:"right",color:r?"#0f172a":"#cbd5e1"}}>{r?`${shop.symbol}${Number(b.travelAllowance||0).toLocaleString()}`:"—"}</td>
+                        <td style={{padding:"7px 10px",textAlign:"right",color:r&&(b.bonusAmount||0)>0?"#16a34a":"#cbd5e1"}}>{r&&(b.bonusAmount||0)>0?`${shop.symbol}${Number(b.bonusAmount||0).toLocaleString()}`:"—"}</td>
                         <td style={{padding:"7px 10px",textAlign:"right",color:r?"#dc2626":"#cbd5e1"}}>{r?`${shop.symbol}${ded.toLocaleString()}`:"—"}</td>
-                        <td style={{padding:"7px 10px",textAlign:"right",fontWeight:700,color:r?"#0f172a":"#cbd5e1"}}>{r?`${shop.symbol}${Number(r.netPay||0).toLocaleString()}`:"—"}</td>
+                        <td style={{padding:"7px 10px",textAlign:"right",fontWeight:700,color:r?(Number(r.netPay||0)<0?"#dc2626":"#0f172a"):"#cbd5e1"}}>{r?`${shop.symbol}${Number(r.netPay||0).toLocaleString()}`:"—"}</td>
                       </tr>
                     );
                   })}
@@ -13247,8 +13293,9 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
                     <td style={{padding:"9px 10px",fontWeight:800}}>TOTAL</td>
                     <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800}}>{shop.symbol}{totals.basic.toLocaleString()}</td>
                     <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800}}>{shop.symbol}{totals.travel.toLocaleString()}</td>
+                    <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800,color:"#16a34a"}}>{shop.symbol}{totals.bonus.toLocaleString()}</td>
                     <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800,color:"#dc2626"}}>{shop.symbol}{totals.deductions.toLocaleString()}</td>
-                    <td style={{padding:"9px 10px",textAlign:"right",fontWeight:900,color:shop.accent,fontSize:14}}>{shop.symbol}{totals.net.toLocaleString()}</td>
+                    <td style={{padding:"9px 10px",textAlign:"right",fontWeight:900,color:totals.net<0?"#dc2626":shop.accent,fontSize:14}}>{shop.symbol}{totals.net.toLocaleString()}</td>
                   </tr>
                 </tfoot>
               </table>
