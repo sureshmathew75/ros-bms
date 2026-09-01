@@ -10500,7 +10500,10 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
   const fetchOrders = React.useCallback(async () => {
     setLoading(true); setError("");
     try {
-      const res = await fetch(`/api/shopify-orders?days=${days}`);
+      // no-store: this exact URL (same query string) got hit repeatedly
+      // while the endpoint was broken during setup, and browsers can latch
+      // onto that old cached response indefinitely otherwise.
+      const res = await fetch(`/api/shopify-orders?days=${days}`, { cache: "no-store" });
       const data = await res.json();
       if (!res.ok) { setError(data.error || "Failed to fetch orders."); setOrders([]); }
       else {
