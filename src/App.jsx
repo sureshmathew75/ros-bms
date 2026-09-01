@@ -12750,11 +12750,11 @@ const PayslipDocument = ({ shop, staffName, monthLabel, breakdown, netPay, domId
 
         {/* header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:22}}>
-          <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <img src={shop.logo} alt={shop.name} style={{height:46,objectFit:"contain"}}/>
+          <div style={{display:"flex",alignItems:"center",gap:14}}>
+            <img src={shop.logo} alt={shop.name} style={{height:74,objectFit:"contain"}}/>
             <div>
-              <div style={{fontSize:19,fontWeight:900,letterSpacing:"-0.01em",color:"#0f172a",lineHeight:1.15}}>{shop.name}</div>
-              <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Kottayam, Kerala, India</div>
+              <div style={{fontSize:22,fontWeight:900,letterSpacing:"-0.01em",color:"#0f172a",lineHeight:1.15}}>{shop.name}</div>
+              <div style={{fontSize:11.5,color:"#64748b",marginTop:2}}>Kottayam, Kerala, India</div>
             </div>
           </div>
           <div style={{textAlign:"right"}}>
@@ -12851,20 +12851,22 @@ const PayslipDocument = ({ shop, staffName, monthLabel, breakdown, netPay, domId
           </div>
         </div>
 
-        {/* net pay banner */}
+        {/* net pay banner — light green for a normal payable amount, red for a shortfall */}
         <div style={{
-          marginTop:22,borderRadius:12,padding:"18px 22px",color:"white",
+          marginTop:22,borderRadius:12,padding:"18px 22px",
           display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,
-          background: isNeg ? "linear-gradient(135deg,#7f1d1d,#450a0a)" : `linear-gradient(135deg, ${shop.accentText}, #4a0a2b)`,
+          background: isNeg ? "linear-gradient(135deg,#7f1d1d,#450a0a)" : "#ecfdf5",
+          border: isNeg ? "none" : "1px solid #bbf7d0",
+          color: isNeg ? "white" : "#166534",
         }}>
           <div>
-            <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",opacity:0.8}}>Net Payable</div>
-            <div style={{fontSize:11,opacity:0.85,marginTop:4,maxWidth:420}}>{words}</div>
+            <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",opacity:isNeg?0.8:0.85}}>Net Payable</div>
+            <div style={{fontSize:11,opacity:isNeg?0.85:0.85,marginTop:4,maxWidth:420}}>{words}</div>
             {(b.carryForwardBalance||0)>0 && (
               <div style={{fontSize:11,opacity:0.95,marginTop:3,fontWeight:700}}>{sym}{Number(b.carryForwardBalance||0).toLocaleString()} shortfall carried to next month</div>
             )}
           </div>
-          <div style={{fontSize:28,fontWeight:900,letterSpacing:"-0.02em"}}>{isNeg?"−":""}{sym}{Math.abs(Number(netPay||0)).toLocaleString()}</div>
+          <div style={{fontSize:28,fontWeight:900,letterSpacing:"-0.02em",color:isNeg?"white":"#166534"}}>{isNeg?"−":""}{sym}{Math.abs(Number(netPay||0)).toLocaleString()}</div>
         </div>
 
         {/* footer */}
