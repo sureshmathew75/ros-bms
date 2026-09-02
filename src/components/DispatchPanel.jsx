@@ -581,6 +581,28 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
     return m;
   }, [entries]);
 
+  // Same-customer duplicate-row guard: entries that share a customer name +
+  // phone but ended up on DIFFERENT despatch groups (see despatchKeyOf
+  // above) — could be two genuinely separate orders, or a case where a
+  // later edit (e.g. a phone number correction) split what should have
+  // been one linked group. This is purely a visual heads-up for despatch
+  // staff to double-check — nothing is merged or changed automatically.
+  const dupCustomerGroupKeys = useMemo(() => {
+    const byCustomer = {}; // "name__phone" -> Set of despatch group keys seen
+    entries.forEach(e => {
+      const linked = allSales.find(x => x.id === e.saleId);
+      const name = ((linked ? linked.customer : e.customer) || "").toLowerCase().trim();
+      const phone = ((linked ? (linked.phone || linked.contact) : e.phone) || "").replace(/\D/g, "").slice(-10);
+      if (!name && !phone) return;
+      const custKey = `${name}__${phone}`;
+      const groupKey = linked ? despatchKeyOf(linked) : (e.saleId || e.uuid);
+      (byCustomer[custKey] ||= new Set()).add(groupKey);
+    });
+    const flagged = new Set();
+    Object.values(byCustomer).forEach(keys => { if (keys.size > 1) keys.forEach(k => flagged.add(k)); });
+    return flagged;
+  }, [entries, allSales, saleGroupKey]);
+
   const summary = useMemo(() => {
     const total = weekEntries.length;
     const noTracking = weekEntries.filter(e => !e.trackingNo).length;
@@ -684,9 +706,20 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
     // Once both tracking number and shipper are on the row — the same
     // point that unlocks the "Send Notification" button — push it back
     // to the linked sale (tracking + carrier) and mark that sale Fulfilled.
+    // A despatch row can stand in for an entire linked GROUP of transactions
+    // (Advance + Part + Final, or manually linked) collapsed into one
+    // parcel — see despatchKeyOf/groupMembers above; the row only stores
+    // the id of the group's "anchor" sale. Tracking has to reach every
+    // transaction in that group, not just the anchor, otherwise the other
+    // linked transactions stay stuck showing "Awaiting Tracking" on the
+    // Sales tab even though the parcel has actually shipped.
     const touchedTrackingOrShipper = ("trackingNo" in patch) || ("shipper" in patch);
     if (touchedTrackingOrShipper && merged.saleId && merged.trackingNo && merged.shipper && onSaleUpdate) {
-      onSaleUpdate(merged.saleId, { trackingNo: merged.trackingNo, carrier: merged.shipper });
+      const linkedSale = allSales.find(s => s.id === merged.saleId);
+      const groupKey = linkedSale ? despatchKeyOf(linkedSale) : merged.saleId;
+      const members = groupMembers[groupKey];
+      const saleIds = members && members.length ? members.map(m => m.id) : [merged.saleId];
+      saleIds.forEach(id => onSaleUpdate(id, { trackingNo: merged.trackingNo, carrier: merged.shipper }));
     }
   };
 
@@ -999,10 +1032,28 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
                     const isDup = dupKey && (trackingIndex[dupKey] || []).length > 1;
                     const canNotify = !!(e.trackingNo && e.shipper);
                     const shipperColor = shipperColorFor(e.shipper);
+                    const linkedSaleForRow = allSales.find(s => s.id === e.saleId);
+                    const rowGroupKey = linkedSaleForRow ? despatchKeyOf(linkedSaleForRow) : (e.saleId || e.uuid);
+                    const rowGroupCount = (groupMembers[rowGroupKey] || []).length;
+                    const isSameCustomerDup = dupCustomerGroupKeys.has(rowGroupKey);
                     return (
                       <tr key={e.uuid} style={{ borderBottom: "1px solid #f1f5f9", background: idx % 2 ? "#fdfbf3" : "white" }}>
                         <td style={{ padding: "8px 12px", color: "#94a3b8", fontWeight: 700, verticalAlign: "top" }}>{idx + 1}</td>
-                        <td style={{ padding: "8px 12px", fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap", verticalAlign: "top" }}>{e.customer || "—"}</td>
+                        <td style={{ padding: "8px 12px", fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap", verticalAlign: "top" }}>
+                          {e.customer || "—"}
+                          {rowGroupCount > 1 && (
+                            <span title="This row covers several linked sale transactions (e.g. Advance + Final) for one parcel — entering tracking here fulfils all of them."
+                              style={{ marginLeft: 6, fontSize: 9.5, fontWeight: 800, color: "#4338ca", background: "#e0e7ff", borderRadius: 999, padding: "1px 6px", whiteSpace: "nowrap" }}>
+                              🔗 {rowGroupCount} linked
+                            </span>
+                          )}
+                          {isSameCustomerDup && (
+                            <div title="Another despatch row exists for this same customer/phone but isn't linked to this one — check whether this is really a separate order."
+                              style={{ marginTop: 3, fontSize: 9.5, fontWeight: 800, color: "#b45309", background: "#fef3c7", borderRadius: 999, padding: "1px 6px", whiteSpace: "nowrap", display: "inline-block" }}>
+                              ⚠ check duplicate
+                            </div>
+                          )}
+                        </td>
                         <td style={{ padding: "8px 12px", minWidth: 180, verticalAlign: "top" }}>
                           {/* Read-only — address is entered/edited on the Sales page only;
                               this always shows that sale's current address live. */}
