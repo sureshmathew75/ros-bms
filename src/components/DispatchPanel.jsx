@@ -1044,8 +1044,17 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
                     const rowGroupCount = (groupMembers[rowGroupKey] || []).length;
                     const isSameCustomerDup = dupCustomerGroupKeys.has(rowGroupKey);
                     const fullAddress = liveAddressFor(e);
-                    const addressFirstLine = fullAddress.split("\n")[0] || "";
-                    const addressHasMore = fullAddress.length > addressFirstLine.length;
+                    // India addresses tend to be typed as several lines (street,
+                    // city, pincode...), so a newline was enough to detect "more
+                    // than one line". UK addresses are usually one long comma-
+                    // separated line instead — same length problem, just no \n to
+                    // detect it — so anything past a normal one-line-box length
+                    // also counts as "more", not just an explicit line break. This
+                    // is what puts the same expand/collapse arrow on every shop.
+                    const ONE_LINE_CHARS = 32;
+                    const hasNewline = fullAddress.includes("\n");
+                    const addressFirstLine = hasNewline ? (fullAddress.split("\n")[0] || "") : fullAddress;
+                    const addressHasMore = hasNewline || fullAddress.length > ONE_LINE_CHARS;
                     const isAddressExpanded = !!expandedAddresses[e.uuid];
                     const phone = livePhoneFor(e);
                     return (
