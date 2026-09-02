@@ -14038,18 +14038,16 @@ const PettyCashPage = ({ shopId, shop, user, users=[] }) => {
               <div style={{fontSize:15,fontWeight:800,color:"#991b1b"}}>{shop.symbol}{totalPaid.toLocaleString()}</div>
             </div>
           </div>
-          {isAdminView && (
-            <button onClick={()=>setShowIssue(v=>!v)}
-              style={{padding:"10px 18px",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>
-              ➕ Top Up
-            </button>
-          )}
+          <button onClick={()=>setShowIssue(v=>!v)}
+            style={{padding:"10px 18px",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>
+            ➕ Add Cash Received
+          </button>
         </div>
 
-        {isAdminView && showIssue && (
+        {showIssue && (
           <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap",padding:"14px 16px",borderBottom:"1px solid #f1f5f9"}}>
             <div>
-              <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Amount to Add</label>
+              <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Amount Received</label>
               <input type="number" value={issueAmount} onChange={e=>setIssueAmount(e.target.value)} placeholder="e.g. 1000" style={{...inp,width:130}}/>
             </div>
             <div style={{flex:1,minWidth:180}}>
@@ -14062,6 +14060,7 @@ const PettyCashPage = ({ shopId, shop, user, users=[] }) => {
             </button>
           </div>
         )}
+        {showIssue && !isAdminView && <div style={{padding:"0 16px 14px",fontSize:11,color:"#94a3b8"}}>Recorded as received by {fullNameOf(myName)}</div>}
 
         <div style={{padding:"14px 16px"}}>
           <div style={{fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Log a Spend</div>
@@ -14117,8 +14116,11 @@ const PettyCashPage = ({ shopId, shop, user, users=[] }) => {
             </thead>
             <tbody>
               {ledger.map((r,i)=>{
-                const canEdit = !r.isVoided && (isAdminView || (r.type==="SPEND" && r.staffName===myName));
-                const canDelete = isAdminView || (!r.isVoided && r.type==="SPEND" && r.staffName===myName);
+                // Admin controls everything. Staff control their own
+                // entries — money they logged as received as well as
+                // spends — but not each other's or admin's.
+                const canEdit = !r.isVoided && (isAdminView || r.staffName===myName);
+                const canDelete = isAdminView || (!r.isVoided && r.staffName===myName);
                 const original = r.correctsId ? byId[r.correctsId] : null;
                 const struck = r.isVoided;
                 const rowText = struck ? {textDecoration:"line-through", color:"#a8a29e"} : {color:"#292524"};
