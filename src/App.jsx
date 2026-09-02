@@ -11536,6 +11536,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   const [loading, setLoading] = React.useState(true);
   const [selectedItemId, setSelectedItemId] = React.useState(null);
   const [showAddItem, setShowAddItem] = React.useState(false);
+  const [showManageItems, setShowManageItems] = React.useState(false); // admin-only "Manage Items" settings panel — add/rename/delete tracked items, kept away from the daily sheet
   const [restockFor, setRestockFor] = React.useState(null); // {id, name} | null
   const [soldFor, setSoldFor] = React.useState(null); // {id, name} | null — Log Sale modal
   const [correctFor, setCorrectFor] = React.useState(null); // {id, name, currentStock} | null — admin-only stock correction
@@ -11741,9 +11742,9 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>Fresh stock — product lines you keep on hand and restock yourself</p>
         </div>
         {isAdmin && (
-          <button onClick={()=>setShowAddItem(true)}
+          <button onClick={()=>setShowManageItems(true)}
             style={{padding:"9px 16px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-            + Add Item
+            ⚙️ Manage Items
           </button>
         )}
       </div>
@@ -11795,7 +11796,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
       {invView==="items" ? (
       items.length===0 ? (
         <div style={{textAlign:"center",padding:"60px 20px",color:"#94a3b8",fontSize:13}}>
-          No inventory items yet. {isAdmin ? 'Click "+ Add Item" to start tracking your first stocked product.' : "Check back once your admin has added tracked items."}
+          No inventory items yet. {isAdmin ? 'Click "⚙️ Manage Items" to start tracking your first stocked product.' : "Check back once your admin has added tracked items."}
         </div>
       ) : (
         <StockSheetView
@@ -11807,7 +11808,6 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           onLogSale={(item)=>setSoldFor({id:item.id,name:item.name})}
           onRestock={isAdmin ? (item)=>setRestockFor({id:item.id,name:item.name}) : null}
           onSelectItem={(id)=>setSelectedItemId(id)}
-          onDeleteItem={isAdmin ? (id)=>setConfirmDeleteId(id) : null}
           fmtDate={fmtDate}
         />
       )
@@ -11897,8 +11897,23 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
         }}/>
       )}
 
+      {showManageItems && (
+        <ManageItemsModal
+          items={items}
+          onClose={()=>setShowManageItems(false)}
+          onAddItem={()=>{ setShowManageItems(false); setShowAddItem(true); }}
+          onRequestDelete={(id)=>setConfirmDeleteId(id)}
+          onRename={async(itemId, patch)=>{
+            const ok = await dbUpdateInventoryItem(shopId, itemId, patch);
+            if (ok) load();
+            else alert("Couldn't save — please check your connection and try again.");
+            return ok;
+          }}
+        />
+      )}
+
       {confirmDeleteId && (
-        <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+        <div style={{position:"fixed",inset:0,zIndex:330,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:"white",borderRadius:16,padding:22,maxWidth:320,width:"92%"}}>
             <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:8}}>Delete this item?</div>
             <p style={{fontSize:12,color:"#64748b",marginBottom:18}}>This removes the item and its full stock history. This can't be undone.</p>
@@ -11946,7 +11961,7 @@ function rectOf(el) {
 const STOCK_CATEGORIES = ["Cover-Up Patches", "Receding Hairpieces", "Bangs and Fringes", "Updos", "Hair Accessories"];
 const OTHER_CATEGORY = "Other";
 
-const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSelectItem, onDeleteItem, fmtDate }) => {
+const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSelectItem, fmtDate }) => {
   const [cellPopover, setCellPopover] = React.useState(null); // {itemId, date, anchor} | null
   const [monthPopover, setMonthPopover] = React.useState(null); // {itemId, type:'sale'|'restock', anchor} | null
   const todayStr = new Date().toISOString().slice(0,10);
@@ -12087,10 +12102,6 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                     style={{ ...stickyCell, left:0, zIndex:2, background:rowBg, cursor:"pointer" }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                       <span style={{ fontWeight:700, fontSize:13, color:"#0f172a", lineHeight:1.3 }}>{item.name}</span>
-                      {onDeleteItem && (
-                        <button onClick={(e)=>{e.stopPropagation();onDeleteItem(item.id);}} title="Delete this item"
-                          style={{ marginLeft:"auto", flexShrink:0, border:"none", background:"transparent", color:"#cbd5e1", cursor:"pointer", fontSize:12 }}>✕</button>
-                      )}
                     </div>
                   </td>
                   <td onClick={(e)=> soldThisMonth>0 && setMonthPopover({ itemId:item.id, type:"sale", anchor:rectOf(e.currentTarget) })}
@@ -12394,6 +12405,106 @@ const AddInventoryItemModal = ({ onClose, onSave }) => {
             style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#1e293b",color:"white",fontWeight:700,fontSize:13,cursor:(!name.trim()||saving)?"default":"pointer",fontFamily:"inherit",opacity:(!name.trim()||saving)?0.6:1}}>
             {saving?"Saving…":"Add Item"}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Admin-only "settings" panel for what's tracked at all — add, rename,
+// recategorize, or delete an item. Deliberately its own dedicated place,
+// away from the daily Stock Sheet, so an accidental tap during normal
+// logging can never delete an item's stock history.
+const ManageItemsModal = ({ items, onClose, onAddItem, onRequestDelete, onRename }) => {
+  const [editingId, setEditingId] = React.useState(null);
+  const [editName, setEditName] = React.useState("");
+  const [editCategory, setEditCategory] = React.useState(STOCK_CATEGORIES[0]);
+  const [savingEdit, setSavingEdit] = React.useState(false);
+
+  const grouped = React.useMemo(() => {
+    const byCat = {};
+    items.forEach(item => {
+      const cat = STOCK_CATEGORIES.includes(item.category) ? item.category : OTHER_CATEGORY;
+      (byCat[cat] ||= []).push(item);
+    });
+    return [...STOCK_CATEGORIES, OTHER_CATEGORY]
+      .filter(cat => byCat[cat] && byCat[cat].length > 0)
+      .map(cat => ({ category: cat, items: byCat[cat] }));
+  }, [items]);
+
+  const startEdit = (item) => {
+    setEditingId(item.id);
+    setEditName(item.name);
+    setEditCategory(STOCK_CATEGORIES.includes(item.category) ? item.category : OTHER_CATEGORY);
+  };
+
+  const inp = {width:"100%",padding:"7px 10px",borderRadius:8,border:"1.5px solid #e2e8f0",fontSize:12.5,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
+
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"white",borderRadius:16,padding:22,maxWidth:460,width:"96%",maxHeight:"84vh",display:"flex",flexDirection:"column"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+          <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>⚙️ Manage Items</div>
+          <button onClick={onClose} style={{border:"none",background:"transparent",color:"#94a3b8",fontSize:18,cursor:"pointer",lineHeight:1}}>✕</button>
+        </div>
+        <p style={{fontSize:12,color:"#64748b",margin:"0 0 14px"}}>Add, rename, recategorize, or delete what you track here — none of this touches stock history.</p>
+
+        <button onClick={onAddItem}
+          style={{padding:"10px 0",borderRadius:10,border:"none",background:"#1e293b",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",marginBottom:16}}>
+          + Add New Item
+        </button>
+
+        <div style={{overflowY:"auto",flex:1,borderTop:"1px solid #f1f5f9"}}>
+          {items.length === 0 ? (
+            <div style={{textAlign:"center",padding:"30px 10px",color:"#94a3b8",fontSize:12.5}}>No items tracked yet.</div>
+          ) : grouped.map(({ category, items: catItems }) => (
+            <div key={category}>
+              <div style={{padding:"10px 4px 6px",fontSize:10.5,fontWeight:800,color:"#334155",textTransform:"uppercase",letterSpacing:"0.05em"}}>{category}</div>
+              {catItems.map(item => (
+                <div key={item.id} style={{padding:"9px 4px",borderTop:"1px solid #f8fafc"}}>
+                  {editingId === item.id ? (
+                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                      <input value={editName} onChange={e=>setEditName(e.target.value)} style={inp} autoFocus/>
+                      <select value={editCategory} onChange={e=>setEditCategory(e.target.value)} style={inp}>
+                        {STOCK_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+                        <option value={OTHER_CATEGORY}>{OTHER_CATEGORY}</option>
+                      </select>
+                      <div style={{display:"flex",gap:8,marginTop:2}}>
+                        <button onClick={()=>setEditingId(null)}
+                          style={{flex:1,padding:"7px 0",borderRadius:8,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                          Cancel
+                        </button>
+                        <button
+                          onClick={async()=>{
+                            if(!editName.trim()) return;
+                            setSavingEdit(true);
+                            const ok = await onRename(item.id, { name: editName.trim(), category: editCategory });
+                            setSavingEdit(false);
+                            if (ok) setEditingId(null);
+                          }}
+                          disabled={!editName.trim()||savingEdit}
+                          style={{flex:1,padding:"7px 0",borderRadius:8,border:"none",background:"#1e293b",color:"white",fontWeight:700,fontSize:12,cursor:(!editName.trim()||savingEdit)?"default":"pointer",fontFamily:"inherit",opacity:(!editName.trim()||savingEdit)?0.6:1}}>
+                          {savingEdit?"Saving…":"Save"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{flex:1,fontSize:13,fontWeight:700,color:"#0f172a"}}>{item.name}</span>
+                      <button onClick={()=>startEdit(item)}
+                        style={{padding:"5px 10px",borderRadius:7,border:"1px solid #e2e8f0",background:"white",color:"#475569",fontWeight:700,fontSize:11.5,cursor:"pointer",fontFamily:"inherit"}}>
+                        ✏️ Edit
+                      </button>
+                      <button onClick={()=>onRequestDelete(item.id)}
+                        style={{padding:"5px 10px",borderRadius:7,border:"1px solid #fecaca",background:"#fef2f2",color:"#b91c1c",fontWeight:700,fontSize:11.5,cursor:"pointer",fontFamily:"inherit"}}>
+                        Delete
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          ))}
         </div>
       </div>
     </div>
