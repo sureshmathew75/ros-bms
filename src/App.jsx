@@ -13339,7 +13339,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
 
       {/* staff + salary strip (shared across Generate/History/Annual) */}
       {subTab!=="advloan" && (
-        <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",marginBottom:20,padding:"14px 16px",background:shop.accentBg,borderRadius:12,border:"1px solid "+shop.accent+"33"}}>
+        <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",marginBottom:14,padding:"14px 16px",background:shop.accentBg,borderRadius:12,border:"1px solid "+shop.accent+"33"}}>
           <div>
             <label style={{fontSize:10,fontWeight:800,color:shop.accentText,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Staff</label>
             <select value={selectedStaff} onChange={e=>{setSelectedStaff(e.target.value);setEditingSalary(false);setEditingPosition(false);}} style={inp}>
@@ -13384,59 +13384,79 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
       {/* ── GENERATE ── */}
       {subTab==="generate" && (
         <div>
-          <div style={{display:"flex",gap:10,marginBottom:16,alignItems:"center"}}>
-            <select value={selMonth} onChange={e=>setSelMonth(Number(e.target.value))} style={inp}>
-              {PAYROLL_MONTH_NAMES.map((m,i)=><option key={m} value={i+1}>{m}</option>)}
-            </select>
-            <select value={selYear} onChange={e=>setSelYear(Number(e.target.value))} style={inp}>
-              {yearOptions.map(y=><option key={y} value={y}>{y}</option>)}
-            </select>
-          </div>
-
           {existingRecord ? (
-            <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-              <span style={{fontSize:13,color:"#166534",fontWeight:700}}>✅ {monthLabel} payslip already generated — Net Pay {shop.symbol}{existingRecord.netPay.toLocaleString()}. See it under History, or delete it there to regenerate.</span>
-            </div>
+            <>
+              <div style={{display:"flex",gap:10,marginBottom:14,alignItems:"center"}}>
+                <select value={selMonth} onChange={e=>setSelMonth(Number(e.target.value))} style={inp}>
+                  {PAYROLL_MONTH_NAMES.map((m,i)=><option key={m} value={i+1}>{m}</option>)}
+                </select>
+                <select value={selYear} onChange={e=>setSelYear(Number(e.target.value))} style={inp}>
+                  {yearOptions.map(y=><option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+              <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+                <span style={{fontSize:13,color:"#166534",fontWeight:700}}>✅ {monthLabel} payslip already generated — Net Pay {shop.symbol}{existingRecord.netPay.toLocaleString()}. See it under History, or delete it there to regenerate.</span>
+              </div>
+            </>
           ) : (
             <>
-              <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap",marginBottom:16,padding:"12px 14px",background:"#f8fafc",borderRadius:12,border:"1px solid #e2e8f0"}}>
-                <div>
-                  <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Festival Bonus (optional)</label>
-                  <input type="text" value={bonusLabel} onChange={e=>setBonusLabel(e.target.value)} placeholder="e.g. Onam Bonus" style={{...inp,width:170}}/>
+              {/* one unified card: pay period, festival bonus, and every
+                  this-month adjustment — replaces what used to be five
+                  separately-floating boxes */}
+              <div style={{border:"1px solid #e2e8f0",borderRadius:12,marginBottom:16,overflow:"hidden",background:"white"}}>
+                <div style={{display:"flex",gap:14,alignItems:"flex-end",flexWrap:"wrap",padding:"14px 16px",
+                  borderBottom:(carryForwardOpening>0||unappliedAdvances.length>0||activeLoans.length>0)?"1px solid #f1f5f9":"none"}}>
+                  <div>
+                    <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Pay Period</label>
+                    <div style={{display:"flex",gap:8}}>
+                      <select value={selMonth} onChange={e=>setSelMonth(Number(e.target.value))} style={inp}>
+                        {PAYROLL_MONTH_NAMES.map((m,i)=><option key={m} value={i+1}>{m}</option>)}
+                      </select>
+                      <select value={selYear} onChange={e=>setSelYear(Number(e.target.value))} style={inp}>
+                        {yearOptions.map(y=><option key={y} value={y}>{y}</option>)}
+                      </select>
+                    </div>
+                  </div>
+                  <div>
+                    <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Festival Bonus (optional)</label>
+                    <input type="text" value={bonusLabel} onChange={e=>setBonusLabel(e.target.value)} placeholder="e.g. Onam Bonus" style={{...inp,width:170}}/>
+                  </div>
+                  <div>
+                    <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Bonus Amount</label>
+                    <input type="number" value={bonusAmount} onChange={e=>setBonusAmount(e.target.value)} placeholder="0" style={{...inp,width:110}}/>
+                  </div>
                 </div>
-                <div>
-                  <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Bonus Amount</label>
-                  <input type="number" value={bonusAmount} onChange={e=>setBonusAmount(e.target.value)} placeholder="0" style={{...inp,width:110}}/>
-                </div>
+                {carryForwardOpening>0 && (
+                  <div style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",borderLeft:"3px solid #dc2626",background:"#fef2f2",
+                    borderBottom:(unappliedAdvances.length>0||activeLoans.length>0)?"1px solid #fee2e2":"none"}}>
+                    <span style={{fontSize:12.5,color:"#991b1b"}}>⚠️ {shop.symbol}{carryForwardOpening.toLocaleString()} carried forward from a previous month's shortfall will be recovered on this payslip.</span>
+                  </div>
+                )}
+                {unappliedAdvances.length>0 && (
+                  <div style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",borderLeft:"3px solid #d97706",background:"#fffbeb",
+                    borderBottom:activeLoans.length>0?"1px solid #fde68a":"none"}}>
+                    <span style={{fontSize:12.5,color:"#92400e"}}>💵 {unappliedAdvances.length} unapplied advance{unappliedAdvances.length>1?"s":""} totalling {shop.symbol}{advanceDeduction.toLocaleString()} will be recovered on this payslip.</span>
+                  </div>
+                )}
+                {activeLoans.length>0 && (
+                  <div style={{padding:"11px 16px",borderLeft:"3px solid #d97706",background:"#fffbeb"}}>
+                    <div style={{fontWeight:700,fontSize:12.5,color:"#92400e",marginBottom:8}}>🏦 Active loan{activeLoans.length>1?"s":""} — this month's instalment can be adjusted below if needed:</div>
+                    {activeLoans.map(l=>{
+                      const row = loanRows.find(x=>x.id===l.id);
+                      const ov = loanInstalmentOverrides[l.id];
+                      return (
+                        <div key={l.id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
+                          <span style={{fontSize:12,color:"#92400e"}}>Balance {shop.symbol}{l.balance.toLocaleString()} (usual instalment {shop.symbol}{l.monthlyInstalment.toLocaleString()})</span>
+                          <input type="number" value={ov!==undefined?ov:""} placeholder={String(l.monthlyInstalment)}
+                            onChange={e=>setLoanInstalmentOverrides(prev=>({...prev, [l.id]: e.target.value}))}
+                            style={{...inp,width:100,padding:"6px 10px"}}/>
+                          <span style={{fontSize:11.5,color:"#92400e"}}>→ {shop.symbol}{(row?.amount||0).toLocaleString()} deducted this month</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
-              {carryForwardOpening>0 && (
-                <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:12,padding:"12px 16px",marginBottom:16,fontSize:12.5,color:"#991b1b"}}>
-                  ⚠️ {shop.symbol}{carryForwardOpening.toLocaleString()} carried forward from a previous month's shortfall will be recovered on this payslip.
-                </div>
-              )}
-              {unappliedAdvances.length>0 && (
-                <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:12,padding:"12px 16px",marginBottom:16,fontSize:12.5,color:"#92400e"}}>
-                  💵 {unappliedAdvances.length} unapplied advance{unappliedAdvances.length>1?"s":""} totalling {shop.symbol}{advanceDeduction.toLocaleString()} will be recovered on this payslip.
-                </div>
-              )}
-              {activeLoans.length>0 && (
-                <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:12,padding:"12px 16px",marginBottom:16,fontSize:12.5,color:"#92400e"}}>
-                  <div style={{fontWeight:700,marginBottom:8}}>🏦 Active loan{activeLoans.length>1?"s":""} — this month's instalment can be adjusted below if needed:</div>
-                  {activeLoans.map(l=>{
-                    const row = loanRows.find(x=>x.id===l.id);
-                    const ov = loanInstalmentOverrides[l.id];
-                    return (
-                      <div key={l.id} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:6}}>
-                        <span style={{fontSize:12}}>Balance {shop.symbol}{l.balance.toLocaleString()} (usual instalment {shop.symbol}{l.monthlyInstalment.toLocaleString()})</span>
-                        <input type="number" value={ov!==undefined?ov:""} placeholder={String(l.monthlyInstalment)}
-                          onChange={e=>setLoanInstalmentOverrides(prev=>({...prev, [l.id]: e.target.value}))}
-                          style={{...inp,width:100,padding:"6px 10px"}}/>
-                        <span style={{fontSize:11.5}}>→ {shop.symbol}{(row?.amount||0).toLocaleString()} deducted this month</span>
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
               <PayslipDocument shop={shop} staffName={selectedStaff} monthLabel={monthLabel} breakdown={previewBreakdown} netPay={netPay} domId="payslip-preview-content"
                 payslipId={`PAY-${selectedStaff}-${monthKey}`} generatedDate={new Date().toISOString().slice(0,10)} isPreview/>
               <div style={{display:"flex",justifyContent:"center",marginTop:16}}>
