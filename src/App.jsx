@@ -13113,6 +13113,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
   const [positionInput, setPositionInput] = React.useState("");
   const [bonusLabel, setBonusLabel] = React.useState("");
   const [bonusAmount, setBonusAmount] = React.useState("");
+  const [festivalBonusOpen, setFestivalBonusOpen] = React.useState(false); // festival bonus isn't used every month — collapsed by default
   const [loanInstalmentOverrides, setLoanInstalmentOverrides] = React.useState({}); // loanId -> this-month-only override
   // Sales Bonus (separate feature from the festival bonus above — its own
   // monthly statement, released on the 15th, tracked in its own table).
@@ -13151,7 +13152,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
 
   // a bonus (or a loan instalment override) typed in for one staff/month
   // shouldn't silently carry over to the next one selected
-  React.useEffect(()=>{ setBonusLabel(""); setBonusAmount(""); setLoanInstalmentOverrides({}); }, [selectedStaff, selMonth, selYear]);
+  React.useEffect(()=>{ setBonusLabel(""); setBonusAmount(""); setFestivalBonusOpen(false); setLoanInstalmentOverrides({}); }, [selectedStaff, selMonth, selYear]);
 
   // Sales Bonus is team-wide (not tied to selectedStaff) — reset it only
   // when the month/year changes, so it isn't lost just by switching the
@@ -13346,6 +13347,19 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
               {staffList.map(u=><option key={u.id} value={u.name}>{u.fullName||u.name}</option>)}
             </select>
           </div>
+          {subTab==="generate" && (
+            <div style={{marginLeft:"auto",background:"white",border:"1.5px solid "+shop.accent,borderRadius:10,padding:"8px 14px"}}>
+              <label style={{fontSize:10,fontWeight:800,color:shop.accentText,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Pay Period</label>
+              <div style={{display:"flex",gap:8}}>
+                <select value={selMonth} onChange={e=>setSelMonth(Number(e.target.value))} style={{...inp,fontWeight:800,fontSize:14}}>
+                  {PAYROLL_MONTH_NAMES.map((m,i)=><option key={m} value={i+1}>{m}</option>)}
+                </select>
+                <select value={selYear} onChange={e=>setSelYear(Number(e.target.value))} style={{...inp,fontWeight:800,fontSize:14}}>
+                  {yearOptions.map(y=><option key={y} value={y}>{y}</option>)}
+                </select>
+              </div>
+            </div>
+          )}
           <div>
             <label style={{fontSize:10,fontWeight:800,color:shop.accentText,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Position</label>
             {editingPosition ? (
@@ -13385,47 +13399,39 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
       {subTab==="generate" && (
         <div>
           {existingRecord ? (
-            <>
-              <div style={{display:"flex",gap:10,marginBottom:14,alignItems:"center"}}>
-                <select value={selMonth} onChange={e=>setSelMonth(Number(e.target.value))} style={inp}>
-                  {PAYROLL_MONTH_NAMES.map((m,i)=><option key={m} value={i+1}>{m}</option>)}
-                </select>
-                <select value={selYear} onChange={e=>setSelYear(Number(e.target.value))} style={inp}>
-                  {yearOptions.map(y=><option key={y} value={y}>{y}</option>)}
-                </select>
-              </div>
-              <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
-                <span style={{fontSize:13,color:"#166534",fontWeight:700}}>✅ {monthLabel} payslip already generated — Net Pay {shop.symbol}{existingRecord.netPay.toLocaleString()}. See it under History, or delete it there to regenerate.</span>
-              </div>
-            </>
+            <div style={{background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,padding:"14px 16px",marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10}}>
+              <span style={{fontSize:13,color:"#166534",fontWeight:700}}>✅ {monthLabel} payslip already generated — Net Pay {shop.symbol}{existingRecord.netPay.toLocaleString()}. See it under History, or delete it there to regenerate.</span>
+            </div>
           ) : (
             <>
-              {/* one unified card: pay period, festival bonus, and every
-                  this-month adjustment — replaces what used to be five
+              {/* one unified card: festival bonus (collapsed unless it's
+                  actually being used this month) plus every this-month
+                  adjustment — replaces what used to be several
                   separately-floating boxes */}
               <div style={{border:"1px solid #e2e8f0",borderRadius:12,marginBottom:16,overflow:"hidden",background:"white"}}>
-                <div style={{display:"flex",gap:14,alignItems:"flex-end",flexWrap:"wrap",padding:"14px 16px",
-                  borderBottom:(carryForwardOpening>0||unappliedAdvances.length>0||activeLoans.length>0)?"1px solid #f1f5f9":"none"}}>
-                  <div>
-                    <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Pay Period</label>
-                    <div style={{display:"flex",gap:8}}>
-                      <select value={selMonth} onChange={e=>setSelMonth(Number(e.target.value))} style={inp}>
-                        {PAYROLL_MONTH_NAMES.map((m,i)=><option key={m} value={i+1}>{m}</option>)}
-                      </select>
-                      <select value={selYear} onChange={e=>setSelYear(Number(e.target.value))} style={inp}>
-                        {yearOptions.map(y=><option key={y} value={y}>{y}</option>)}
-                      </select>
+                {festivalBonusOpen ? (
+                  <div style={{display:"flex",gap:14,alignItems:"flex-end",flexWrap:"wrap",padding:"14px 16px",
+                    borderBottom:(carryForwardOpening>0||unappliedAdvances.length>0||activeLoans.length>0)?"1px solid #f1f5f9":"none"}}>
+                    <div>
+                      <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Festival Bonus (optional)</label>
+                      <input type="text" value={bonusLabel} onChange={e=>setBonusLabel(e.target.value)} placeholder="e.g. Onam Bonus" style={{...inp,width:170}}/>
                     </div>
+                    <div>
+                      <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Bonus Amount</label>
+                      <input type="number" value={bonusAmount} onChange={e=>setBonusAmount(e.target.value)} placeholder="0" style={{...inp,width:110}}/>
+                    </div>
+                    <button onClick={()=>{setBonusLabel("");setBonusAmount("");setFestivalBonusOpen(false);}}
+                      style={{border:"none",background:"transparent",color:"#94a3b8",cursor:"pointer",fontSize:12,fontWeight:700,padding:"8px 0"}}>✕ Remove</button>
                   </div>
-                  <div>
-                    <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Festival Bonus (optional)</label>
-                    <input type="text" value={bonusLabel} onChange={e=>setBonusLabel(e.target.value)} placeholder="e.g. Onam Bonus" style={{...inp,width:170}}/>
+                ) : (
+                  <div style={{padding:"10px 16px",
+                    borderBottom:(carryForwardOpening>0||unappliedAdvances.length>0||activeLoans.length>0)?"1px solid #f1f5f9":"none"}}>
+                    <button onClick={()=>setFestivalBonusOpen(true)}
+                      style={{border:"1px dashed #cbd5e1",background:"#f8fafc",color:"#64748b",cursor:"pointer",fontSize:12,fontWeight:700,padding:"7px 12px",borderRadius:8,fontFamily:"inherit"}}>
+                      🎁 + Add Festival Bonus
+                    </button>
                   </div>
-                  <div>
-                    <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Bonus Amount</label>
-                    <input type="number" value={bonusAmount} onChange={e=>setBonusAmount(e.target.value)} placeholder="0" style={{...inp,width:110}}/>
-                  </div>
-                </div>
+                )}
                 {carryForwardOpening>0 && (
                   <div style={{display:"flex",alignItems:"center",gap:10,padding:"11px 16px",borderLeft:"3px solid #dc2626",background:"#fef2f2",
                     borderBottom:(unappliedAdvances.length>0||activeLoans.length>0)?"1px solid #fee2e2":"none"}}>
