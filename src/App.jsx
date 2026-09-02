@@ -17784,10 +17784,11 @@ const ROLE_NAV={
   admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","pettycash","inventory","dispatch"],
   // Payroll is kept admin-only (not in staff's list) — it exposes salary,
   // advances and loan balances for every staff member, not just the
-  // person viewing it. Petty Cash is different — like Attendance, staff
-  // can see it too, but each one is scoped to just their own float
-  // (PettyCashPage itself enforces that scoping, not this list).
-  staff:["sales","customers","returns","attendance","pettycash","inventory","dispatch"],
+  // person viewing it. Petty Cash is admin-only for now too, while it's
+  // still being built out — PettyCashPage already supports a staff view
+  // (each entry attributed to whoever's logged in), so re-adding
+  // "pettycash" here later is all it takes to turn staff access back on.
+  staff:["sales","customers","returns","attendance","inventory","dispatch"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
 
