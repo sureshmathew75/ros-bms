@@ -13918,10 +13918,11 @@ const PettyCashPage = ({ shopId, shop, user, users=[] }) => {
   const myName = user?.name || "";
   const fmtDate = (d) => { if(!d) return ""; try { return new Date(d+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}); } catch { return d||""; } };
 
-  // Who a spend can be attributed to: admin can log on behalf of any
-  // staff member or themselves; staff can only log as themselves.
+  // Who a spend can be attributed to: admin can log on behalf of either
+  // staff member who actually handles the office kitty; staff can only
+  // log as themselves.
   const spendByOptions = isAdminView
-    ? [...staffList.map(u=>({name:u.name, label:u.fullName||u.name})), {name: user?.name||"admin", label:(user?.fullName||user?.name||"Admin")+" (You)"}]
+    ? staffList.map(u=>({name:u.name, label:u.fullName||u.name}))
     : [{name: myName, label: fullNameOf(myName)}];
 
   const load = React.useCallback(()=>{
