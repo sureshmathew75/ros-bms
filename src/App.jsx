@@ -11932,9 +11932,17 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
    existing data out as a grid instead of a card per item. Item name and
    Current-stock columns stay pinned (position:sticky) on the left as you
    scroll through a busy month, the same idea as Excel's freeze panes. ── */
+// A plain, storable snapshot of where a clicked cell sits on screen right
+// now — used to position a popover via document.body portal instead of
+// relative to the table cell itself (see the popover components below).
+function rectOf(el) {
+  const r = el.getBoundingClientRect();
+  return { top:r.top, bottom:r.bottom, left:r.left, right:r.right, width:r.width, height:r.height };
+}
+
 const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSelectItem, onDeleteItem, fmtDate }) => {
-  const [cellPopover, setCellPopover] = React.useState(null); // {itemId, date} | null
-  const [monthPopover, setMonthPopover] = React.useState(null); // {itemId, type:'sale'|'restock'} | null
+  const [cellPopover, setCellPopover] = React.useState(null); // {itemId, date, anchor} | null
+  const [monthPopover, setMonthPopover] = React.useState(null); // {itemId, type:'sale'|'restock', anchor} | null
   const todayStr = new Date().toISOString().slice(0,10);
 
   const [y, mo] = sheetMonth.split("-").map(Number);
@@ -12055,19 +12063,13 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                       )}
                     </div>
                   </td>
-                  <td onClick={()=> soldThisMonth>0 && setMonthPopover({ itemId:item.id, type:"sale" })}
+                  <td onClick={(e)=> soldThisMonth>0 && setMonthPopover({ itemId:item.id, type:"sale", anchor:rectOf(e.currentTarget) })}
                     style={{ ...stickyCell, left:LEFT_SOLD, zIndex:2, background:rowBg, textAlign:"center", position:"sticky", cursor: soldThisMonth>0?"pointer":"default" }}>
                     <span style={{ fontWeight:800, fontSize:13, color: soldThisMonth>0?"#b91c1c":"#cbd5e1" }}>{soldThisMonth>0?soldThisMonth:"—"}</span>
-                    {monthPopover && monthPopover.itemId===item.id && monthPopover.type==="sale" && (
-                      <MonthMovementsPopover item={item} type="sale" monthLabel={monthLabel} moves={monthMoves.filter(m=>m.type==="sale")} fmtDate={fmtDate} onClose={()=>setMonthPopover(null)} />
-                    )}
                   </td>
-                  <td onClick={()=> addedThisMonth>0 && setMonthPopover({ itemId:item.id, type:"restock" })}
+                  <td onClick={(e)=> addedThisMonth>0 && setMonthPopover({ itemId:item.id, type:"restock", anchor:rectOf(e.currentTarget) })}
                     style={{ ...stickyCell, left:LEFT_ADDED, zIndex:2, background:rowBg, textAlign:"center", position:"sticky", cursor: addedThisMonth>0?"pointer":"default" }}>
                     <span style={{ fontWeight:800, fontSize:13, color: addedThisMonth>0?"#166534":"#cbd5e1" }}>{addedThisMonth>0?addedThisMonth:"—"}</span>
-                    {monthPopover && monthPopover.itemId===item.id && monthPopover.type==="restock" && (
-                      <MonthMovementsPopover item={item} type="restock" monthLabel={monthLabel} moves={monthMoves.filter(m=>m.type==="restock")} fmtDate={fmtDate} onClose={()=>setMonthPopover(null)} />
-                    )}
                   </td>
                   <td style={{ ...stickyCell, left:LEFT_CURRENT, zIndex:2, background:rowBg, textAlign:"center" }}>
                     <span style={{
@@ -12095,7 +12097,7 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                     const isFuture = c.date > todayStr;
                     return (
                       <td key={c.date}
-                        onClick={()=> c.hasMoves && setCellPopover({ itemId:item.id, date:c.date })}
+                        onClick={(e)=> c.hasMoves && setCellPopover({ itemId:item.id, date:c.date, anchor:rectOf(e.currentTarget) })}
                         style={{
                           padding:"6px 3px", textAlign:"center", borderLeft:"1px solid #f1f5f9", borderTop:"1px solid #f1f5f9",
                           background: isFuture ? "#fbfbfb" : isToday ? (shop.accentBg||"#eef2ff") : rowBg,
@@ -12114,9 +12116,6 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                             )}
                           </div>
                         )}
-                        {cellPopover && cellPopover.itemId===item.id && cellPopover.date===c.date && (
-                          <CellMovementPopover item={item} date={c.date} movements={movementsByItem[item.id]||[]} fmtDate={fmtDate} onClose={()=>setCellPopover(null)} />
-                        )}
                       </td>
                     );
                   })}
@@ -12126,6 +12125,31 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
           </tbody>
         </table>
       </div>
+
+      {/* Both popovers render once here (not per-cell) via a portal straight
+          to document.body — position:fixed, coordinates computed from where
+          the trigger cell actually sits on screen. Rendering inside a table
+          cell risked two real problems: the table wrapper's overflow (needed
+          to keep the horizontal day-scroll working) could clip a popover
+          that opened near the bottom of the sheet, and nesting a fixed
+          overlay that deep was the cause of the earlier freeze bug. A portal
+          sidesteps both — nothing in the table can clip or misposition it. */}
+      {cellPopover && (() => {
+        const row = rows.find(r => r.item.id === cellPopover.itemId);
+        if (!row) return null;
+        return (
+          <CellMovementPopover item={row.item} date={cellPopover.date} anchor={cellPopover.anchor}
+            movements={movementsByItem[row.item.id]||[]} fmtDate={fmtDate} onClose={()=>setCellPopover(null)} />
+        );
+      })()}
+      {monthPopover && (() => {
+        const row = rows.find(r => r.item.id === monthPopover.itemId);
+        if (!row) return null;
+        return (
+          <MonthMovementsPopover item={row.item} type={monthPopover.type} anchor={monthPopover.anchor} monthLabel={monthLabel}
+            moves={row.monthMoves.filter(m=>m.type===monthPopover.type)} fmtDate={fmtDate} onClose={()=>setMonthPopover(null)} />
+        );
+      })()}
     </div>
   );
 };
@@ -12153,14 +12177,29 @@ function usePopoverOutsideClose(onClose) {
   return ref;
 }
 
-const CellMovementPopover = ({ item, date, movements, fmtDate, onClose }) => {
+// Fixed-position coordinates for a popover anchored to `anchor` (a rect
+// captured at click time — see rectOf above), clamped to stay fully
+// on-screen: opens below-left of the anchor by default, but flips above it
+// when there isn't room below, and is pulled in from the right/bottom
+// edges rather than running off them. estHeight only needs to be roughly
+// right — it decides the flip, not the final pixel position.
+function popoverFixedStyle(anchor, width, estHeight) {
+  if (!anchor) return { position:"fixed", top:80, left:80, width };
+  const vw = window.innerWidth, vh = window.innerHeight, pad = 8;
+  let left = Math.min(Math.max(anchor.left, pad), vw - width - pad);
+  let top = anchor.bottom + 6;
+  if (top + estHeight > vh - pad) top = Math.max(anchor.top - estHeight - 6, pad);
+  return { position:"fixed", top, left, width };
+}
+
+const CellMovementPopover = ({ item, date, anchor, movements, fmtDate, onClose }) => {
   const ref = usePopoverOutsideClose(onClose);
   const dayMoves = movements.filter(m => m.date === date);
-  return (
+  const style = popoverFixedStyle(anchor, 210, 44 + Math.max(dayMoves.length,1)*24);
+  return ReactDOM.createPortal(
     <div ref={ref} onClick={e=>e.stopPropagation()} style={{
-      position:"absolute", top:"calc(100% + 4px)", left:"50%", transform:"translateX(-50%)",
-      zIndex:300, background:"white", border:"1px solid #e2e8f0", borderRadius:10,
-      boxShadow:"0 10px 30px rgba(15,23,42,0.18)", padding:"10px 12px", width:210, textAlign:"left",
+      ...style, zIndex:300, background:"white", border:"1px solid #e2e8f0", borderRadius:10,
+      boxShadow:"0 10px 30px rgba(15,23,42,0.18)", padding:"10px 12px", textAlign:"left",
     }}>
       <div style={{ fontSize:11, fontWeight:800, color:"#0f172a", marginBottom:6 }}>{item.name} · {fmtDate(date)}</div>
       {dayMoves.length === 0 ? (
@@ -12178,7 +12217,8 @@ const CellMovementPopover = ({ item, date, movements, fmtDate, onClose }) => {
           </div>
         );
       })}
-    </div>
+    </div>,
+    document.body
   );
 };
 
@@ -12186,15 +12226,15 @@ const CellMovementPopover = ({ item, date, movements, fmtDate, onClose }) => {
 // behind that number (who it was sold to, or the restock note), sorted
 // oldest first. This is the "-5, click to see who" the Sold column exists
 // for.
-const MonthMovementsPopover = ({ item, type, monthLabel, moves, fmtDate, onClose }) => {
+const MonthMovementsPopover = ({ item, type, anchor, monthLabel, moves, fmtDate, onClose }) => {
   const ref = usePopoverOutsideClose(onClose);
   const sorted = [...moves].sort((a,b)=> a.date.localeCompare(b.date));
   const total = sorted.reduce((s,m)=>s+(Number(m.qty)||0),0);
-  return (
+  const style = popoverFixedStyle(anchor, 230, 56 + Math.max(sorted.length,1)*24);
+  return ReactDOM.createPortal(
     <div ref={ref} onClick={e=>e.stopPropagation()} style={{
-      position:"absolute", top:"calc(100% + 4px)", left:0,
-      zIndex:300, background:"white", border:"1px solid #e2e8f0", borderRadius:10,
-      boxShadow:"0 10px 30px rgba(15,23,42,0.18)", padding:"10px 12px", width:230, textAlign:"left",
+      ...style, zIndex:300, background:"white", border:"1px solid #e2e8f0", borderRadius:10,
+      boxShadow:"0 10px 30px rgba(15,23,42,0.18)", padding:"10px 12px", textAlign:"left",
     }}>
       <div style={{ fontSize:11, fontWeight:800, color:"#0f172a" }}>{item.name}</div>
       <div style={{ fontSize:10.5, color:"#94a3b8", marginBottom:6 }}>{type==="sale"?"Sold":"Added"} in {monthLabel} · {total} total</div>
@@ -12208,7 +12248,8 @@ const MonthMovementsPopover = ({ item, type, monthLabel, moves, fmtDate, onClose
           <span style={{ fontWeight:800, color: type==="sale"?"#991b1b":"#166534", whiteSpace:"nowrap" }}>{type==="sale"?"−":"+"}{Number(m.qty)||0}</span>
         </div>
       ))}
-    </div>
+    </div>,
+    document.body
   );
 };
 
