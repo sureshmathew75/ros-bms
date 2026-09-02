@@ -14012,7 +14012,7 @@ const PettyCashPage = ({ shopId, shop, user, users=[] }) => {
   return (
     <div style={{maxWidth:1050}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
-        <h2 style={{margin:0,fontSize:20,fontWeight:800,color:"#0f172a"}}>💵 Petty Cash — Office Kitty</h2>
+        <h2 style={{margin:0,fontSize:20,fontWeight:800,color:"#0f172a"}}>💵 Petty Cash - Office Changanacherry</h2>
       </div>
 
       {/* balance + issue + log-a-spend card — one shared float for the whole shop */}
@@ -17784,11 +17784,9 @@ const ROLE_NAV={
   admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","pettycash","inventory","dispatch"],
   // Payroll is kept admin-only (not in staff's list) — it exposes salary,
   // advances and loan balances for every staff member, not just the
-  // person viewing it. Petty Cash is admin-only for now too, while it's
-  // still being built out — PettyCashPage already supports a staff view
-  // (each entry attributed to whoever's logged in), so re-adding
-  // "pettycash" here later is all it takes to turn staff access back on.
-  staff:["sales","customers","returns","attendance","inventory","dispatch"],
+  // person viewing it. Petty Cash is different — everyone shares the one
+  // office float, so staff see and log into the same book as admin.
+  staff:["sales","customers","returns","attendance","pettycash","inventory","dispatch"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
 
