@@ -11542,6 +11542,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   const [confirmDeleteId, setConfirmDeleteId] = React.useState(null);
   const [invView, setInvView] = React.useState("items"); // "items" | "log" — list view only
   const [collapsedLogDates, setCollapsedLogDates] = React.useState({}); // date -> bool, daily-log view
+  const [sheetMonth, setSheetMonth] = React.useState(new Date().toISOString().slice(0,7)); // "YYYY-MM" shown in the Stock Sheet
 
   const load = React.useCallback(() => {
     setLoading(true);
@@ -11773,14 +11774,14 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
         </div>
       </div>
 
-      {/* ── View toggle: item grid vs. day-by-day movement log ── */}
+      {/* ── View toggle: Excel-style stock sheet vs. day-by-day movement log ── */}
       <div style={{display:"flex",gap:6,marginBottom:16}}>
         <button onClick={()=>setInvView("items")}
           style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
             border:"1px solid "+(invView==="items"?shop.accent:"#e2e8f0"),
             background:invView==="items"?shop.accent:"white",
             color:invView==="items"?"white":"#64748b"}}>
-          📦 Items
+          📊 Stock Sheet
         </button>
         <button onClick={()=>setInvView("log")}
           style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
@@ -11797,33 +11798,17 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           No inventory items yet. {isAdmin ? 'Click "+ Add Item" to start tracking your first stocked product.' : "Check back once your admin has added tracked items."}
         </div>
       ) : (
-        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(240px,1fr))",gap:14}}>
-          {items.map(item => (
-            <div key={item.id} onClick={()=>setSelectedItemId(item.id)}
-              style={{padding:"16px 18px",borderRadius:14,border:"1px solid #e2e8f0",background:"white",cursor:"pointer",position:"relative"}}>
-              {isAdmin && (
-                <button onClick={(e)=>{e.stopPropagation();setConfirmDeleteId(item.id);}}
-                  title="Delete this item"
-                  style={{position:"absolute",top:10,right:10,border:"none",background:"transparent",color:"#cbd5e1",cursor:"pointer",fontSize:13}}>
-                  ✕
-                </button>
-              )}
-              <div style={{fontSize:14,fontWeight:700,color:"#0f172a",marginBottom:10,paddingRight:16}}>{item.name}</div>
-              <div style={{display:"inline-block",padding:"5px 12px",borderRadius:999,background:stockBg(item.currentStock),color:stockColor(item.currentStock),fontWeight:900,fontSize:18}}>
-                {item.currentStock}
-              </div>
-              <div style={{fontSize:10.5,color:"#94a3b8",marginTop:6,marginBottom:12}}>in stock · {item.totalStocked - item.currentStock} sold total</div>
-              {/* Log a sale right from the card — no need to open the item
-                  first. Staff and admin both get this; it's the everyday
-                  action here, unlike Restock/Correct which stay one click
-                  further in, inside the item's own page. */}
-              <button onClick={(e)=>{e.stopPropagation();setSoldFor({id:item.id,name:item.name});}}
-                style={{width:"100%",padding:"7px 0",borderRadius:8,border:"1.5px solid #fca5a5",background:"#fef2f2",color:"#b91c1c",fontWeight:700,fontSize:11.5,cursor:"pointer",fontFamily:"inherit"}}>
-                − Log Sale
-              </button>
-            </div>
-          ))}
-        </div>
+        <StockSheetView
+          items={items}
+          movements={movements}
+          shop={shop}
+          sheetMonth={sheetMonth}
+          setSheetMonth={setSheetMonth}
+          onLogSale={(item)=>setSoldFor({id:item.id,name:item.name})}
+          onSelectItem={(id)=>setSelectedItemId(id)}
+          onDeleteItem={isAdmin ? (id)=>setConfirmDeleteId(id) : null}
+          fmtDate={fmtDate}
+        />
       )
       ) : (
         /* ── Daily Log — every stock change across every item, grouped by
@@ -11929,6 +11914,239 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
     </div>
   );
 };
+
+/* ── StockSheetView: the "Excel sheet" — one row per tracked item, one
+   column per day of the chosen month, each cell showing that item's stock
+   as it stood at the END of that day. Replays the same movement ledger the
+   item's own History already uses (sum of every restock/sale/correction
+   dated on or before that day) — nothing new is stored, this just lays the
+   existing data out as a grid instead of a card per item. Item name and
+   Current-stock columns stay pinned (position:sticky) on the left as you
+   scroll through a busy month, the same idea as Excel's freeze panes. ── */
+const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onSelectItem, onDeleteItem, fmtDate }) => {
+  const [cellPopover, setCellPopover] = React.useState(null); // {itemId, date} | null
+  const todayStr = new Date().toISOString().slice(0,10);
+
+  const [y, mo] = sheetMonth.split("-").map(Number);
+  const daysInMonth = new Date(y, mo, 0).getDate();
+  const days = Array.from({ length: daysInMonth }, (_, i) => `${y}-${String(mo).padStart(2,"0")}-${String(i+1).padStart(2,"0")}`);
+  const monthLabel = new Date(y, mo-1, 1).toLocaleDateString("en-GB", { month: "long", year: "numeric" });
+  const atCurrentMonthOrLater = sheetMonth >= todayStr.slice(0,7);
+
+  const shiftMonth = (offset) => {
+    const d = new Date(y, mo - 1 + offset, 1);
+    setSheetMonth(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`);
+  };
+
+  const movementsByItem = React.useMemo(() => {
+    const byItem = {};
+    movements.forEach(m => { (byItem[m.itemId] ||= []).push(m); });
+    return byItem;
+  }, [movements]);
+
+  // For every item, replay its ledger day by day across the visible month:
+  // `value` = running stock at the end of that day (null = before the item
+  // existed yet — shown as a dash, never a false zero); `delta` = that
+  // day's own net change, which is what puts the red ▼ / green ▲ tag on a
+  // cell so a dip from a sale (or a jump from a restock) is impossible to
+  // miss when scanning across a row.
+  const rows = React.useMemo(() => {
+    return items.map(item => {
+      const itemMoves = movementsByItem[item.id] || [];
+      const netByDate = {};
+      itemMoves.forEach(m => {
+        const delta = m.type === "restock" ? (Number(m.qty)||0) : m.type === "correction" ? (Number(m.qty)||0) : -(Number(m.qty)||0);
+        netByDate[m.date] = (netByDate[m.date] || 0) + delta;
+      });
+      const sortedDates = Object.keys(netByDate).sort();
+      let running = 0;
+      const cumByDate = {};
+      sortedDates.forEach(d => { running += netByDate[d]; cumByDate[d] = running; });
+      let idx = 0, lastVal = null;
+      const cells = days.map(d => {
+        while (idx < sortedDates.length && sortedDates[idx] <= d) { lastVal = cumByDate[sortedDates[idx]]; idx++; }
+        return { date: d, value: lastVal, delta: netByDate[d] || 0 };
+      });
+      return { item, cells };
+    });
+  }, [items, movementsByItem, days.join(",")]);
+
+  const pillBtn = { padding:"7px 12px", borderRadius:8, border:"1px solid #e2e8f0", background:"white", color:"#475569", fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit" };
+  const stickyHead = { position:"sticky", top:0, padding:"9px 10px", textAlign:"left", fontWeight:800, fontSize:10.5, color:"#475569", textTransform:"uppercase", letterSpacing:"0.03em", background:"#f8fafc", borderBottom:"1px solid #e2e8f0" };
+  const stickyCell = { position:"sticky", padding:"8px 10px", borderBottom:"1px solid #f1f5f9", borderTop:"1px solid transparent" };
+
+  return (
+    <div>
+      <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", flexWrap:"wrap", gap:10, marginBottom:12 }}>
+        <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+          <button onClick={()=>shiftMonth(-1)} style={pillBtn}>←</button>
+          <div style={{ fontSize:14, fontWeight:800, color:"#0f172a", minWidth:150, textAlign:"center" }}>{monthLabel}</div>
+          <button onClick={()=>!atCurrentMonthOrLater && shiftMonth(1)} disabled={atCurrentMonthOrLater}
+            style={{ ...pillBtn, opacity: atCurrentMonthOrLater?0.4:1, cursor: atCurrentMonthOrLater?"not-allowed":"pointer" }}>→</button>
+          <button onClick={()=>setSheetMonth(todayStr.slice(0,7))} style={pillBtn}>This Month</button>
+        </div>
+        <button onClick={()=>printStockSheet(rows, monthLabel, shop)}
+          style={{ padding:"8px 14px", borderRadius:10, border:"1px solid #e2e8f0", background:"white", color:"#334155", fontWeight:700, fontSize:12.5, cursor:"pointer", fontFamily:"inherit" }}>
+          🖨️ Print / Export PDF
+        </button>
+      </div>
+
+      <div style={{ fontSize:11, color:"#94a3b8", marginBottom:10 }}>
+        Each cell is that item's stock at the end of the day · <span style={{color:"#166534",fontWeight:700}}>▲ restock</span> · <span style={{color:"#dc2626",fontWeight:700}}>▼ sold</span> · click a tagged cell for details
+      </div>
+
+      <div style={{ overflowX:"auto", border:"1px solid #e2e8f0", borderRadius:12 }}>
+        <table style={{ borderCollapse:"collapse", fontSize:12, width:"max-content" }}>
+          <thead>
+            <tr>
+              <th style={{ ...stickyHead, left:0, zIndex:4, minWidth:170 }}>Item</th>
+              <th style={{ ...stickyHead, left:170, zIndex:4, minWidth:64, textAlign:"center" }}>Current</th>
+              {days.map(d => {
+                const dayNum = Number(d.slice(-2));
+                const isToday = d === todayStr;
+                const dow = new Date(y, mo-1, dayNum).getDay();
+                const isWeekend = dow === 0 || dow === 6;
+                return (
+                  <th key={d} style={{
+                    padding:"9px 4px", textAlign:"center", fontWeight:800, fontSize:10.5, minWidth:36,
+                    color: isToday ? "white" : "#64748b",
+                    background: isToday ? (shop.accent||"#0f172a") : isWeekend ? "#f8fafc" : "white",
+                    borderBottom:"1px solid #e2e8f0", borderLeft:"1px solid #f1f5f9",
+                  }}>{dayNum}</th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(({ item, cells }, ridx) => {
+              const rowBg = ridx % 2 ? "#fdfbf3" : "white";
+              return (
+                <tr key={item.id}>
+                  <td onClick={()=>onSelectItem(item.id)}
+                    style={{ ...stickyCell, left:0, zIndex:2, background:rowBg, cursor:"pointer" }}>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:6 }}>
+                      <span style={{ fontWeight:700, color:"#0f172a", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:100 }}>{item.name}</span>
+                      <div style={{ display:"flex", alignItems:"center", gap:4, flexShrink:0 }}>
+                        <button onClick={(e)=>{e.stopPropagation();onLogSale(item);}} title="Log a sale"
+                          style={{ border:"none", borderRadius:6, padding:"3px 6px", fontSize:9.5, fontWeight:800, cursor:"pointer", background:"#fef2f2", color:"#b91c1c", fontFamily:"inherit" }}>
+                          − Sale
+                        </button>
+                        {onDeleteItem && (
+                          <button onClick={(e)=>{e.stopPropagation();onDeleteItem(item.id);}} title="Delete this item"
+                            style={{ border:"none", background:"transparent", color:"#cbd5e1", cursor:"pointer", fontSize:12 }}>✕</button>
+                        )}
+                      </div>
+                    </div>
+                  </td>
+                  <td style={{ ...stickyCell, left:170, zIndex:2, background:rowBg, textAlign:"center" }}>
+                    <span style={{ fontWeight:900, color: item.currentStock<=0?"#dc2626":item.currentStock<=2?"#d97706":"#166534" }}>{item.currentStock}</span>
+                  </td>
+                  {cells.map(c => {
+                    const isToday = c.date === todayStr;
+                    return (
+                      <td key={c.date}
+                        onClick={()=> c.delta !== 0 && setCellPopover({ itemId:item.id, date:c.date })}
+                        style={{
+                          padding:"6px 3px", textAlign:"center", borderLeft:"1px solid #f1f5f9", borderTop:"1px solid #f1f5f9",
+                          background: isToday ? (shop.accentBg||"#eef2ff") : rowBg,
+                          cursor: c.delta !== 0 ? "pointer" : "default", position:"relative",
+                        }}>
+                        {c.value === null ? (
+                          <span style={{ color:"#cbd5e1" }}>—</span>
+                        ) : (
+                          <div>
+                            <div style={{ fontWeight:700, color: c.value<=0?"#dc2626":c.value<=2?"#d97706":"#334155" }}>{c.value}</div>
+                            {c.delta !== 0 && (
+                              <div style={{ fontSize:8.5, fontWeight:800, color: c.delta>0?"#166534":"#dc2626", marginTop:1 }}>
+                                {c.delta>0?"▲":"▼"}{Math.abs(c.delta)}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        {cellPopover && cellPopover.itemId===item.id && cellPopover.date===c.date && (
+                          <CellMovementPopover item={item} date={c.date} movements={movementsByItem[item.id]||[]} fmtDate={fmtDate} onClose={()=>setCellPopover(null)} />
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+// Small popover for a tagged cell — exactly which movement(s) caused that
+// day's change (who bought it, note), so "which day it dropped" is one
+// click from "why it dropped". A fixed full-screen catcher behind it closes
+// on any outside click, same pattern used by other popovers in this app.
+const CellMovementPopover = ({ item, date, movements, fmtDate, onClose }) => {
+  const dayMoves = movements.filter(m => m.date === date);
+  return (
+    <>
+      <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:290 }} />
+      <div onClick={e=>e.stopPropagation()} style={{
+        position:"absolute", top:"calc(100% + 4px)", left:"50%", transform:"translateX(-50%)",
+        zIndex:300, background:"white", border:"1px solid #e2e8f0", borderRadius:10,
+        boxShadow:"0 10px 30px rgba(15,23,42,0.18)", padding:"10px 12px", width:210, textAlign:"left",
+      }}>
+        <div style={{ fontSize:11, fontWeight:800, color:"#0f172a", marginBottom:6 }}>{item.name} · {fmtDate(date)}</div>
+        {dayMoves.length === 0 ? (
+          <div style={{ fontSize:11, color:"#94a3b8" }}>No movement logged this day.</div>
+        ) : dayMoves.map(m => {
+          const isCorrection = m.type === "correction";
+          const signedQty = isCorrection ? (Number(m.qty)||0) : (m.type==="restock" ? (Number(m.qty)||0) : -(Number(m.qty)||0));
+          return (
+            <div key={m.id} style={{ display:"flex", justifyContent:"space-between", gap:8, fontSize:11, padding:"4px 0", borderTop:"1px solid #f1f5f9" }}>
+              <span style={{ color:"#475569" }}>
+                {m.type==="restock"?"🟢 Restocked":isCorrection?"⚖️ Corrected":"🔴 Sold"}
+                {m.customer ? " — "+m.customer : ""}
+              </span>
+              <span style={{ fontWeight:800, color: signedQty>0?"#166534":"#991b1b", whiteSpace:"nowrap" }}>{signedQty>0?"+":""}{signedQty}</span>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+};
+
+// Print/export — a clean printable table of the sheet currently on screen
+// (the same rows/cells already computed for the grid). "Save as PDF" from
+// the browser's print dialog is the PDF export — same mechanism the
+// Despatch Log's own print button already uses elsewhere in this app.
+function printStockSheet(rows, monthLabel, shop) {
+  const w = window.open("", "_blank");
+  if (!w) return;
+  const days = rows[0]?.cells.map(c => c.date) || [];
+  const headerCells = days.map(d => `<th>${Number(d.slice(-2))}</th>`).join("");
+  const bodyRows = rows.map(({ item, cells }) => {
+    const tds = cells.map(c => {
+      const val = c.value === null ? "—" : c.value;
+      const tag = c.delta ? (c.delta > 0 ? ` <span style="color:#166534">+${c.delta}</span>` : ` <span style="color:#991b1b">${c.delta}</span>`) : "";
+      return `<td>${val}${tag}</td>`;
+    }).join("");
+    return `<tr><td style="text-align:left;font-weight:700">${item.name}</td><td style="font-weight:800">${item.currentStock}</td>${tds}</tr>`;
+  }).join("");
+  w.document.write(`<!DOCTYPE html><html><head><title>Stock Sheet — ${monthLabel}</title>
+    <style>
+      body{font-family:Arial,sans-serif;padding:24px;color:#0f172a;}
+      h1{font-size:18px;margin-bottom:4px;} p{color:#64748b;font-size:12px;margin-top:0 0 14px;}
+      table{width:100%;border-collapse:collapse;font-size:10.5px;}
+      th,td{border:1px solid #e2e8f0;padding:5px 6px;text-align:center;white-space:nowrap;}
+      th{background:#f8fafc;font-size:10px;}
+      td:first-child, th:first-child{text-align:left;}
+    </style></head><body>
+    <h1>📦 Stock Sheet${shop?.name?" — "+shop.name:""}</h1>
+    <p>${monthLabel} · stock level at the end of each day</p>
+    <table><thead><tr><th>Item</th><th>Current</th>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table>
+    </body></html>`);
+  w.document.close();
+  setTimeout(() => w.print(), 300);
+}
 
 const AddInventoryItemModal = ({ onClose, onSave }) => {
   const [name, setName] = React.useState("");
