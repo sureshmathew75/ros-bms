@@ -13704,19 +13704,33 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
         }
         const fyRecords = fyMonths.map(fm => payrollRecords.find(p=>p.staffName===selectedStaff && p.month===fm.key));
         const fyBonusRecords = fyMonths.map(fm => bonusRecords.find(b=>b.staffName===selectedStaff && b.month===fm.key));
+        // Advances/loans are real cash handed to the staff member on the
+        // day they're given — that event never shows up in payroll records
+        // (it's only ever felt later, as a smaller Net Pay when it's
+        // recovered). To know exactly how much was actually paid, each
+        // disbursement has to be counted in the month it happened.
+        const fyAdvancesGiven = fyMonths.map(fm => advances.filter(a=>a.staffName===selectedStaff && (a.dateGiven||"").slice(0,7)===fm.key).reduce((s,a)=>s+Number(a.amount||0),0));
+        const fyLoansGiven = fyMonths.map(fm => loans.filter(l=>l.staffName===selectedStaff && (l.startDate||"").slice(0,7)===fm.key).reduce((s,l)=>s+Number(l.principal||0),0));
         const totals = fyRecords.reduce((a,r,i)=>{
           if(r){
             const b = r.breakdown||{};
             a.basic += Number(b.basicSalary||0);
             a.travel += Number(b.travelAllowance||0);
             a.bonus += Number(b.bonusAmount||0);
-            a.deductions += Number(b.absenceDeduction||0)+Number(b.advanceDeduction||0)+Number(b.loanDeduction||0)+Number(b.carryForwardApplied||0);
+            a.absenceDeduction += Number(b.absenceDeduction||0);
+            a.recoveries += Number(b.advanceDeduction||0)+Number(b.loanDeduction||0)+Number(b.carryForwardApplied||0);
             a.net += Number(r.netPay||0);
           }
           const br = fyBonusRecords[i];
           if(br) a.salesBonus += Number(br.amount||0);
+          a.advanceGiven += fyAdvancesGiven[i];
+          a.loanGiven += fyLoansGiven[i];
           return a;
-        }, {basic:0, travel:0, bonus:0, salesBonus:0, deductions:0, net:0});
+        }, {basic:0, travel:0, bonus:0, salesBonus:0, absenceDeduction:0, recoveries:0, net:0, advanceGiven:0, loanGiven:0});
+        // The headline figure: every rupee that actually left the till for
+        // this person this FY — payroll net pay plus whatever cash went
+        // out as advances/loans, wherever in the year it happened.
+        totals.totalPaid = totals.net + totals.advanceGiven + totals.loanGiven;
         const anyMissing = fyRecords.some(r=>!r);
         return (
           <div>
@@ -13728,7 +13742,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
             </div>
             {anyMissing && (
               <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"10px 14px",marginBottom:16,fontSize:12,color:"#92400e"}}>
-                ⚠️ Not every month in this financial year has a generated payslip yet — totals below only include months that were generated.
+                ⚠️ Not every month in this financial year has a generated payslip yet — totals below only include months that were generated (advances/loans given in a month with no payslip are still counted).
               </div>
             )}
             <div id="annual-summary-content" style={{maxWidth:794,margin:"0 auto",padding:"40px 48px",fontFamily:"Arial,sans-serif",fontSize:12.5,color:"#0f172a",background:"white",border:"1px solid #e2e8f0"}}>
@@ -13743,11 +13757,24 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
               <div style={{marginBottom:16}}>
                 <span style={{fontWeight:700,fontSize:14}}>{staffFullName}</span> · <span style={{color:"#64748b"}}>{shop.name}</span>
               </div>
+
+              {/* headline — the actual answer to "how much did we pay this
+                  person", not just the payroll formula's output */}
+              <div style={{background:"#ecfdf5",border:"1px solid #a7f3d0",borderRadius:10,padding:"14px 16px",marginBottom:18}}>
+                <div style={{fontSize:10,fontWeight:800,color:"#166534",textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Total Paid to {staffFullName} — FY {fyStartYear}–{fyStartYear+1}</div>
+                <div style={{fontSize:24,fontWeight:900,color:"#166534",letterSpacing:"-0.02em",marginBottom:4}}>{shop.symbol}{totals.totalPaid.toLocaleString()}</div>
+                <div style={{fontSize:11,color:"#166534"}}>
+                  {shop.symbol}{totals.net.toLocaleString()} via monthly payroll
+                  {totals.advanceGiven>0 && <> + {shop.symbol}{totals.advanceGiven.toLocaleString()} in advances given</>}
+                  {totals.loanGiven>0 && <> + {shop.symbol}{totals.loanGiven.toLocaleString()} in loan amounts disbursed</>}
+                </div>
+              </div>
+
               <table style={{width:"100%",borderCollapse:"collapse",marginBottom:18}}>
                 <thead>
                   <tr style={{background:"#0f172a",color:"white"}}>
-                    {["MONTH","BASIC","TRAVEL ALLOW.","BONUS","SALES BONUS","DEDUCTIONS","NET PAY"].map(h=>(
-                      <th key={h} style={{padding:"8px 10px",textAlign:h==="MONTH"?"left":"right",fontSize:10,fontWeight:800,letterSpacing:"0.05em"}}>{h}</th>
+                    {["MONTH","BASIC","TRAVEL ALLOW.","BONUS","SALES BONUS","ABSENCE DED.","RECOVERIES","NET PAY","ADVANCE GIVEN","LOAN GIVEN","TOTAL PAID"].map(h=>(
+                      <th key={h} style={{padding:"7px 6px",textAlign:h==="MONTH"?"left":"right",fontSize:8.5,fontWeight:800,letterSpacing:"0.03em"}}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -13756,32 +13783,46 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
                     const r = fyRecords[i];
                     const b = r?.breakdown || {};
                     const br = fyBonusRecords[i];
-                    const ded = r ? Number(b.absenceDeduction||0)+Number(b.advanceDeduction||0)+Number(b.loanDeduction||0)+Number(b.carryForwardApplied||0) : 0;
+                    const absDed = r ? Number(b.absenceDeduction||0) : 0;
+                    const recov = r ? Number(b.advanceDeduction||0)+Number(b.loanDeduction||0)+Number(b.carryForwardApplied||0) : 0;
+                    const advGiven = fyAdvancesGiven[i];
+                    const loanGiven = fyLoansGiven[i];
+                    const monthTotalPaid = (r?Number(r.netPay||0):0) + advGiven + loanGiven;
+                    const showTotalPaid = !!r || advGiven>0 || loanGiven>0;
                     return (
                       <tr key={fm.key} style={{borderBottom:"1px solid #e2e8f0"}}>
-                        <td style={{padding:"7px 10px"}}>{PAYROLL_MONTH_NAMES[fm.month-1]} {fm.year}</td>
-                        <td style={{padding:"7px 10px",textAlign:"right",color:r?"#0f172a":"#cbd5e1"}}>{r?`${shop.symbol}${Number(b.basicSalary||0).toLocaleString()}`:"—"}</td>
-                        <td style={{padding:"7px 10px",textAlign:"right",color:r?"#0f172a":"#cbd5e1"}}>{r?`${shop.symbol}${Number(b.travelAllowance||0).toLocaleString()}`:"—"}</td>
-                        <td style={{padding:"7px 10px",textAlign:"right",color:r&&(b.bonusAmount||0)>0?"#16a34a":"#cbd5e1"}}>{r&&(b.bonusAmount||0)>0?`${shop.symbol}${Number(b.bonusAmount||0).toLocaleString()}`:"—"}</td>
-                        <td style={{padding:"7px 10px",textAlign:"right",color:br?"#16a34a":"#cbd5e1"}}>{br?`${shop.symbol}${Number(br.amount||0).toLocaleString()}`:"—"}</td>
-                        <td style={{padding:"7px 10px",textAlign:"right",color:r?"#dc2626":"#cbd5e1"}}>{r?`${shop.symbol}${ded.toLocaleString()}`:"—"}</td>
-                        <td style={{padding:"7px 10px",textAlign:"right",fontWeight:700,color:r?(Number(r.netPay||0)<0?"#dc2626":"#0f172a"):"#cbd5e1"}}>{r?`${shop.symbol}${Number(r.netPay||0).toLocaleString()}`:"—"}</td>
+                        <td style={{padding:"6px 6px",fontSize:11}}>{PAYROLL_MONTH_NAMES[fm.month-1]} {fm.year}</td>
+                        <td style={{padding:"6px 6px",textAlign:"right",fontSize:11,color:r?"#0f172a":"#cbd5e1"}}>{r?`${shop.symbol}${Number(b.basicSalary||0).toLocaleString()}`:"—"}</td>
+                        <td style={{padding:"6px 6px",textAlign:"right",fontSize:11,color:r?"#0f172a":"#cbd5e1"}}>{r?`${shop.symbol}${Number(b.travelAllowance||0).toLocaleString()}`:"—"}</td>
+                        <td style={{padding:"6px 6px",textAlign:"right",fontSize:11,color:r&&(b.bonusAmount||0)>0?"#16a34a":"#cbd5e1"}}>{r&&(b.bonusAmount||0)>0?`${shop.symbol}${Number(b.bonusAmount||0).toLocaleString()}`:"—"}</td>
+                        <td style={{padding:"6px 6px",textAlign:"right",fontSize:11,color:br?"#16a34a":"#cbd5e1"}}>{br?`${shop.symbol}${Number(br.amount||0).toLocaleString()}`:"—"}</td>
+                        <td style={{padding:"6px 6px",textAlign:"right",fontSize:11,color:absDed>0?"#dc2626":"#cbd5e1"}}>{absDed>0?`${shop.symbol}${absDed.toLocaleString()}`:"—"}</td>
+                        <td style={{padding:"6px 6px",textAlign:"right",fontSize:11,color:recov>0?"#b45309":"#cbd5e1"}}>{recov>0?`${shop.symbol}${recov.toLocaleString()}`:"—"}</td>
+                        <td style={{padding:"6px 6px",textAlign:"right",fontSize:11,fontWeight:700,color:r?(Number(r.netPay||0)<0?"#dc2626":"#0f172a"):"#cbd5e1"}}>{r?`${shop.symbol}${Number(r.netPay||0).toLocaleString()}`:"—"}</td>
+                        <td style={{padding:"6px 6px",textAlign:"right",fontSize:11,color:advGiven>0?"#0f172a":"#cbd5e1"}}>{advGiven>0?`${shop.symbol}${advGiven.toLocaleString()}`:"—"}</td>
+                        <td style={{padding:"6px 6px",textAlign:"right",fontSize:11,color:loanGiven>0?"#0f172a":"#cbd5e1"}}>{loanGiven>0?`${shop.symbol}${loanGiven.toLocaleString()}`:"—"}</td>
+                        <td style={{padding:"6px 6px",textAlign:"right",fontSize:11,fontWeight:800,background:"#ecfdf5",color:showTotalPaid?"#166534":"#cbd5e1"}}>{showTotalPaid?`${shop.symbol}${monthTotalPaid.toLocaleString()}`:"—"}</td>
                       </tr>
                     );
                   })}
                 </tbody>
                 <tfoot>
                   <tr style={{borderTop:"2px solid #0f172a"}}>
-                    <td style={{padding:"9px 10px",fontWeight:800}}>TOTAL</td>
-                    <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800}}>{shop.symbol}{totals.basic.toLocaleString()}</td>
-                    <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800}}>{shop.symbol}{totals.travel.toLocaleString()}</td>
-                    <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800,color:"#16a34a"}}>{shop.symbol}{totals.bonus.toLocaleString()}</td>
-                    <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800,color:"#16a34a"}}>{shop.symbol}{totals.salesBonus.toLocaleString()}</td>
-                    <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800,color:"#dc2626"}}>{shop.symbol}{totals.deductions.toLocaleString()}</td>
-                    <td style={{padding:"9px 10px",textAlign:"right",fontWeight:900,color:totals.net<0?"#dc2626":shop.accent,fontSize:14}}>{shop.symbol}{totals.net.toLocaleString()}</td>
+                    <td style={{padding:"8px 6px",fontWeight:800,fontSize:11}}>TOTAL</td>
+                    <td style={{padding:"8px 6px",textAlign:"right",fontWeight:800,fontSize:11}}>{shop.symbol}{totals.basic.toLocaleString()}</td>
+                    <td style={{padding:"8px 6px",textAlign:"right",fontWeight:800,fontSize:11}}>{shop.symbol}{totals.travel.toLocaleString()}</td>
+                    <td style={{padding:"8px 6px",textAlign:"right",fontWeight:800,fontSize:11,color:"#16a34a"}}>{shop.symbol}{totals.bonus.toLocaleString()}</td>
+                    <td style={{padding:"8px 6px",textAlign:"right",fontWeight:800,fontSize:11,color:"#16a34a"}}>{shop.symbol}{totals.salesBonus.toLocaleString()}</td>
+                    <td style={{padding:"8px 6px",textAlign:"right",fontWeight:800,fontSize:11,color:"#dc2626"}}>{shop.symbol}{totals.absenceDeduction.toLocaleString()}</td>
+                    <td style={{padding:"8px 6px",textAlign:"right",fontWeight:800,fontSize:11,color:"#b45309"}}>{shop.symbol}{totals.recoveries.toLocaleString()}</td>
+                    <td style={{padding:"8px 6px",textAlign:"right",fontWeight:900,fontSize:12,color:totals.net<0?"#dc2626":shop.accent}}>{shop.symbol}{totals.net.toLocaleString()}</td>
+                    <td style={{padding:"8px 6px",textAlign:"right",fontWeight:800,fontSize:11}}>{shop.symbol}{totals.advanceGiven.toLocaleString()}</td>
+                    <td style={{padding:"8px 6px",textAlign:"right",fontWeight:800,fontSize:11}}>{shop.symbol}{totals.loanGiven.toLocaleString()}</td>
+                    <td style={{padding:"8px 6px",textAlign:"right",fontWeight:900,fontSize:12.5,background:"#ecfdf5",color:"#166534"}}>{shop.symbol}{totals.totalPaid.toLocaleString()}</td>
                   </tr>
                 </tfoot>
               </table>
+              <p style={{margin:"0 0 4px",fontSize:9.5,color:"#94a3b8"}}><b>Absence Ded.</b> = unpaid days (a true deduction). <b>Recoveries</b> = advance/loan/carry-forward repayment — money already paid earlier, not a loss. <b>Advance/Loan Given</b> = cash actually disbursed that month, separate from payroll.</p>
               <p style={{margin:0,fontSize:10,color:"#94a3b8"}}>This is an internal annual pay record for {selectedStaff}'s own reference, generated by {shop.name}. It is not a statutory tax document.</p>
             </div>
             <div style={{display:"flex",justifyContent:"center",marginTop:16}}>
