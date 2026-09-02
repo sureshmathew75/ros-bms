@@ -322,6 +322,13 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
   // that default is what you get again on the next page load/refresh —
   // collapse state is intentionally not persisted.
   const [collapsedDates, setCollapsedDates] = useState({});
+  // Log-view row compactness: the Address cell shows just its first line
+  // by default (click to expand) and Remarks lives behind a small icon
+  // instead of an always-visible input — both purely to keep the table
+  // narrow enough to fit without a horizontal scrollbar. Neither changes
+  // any stored data, just how much of it is shown at once.
+  const [expandedAddresses, setExpandedAddresses] = useState({}); // uuid -> true when address is expanded
+  const [openRemarksUuid, setOpenRemarksUuid] = useState(null); // uuid of the row whose remarks field is open, if any
   // Keys (see despatchKeyOf) currently in the middle of being written to
   // the despatch log by the auto-add effect below. React state only
   // reflects a new row once its insert has actually returned, so if the
@@ -1016,17 +1023,17 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
             </div>
             {!isCollapsed && (
             <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderTop: "none", borderRadius: "0 0 12px 12px" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 920, fontSize: 12.5 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 680, fontSize: 12.5 }}>
                 <thead>
                   <tr style={{ background: "#f8fafc" }}>
-                    {["#", "Customer", "Address", "Phone", "Tracking No.", "Shipper", "Notify", "Remarks", ""].map(h => (
+                    {["#", "Customer", "Address", "Tracking No.", "Shipper", ""].map(h => (
                       <th key={h} style={{ textAlign: "left", padding: "10px 12px", fontWeight: 800, color: "#475569", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {dayList.length === 0 ? (
-                    <tr><td colSpan={9} style={{ padding: 18, textAlign: "center", color: "#94a3b8" }}>Nothing despatched this day.</td></tr>
+                    <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: "#94a3b8" }}>Nothing despatched this day.</td></tr>
                   ) : dayList.map((e, idx) => {
                     const dupKey = (e.trackingNo || "").replace(/\s+/g, "").toUpperCase();
                     const isDup = dupKey && (trackingIndex[dupKey] || []).length > 1;
@@ -1036,14 +1043,22 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
                     const rowGroupKey = linkedSaleForRow ? despatchKeyOf(linkedSaleForRow) : (e.saleId || e.uuid);
                     const rowGroupCount = (groupMembers[rowGroupKey] || []).length;
                     const isSameCustomerDup = dupCustomerGroupKeys.has(rowGroupKey);
+                    const fullAddress = liveAddressFor(e);
+                    const addressFirstLine = fullAddress.split("\n")[0] || "";
+                    const addressHasMore = fullAddress.length > addressFirstLine.length;
+                    const isAddressExpanded = !!expandedAddresses[e.uuid];
+                    const phone = livePhoneFor(e);
                     return (
                       <tr key={e.uuid} style={{ borderBottom: "1px solid #f1f5f9", background: idx % 2 ? "#fdfbf3" : "white" }}>
                         <td style={{ padding: "8px 12px", color: "#94a3b8", fontWeight: 700, verticalAlign: "top" }}>{idx + 1}</td>
-                        <td style={{ padding: "8px 12px", fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap", verticalAlign: "top" }}>
-                          {e.customer || "—"}
+                        <td style={{ padding: "8px 12px", minWidth: 130, maxWidth: 170, verticalAlign: "top" }}>
+                          {/* Phone lives on the Sales page only — shown here read-only,
+                              stacked under the name instead of its own column. */}
+                          <div style={{ fontWeight: 700, color: "#0f172a", fontSize: 12.5, lineHeight: 1.3 }}>{e.customer || "—"}</div>
+                          <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>{phone || "—"}</div>
                           {rowGroupCount > 1 && (
                             <span title="This row covers several linked sale transactions (e.g. Advance + Final) for one parcel — entering tracking here fulfils all of them."
-                              style={{ marginLeft: 6, fontSize: 9.5, fontWeight: 800, color: "#4338ca", background: "#e0e7ff", borderRadius: 999, padding: "1px 6px", whiteSpace: "nowrap" }}>
+                              style={{ display: "inline-block", marginTop: 3, fontSize: 9.5, fontWeight: 800, color: "#4338ca", background: "#e0e7ff", borderRadius: 999, padding: "1px 6px", whiteSpace: "nowrap" }}>
                               🔗 {rowGroupCount} linked
                             </span>
                           )}
@@ -1054,39 +1069,43 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
                             </div>
                           )}
                         </td>
-                        <td style={{ padding: "8px 12px", minWidth: 180, verticalAlign: "top" }}>
+                        <td style={{ padding: "8px 12px", minWidth: 150, maxWidth: 220, verticalAlign: "top" }}>
                           {/* Read-only — address is entered/edited on the Sales page only;
-                              this always shows that sale's current address live. */}
-                          <div style={{
-                            minHeight: 92, padding: "6px 8px", borderRadius: 7,
-                            border: "1px solid #e2e8f0", background: "#f8fafc",
-                            fontSize: 12, color: "#374151", whiteSpace: "pre-wrap", lineHeight: 1.4,
-                          }}>
-                            {liveAddressFor(e) || (
-                              <span style={{ color: "#94a3b8", fontStyle: "italic" }}>No address on file — set it on the Sales page</span>
-                            )}
-                          </div>
+                              this always shows that sale's current address live. Collapsed to
+                              its first line by default (click to expand/collapse) to keep the
+                              row compact — the full address is one click away, and always
+                              visible in full on the printout / WhatsApp sheet. */}
+                          {fullAddress ? (
+                            <div onClick={() => addressHasMore && setExpandedAddresses(p => ({ ...p, [e.uuid]: !p[e.uuid] }))}
+                              title={addressHasMore ? (isAddressExpanded ? "Click to collapse" : "Click to see full address") : undefined}
+                              style={{
+                                padding: "6px 8px", borderRadius: 7,
+                                border: "1px solid #e2e8f0", background: "#f8fafc",
+                                fontSize: 12, color: "#374151", lineHeight: 1.4,
+                                cursor: addressHasMore ? "pointer" : "default",
+                                whiteSpace: isAddressExpanded ? "pre-wrap" : "nowrap",
+                                overflow: isAddressExpanded ? "visible" : "hidden",
+                                textOverflow: "ellipsis",
+                              }}>
+                              {isAddressExpanded ? fullAddress : addressFirstLine}
+                              {addressHasMore && (
+                                <span style={{ marginLeft: 6, fontSize: 9.5, fontWeight: 800, color: "#6366f1", whiteSpace: "nowrap" }}>
+                                  {isAddressExpanded ? "▲ less" : "▼ more"}
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            <span style={{ color: "#94a3b8", fontStyle: "italic", fontSize: 12 }}>No address — set it on Sales page</span>
+                          )}
                         </td>
-                        <td style={{ padding: "8px 12px", minWidth: 120, verticalAlign: "top" }}>
-                          {/* Read-only — phone is entered/edited on the Sales page only;
-                              this always shows that sale's current number live. */}
-                          <div style={{
-                            padding: "6px 8px", borderRadius: 7, border: "1px solid #e2e8f0",
-                            background: "#f8fafc", fontSize: 12, color: "#374151",
-                          }}>
-                            {livePhoneFor(e) || (
-                              <span style={{ color: "#94a3b8", fontStyle: "italic" }}>—</span>
-                            )}
-                          </div>
-                        </td>
-                        <td style={{ padding: "8px 12px", minWidth: 140, verticalAlign: "top" }}>
+                        <td style={{ padding: "8px 12px", minWidth: 130, verticalAlign: "top" }}>
                           <input value={e.trackingNo} placeholder="Tracking no."
                             onChange={ev => updateEntry(e.uuid, { trackingNo: ev.target.value.toUpperCase() })}
                             onBlur={ev => saveEntry(e.uuid, { trackingNo: ev.target.value.toUpperCase() })}
                             style={{ ...cellInputStyle, borderColor: isDup ? "#fca5a5" : "#e2e8f0", background: isDup ? "#fef2f2" : "white" }} />
                           {isDup && <div style={{ fontSize: 10, color: "#dc2626", fontWeight: 700, marginTop: 2 }}>⚠ used on another row</div>}
                         </td>
-                        <td style={{ padding: "8px 12px", minWidth: 130, verticalAlign: "top" }}>
+                        <td style={{ padding: "8px 12px", minWidth: 120, verticalAlign: "top" }}>
                           <select value={e.shipper}
                             onChange={ev => saveEntry(e.uuid, { shipper: ev.target.value })}
                             style={{ ...cellInputStyle, fontWeight: 700, color: e.shipper ? shipperColor.color : "#94a3b8", background: e.shipper ? shipperColor.bg : "white" }}>
@@ -1094,29 +1113,39 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
                             {SHIPPERS.map(s => <option key={s} value={s}>{s}</option>)}
                           </select>
                         </td>
-                        <td style={{ padding: "8px 12px", textAlign: "center", verticalAlign: "top" }}>
-                          <button onClick={() => canNotify && notify(e)} disabled={!canNotify}
-                            title={canNotify ? (e.notified ? "Notified — click to resend" : "Send tracking to customer") : "Add tracking number + shipper first"}
-                            style={{
-                              border: "none", borderRadius: 8, padding: "7px 10px", fontSize: 12, fontWeight: 700, cursor: canNotify ? "pointer" : "not-allowed",
-                              background: !canNotify ? "#f1f5f9" : e.notified ? "#dcfce7" : "#25D366",
-                              color: !canNotify ? "#94a3b8" : e.notified ? "#166534" : "white",
-                              fontFamily: "inherit",
-                            }}>
-                            {e.notified ? "✅" : "💬"}
-                          </button>
-                        </td>
-                        <td style={{ padding: "8px 12px", minWidth: 160, verticalAlign: "top" }}>
-                          <input value={e.remarks} placeholder="Remarks"
-                            onChange={ev => updateEntry(e.uuid, { remarks: ev.target.value })}
-                            onBlur={ev => saveEntry(e.uuid, { remarks: ev.target.value })}
-                            style={cellInputStyle} />
-                        </td>
                         <td style={{ padding: "8px 12px", verticalAlign: "top" }}>
-                          {isAdmin && (
-                            <button onClick={() => removeEntry(e.uuid)} title="Remove row"
-                              style={{ border: "none", background: "transparent", color: "#94a3b8", cursor: "pointer", fontSize: 14 }}>✕</button>
-                          )}
+                          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <button onClick={() => canNotify && notify(e)} disabled={!canNotify}
+                              title={canNotify ? (e.notified ? "Notified — click to resend" : "Send tracking to customer") : "Add tracking number + shipper first"}
+                              style={{
+                                border: "none", borderRadius: 8, padding: "7px 9px", fontSize: 12, fontWeight: 700, cursor: canNotify ? "pointer" : "not-allowed",
+                                background: !canNotify ? "#f1f5f9" : e.notified ? "#dcfce7" : "#25D366",
+                                color: !canNotify ? "#94a3b8" : e.notified ? "#166534" : "white",
+                                fontFamily: "inherit",
+                              }}>
+                              {e.notified ? "✅" : "💬"}
+                            </button>
+                            {openRemarksUuid === e.uuid ? (
+                              <input autoFocus value={e.remarks} placeholder="Remarks"
+                                onChange={ev => updateEntry(e.uuid, { remarks: ev.target.value })}
+                                onBlur={ev => { saveEntry(e.uuid, { remarks: ev.target.value }); setOpenRemarksUuid(null); }}
+                                onKeyDown={ev => { if (ev.key === "Enter") ev.target.blur(); }}
+                                style={{ ...cellInputStyle, width: 130 }} />
+                            ) : (
+                              <button onClick={() => setOpenRemarksUuid(e.uuid)}
+                                title={e.remarks ? `Remarks: ${e.remarks}` : "Add remarks"}
+                                style={{
+                                  border: "none", borderRadius: 8, padding: "7px 9px", fontSize: 12, cursor: "pointer", fontFamily: "inherit",
+                                  background: e.remarks ? "#fef3c7" : "#f1f5f9", color: e.remarks ? "#92400e" : "#94a3b8",
+                                }}>
+                                📝
+                              </button>
+                            )}
+                            {isAdmin && (
+                              <button onClick={() => removeEntry(e.uuid)} title="Remove row"
+                                style={{ border: "none", background: "transparent", color: "#94a3b8", cursor: "pointer", fontSize: 14 }}>✕</button>
+                            )}
+                          </div>
                         </td>
                       </tr>
                     );
