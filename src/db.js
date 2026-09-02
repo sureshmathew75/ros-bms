@@ -1495,6 +1495,64 @@ export const dbDeleteSalesBonusRecord = async (id) => {
   return true;
 };
 
+/* ── Petty Cash: small lump sums (₹1,000–2,000) handed to staff to cover
+   shipping/courier and petrol costs. A simple two-entry-type ledger —
+   ISSUE (cash handed out) and SPEND (logged against it) — so the balance
+   is always just a sum, never typed in by hand. Every SPEND also writes
+   a matching row into Expenses (category "Petty Cash") so shop expense
+   totals include this spend without double entry; deleting the spend
+   removes that Expenses row too. ─────────────────────────────────────── */
+export const dbLoadPettyCash = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('petty_cash_records').select('*').eq('shop_id', shopId).order('date', { ascending: false });
+  if (error) { console.error('Load petty cash error:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id, staffName: r.staff_name, type: r.type, date: r.date,
+    amount: Number(r.amount) || 0, category: r.category || '', description: r.description || '',
+    linkedExpenseId: r.linked_expense_id || null,
+  }));
+};
+
+export const dbAddPettyCashIssue = async (shopId, staffName, amount, date, note) => {
+  if (!sb) return null;
+  const id = `PC-${Date.now().toString().slice(-8)}-${Math.floor(Math.random()*1000)}`;
+  const { error } = await sb.from('petty_cash_records').insert({
+    id, shop_id: shopId, staff_name: staffName, type: 'ISSUE', date,
+    amount: Number(amount) || 0, category: null, description: note || '',
+  });
+  if (error) { console.error('Save petty cash issue error:', error); return null; }
+  return id;
+};
+
+export const dbAddPettyCashSpend = async (shopId, staffName, staffFullName, amount, date, category, description) => {
+  if (!sb) return null;
+  // Make sure "Petty Cash" exists as an Expenses category (idempotent —
+  // dbSaveExpenseCategory no-ops if it's already there), then mirror this
+  // spend into Expenses so shop totals include it automatically.
+  await dbSaveExpenseCategory(shopId, 'Petty Cash').catch(()=>{});
+  const expDesc = `${category || 'Petty Cash'}${description ? ` — ${description}` : ''} (${staffFullName || staffName})`;
+  const expResult = await dbSaveExpense(shopId, {
+    date, cat: 'Petty Cash', desc: expDesc, amount, method: 'Cash',
+    notes: `Petty cash spend — ${staffFullName || staffName}`,
+  });
+  const id = `PC-${Date.now().toString().slice(-8)}-${Math.floor(Math.random()*1000)}`;
+  const { error } = await sb.from('petty_cash_records').insert({
+    id, shop_id: shopId, staff_name: staffName, type: 'SPEND', date,
+    amount: Number(amount) || 0, category: category || '', description: description || '',
+    linked_expense_id: expResult?.uuid || null,
+  });
+  if (error) { console.error('Save petty cash spend error:', error); return null; }
+  return id;
+};
+
+export const dbDeletePettyCash = async (id, shopId, linkedExpenseId) => {
+  if (!sb) return false;
+  if (linkedExpenseId) await dbDeleteExpense(linkedExpenseId, shopId).catch(()=>{});
+  const { error } = await sb.from('petty_cash_records').delete().eq('id', id).eq('shop_id', shopId);
+  if (error) { console.error('Delete petty cash record error:', error); return false; }
+  return true;
+};
+
 /* ── Inventory management (ROS India stocked items only). Every stock
    change — sale-out or restock-in — is logged as its own movement, so
    an item's history is a real ledger, not just a running number. ────── */

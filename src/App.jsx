@@ -41,7 +41,8 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadSalaryAdvances, dbAddSalaryAdvance, dbMarkAdvanceApplied, dbUnmarkAdvanceApplied, dbDeleteSalaryAdvance,
   dbLoadLoans, dbAddLoan, dbUpdateLoanBalance, dbDeleteLoan,
   dbLoadPayrollRecords, dbSavePayrollRecord, dbDeletePayrollRecord,
-  dbLoadSalesBonusRecords, dbSaveSalesBonusRecord, dbDeleteSalesBonusRecord } from "./db";
+  dbLoadSalesBonusRecords, dbSaveSalesBonusRecord, dbDeleteSalesBonusRecord,
+  dbLoadPettyCash, dbAddPettyCashIssue, dbAddPettyCashSpend, dbDeletePettyCash } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -7128,6 +7129,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"products", l:"Products", ic:"🏷️"},
     {id:"attendance",l:"Attendance",ic:"🕐"},
     {id:"payroll",  l:"Payroll",   ic:"💰"},
+    {id:"pettycash",l:"Petty Cash",ic:"💵"},
     {id:"inventory",l:"Stock",ic:"📦"},
     {id:"expenses", l:"Expenses", ic:"💳"},
     {id:"documents",l:"Documents",ic:"📎"},
@@ -7401,7 +7403,7 @@ return(
             {label:"MAIN",       ids:["dashboard"]},
             {label:"SALES",      ids:["sales","customers","returns","dispatch"]},
             {label:"PURCHASES",  ids:["purchases","suppliers","logistics","agents"]},
-            {label:"OPERATIONS", ids:["attendance","payroll","inventory"]},
+            {label:"OPERATIONS", ids:["attendance","payroll","pettycash","inventory"]},
             {label:"EXPENSES",   ids:["expenses"]},
             {label:"INSIGHTS",   ids:["documents","analytics","reports"]},
           ].map(group=>{
@@ -8733,6 +8735,11 @@ return(
           {/* ── PAYROLL (ROS India only, admin-only via ROLE_NAV) ── */}
           {tab==="payroll"&&shopId==="ros-india"&&(
             <PayrollPage shopId={shopId} shop={shop} user={user} users={users} />
+          )}
+
+          {/* ── PETTY CASH (all shops — staff see only their own float) ── */}
+          {tab==="pettycash"&&(
+            <PettyCashPage shopId={shopId} shop={shop} user={user} users={users} />
           )}
 
           {/* ── INVENTORY (ROS India only) ── */}
@@ -13871,6 +13878,248 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
   );
 };
 
+/* ── PettyCashPage: small cash floats (₹1,000–2,000) handed to staff for
+   shipping/courier and petrol costs. Admin issues cash; staff (and admin,
+   on their behalf) log what it was spent on; the balance is always just
+   computed — never typed — from the running total of issues minus spends.
+   Available on every shop (unlike Payroll), and visible to staff too,
+   each scoped to only their own float. ─────────────────────────────────── */
+const PETTY_CASH_CATEGORIES = ["Shipping/Courier", "Petrol/Fuel", "Other"];
+
+const PettyCashPage = ({ shopId, shop, user, users=[] }) => {
+  const isAdminView = user?.role !== "staff";
+  const [loaded, setLoaded] = React.useState(false);
+  const [records, setRecords] = React.useState([]);
+  const [selectedStaff, setSelectedStaff] = React.useState("");
+  const [showIssue, setShowIssue] = React.useState(false);
+  const [issueAmount, setIssueAmount] = React.useState("");
+  const [issueNote, setIssueNote] = React.useState("");
+  const [spendDate, setSpendDate] = React.useState(() => new Date().toISOString().slice(0,10));
+  const [spendCategory, setSpendCategory] = React.useState(PETTY_CASH_CATEGORIES[0]);
+  const [spendAmount, setSpendAmount] = React.useState("");
+  const [spendDesc, setSpendDesc] = React.useState("");
+  const [confirmDelete, setConfirmDelete] = React.useState(null);
+
+  const staffList = React.useMemo(()=>users.filter(u=>u.role==="staff"&&(u.shops||[]).includes(shopId)), [users, shopId]);
+  const fullNameOf = (shortName) => staffList.find(u=>u.name===shortName)?.fullName || shortName;
+  const myName = user?.name || "";
+  const fmtDate = (d) => { if(!d) return ""; try { return new Date(d+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}); } catch { return d||""; } };
+
+  const load = React.useCallback(()=>{
+    return dbLoadPettyCash(shopId).then(recs=>{ setRecords(recs); setLoaded(true); });
+  }, [shopId]);
+  React.useEffect(()=>{ load(); }, [load]);
+
+  React.useEffect(()=>{
+    if (isAdminView) { if (!selectedStaff && staffList.length>0) setSelectedStaff(staffList[0].name); }
+    else if (selectedStaff !== myName) setSelectedStaff(myName);
+  }, [isAdminView, staffList, selectedStaff, myName]);
+
+  if (!loaded) return <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>Loading petty cash…</div>;
+
+  if (isAdminView && staffList.length===0) return (
+    <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>No staff members are assigned to {shop.name} yet. Add one under Settings → Manage Users first.</div>
+  );
+  if (!isAdminView && !myName) return (
+    <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>Couldn't identify your account — please log in again.</div>
+  );
+
+  const balanceFor = (name) => records.filter(r=>r.staffName===name).reduce((s,r)=> s + (r.type==="ISSUE" ? r.amount : -r.amount), 0);
+
+  const myRecordsChrono = records.filter(r=>r.staffName===selectedStaff).slice().sort((a,b)=> (a.date||"").localeCompare(b.date||""));
+  let running = 0;
+  const withRunning = myRecordsChrono.map(r=>{ running += (r.type==="ISSUE" ? r.amount : -r.amount); return {...r, runningBalance: running}; });
+  const ledger = withRunning.slice().reverse();
+  const currentBalance = running;
+
+  const balanceColor = currentBalance<=0 ? "#dc2626" : currentBalance<300 ? "#b45309" : "#166534";
+  const balanceBg    = currentBalance<=0 ? "#fef2f2" : currentBalance<300 ? "#fffbeb" : "#ecfdf5";
+  const balanceBorder= currentBalance<=0 ? "#fecaca" : currentBalance<300 ? "#fde68a" : "#a7f3d0";
+
+  const handleIssue = async () => {
+    const amt = Number(issueAmount);
+    if (!(amt>0)) { alert("Enter an amount to issue."); return; }
+    if (!window.confirm(`Issue ${shop.symbol}${amt.toLocaleString()} petty cash to ${fullNameOf(selectedStaff)}?`)) return;
+    const id = await dbAddPettyCashIssue(shopId, selectedStaff, amt, new Date().toISOString().slice(0,10), issueNote.trim());
+    if (!id) { alert("Couldn't save — please check your connection and try again."); return; }
+    setIssueAmount(""); setIssueNote(""); setShowIssue(false);
+    await load();
+  };
+
+  const handleSpend = async () => {
+    const amt = Number(spendAmount);
+    if (!(amt>0)) { alert("Enter the amount spent."); return; }
+    if (!spendDate) { alert("Pick a date."); return; }
+    const id = await dbAddPettyCashSpend(shopId, selectedStaff, fullNameOf(selectedStaff), amt, spendDate, spendCategory, spendDesc.trim());
+    if (!id) { alert("Couldn't save — please check your connection and try again."); return; }
+    setSpendAmount(""); setSpendDesc("");
+    await load();
+  };
+
+  const handleDelete = async (rec) => {
+    await dbDeletePettyCash(rec.id, shopId, rec.linkedExpenseId);
+    setConfirmDelete(null);
+    await load();
+  };
+
+  const inp = {padding:"8px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none"};
+
+  return (
+    <div style={{maxWidth:1000}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
+        <h2 style={{margin:0,fontSize:20,fontWeight:800,color:"#0f172a"}}>💵 Petty Cash</h2>
+      </div>
+
+      {/* at-a-glance balances — admin only, so you can spot who needs a top-up without switching the selector each time */}
+      {isAdminView && (
+        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
+          {staffList.map(u=>{
+            const bal = balanceFor(u.name);
+            const c  = bal<=0 ? "#dc2626" : bal<300 ? "#b45309" : "#166534";
+            const bg = bal<=0 ? "#fef2f2" : bal<300 ? "#fffbeb" : "#ecfdf5";
+            const bd = bal<=0 ? "#fecaca" : bal<300 ? "#fde68a" : "#a7f3d0";
+            const active = selectedStaff===u.name;
+            return (
+              <button key={u.id} onClick={()=>{setSelectedStaff(u.name); setShowIssue(false);}}
+                style={{display:"flex",flexDirection:"column",alignItems:"flex-start",gap:2,padding:"8px 14px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",
+                  border:"1.5px solid "+(active?shop.accent:bd), background:active?shop.accentBg:bg}}>
+                <span style={{fontSize:11,fontWeight:700,color:"#64748b"}}>{u.fullName||u.name}</span>
+                <span style={{fontSize:15,fontWeight:800,color:c}}>{shop.symbol}{bal.toLocaleString()}</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {/* balance + issue + log-a-spend card for whoever's selected */}
+      <div style={{border:"1px solid #e2e8f0",borderRadius:12,marginBottom:16,overflow:"hidden",background:"white"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,padding:16,background:balanceBg,borderBottom:"1px solid "+balanceBorder}}>
+          <div>
+            <div style={{fontSize:10,fontWeight:800,color:balanceColor,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>
+              {isAdminView ? `${fullNameOf(selectedStaff)}'s Balance` : "Your Petty Cash Balance"}
+            </div>
+            <div style={{fontSize:26,fontWeight:900,color:balanceColor,letterSpacing:"-0.02em"}}>{shop.symbol}{currentBalance.toLocaleString()}</div>
+            {currentBalance<300 && (
+              <div style={{fontSize:11.5,color:balanceColor,marginTop:2}}>
+                {currentBalance<=0 ? "⚠️ Balance used up — needs a top-up." : "⚠️ Running low — consider a top-up soon."}
+              </div>
+            )}
+          </div>
+          {isAdminView && (
+            <button onClick={()=>setShowIssue(v=>!v)}
+              style={{padding:"10px 18px",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>
+              ➕ Issue Cash
+            </button>
+          )}
+        </div>
+
+        {isAdminView && showIssue && (
+          <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap",padding:"14px 16px",borderBottom:"1px solid #f1f5f9"}}>
+            <div>
+              <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Amount to Issue</label>
+              <input type="number" value={issueAmount} onChange={e=>setIssueAmount(e.target.value)} placeholder="e.g. 1000" style={{...inp,width:130}}/>
+            </div>
+            <div style={{flex:1,minWidth:180}}>
+              <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Note (optional)</label>
+              <input type="text" value={issueNote} onChange={e=>setIssueNote(e.target.value)} placeholder="e.g. Monthly top-up" style={{...inp,width:"100%"}}/>
+            </div>
+            <button onClick={handleIssue}
+              style={{padding:"9px 16px",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>
+              ✅ Confirm Issue
+            </button>
+          </div>
+        )}
+
+        <div style={{padding:"14px 16px"}}>
+          <div style={{fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Log a Spend</div>
+          <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+            <div>
+              <label style={{fontSize:10,fontWeight:700,color:"#94a3b8",display:"block",marginBottom:3}}>Date</label>
+              <input type="date" value={spendDate} onChange={e=>setSpendDate(e.target.value)} style={{...inp,width:140}}/>
+            </div>
+            <div>
+              <label style={{fontSize:10,fontWeight:700,color:"#94a3b8",display:"block",marginBottom:3}}>Category</label>
+              <select value={spendCategory} onChange={e=>setSpendCategory(e.target.value)} style={{...inp,width:150}}>
+                {PETTY_CASH_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{fontSize:10,fontWeight:700,color:"#94a3b8",display:"block",marginBottom:3}}>Amount</label>
+              <input type="number" value={spendAmount} onChange={e=>setSpendAmount(e.target.value)} placeholder="0" style={{...inp,width:100}}/>
+            </div>
+            <div style={{flex:1,minWidth:180}}>
+              <label style={{fontSize:10,fontWeight:700,color:"#94a3b8",display:"block",marginBottom:3}}>Description</label>
+              <input type="text" value={spendDesc} onChange={e=>setSpendDesc(e.target.value)} placeholder="e.g. Courier to Kochi" style={{...inp,width:"100%"}}/>
+            </div>
+            <button onClick={handleSpend}
+              style={{padding:"9px 16px",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>
+              ✅ Add
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div style={{fontSize:13,fontWeight:800,color:"#0f172a",marginBottom:10}}>📒 Ledger{isAdminView?` — ${fullNameOf(selectedStaff)}`:""}</div>
+      {ledger.length===0 ? (
+        <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>No petty cash activity yet.</div>
+      ) : (
+        <div style={{border:"1px solid #e2e8f0",borderRadius:12,overflow:"auto"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
+            <thead>
+              <tr style={{background:"#f8fafc"}}>
+                {["DATE","TYPE","CATEGORY","DESCRIPTION","AMOUNT","BALANCE",""].map(h=>(
+                  <th key={h} style={{padding:"8px 10px",textAlign:(h==="AMOUNT"||h==="BALANCE")?"right":"left",fontSize:10,fontWeight:800,color:"#64748b",letterSpacing:"0.05em",whiteSpace:"nowrap"}}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {ledger.map(r=>{
+                const canDelete = isAdminView || r.type==="SPEND";
+                return (
+                  <tr key={r.id} style={{borderTop:"1px solid #f1f5f9"}}>
+                    <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>{fmtDate(r.date)}</td>
+                    <td style={{padding:"8px 10px"}}>
+                      <span style={{fontSize:10.5,fontWeight:700,padding:"2px 8px",borderRadius:999,whiteSpace:"nowrap",
+                        background:r.type==="ISSUE"?"#ecfdf5":"#fef2f2", color:r.type==="ISSUE"?"#166534":"#991b1b"}}>
+                        {r.type==="ISSUE"?"Issued":"Spent"}
+                      </span>
+                    </td>
+                    <td style={{padding:"8px 10px",color:"#64748b",whiteSpace:"nowrap"}}>{r.category||"—"}</td>
+                    <td style={{padding:"8px 10px",color:"#64748b"}}>{r.description||"—"}</td>
+                    <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,whiteSpace:"nowrap",color:r.type==="ISSUE"?"#166534":"#991b1b"}}>{r.type==="ISSUE"?"+":"−"}{shop.symbol}{r.amount.toLocaleString()}</td>
+                    <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,whiteSpace:"nowrap"}}>{shop.symbol}{r.runningBalance.toLocaleString()}</td>
+                    <td style={{padding:"8px 10px",textAlign:"right",whiteSpace:"nowrap"}}>
+                      {canDelete && (
+                        <button onClick={()=>setConfirmDelete(r)}
+                          style={{border:"none",background:"transparent",color:"#dc2626",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>Delete</button>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {confirmDelete && (
+        <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:"white",borderRadius:16,padding:22,maxWidth:340,width:"92%"}}>
+            <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:8}}>Delete this entry?</div>
+            <p style={{fontSize:12,color:"#64748b",marginBottom:18}}>
+              {confirmDelete.type==="ISSUE" ? "This removes the issued amount from the balance calculation." : "This removes the spend, and its matching Expenses entry, for good."}
+            </p>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setConfirmDelete(null)} style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+              <button onClick={()=>handleDelete(confirmDelete)} style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#dc2626",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 const Auditor = ({ size = 64, mood = "neutral" }) => {
   const suitColor  = "#2d3748";
   const suitShade  = "#1a202c";
@@ -17434,12 +17683,14 @@ const INITIAL_USERS=[
    avatar:"linear-gradient(135deg,#ec4899,#db2777)", shops:["ros-india"]},
 ];
 const ROLE_NAV={
-  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","inventory","dispatch","settings"],
-  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","inventory","dispatch"],
+  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","pettycash","inventory","dispatch","settings"],
+  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","pettycash","inventory","dispatch"],
   // Payroll is kept admin-only (not in staff's list) — it exposes salary,
   // advances and loan balances for every staff member, not just the
-  // person viewing it.
-  staff:["sales","customers","returns","attendance","inventory","dispatch"],
+  // person viewing it. Petty Cash is different — like Attendance, staff
+  // can see it too, but each one is scoped to just their own float
+  // (PettyCashPage itself enforces that scoping, not this list).
+  staff:["sales","customers","returns","attendance","pettycash","inventory","dispatch"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
 
