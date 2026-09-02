@@ -11805,6 +11805,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           sheetMonth={sheetMonth}
           setSheetMonth={setSheetMonth}
           onLogSale={(item)=>setSoldFor({id:item.id,name:item.name})}
+          onRestock={isAdmin ? (item)=>setRestockFor({id:item.id,name:item.name}) : null}
           onSelectItem={(id)=>setSelectedItemId(id)}
           onDeleteItem={isAdmin ? (id)=>setConfirmDeleteId(id) : null}
           fmtDate={fmtDate}
@@ -11888,6 +11889,14 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
         }}/>
       )}
 
+      {restockFor && (
+        <RestockModal item={restockFor} onClose={()=>setRestockFor(null)} onSave={async(qty,note)=>{
+          const ok = await dbAddInventoryMovement(shopId, restockFor.id, "restock", qty, new Date().toISOString().slice(0,10), null, null, note);
+          if (ok) { setRestockFor(null); load(); }
+          else alert("Couldn't save — please check your connection and try again.");
+        }}/>
+      )}
+
       {confirmDeleteId && (
         <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:"white",borderRadius:16,padding:22,maxWidth:320,width:"92%"}}>
@@ -11923,7 +11932,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
    existing data out as a grid instead of a card per item. Item name and
    Current-stock columns stay pinned (position:sticky) on the left as you
    scroll through a busy month, the same idea as Excel's freeze panes. ── */
-const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onSelectItem, onDeleteItem, fmtDate }) => {
+const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSelectItem, onDeleteItem, fmtDate }) => {
   const [cellPopover, setCellPopover] = React.useState(null); // {itemId, date} | null
   const todayStr = new Date().toISOString().slice(0,10);
 
@@ -11971,9 +11980,19 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
     });
   }, [items, movementsByItem, days.join(",")]);
 
+  // Three columns stay frozen on the left as the sheet scrolls sideways
+  // through the month: Item (full name, never truncated), Current stock,
+  // and the two quick actions. A shadow on the right edge of the frozen
+  // block (below) is what makes it visually obvious those columns are
+  // pinned — without it, "stuck" columns can look like they've simply
+  // scrolled away when they haven't.
+  const ITEM_W = 210, CURRENT_W = 76, ACTIONS_W = 118;
+  const LEFT_CURRENT = ITEM_W, LEFT_ACTIONS = ITEM_W + CURRENT_W;
+  const FROZEN_EDGE = "6px 0 10px -6px rgba(15,23,42,0.22)";
+
   const pillBtn = { padding:"7px 12px", borderRadius:8, border:"1px solid #e2e8f0", background:"white", color:"#475569", fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit" };
-  const stickyHead = { position:"sticky", top:0, padding:"9px 10px", textAlign:"left", fontWeight:800, fontSize:10.5, color:"#475569", textTransform:"uppercase", letterSpacing:"0.03em", background:"#f8fafc", borderBottom:"1px solid #e2e8f0" };
-  const stickyCell = { position:"sticky", padding:"8px 10px", borderBottom:"1px solid #f1f5f9", borderTop:"1px solid transparent" };
+  const stickyHead = { position:"sticky", top:0, padding:"11px 12px", textAlign:"left", fontWeight:800, fontSize:11, color:"#475569", textTransform:"uppercase", letterSpacing:"0.03em", background:"#f8fafc", borderBottom:"1.5px solid #e2e8f0" };
+  const stickyCell = { position:"sticky", padding:"10px 12px", borderBottom:"1px solid #f1f5f9" };
 
   return (
     <div>
@@ -11992,15 +12011,16 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
       </div>
 
       <div style={{ fontSize:11, color:"#94a3b8", marginBottom:10 }}>
-        Each cell is that item's stock at the end of the day · <span style={{color:"#166534",fontWeight:700}}>▲ restock</span> · <span style={{color:"#dc2626",fontWeight:700}}>▼ sold</span> · click a tagged cell for details
+        Each column is a day · the number is stock at the end of that day · a tagged cell (<span style={{color:"#166534",fontWeight:700}}>▲ in</span> / <span style={{color:"#dc2626",fontWeight:700}}>▼ out</span>) means it changed that day — click it for details
       </div>
 
-      <div style={{ overflowX:"auto", border:"1px solid #e2e8f0", borderRadius:12 }}>
-        <table style={{ borderCollapse:"collapse", fontSize:12, width:"max-content" }}>
+      <div style={{ overflowX:"auto", overflowY:"hidden", border:"1px solid #e2e8f0", borderRadius:12 }}>
+        <table style={{ borderCollapse:"collapse", fontSize:12.5, width:"max-content" }}>
           <thead>
             <tr>
-              <th style={{ ...stickyHead, left:0, zIndex:4, minWidth:170 }}>Item</th>
-              <th style={{ ...stickyHead, left:170, zIndex:4, minWidth:64, textAlign:"center" }}>Current</th>
+              <th style={{ ...stickyHead, left:0, zIndex:4, minWidth:ITEM_W, width:ITEM_W }}>Item</th>
+              <th style={{ ...stickyHead, left:LEFT_CURRENT, zIndex:4, minWidth:CURRENT_W, width:CURRENT_W, textAlign:"center" }}>Current</th>
+              <th style={{ ...stickyHead, left:LEFT_ACTIONS, zIndex:4, minWidth:ACTIONS_W, width:ACTIONS_W, textAlign:"center", boxShadow:FROZEN_EDGE }}>Stock In / Out</th>
               {days.map(d => {
                 const dayNum = Number(d.slice(-2));
                 const isToday = d === todayStr;
@@ -12008,10 +12028,10 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                 const isWeekend = dow === 0 || dow === 6;
                 return (
                   <th key={d} style={{
-                    padding:"9px 4px", textAlign:"center", fontWeight:800, fontSize:10.5, minWidth:36,
+                    padding:"11px 4px", textAlign:"center", fontWeight:800, fontSize:11, minWidth:36,
                     color: isToday ? "white" : "#64748b",
                     background: isToday ? (shop.accent||"#0f172a") : isWeekend ? "#f8fafc" : "white",
-                    borderBottom:"1px solid #e2e8f0", borderLeft:"1px solid #f1f5f9",
+                    borderBottom:"1.5px solid #e2e8f0", borderLeft:"1px solid #f1f5f9",
                   }}>{dayNum}</th>
                 );
               })}
@@ -12024,22 +12044,34 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                 <tr key={item.id}>
                   <td onClick={()=>onSelectItem(item.id)}
                     style={{ ...stickyCell, left:0, zIndex:2, background:rowBg, cursor:"pointer" }}>
-                    <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", gap:6 }}>
-                      <span style={{ fontWeight:700, color:"#0f172a", overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap", maxWidth:100 }}>{item.name}</span>
-                      <div style={{ display:"flex", alignItems:"center", gap:4, flexShrink:0 }}>
-                        <button onClick={(e)=>{e.stopPropagation();onLogSale(item);}} title="Log a sale"
-                          style={{ border:"none", borderRadius:6, padding:"3px 6px", fontSize:9.5, fontWeight:800, cursor:"pointer", background:"#fef2f2", color:"#b91c1c", fontFamily:"inherit" }}>
-                          − Sale
-                        </button>
-                        {onDeleteItem && (
-                          <button onClick={(e)=>{e.stopPropagation();onDeleteItem(item.id);}} title="Delete this item"
-                            style={{ border:"none", background:"transparent", color:"#cbd5e1", cursor:"pointer", fontSize:12 }}>✕</button>
-                        )}
-                      </div>
+                    <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      <span style={{ fontWeight:700, fontSize:13, color:"#0f172a", lineHeight:1.3 }}>{item.name}</span>
+                      {onDeleteItem && (
+                        <button onClick={(e)=>{e.stopPropagation();onDeleteItem(item.id);}} title="Delete this item"
+                          style={{ marginLeft:"auto", flexShrink:0, border:"none", background:"transparent", color:"#cbd5e1", cursor:"pointer", fontSize:12 }}>✕</button>
+                      )}
                     </div>
                   </td>
-                  <td style={{ ...stickyCell, left:170, zIndex:2, background:rowBg, textAlign:"center" }}>
-                    <span style={{ fontWeight:900, color: item.currentStock<=0?"#dc2626":item.currentStock<=2?"#d97706":"#166534" }}>{item.currentStock}</span>
+                  <td style={{ ...stickyCell, left:LEFT_CURRENT, zIndex:2, background:rowBg, textAlign:"center" }}>
+                    <span style={{
+                      display:"inline-block", minWidth:34, padding:"3px 0", borderRadius:999, fontWeight:900, fontSize:14,
+                      color: item.currentStock<=0?"#dc2626":item.currentStock<=2?"#d97706":"#166534",
+                      background: item.currentStock<=0?"#fef2f2":item.currentStock<=2?"#fffbeb":"#f0fdf4",
+                    }}>{item.currentStock}</span>
+                  </td>
+                  <td style={{ ...stickyCell, left:LEFT_ACTIONS, zIndex:2, background:rowBg, textAlign:"center", boxShadow:FROZEN_EDGE }}>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
+                      {onRestock && (
+                        <button onClick={(e)=>{e.stopPropagation();onRestock(item);}} title="Add stock in (restock)"
+                          style={{ border:"1.5px solid #86efac", borderRadius:8, padding:"6px 10px", fontSize:13, fontWeight:900, cursor:"pointer", background:"#f0fdf4", color:"#166534", fontFamily:"inherit", lineHeight:1 }}>
+                          +
+                        </button>
+                      )}
+                      <button onClick={(e)=>{e.stopPropagation();onLogSale(item);}} title="Log stock out (sale)"
+                        style={{ border:"1.5px solid #fca5a5", borderRadius:8, padding:"6px 10px", fontSize:13, fontWeight:900, cursor:"pointer", background:"#fef2f2", color:"#b91c1c", fontFamily:"inherit", lineHeight:1 }}>
+                        −
+                      </button>
+                    </div>
                   </td>
                   {cells.map(c => {
                     const isToday = c.date === todayStr;
@@ -12047,7 +12079,7 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                       <td key={c.date}
                         onClick={()=> c.delta !== 0 && setCellPopover({ itemId:item.id, date:c.date })}
                         style={{
-                          padding:"6px 3px", textAlign:"center", borderLeft:"1px solid #f1f5f9", borderTop:"1px solid #f1f5f9",
+                          padding:"8px 3px", textAlign:"center", borderLeft:"1px solid #f1f5f9", borderTop:"1px solid #f1f5f9",
                           background: isToday ? (shop.accentBg||"#eef2ff") : rowBg,
                           cursor: c.delta !== 0 ? "pointer" : "default", position:"relative",
                         }}>
