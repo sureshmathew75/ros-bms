@@ -11934,6 +11934,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
    scroll through a busy month, the same idea as Excel's freeze panes. ── */
 const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSelectItem, onDeleteItem, fmtDate }) => {
   const [cellPopover, setCellPopover] = React.useState(null); // {itemId, date} | null
+  const [monthPopover, setMonthPopover] = React.useState(null); // {itemId, type:'sale'|'restock'} | null
   const todayStr = new Date().toISOString().slice(0,10);
 
   const [y, mo] = sheetMonth.split("-").map(Number);
@@ -11953,46 +11954,45 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
     return byItem;
   }, [movements]);
 
-  // For every item, replay its ledger day by day across the visible month:
-  // `value` = running stock at the end of that day (null = before the item
-  // existed yet — shown as a dash, never a false zero); `delta` = that
-  // day's own net change, which is what puts the red ▼ / green ▲ tag on a
-  // cell so a dip from a sale (or a jump from a restock) is impossible to
-  // miss when scanning across a row.
+  // Each day cell shows only what was actually logged THAT day — never a
+  // running total. A running total would need a trustworthy zero starting
+  // point, which isn't guaranteed (an item set up, or corrected, outside
+  // this ledger breaks that assumption) — it used to silently drift and
+  // repeat the same wrong number into every future day. Reading straight
+  // off that day's own movements can't drift, and a day with nothing
+  // logged is simply blank — future days included, automatically, since
+  // nothing is ever dated in the future.
   const rows = React.useMemo(() => {
     return items.map(item => {
       const itemMoves = movementsByItem[item.id] || [];
-      const netByDate = {};
-      itemMoves.forEach(m => {
-        const delta = m.type === "restock" ? (Number(m.qty)||0) : m.type === "correction" ? (Number(m.qty)||0) : -(Number(m.qty)||0);
-        netByDate[m.date] = (netByDate[m.date] || 0) + delta;
-      });
-      const sortedDates = Object.keys(netByDate).sort();
-      let running = 0;
-      const cumByDate = {};
-      sortedDates.forEach(d => { running += netByDate[d]; cumByDate[d] = running; });
-      let idx = 0, lastVal = null;
+      const monthMoves = itemMoves.filter(m => m.date.slice(0,7) === sheetMonth);
+      const soldThisMonth = monthMoves.filter(m=>m.type==="sale").reduce((s,m)=>s+(Number(m.qty)||0),0);
+      const addedThisMonth = monthMoves.filter(m=>m.type==="restock").reduce((s,m)=>s+(Number(m.qty)||0),0);
+      const byDate = {};
+      monthMoves.forEach(m => { (byDate[m.date] ||= []).push(m); });
       const cells = days.map(d => {
-        while (idx < sortedDates.length && sortedDates[idx] <= d) { lastVal = cumByDate[sortedDates[idx]]; idx++; }
-        return { date: d, value: lastVal, delta: netByDate[d] || 0 };
+        const dayMoves = byDate[d] || [];
+        const sold = dayMoves.filter(m=>m.type==="sale").reduce((s,m)=>s+(Number(m.qty)||0),0);
+        const added = dayMoves.filter(m=>m.type==="restock").reduce((s,m)=>s+(Number(m.qty)||0),0);
+        const corrected = dayMoves.filter(m=>m.type==="correction").reduce((s,m)=>s+(Number(m.qty)||0),0);
+        return { date:d, sold, added, corrected, hasMoves: dayMoves.length>0 };
       });
-      return { item, cells };
+      return { item, cells, soldThisMonth, addedThisMonth, monthMoves };
     });
-  }, [items, movementsByItem, days.join(",")]);
+  }, [items, movementsByItem, days.join(","), sheetMonth]);
 
-  // Three columns stay frozen on the left as the sheet scrolls sideways
-  // through the month: Item (full name, never truncated), Current stock,
-  // and the two quick actions. A shadow on the right edge of the frozen
-  // block (below) is what makes it visually obvious those columns are
-  // pinned — without it, "stuck" columns can look like they've simply
-  // scrolled away when they haven't.
-  const ITEM_W = 210, CURRENT_W = 76, ACTIONS_W = 118;
-  const LEFT_CURRENT = ITEM_W, LEFT_ACTIONS = ITEM_W + CURRENT_W;
+  // Five columns stay frozen on the left as the sheet scrolls sideways
+  // through the month — Item (full name, never truncated), Sold/Added this
+  // month, Current stock, and the two quick actions. The shadow on the
+  // right edge of the frozen block is what makes it visually obvious those
+  // columns are pinned, like Excel's freeze-pane line.
+  const ITEM_W = 190, SOLD_W = 60, ADDED_W = 60, CURRENT_W = 68, ACTIONS_W = 88;
+  const LEFT_SOLD = ITEM_W, LEFT_ADDED = ITEM_W+SOLD_W, LEFT_CURRENT = ITEM_W+SOLD_W+ADDED_W, LEFT_ACTIONS = ITEM_W+SOLD_W+ADDED_W+CURRENT_W;
   const FROZEN_EDGE = "6px 0 10px -6px rgba(15,23,42,0.22)";
 
   const pillBtn = { padding:"7px 12px", borderRadius:8, border:"1px solid #e2e8f0", background:"white", color:"#475569", fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit" };
-  const stickyHead = { position:"sticky", top:0, padding:"11px 12px", textAlign:"left", fontWeight:800, fontSize:11, color:"#475569", textTransform:"uppercase", letterSpacing:"0.03em", background:"#f8fafc", borderBottom:"1.5px solid #e2e8f0" };
-  const stickyCell = { position:"sticky", padding:"10px 12px", borderBottom:"1px solid #f1f5f9" };
+  const stickyHead = { position:"sticky", top:0, padding:"11px 10px", textAlign:"left", fontWeight:800, fontSize:10.5, color:"#475569", textTransform:"uppercase", letterSpacing:"0.03em", background:"#f8fafc", borderBottom:"1.5px solid #e2e8f0" };
+  const stickyCell = { position:"sticky", padding:"10px 10px", borderBottom:"1px solid #f1f5f9" };
 
   return (
     <div>
@@ -12004,14 +12004,14 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
             style={{ ...pillBtn, opacity: atCurrentMonthOrLater?0.4:1, cursor: atCurrentMonthOrLater?"not-allowed":"pointer" }}>→</button>
           <button onClick={()=>setSheetMonth(todayStr.slice(0,7))} style={pillBtn}>This Month</button>
         </div>
-        <button onClick={()=>printStockSheet(rows, monthLabel, shop)}
+        <button onClick={()=>printStockSheet(rows, monthLabel, shop, fmtDate)}
           style={{ padding:"8px 14px", borderRadius:10, border:"1px solid #e2e8f0", background:"white", color:"#334155", fontWeight:700, fontSize:12.5, cursor:"pointer", fontFamily:"inherit" }}>
           🖨️ Print / Export PDF
         </button>
       </div>
 
       <div style={{ fontSize:11, color:"#94a3b8", marginBottom:10 }}>
-        Each column is a day · the number is stock at the end of that day · a tagged cell (<span style={{color:"#166534",fontWeight:700}}>▲ in</span> / <span style={{color:"#dc2626",fontWeight:700}}>▼ out</span>) means it changed that day — click it for details
+        <span style={{color:"#b91c1c",fontWeight:700}}>S</span> = sold that day · <span style={{color:"#166534",fontWeight:700}}>I</span> = stock added that day · click a tagged day, or the Sold/Added totals, to see who/what · future days are intentionally blank
       </div>
 
       <div style={{ overflowX:"auto", overflowY:"hidden", border:"1px solid #e2e8f0", borderRadius:12 }}>
@@ -12019,18 +12019,21 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
           <thead>
             <tr>
               <th style={{ ...stickyHead, left:0, zIndex:4, minWidth:ITEM_W, width:ITEM_W }}>Item</th>
+              <th style={{ ...stickyHead, left:LEFT_SOLD, zIndex:4, minWidth:SOLD_W, width:SOLD_W, textAlign:"center" }}>Sold</th>
+              <th style={{ ...stickyHead, left:LEFT_ADDED, zIndex:4, minWidth:ADDED_W, width:ADDED_W, textAlign:"center" }}>Added</th>
               <th style={{ ...stickyHead, left:LEFT_CURRENT, zIndex:4, minWidth:CURRENT_W, width:CURRENT_W, textAlign:"center" }}>Current</th>
               <th style={{ ...stickyHead, left:LEFT_ACTIONS, zIndex:4, minWidth:ACTIONS_W, width:ACTIONS_W, textAlign:"center", boxShadow:FROZEN_EDGE }}>Stock In / Out</th>
               {days.map(d => {
                 const dayNum = Number(d.slice(-2));
                 const isToday = d === todayStr;
+                const isFuture = d > todayStr;
                 const dow = new Date(y, mo-1, dayNum).getDay();
                 const isWeekend = dow === 0 || dow === 6;
                 return (
                   <th key={d} style={{
                     padding:"11px 4px", textAlign:"center", fontWeight:800, fontSize:11, minWidth:36,
-                    color: isToday ? "white" : "#64748b",
-                    background: isToday ? (shop.accent||"#0f172a") : isWeekend ? "#f8fafc" : "white",
+                    color: isToday ? "white" : isFuture ? "#cbd5e1" : "#64748b",
+                    background: isToday ? (shop.accent||"#0f172a") : isFuture ? "#fbfbfb" : isWeekend ? "#f8fafc" : "white",
                     borderBottom:"1.5px solid #e2e8f0", borderLeft:"1px solid #f1f5f9",
                   }}>{dayNum}</th>
                 );
@@ -12038,7 +12041,7 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ item, cells }, ridx) => {
+            {rows.map(({ item, cells, soldThisMonth, addedThisMonth, monthMoves }, ridx) => {
               const rowBg = ridx % 2 ? "#fdfbf3" : "white";
               return (
                 <tr key={item.id}>
@@ -12051,6 +12054,20 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                           style={{ marginLeft:"auto", flexShrink:0, border:"none", background:"transparent", color:"#cbd5e1", cursor:"pointer", fontSize:12 }}>✕</button>
                       )}
                     </div>
+                  </td>
+                  <td onClick={()=> soldThisMonth>0 && setMonthPopover({ itemId:item.id, type:"sale" })}
+                    style={{ ...stickyCell, left:LEFT_SOLD, zIndex:2, background:rowBg, textAlign:"center", position:"sticky", cursor: soldThisMonth>0?"pointer":"default" }}>
+                    <span style={{ fontWeight:800, fontSize:13, color: soldThisMonth>0?"#b91c1c":"#cbd5e1" }}>{soldThisMonth>0?soldThisMonth:"—"}</span>
+                    {monthPopover && monthPopover.itemId===item.id && monthPopover.type==="sale" && (
+                      <MonthMovementsPopover item={item} type="sale" monthLabel={monthLabel} moves={monthMoves.filter(m=>m.type==="sale")} fmtDate={fmtDate} onClose={()=>setMonthPopover(null)} />
+                    )}
+                  </td>
+                  <td onClick={()=> addedThisMonth>0 && setMonthPopover({ itemId:item.id, type:"restock" })}
+                    style={{ ...stickyCell, left:LEFT_ADDED, zIndex:2, background:rowBg, textAlign:"center", position:"sticky", cursor: addedThisMonth>0?"pointer":"default" }}>
+                    <span style={{ fontWeight:800, fontSize:13, color: addedThisMonth>0?"#166534":"#cbd5e1" }}>{addedThisMonth>0?addedThisMonth:"—"}</span>
+                    {monthPopover && monthPopover.itemId===item.id && monthPopover.type==="restock" && (
+                      <MonthMovementsPopover item={item} type="restock" monthLabel={monthLabel} moves={monthMoves.filter(m=>m.type==="restock")} fmtDate={fmtDate} onClose={()=>setMonthPopover(null)} />
+                    )}
                   </td>
                   <td style={{ ...stickyCell, left:LEFT_CURRENT, zIndex:2, background:rowBg, textAlign:"center" }}>
                     <span style={{
@@ -12075,23 +12092,25 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                   </td>
                   {cells.map(c => {
                     const isToday = c.date === todayStr;
+                    const isFuture = c.date > todayStr;
                     return (
                       <td key={c.date}
-                        onClick={()=> c.delta !== 0 && setCellPopover({ itemId:item.id, date:c.date })}
+                        onClick={()=> c.hasMoves && setCellPopover({ itemId:item.id, date:c.date })}
                         style={{
-                          padding:"8px 3px", textAlign:"center", borderLeft:"1px solid #f1f5f9", borderTop:"1px solid #f1f5f9",
-                          background: isToday ? (shop.accentBg||"#eef2ff") : rowBg,
-                          cursor: c.delta !== 0 ? "pointer" : "default", position:"relative",
+                          padding:"6px 3px", textAlign:"center", borderLeft:"1px solid #f1f5f9", borderTop:"1px solid #f1f5f9",
+                          background: isFuture ? "#fbfbfb" : isToday ? (shop.accentBg||"#eef2ff") : rowBg,
+                          cursor: c.hasMoves ? "pointer" : "default", position:"relative",
                         }}>
-                        {c.value === null ? (
-                          <span style={{ color:"#cbd5e1" }}>—</span>
-                        ) : (
-                          <div>
-                            <div style={{ fontWeight:700, color: c.value<=0?"#dc2626":c.value<=2?"#d97706":"#334155" }}>{c.value}</div>
-                            {c.delta !== 0 && (
-                              <div style={{ fontSize:8.5, fontWeight:800, color: c.delta>0?"#166534":"#dc2626", marginTop:1 }}>
-                                {c.delta>0?"▲":"▼"}{Math.abs(c.delta)}
-                              </div>
+                        {c.hasMoves && (
+                          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
+                            {c.sold>0 && (
+                              <span style={{ fontSize:9.5, fontWeight:800, color:"#b91c1c", background:"#fef2f2", borderRadius:5, padding:"1px 5px" }}>S {c.sold}</span>
+                            )}
+                            {c.added>0 && (
+                              <span style={{ fontSize:9.5, fontWeight:800, color:"#166534", background:"#f0fdf4", borderRadius:5, padding:"1px 5px" }}>I {c.added}</span>
+                            )}
+                            {c.corrected!==0 && (
+                              <span style={{ fontSize:9.5, fontWeight:800, color:"#7c3aed", background:"#f5f3ff", borderRadius:5, padding:"1px 5px" }}>C {c.corrected>0?"+":""}{c.corrected}</span>
                             )}
                           </div>
                         )}
@@ -12111,10 +12130,9 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
   );
 };
 
-// Small popover for a tagged cell — exactly which movement(s) caused that
-// day's change (who bought it, note), so "which day it dropped" is one
-// click from "why it dropped". A fixed full-screen catcher behind it closes
-// on any outside click, same pattern used by other popovers in this app.
+// Small popover for a tagged day cell — exactly which movement(s) happened
+// that day (who bought it, note). A fixed full-screen catcher behind it
+// closes on any outside click, same pattern used by other popovers here.
 const CellMovementPopover = ({ item, date, movements, fmtDate, onClose }) => {
   const dayMoves = movements.filter(m => m.date === date);
   return (
@@ -12146,35 +12164,89 @@ const CellMovementPopover = ({ item, date, movements, fmtDate, onClose }) => {
   );
 };
 
-// Print/export — a clean printable table of the sheet currently on screen
-// (the same rows/cells already computed for the grid). "Save as PDF" from
-// the browser's print dialog is the PDF export — same mechanism the
-// Despatch Log's own print button already uses elsewhere in this app.
-function printStockSheet(rows, monthLabel, shop) {
+// Popover for the Sold/Added month-total columns — the full dated list
+// behind that number (who it was sold to, or the restock note), sorted
+// oldest first. This is the "-5, click to see who" the Sold column exists
+// for.
+const MonthMovementsPopover = ({ item, type, monthLabel, moves, fmtDate, onClose }) => {
+  const sorted = [...moves].sort((a,b)=> a.date.localeCompare(b.date));
+  const total = sorted.reduce((s,m)=>s+(Number(m.qty)||0),0);
+  return (
+    <>
+      <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:290 }} />
+      <div onClick={e=>e.stopPropagation()} style={{
+        position:"absolute", top:"calc(100% + 4px)", left:0,
+        zIndex:300, background:"white", border:"1px solid #e2e8f0", borderRadius:10,
+        boxShadow:"0 10px 30px rgba(15,23,42,0.18)", padding:"10px 12px", width:230, textAlign:"left",
+      }}>
+        <div style={{ fontSize:11, fontWeight:800, color:"#0f172a" }}>{item.name}</div>
+        <div style={{ fontSize:10.5, color:"#94a3b8", marginBottom:6 }}>{type==="sale"?"Sold":"Added"} in {monthLabel} · {total} total</div>
+        {sorted.length === 0 ? (
+          <div style={{ fontSize:11, color:"#94a3b8" }}>Nothing logged.</div>
+        ) : sorted.map(m => (
+          <div key={m.id} style={{ display:"flex", justifyContent:"space-between", gap:8, fontSize:11, padding:"4px 0", borderTop:"1px solid #f1f5f9" }}>
+            <span style={{ color:"#475569" }}>
+              {fmtDate(m.date)}{type==="sale" && m.customer ? " — "+m.customer : ""}{type==="restock" && m.note ? " — "+m.note : ""}
+            </span>
+            <span style={{ fontWeight:800, color: type==="sale"?"#991b1b":"#166534", whiteSpace:"nowrap" }}>{type==="sale"?"−":"+"}{Number(m.qty)||0}</span>
+          </div>
+        ))}
+      </div>
+    </>
+  );
+};
+
+// Print/export — a proper paper record instead of a cramped grid: a
+// summary table (current stock, sold/added this month), then a full dated
+// sales ledger (who every unit went to) and a restock ledger, both sorted
+// chronologically. "Save as PDF" from the browser's print dialog is the
+// PDF export — same mechanism the Despatch Log's own print button uses.
+function printStockSheet(rows, monthLabel, shop, fmtDate) {
   const w = window.open("", "_blank");
   if (!w) return;
-  const days = rows[0]?.cells.map(c => c.date) || [];
-  const headerCells = days.map(d => `<th>${Number(d.slice(-2))}</th>`).join("");
-  const bodyRows = rows.map(({ item, cells }) => {
-    const tds = cells.map(c => {
-      const val = c.value === null ? "—" : c.value;
-      const tag = c.delta ? (c.delta > 0 ? ` <span style="color:#166534">+${c.delta}</span>` : ` <span style="color:#991b1b">${c.delta}</span>`) : "";
-      return `<td>${val}${tag}</td>`;
-    }).join("");
-    return `<tr><td style="text-align:left;font-weight:700">${item.name}</td><td style="font-weight:800">${item.currentStock}</td>${tds}</tr>`;
-  }).join("");
+
+  const summaryRows = rows.map(({ item, soldThisMonth, addedThisMonth }) =>
+    `<tr><td style="text-align:left;font-weight:700">${item.name}</td><td style="font-weight:800">${item.currentStock}</td><td>${soldThisMonth||"—"}</td><td>${addedThisMonth||"—"}</td></tr>`
+  ).join("");
+
+  const saleRows = [];
+  rows.forEach(({ item, monthMoves }) => {
+    monthMoves.filter(m=>m.type==="sale").forEach(m => saleRows.push({ date:m.date, item:item.name, qty:Number(m.qty)||0, customer:m.customer||"—", note:m.note||"" }));
+  });
+  saleRows.sort((a,b)=> a.date.localeCompare(b.date) || a.item.localeCompare(b.item));
+  const saleTable = saleRows.length
+    ? saleRows.map(r => `<tr><td>${fmtDate(r.date)}</td><td style="text-align:left">${r.item}</td><td>${r.qty}</td><td style="text-align:left">${r.customer}</td><td style="text-align:left">${r.note}</td></tr>`).join("")
+    : `<tr><td colspan="5" style="color:#94a3b8">No sales logged this month.</td></tr>`;
+
+  const restockRows = [];
+  rows.forEach(({ item, monthMoves }) => {
+    monthMoves.filter(m=>m.type==="restock").forEach(m => restockRows.push({ date:m.date, item:item.name, qty:Number(m.qty)||0, note:m.note||"" }));
+  });
+  restockRows.sort((a,b)=> a.date.localeCompare(b.date) || a.item.localeCompare(b.item));
+  const restockTable = restockRows.length
+    ? restockRows.map(r => `<tr><td>${fmtDate(r.date)}</td><td style="text-align:left">${r.item}</td><td>${r.qty}</td><td style="text-align:left">${r.note}</td></tr>`).join("")
+    : `<tr><td colspan="4" style="color:#94a3b8">No restocks logged this month.</td></tr>`;
+
   w.document.write(`<!DOCTYPE html><html><head><title>Stock Sheet — ${monthLabel}</title>
     <style>
       body{font-family:Arial,sans-serif;padding:24px;color:#0f172a;}
-      h1{font-size:18px;margin-bottom:4px;} p{color:#64748b;font-size:12px;margin-top:0 0 14px;}
-      table{width:100%;border-collapse:collapse;font-size:10.5px;}
-      th,td{border:1px solid #e2e8f0;padding:5px 6px;text-align:center;white-space:nowrap;}
-      th{background:#f8fafc;font-size:10px;}
-      td:first-child, th:first-child{text-align:left;}
+      h1{font-size:18px;margin-bottom:4px;} h2{font-size:13px;margin:22px 0 8px;text-transform:uppercase;letter-spacing:0.04em;color:#475569;}
+      p{color:#64748b;font-size:12px;margin:0;}
+      table{width:100%;border-collapse:collapse;font-size:11px;}
+      th,td{border:1px solid #e2e8f0;padding:6px 8px;text-align:center;}
+      th{background:#f8fafc;font-size:10px;text-transform:uppercase;letter-spacing:0.03em;}
     </style></head><body>
     <h1>📦 Stock Sheet${shop?.name?" — "+shop.name:""}</h1>
-    <p>${monthLabel} · stock level at the end of each day</p>
-    <table><thead><tr><th>Item</th><th>Current</th>${headerCells}</tr></thead><tbody>${bodyRows}</tbody></table>
+    <p>${monthLabel}</p>
+
+    <h2>Summary</h2>
+    <table><thead><tr><th style="text-align:left">Item</th><th>Current Stock</th><th>Sold This Month</th><th>Added This Month</th></tr></thead><tbody>${summaryRows}</tbody></table>
+
+    <h2>Sales — who we sold to, by date</h2>
+    <table><thead><tr><th>Date</th><th style="text-align:left">Item</th><th>Qty</th><th style="text-align:left">Customer</th><th style="text-align:left">Note</th></tr></thead><tbody>${saleTable}</tbody></table>
+
+    <h2>Stock Added</h2>
+    <table><thead><tr><th>Date</th><th style="text-align:left">Item</th><th>Qty</th><th style="text-align:left">Note</th></tr></thead><tbody>${restockTable}</tbody></table>
     </body></html>`);
   w.document.close();
   setTimeout(() => w.print(), 300);
