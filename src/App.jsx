@@ -12133,34 +12133,52 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
 // Small popover for a tagged day cell — exactly which movement(s) happened
 // that day (who bought it, note). A fixed full-screen catcher behind it
 // closes on any outside click, same pattern used by other popovers here.
+// Closes a popover when a click lands outside it. Deliberately NOT the
+// common "invisible div covering the whole viewport" trick — that div has
+// to be position:fixed, and nested this deep (inside a position:sticky
+// table cell, inside a horizontally-scrolling container) a fixed overlay
+// can stop lining up with the real screen if anything further up the page
+// sets a CSS transform. When that happens the invisible layer keeps
+// sitting on top of the entire app — sidebar included — silently eating
+// every click, which looks exactly like the page freezing until a
+// refresh. A scoped listener on the popover's own element has no such
+// failure mode: it never blocks a click, it only reacts to one.
+function usePopoverOutsideClose(onClose) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [onClose]);
+  return ref;
+}
+
 const CellMovementPopover = ({ item, date, movements, fmtDate, onClose }) => {
+  const ref = usePopoverOutsideClose(onClose);
   const dayMoves = movements.filter(m => m.date === date);
   return (
-    <>
-      <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:290 }} />
-      <div onClick={e=>e.stopPropagation()} style={{
-        position:"absolute", top:"calc(100% + 4px)", left:"50%", transform:"translateX(-50%)",
-        zIndex:300, background:"white", border:"1px solid #e2e8f0", borderRadius:10,
-        boxShadow:"0 10px 30px rgba(15,23,42,0.18)", padding:"10px 12px", width:210, textAlign:"left",
-      }}>
-        <div style={{ fontSize:11, fontWeight:800, color:"#0f172a", marginBottom:6 }}>{item.name} · {fmtDate(date)}</div>
-        {dayMoves.length === 0 ? (
-          <div style={{ fontSize:11, color:"#94a3b8" }}>No movement logged this day.</div>
-        ) : dayMoves.map(m => {
-          const isCorrection = m.type === "correction";
-          const signedQty = isCorrection ? (Number(m.qty)||0) : (m.type==="restock" ? (Number(m.qty)||0) : -(Number(m.qty)||0));
-          return (
-            <div key={m.id} style={{ display:"flex", justifyContent:"space-between", gap:8, fontSize:11, padding:"4px 0", borderTop:"1px solid #f1f5f9" }}>
-              <span style={{ color:"#475569" }}>
-                {m.type==="restock"?"🟢 Restocked":isCorrection?"⚖️ Corrected":"🔴 Sold"}
-                {m.customer ? " — "+m.customer : ""}
-              </span>
-              <span style={{ fontWeight:800, color: signedQty>0?"#166534":"#991b1b", whiteSpace:"nowrap" }}>{signedQty>0?"+":""}{signedQty}</span>
-            </div>
-          );
-        })}
-      </div>
-    </>
+    <div ref={ref} onClick={e=>e.stopPropagation()} style={{
+      position:"absolute", top:"calc(100% + 4px)", left:"50%", transform:"translateX(-50%)",
+      zIndex:300, background:"white", border:"1px solid #e2e8f0", borderRadius:10,
+      boxShadow:"0 10px 30px rgba(15,23,42,0.18)", padding:"10px 12px", width:210, textAlign:"left",
+    }}>
+      <div style={{ fontSize:11, fontWeight:800, color:"#0f172a", marginBottom:6 }}>{item.name} · {fmtDate(date)}</div>
+      {dayMoves.length === 0 ? (
+        <div style={{ fontSize:11, color:"#94a3b8" }}>No movement logged this day.</div>
+      ) : dayMoves.map(m => {
+        const isCorrection = m.type === "correction";
+        const signedQty = isCorrection ? (Number(m.qty)||0) : (m.type==="restock" ? (Number(m.qty)||0) : -(Number(m.qty)||0));
+        return (
+          <div key={m.id} style={{ display:"flex", justifyContent:"space-between", gap:8, fontSize:11, padding:"4px 0", borderTop:"1px solid #f1f5f9" }}>
+            <span style={{ color:"#475569" }}>
+              {m.type==="restock"?"🟢 Restocked":isCorrection?"⚖️ Corrected":"🔴 Sold"}
+              {m.customer ? " — "+m.customer : ""}
+            </span>
+            <span style={{ fontWeight:800, color: signedQty>0?"#166534":"#991b1b", whiteSpace:"nowrap" }}>{signedQty>0?"+":""}{signedQty}</span>
+          </div>
+        );
+      })}
+    </div>
   );
 };
 
@@ -12169,30 +12187,28 @@ const CellMovementPopover = ({ item, date, movements, fmtDate, onClose }) => {
 // oldest first. This is the "-5, click to see who" the Sold column exists
 // for.
 const MonthMovementsPopover = ({ item, type, monthLabel, moves, fmtDate, onClose }) => {
+  const ref = usePopoverOutsideClose(onClose);
   const sorted = [...moves].sort((a,b)=> a.date.localeCompare(b.date));
   const total = sorted.reduce((s,m)=>s+(Number(m.qty)||0),0);
   return (
-    <>
-      <div onClick={onClose} style={{ position:"fixed", inset:0, zIndex:290 }} />
-      <div onClick={e=>e.stopPropagation()} style={{
-        position:"absolute", top:"calc(100% + 4px)", left:0,
-        zIndex:300, background:"white", border:"1px solid #e2e8f0", borderRadius:10,
-        boxShadow:"0 10px 30px rgba(15,23,42,0.18)", padding:"10px 12px", width:230, textAlign:"left",
-      }}>
-        <div style={{ fontSize:11, fontWeight:800, color:"#0f172a" }}>{item.name}</div>
-        <div style={{ fontSize:10.5, color:"#94a3b8", marginBottom:6 }}>{type==="sale"?"Sold":"Added"} in {monthLabel} · {total} total</div>
-        {sorted.length === 0 ? (
-          <div style={{ fontSize:11, color:"#94a3b8" }}>Nothing logged.</div>
-        ) : sorted.map(m => (
-          <div key={m.id} style={{ display:"flex", justifyContent:"space-between", gap:8, fontSize:11, padding:"4px 0", borderTop:"1px solid #f1f5f9" }}>
-            <span style={{ color:"#475569" }}>
-              {fmtDate(m.date)}{type==="sale" && m.customer ? " — "+m.customer : ""}{type==="restock" && m.note ? " — "+m.note : ""}
-            </span>
-            <span style={{ fontWeight:800, color: type==="sale"?"#991b1b":"#166534", whiteSpace:"nowrap" }}>{type==="sale"?"−":"+"}{Number(m.qty)||0}</span>
-          </div>
-        ))}
-      </div>
-    </>
+    <div ref={ref} onClick={e=>e.stopPropagation()} style={{
+      position:"absolute", top:"calc(100% + 4px)", left:0,
+      zIndex:300, background:"white", border:"1px solid #e2e8f0", borderRadius:10,
+      boxShadow:"0 10px 30px rgba(15,23,42,0.18)", padding:"10px 12px", width:230, textAlign:"left",
+    }}>
+      <div style={{ fontSize:11, fontWeight:800, color:"#0f172a" }}>{item.name}</div>
+      <div style={{ fontSize:10.5, color:"#94a3b8", marginBottom:6 }}>{type==="sale"?"Sold":"Added"} in {monthLabel} · {total} total</div>
+      {sorted.length === 0 ? (
+        <div style={{ fontSize:11, color:"#94a3b8" }}>Nothing logged.</div>
+      ) : sorted.map(m => (
+        <div key={m.id} style={{ display:"flex", justifyContent:"space-between", gap:8, fontSize:11, padding:"4px 0", borderTop:"1px solid #f1f5f9" }}>
+          <span style={{ color:"#475569" }}>
+            {fmtDate(m.date)}{type==="sale" && m.customer ? " — "+m.customer : ""}{type==="restock" && m.note ? " — "+m.note : ""}
+          </span>
+          <span style={{ fontWeight:800, color: type==="sale"?"#991b1b":"#166534", whiteSpace:"nowrap" }}>{type==="sale"?"−":"+"}{Number(m.qty)||0}</span>
+        </div>
+      ))}
+    </div>
   );
 };
 
