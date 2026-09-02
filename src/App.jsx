@@ -34,7 +34,7 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadAuditDismissals, dbDismissAuditFinding,
   dbLoadAttendanceRecords, dbClockIn, dbClockOut, dbSetAttendanceRecord,
   dbLoadAttendanceHolidays, dbAddAttendanceHoliday, dbRemoveAttendanceHoliday,
-  dbLoadInventoryItems, dbAddInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement,
+  dbLoadInventoryItems, dbAddInventoryItem, dbUpdateInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement,
   dbLoadUpfrontRefunds, dbAddUpfrontRefund, dbDeleteUpfrontRefund,
   dbLoadGiftVouchers, dbAddGiftVoucher, dbUpdateGiftVoucher, dbDeleteGiftVoucher,
   dbLoadStaffSalaries, dbSaveStaffSalary, dbLoadStaffPositions, dbSaveStaffPosition, dbLoadCarryForward, dbUpdateCarryForward,
@@ -11874,8 +11874,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
       )}
 
       {showAddItem && (
-        <AddInventoryItemModal onClose={()=>setShowAddItem(false)} onSave={async(name,stock)=>{
-          const id = await dbAddInventoryItem(shopId, name, stock);
+        <AddInventoryItemModal onClose={()=>setShowAddItem(false)} onSave={async(name,stock,category)=>{
+          const id = await dbAddInventoryItem(shopId, name, stock, category);
           if (id) { setShowAddItem(false); load(); }
           else alert("Couldn't add this item — please check your connection and try again.");
         }}/>
@@ -11940,6 +11940,12 @@ function rectOf(el) {
   return { top:r.top, bottom:r.bottom, left:r.left, right:r.right, width:r.width, height:r.height };
 }
 
+// Fixed, ordered list of product categories the Stock Sheet groups items
+// under. An item with no category (or one that doesn't match this list)
+// falls into "Other" so nothing ever silently disappears from the sheet.
+const STOCK_CATEGORIES = ["Cover-Up Patches", "Receding Hairpieces", "Bangs and Fringes", "Updos", "Hair Accessories"];
+const OTHER_CATEGORY = "Other";
+
 const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSelectItem, onDeleteItem, fmtDate }) => {
   const [cellPopover, setCellPopover] = React.useState(null); // {itemId, date, anchor} | null
   const [monthPopover, setMonthPopover] = React.useState(null); // {itemId, type:'sale'|'restock', anchor} | null
@@ -11988,6 +11994,21 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
       return { item, cells, soldThisMonth, addedThisMonth, monthMoves };
     });
   }, [items, movementsByItem, days.join(","), sheetMonth]);
+
+  // Grouped for display only — same rows, arranged under a header per
+  // product category (fixed order, "Other" catches anything uncategorized
+  // so nothing silently disappears). Popover lookups and the print export
+  // both still use the flat `rows` list above, unaffected by grouping.
+  const groupedRows = React.useMemo(() => {
+    const byCat = {};
+    rows.forEach(r => {
+      const cat = STOCK_CATEGORIES.includes(r.item.category) ? r.item.category : OTHER_CATEGORY;
+      (byCat[cat] ||= []).push(r);
+    });
+    return [...STOCK_CATEGORIES, OTHER_CATEGORY]
+      .filter(cat => byCat[cat] && byCat[cat].length > 0)
+      .map(cat => ({ category: cat, rows: byCat[cat] }));
+  }, [rows]);
 
   // Five columns stay frozen on the left as the sheet scrolls sideways
   // through the month — Item (full name, never truncated), Sold/Added this
@@ -12049,7 +12070,16 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
             </tr>
           </thead>
           <tbody>
-            {rows.map(({ item, cells, soldThisMonth, addedThisMonth, monthMoves }, ridx) => {
+            {groupedRows.map(({ category, rows: catRows }) => (
+              <React.Fragment key={category}>
+                <tr>
+                  <td colSpan={5 + days.length} style={{
+                    position:"sticky", left:0, padding:"7px 10px", background:"#f1f5f9",
+                    borderTop:"1px solid #e2e8f0", borderBottom:"1px solid #e2e8f0",
+                    fontWeight:800, fontSize:11, color:"#334155", textTransform:"uppercase", letterSpacing:"0.05em",
+                  }}>{category}</td>
+                </tr>
+                {catRows.map(({ item, cells, soldThisMonth, addedThisMonth, monthMoves }, ridx) => {
               const rowBg = ridx % 2 ? "#fdfbf3" : "white";
               return (
                 <tr key={item.id}>
@@ -12121,7 +12151,9 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                   })}
                 </tr>
               );
-            })}
+                })}
+              </React.Fragment>
+            ))}
           </tbody>
         </table>
       </div>
@@ -12262,9 +12294,20 @@ function printStockSheet(rows, monthLabel, shop, fmtDate) {
   const w = window.open("", "_blank");
   if (!w) return;
 
-  const summaryRows = rows.map(({ item, soldThisMonth, addedThisMonth }) =>
-    `<tr><td style="text-align:left;font-weight:700">${item.name}</td><td style="font-weight:800">${item.currentStock}</td><td>${soldThisMonth||"—"}</td><td>${addedThisMonth||"—"}</td></tr>`
-  ).join("");
+  // Grouped by category, same order and fallback as the on-screen sheet,
+  // so the printed record matches what's visible on the page.
+  const byCat = {};
+  rows.forEach(r => {
+    const cat = STOCK_CATEGORIES.includes(r.item.category) ? r.item.category : OTHER_CATEGORY;
+    (byCat[cat] ||= []).push(r);
+  });
+  const summaryRows = [...STOCK_CATEGORIES, OTHER_CATEGORY]
+    .filter(cat => byCat[cat] && byCat[cat].length > 0)
+    .map(cat => `<tr><td colspan="4" style="text-align:left;font-weight:800;background:#f8fafc;text-transform:uppercase;letter-spacing:0.04em;font-size:10px;">${cat}</td></tr>` +
+      byCat[cat].map(({ item, soldThisMonth, addedThisMonth }) =>
+        `<tr><td style="text-align:left;font-weight:700">${item.name}</td><td style="font-weight:800">${item.currentStock}</td><td>${soldThisMonth||"—"}</td><td>${addedThisMonth||"—"}</td></tr>`
+      ).join("")
+    ).join("");
 
   const saleRows = [];
   rows.forEach(({ item, monthMoves }) => {
@@ -12312,6 +12355,7 @@ function printStockSheet(rows, monthLabel, shop, fmtDate) {
 const AddInventoryItemModal = ({ onClose, onSave }) => {
   const [name, setName] = React.useState("");
   const [stock, setStock] = React.useState("");
+  const [category, setCategory] = React.useState(STOCK_CATEGORIES[0]);
   const [saving, setSaving] = React.useState(false);
   const inp = {width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
   const lbl = {display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
@@ -12322,6 +12366,13 @@ const AddInventoryItemModal = ({ onClose, onSave }) => {
         <div style={{marginBottom:12}}>
           <label style={lbl}>Item Name</label>
           <input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Side Bangs" style={inp} autoFocus/>
+        </div>
+        <div style={{marginBottom:12}}>
+          <label style={lbl}>Category</label>
+          <select value={category} onChange={e=>setCategory(e.target.value)} style={inp}>
+            {STOCK_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            <option value={OTHER_CATEGORY}>{OTHER_CATEGORY}</option>
+          </select>
         </div>
         <div style={{marginBottom:18}}>
           <label style={lbl}>Starting Stock</label>
@@ -12336,7 +12387,7 @@ const AddInventoryItemModal = ({ onClose, onSave }) => {
             onClick={async()=>{
               if(!name.trim()) return;
               setSaving(true);
-              await onSave(name.trim(), Number(stock)||0);
+              await onSave(name.trim(), Number(stock)||0, category);
               setSaving(false);
             }}
             disabled={!name.trim()||saving}

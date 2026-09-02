@@ -1615,17 +1615,17 @@ export const dbLoadInventoryItems = async (shopId) => {
   const { data, error } = await sb.from('inventory_items').select('*').eq('shop_id', shopId).order('name');
   if (error) { console.error('Load inventory items error:', error); return []; }
   return (data || []).map(r => ({
-    id: r.id, name: r.name, currentStock: Number(r.current_stock) || 0,
+    id: r.id, name: r.name, category: r.category || null, currentStock: Number(r.current_stock) || 0,
     totalStocked: Number(r.total_stocked) || 0, createdAt: r.created_at,
   }));
 };
 
-export const dbAddInventoryItem = async (shopId, name, initialStock) => {
+export const dbAddInventoryItem = async (shopId, name, initialStock, category) => {
   if (!sb) return null;
   const id = `INV-${Date.now().toString().slice(-8)}`;
   const stock = Number(initialStock) || 0;
   const { error } = await sb.from('inventory_items').insert({
-    id, shop_id: shopId, name, current_stock: 0, total_stocked: 0,
+    id, shop_id: shopId, name, category: category || null, current_stock: 0, total_stocked: 0,
   });
   if (error) { console.error('Add inventory item error:', error); return null; }
   if (stock > 0) {
@@ -1635,6 +1635,20 @@ export const dbAddInventoryItem = async (shopId, name, initialStock) => {
     await dbAddInventoryMovement(shopId, id, 'restock', stock, new Date().toISOString().slice(0,10), null, null, 'Initial stock');
   }
   return id;
+};
+
+// Renames an item and/or moves it to a different category — used for
+// correcting a name or re-grouping an item without touching its stock
+// history (that lives entirely in inventory_movements and is untouched).
+export const dbUpdateInventoryItem = async (shopId, itemId, { name, category } = {}) => {
+  if (!sb) return false;
+  const patch = {};
+  if (name !== undefined) patch.name = name;
+  if (category !== undefined) patch.category = category || null;
+  if (Object.keys(patch).length === 0) return true;
+  const { error } = await sb.from('inventory_items').update(patch).eq('id', itemId).eq('shop_id', shopId);
+  if (error) { console.error('Update inventory item error:', error); return false; }
+  return true;
 };
 
 export const dbDeleteInventoryItem = async (shopId, itemId) => {
