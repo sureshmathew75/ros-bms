@@ -1495,53 +1495,107 @@ export const dbDeleteSalesBonusRecord = async (id) => {
   return true;
 };
 
-/* ── Petty Cash: small lump sums (₹1,000–2,000) handed to staff to cover
-   shipping/courier and petrol costs. A simple two-entry-type ledger —
-   ISSUE (cash handed out) and SPEND (logged against it) — so the balance
-   is always just a sum, never typed in by hand. Every SPEND also writes
-   a matching row into Expenses (category "Petty Cash") so shop expense
-   totals include this spend without double entry; deleting the spend
-   removes that Expenses row too. ─────────────────────────────────────── */
+/* ── Petty Cash: ONE shared cash float per shop ("the office kitty") —
+   not a per-staff account — topped up in lump sums (₹1,000–2,000) to
+   cover shipping/courier and petrol costs. A simple two-entry-type
+   cashbook — ISSUE (cash topped up) and SPEND (logged against it) — so
+   the balance is always just a sum, never typed in by hand. Every SPEND
+   also writes a matching row into Expenses (category "Petty Cash") so
+   shop expense totals include it without double entry.
+
+   staff_name on each row records who ENTERED that transaction (issued
+   it, or spent against the float) — accountability, not ownership; the
+   balance itself is always summed across every row for the shop.
+
+   Corrections never silently overwrite history: editing an entry marks
+   the old row is_voided (excluded from the balance, shown struck-through
+   in the ledger) and inserts a fresh corrected row, linked back via
+   corrects_id — a real cashbook is never erased, only struck and
+   re-entered. ──────────────────────────────────────────────────────── */
 export const dbLoadPettyCash = async (shopId) => {
   if (!sb) return [];
-  const { data, error } = await sb.from('petty_cash_records').select('*').eq('shop_id', shopId).order('date', { ascending: false });
+  const { data, error } = await sb.from('petty_cash_records').select('*').eq('shop_id', shopId).order('date', { ascending: true });
   if (error) { console.error('Load petty cash error:', error); return []; }
   return (data || []).map(r => ({
     id: r.id, staffName: r.staff_name, type: r.type, date: r.date,
     amount: Number(r.amount) || 0, category: r.category || '', description: r.description || '',
     linkedExpenseId: r.linked_expense_id || null,
+    isVoided: !!r.is_voided, correctsId: r.corrects_id || null,
   }));
 };
 
-export const dbAddPettyCashIssue = async (shopId, staffName, amount, date, note) => {
+const pettyCashId = () => `PC-${Date.now().toString().slice(-8)}-${Math.floor(Math.random()*1000)}`;
+
+export const dbAddPettyCashIssue = async (shopId, enteredBy, amount, date, note) => {
   if (!sb) return null;
-  const id = `PC-${Date.now().toString().slice(-8)}-${Math.floor(Math.random()*1000)}`;
+  const id = pettyCashId();
   const { error } = await sb.from('petty_cash_records').insert({
-    id, shop_id: shopId, staff_name: staffName, type: 'ISSUE', date,
+    id, shop_id: shopId, staff_name: enteredBy, type: 'ISSUE', date,
     amount: Number(amount) || 0, category: null, description: note || '',
   });
   if (error) { console.error('Save petty cash issue error:', error); return null; }
   return id;
 };
 
-export const dbAddPettyCashSpend = async (shopId, staffName, staffFullName, amount, date, category, description) => {
+export const dbAddPettyCashSpend = async (shopId, spentBy, spentByFullName, amount, date, category, description) => {
   if (!sb) return null;
   // Make sure "Petty Cash" exists as an Expenses category (idempotent —
   // dbSaveExpenseCategory no-ops if it's already there), then mirror this
   // spend into Expenses so shop totals include it automatically.
   await dbSaveExpenseCategory(shopId, 'Petty Cash').catch(()=>{});
-  const expDesc = `${category || 'Petty Cash'}${description ? ` — ${description}` : ''} (${staffFullName || staffName})`;
+  const expDesc = `${category || 'Petty Cash'}${description ? ` — ${description}` : ''} (${spentByFullName || spentBy})`;
   const expResult = await dbSaveExpense(shopId, {
     date, cat: 'Petty Cash', desc: expDesc, amount, method: 'Cash',
-    notes: `Petty cash spend — ${staffFullName || staffName}`,
+    notes: `Petty cash spend — ${spentByFullName || spentBy}`,
   });
-  const id = `PC-${Date.now().toString().slice(-8)}-${Math.floor(Math.random()*1000)}`;
+  const id = pettyCashId();
   const { error } = await sb.from('petty_cash_records').insert({
-    id, shop_id: shopId, staff_name: staffName, type: 'SPEND', date,
+    id, shop_id: shopId, staff_name: spentBy, type: 'SPEND', date,
     amount: Number(amount) || 0, category: category || '', description: description || '',
     linked_expense_id: expResult?.uuid || null,
   });
   if (error) { console.error('Save petty cash spend error:', error); return null; }
+  return id;
+};
+
+// Corrects an ISSUE entry: strikes the original (excluded from the
+// balance, kept for the audit trail) and inserts a fresh corrected row.
+export const dbEditPettyCashIssue = async (shopId, original, enteredBy, amount, date, note) => {
+  if (!sb) return null;
+  const { error: voidErr } = await sb.from('petty_cash_records').update({ is_voided: true }).eq('id', original.id).eq('shop_id', shopId);
+  if (voidErr) { console.error('Void petty cash issue error:', voidErr); return null; }
+  const id = pettyCashId();
+  const { error } = await sb.from('petty_cash_records').insert({
+    id, shop_id: shopId, staff_name: enteredBy, type: 'ISSUE', date,
+    amount: Number(amount) || 0, category: null, description: note || '', corrects_id: original.id,
+  });
+  if (error) { console.error('Save corrected petty cash issue error:', error); return null; }
+  return id;
+};
+
+// Corrects a SPEND entry the same way, and updates the linked Expenses
+// row IN PLACE (rather than voiding + duplicating it) so shop expense
+// totals reflect the correction without double-counting.
+export const dbEditPettyCashSpend = async (shopId, original, spentBy, spentByFullName, amount, date, category, description) => {
+  if (!sb) return null;
+  if (original.linkedExpenseId) {
+    const expDesc = `${category || 'Petty Cash'}${description ? ` — ${description}` : ''} (${spentByFullName || spentBy})`;
+    await dbSaveExpense(shopId, {
+      _uuid: original.linkedExpenseId, date, cat: 'Petty Cash', desc: expDesc, amount, method: 'Cash',
+      notes: `Petty cash spend — ${spentByFullName || spentBy} (corrected)`,
+    }).catch(()=>{});
+  }
+  const { error: voidErr } = await sb.from('petty_cash_records')
+    .update({ is_voided: true, linked_expense_id: null }) // hand the expense link over to the corrected row below
+    .eq('id', original.id).eq('shop_id', shopId);
+  if (voidErr) { console.error('Void petty cash spend error:', voidErr); return null; }
+  const id = pettyCashId();
+  const { error } = await sb.from('petty_cash_records').insert({
+    id, shop_id: shopId, staff_name: spentBy, type: 'SPEND', date,
+    amount: Number(amount) || 0, category: category || '', description: description || '',
+    linked_expense_id: original.linkedExpenseId || null, corrects_id: original.id,
+  });
+  if (error) { console.error('Save corrected petty cash spend error:', error); return null; }
   return id;
 };
 

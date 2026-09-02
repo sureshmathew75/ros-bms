@@ -42,7 +42,7 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadLoans, dbAddLoan, dbUpdateLoanBalance, dbDeleteLoan,
   dbLoadPayrollRecords, dbSavePayrollRecord, dbDeletePayrollRecord,
   dbLoadSalesBonusRecords, dbSaveSalesBonusRecord, dbDeleteSalesBonusRecord,
-  dbLoadPettyCash, dbAddPettyCashIssue, dbAddPettyCashSpend, dbDeletePettyCash } from "./db";
+  dbLoadPettyCash, dbAddPettyCashIssue, dbAddPettyCashSpend, dbEditPettyCashIssue, dbEditPettyCashSpend, dbDeletePettyCash } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -13878,32 +13878,51 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
   );
 };
 
-/* ── PettyCashPage: small cash floats (₹1,000–2,000) handed to staff for
-   shipping/courier and petrol costs. Admin issues cash; staff (and admin,
-   on their behalf) log what it was spent on; the balance is always just
-   computed — never typed — from the running total of issues minus spends.
-   Available on every shop (unlike Payroll), and visible to staff too,
-   each scoped to only their own float. ─────────────────────────────────── */
+/* ── PettyCashPage: ONE shared cash float per shop — "the office kitty" —
+   topped up in lump sums (₹1,000–2,000) for shipping/courier and petrol
+   costs. Not a per-staff account: everyone who can see this tab (admin +
+   staff, unlike Payroll) shares the same balance and the same book.
+   Admin tops it up; anyone can log what it was spent on. The balance is
+   always computed, never typed. Displayed as a running cashbook — date,
+   particulars, received/paid columns, balance carried forward — and a
+   saved entry is never silently overwritten: editing strikes the old
+   line (kept, visible, excluded from the balance) and adds a fresh
+   corrected one, the way a real petty cash book gets corrected. ───────── */
 const PETTY_CASH_CATEGORIES = ["Shipping/Courier", "Petrol/Fuel", "Other"];
 
 const PettyCashPage = ({ shopId, shop, user, users=[] }) => {
   const isAdminView = user?.role !== "staff";
   const [loaded, setLoaded] = React.useState(false);
   const [records, setRecords] = React.useState([]);
-  const [selectedStaff, setSelectedStaff] = React.useState("");
   const [showIssue, setShowIssue] = React.useState(false);
   const [issueAmount, setIssueAmount] = React.useState("");
   const [issueNote, setIssueNote] = React.useState("");
+  const [spendBy, setSpendBy] = React.useState("");
   const [spendDate, setSpendDate] = React.useState(() => new Date().toISOString().slice(0,10));
   const [spendCategory, setSpendCategory] = React.useState(PETTY_CASH_CATEGORIES[0]);
   const [spendAmount, setSpendAmount] = React.useState("");
   const [spendDesc, setSpendDesc] = React.useState("");
   const [confirmDelete, setConfirmDelete] = React.useState(null);
+  const [editingRecord, setEditingRecord] = React.useState(null); // the live record being corrected
+  const [editDate, setEditDate] = React.useState("");
+  const [editCategory, setEditCategory] = React.useState("");
+  const [editAmount, setEditAmount] = React.useState("");
+  const [editDesc, setEditDesc] = React.useState("");
+  const [editSpendBy, setEditSpendBy] = React.useState("");
 
+  // Full-name lookup across EVERY user (staff and admin alike) — a top-up
+  // is usually entered by an admin, so this needs to resolve admin names
+  // too, not just staffList.
+  const fullNameOf = (shortName) => users.find(u=>u.name===shortName)?.fullName || shortName;
   const staffList = React.useMemo(()=>users.filter(u=>u.role==="staff"&&(u.shops||[]).includes(shopId)), [users, shopId]);
-  const fullNameOf = (shortName) => staffList.find(u=>u.name===shortName)?.fullName || shortName;
   const myName = user?.name || "";
   const fmtDate = (d) => { if(!d) return ""; try { return new Date(d+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}); } catch { return d||""; } };
+
+  // Who a spend can be attributed to: admin can log on behalf of any
+  // staff member or themselves; staff can only log as themselves.
+  const spendByOptions = isAdminView
+    ? [...staffList.map(u=>({name:u.name, label:u.fullName||u.name})), {name: user?.name||"admin", label:(user?.fullName||user?.name||"Admin")+" (You)"}]
+    : [{name: myName, label: fullNameOf(myName)}];
 
   const load = React.useCallback(()=>{
     return dbLoadPettyCash(shopId).then(recs=>{ setRecords(recs); setLoaded(true); });
@@ -13911,26 +13930,25 @@ const PettyCashPage = ({ shopId, shop, user, users=[] }) => {
   React.useEffect(()=>{ load(); }, [load]);
 
   React.useEffect(()=>{
-    if (isAdminView) { if (!selectedStaff && staffList.length>0) setSelectedStaff(staffList[0].name); }
-    else if (selectedStaff !== myName) setSelectedStaff(myName);
-  }, [isAdminView, staffList, selectedStaff, myName]);
+    if (!spendBy && spendByOptions.length>0) setSpendBy(isAdminView ? spendByOptions[0].name : myName);
+  }, [isAdminView, myName, spendByOptions.length, spendBy]);
 
   if (!loaded) return <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>Loading petty cash…</div>;
 
-  if (isAdminView && staffList.length===0) return (
-    <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>No staff members are assigned to {shop.name} yet. Add one under Settings → Manage Users first.</div>
-  );
-  if (!isAdminView && !myName) return (
-    <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>Couldn't identify your account — please log in again.</div>
-  );
-
-  const balanceFor = (name) => records.filter(r=>r.staffName===name).reduce((s,r)=> s + (r.type==="ISSUE" ? r.amount : -r.amount), 0);
-
-  const myRecordsChrono = records.filter(r=>r.staffName===selectedStaff).slice().sort((a,b)=> (a.date||"").localeCompare(b.date||""));
+  // records already come back oldest → newest; give each an id → record
+  // lookup and a running balance that skips struck (voided) entries.
+  const byId = {};
+  records.forEach(r=>{ byId[r.id]=r; });
+  const correctedFrom = {}; // correctsId -> the row that replaced it
+  records.forEach(r=>{ if (r.correctsId) correctedFrom[r.correctsId]=r; });
   let running = 0;
-  const withRunning = myRecordsChrono.map(r=>{ running += (r.type==="ISSUE" ? r.amount : -r.amount); return {...r, runningBalance: running}; });
-  const ledger = withRunning.slice().reverse();
+  const ledger = records.map(r=>{
+    if (!r.isVoided) running += (r.type==="ISSUE" ? r.amount : -r.amount);
+    return {...r, runningBalance: r.isVoided ? null : running};
+  });
   const currentBalance = running;
+  const totalReceived = ledger.filter(r=>!r.isVoided && r.type==="ISSUE").reduce((s,r)=>s+r.amount,0);
+  const totalPaid      = ledger.filter(r=>!r.isVoided && r.type==="SPEND").reduce((s,r)=>s+r.amount,0);
 
   const balanceColor = currentBalance<=0 ? "#dc2626" : currentBalance<300 ? "#b45309" : "#166534";
   const balanceBg    = currentBalance<=0 ? "#fef2f2" : currentBalance<300 ? "#fffbeb" : "#ecfdf5";
@@ -13939,8 +13957,8 @@ const PettyCashPage = ({ shopId, shop, user, users=[] }) => {
   const handleIssue = async () => {
     const amt = Number(issueAmount);
     if (!(amt>0)) { alert("Enter an amount to issue."); return; }
-    if (!window.confirm(`Issue ${shop.symbol}${amt.toLocaleString()} petty cash to ${fullNameOf(selectedStaff)}?`)) return;
-    const id = await dbAddPettyCashIssue(shopId, selectedStaff, amt, new Date().toISOString().slice(0,10), issueNote.trim());
+    if (!window.confirm(`Add ${shop.symbol}${amt.toLocaleString()} to the office petty cash?`)) return;
+    const id = await dbAddPettyCashIssue(shopId, user?.name||"admin", amt, new Date().toISOString().slice(0,10), issueNote.trim());
     if (!id) { alert("Couldn't save — please check your connection and try again."); return; }
     setIssueAmount(""); setIssueNote(""); setShowIssue(false);
     await load();
@@ -13950,7 +13968,7 @@ const PettyCashPage = ({ shopId, shop, user, users=[] }) => {
     const amt = Number(spendAmount);
     if (!(amt>0)) { alert("Enter the amount spent."); return; }
     if (!spendDate) { alert("Pick a date."); return; }
-    const id = await dbAddPettyCashSpend(shopId, selectedStaff, fullNameOf(selectedStaff), amt, spendDate, spendCategory, spendDesc.trim());
+    const id = await dbAddPettyCashSpend(shopId, spendBy, fullNameOf(spendBy), amt, spendDate, spendCategory, spendDesc.trim());
     if (!id) { alert("Couldn't save — please check your connection and try again."); return; }
     setSpendAmount(""); setSpendDesc("");
     await load();
@@ -13962,42 +13980,46 @@ const PettyCashPage = ({ shopId, shop, user, users=[] }) => {
     await load();
   };
 
+  const openEdit = (rec) => {
+    setEditingRecord(rec);
+    setEditDate(rec.date);
+    setEditCategory(rec.category || PETTY_CASH_CATEGORIES[0]);
+    setEditAmount(String(rec.amount));
+    setEditDesc(rec.description || "");
+    setEditSpendBy(rec.staffName);
+  };
+
+  const handleSaveEdit = async () => {
+    const amt = Number(editAmount);
+    if (!(amt>0)) { alert("Enter a valid amount."); return; }
+    if (!editDate) { alert("Pick a date."); return; }
+    let newId;
+    if (editingRecord.type==="ISSUE") {
+      newId = await dbEditPettyCashIssue(shopId, editingRecord, user?.name||"admin", amt, editDate, editDesc.trim());
+    } else {
+      newId = await dbEditPettyCashSpend(shopId, editingRecord, editSpendBy, fullNameOf(editSpendBy), amt, editDate, editCategory, editDesc.trim());
+    }
+    if (!newId) { alert("Couldn't save the correction — please check your connection and try again."); return; }
+    setEditingRecord(null);
+    await load();
+  };
+
   const inp = {padding:"8px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none"};
+  const particularsOf = (r) => r.type==="ISSUE"
+    ? (r.description ? `Cash received — ${r.description}` : "Cash received — office top-up")
+    : `${r.category||"Other"}${r.description?` — ${r.description}`:""}`;
 
   return (
-    <div style={{maxWidth:1000}}>
+    <div style={{maxWidth:1050}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16,flexWrap:"wrap",gap:10}}>
-        <h2 style={{margin:0,fontSize:20,fontWeight:800,color:"#0f172a"}}>💵 Petty Cash</h2>
+        <h2 style={{margin:0,fontSize:20,fontWeight:800,color:"#0f172a"}}>💵 Petty Cash — Office Kitty</h2>
       </div>
 
-      {/* at-a-glance balances — admin only, so you can spot who needs a top-up without switching the selector each time */}
-      {isAdminView && (
-        <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:16}}>
-          {staffList.map(u=>{
-            const bal = balanceFor(u.name);
-            const c  = bal<=0 ? "#dc2626" : bal<300 ? "#b45309" : "#166534";
-            const bg = bal<=0 ? "#fef2f2" : bal<300 ? "#fffbeb" : "#ecfdf5";
-            const bd = bal<=0 ? "#fecaca" : bal<300 ? "#fde68a" : "#a7f3d0";
-            const active = selectedStaff===u.name;
-            return (
-              <button key={u.id} onClick={()=>{setSelectedStaff(u.name); setShowIssue(false);}}
-                style={{display:"flex",flexDirection:"column",alignItems:"flex-start",gap:2,padding:"8px 14px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",
-                  border:"1.5px solid "+(active?shop.accent:bd), background:active?shop.accentBg:bg}}>
-                <span style={{fontSize:11,fontWeight:700,color:"#64748b"}}>{u.fullName||u.name}</span>
-                <span style={{fontSize:15,fontWeight:800,color:c}}>{shop.symbol}{bal.toLocaleString()}</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* balance + issue + log-a-spend card for whoever's selected */}
+      {/* balance + issue + log-a-spend card — one shared float for the whole shop */}
       <div style={{border:"1px solid #e2e8f0",borderRadius:12,marginBottom:16,overflow:"hidden",background:"white"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,padding:16,background:balanceBg,borderBottom:"1px solid "+balanceBorder}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:16,padding:16,background:balanceBg,borderBottom:"1px solid "+balanceBorder}}>
           <div>
-            <div style={{fontSize:10,fontWeight:800,color:balanceColor,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>
-              {isAdminView ? `${fullNameOf(selectedStaff)}'s Balance` : "Your Petty Cash Balance"}
-            </div>
+            <div style={{fontSize:10,fontWeight:800,color:balanceColor,textTransform:"uppercase",letterSpacing:"0.08em",marginBottom:4}}>Current Office Balance</div>
             <div style={{fontSize:26,fontWeight:900,color:balanceColor,letterSpacing:"-0.02em"}}>{shop.symbol}{currentBalance.toLocaleString()}</div>
             {currentBalance<300 && (
               <div style={{fontSize:11.5,color:balanceColor,marginTop:2}}>
@@ -14005,10 +14027,20 @@ const PettyCashPage = ({ shopId, shop, user, users=[] }) => {
               </div>
             )}
           </div>
+          <div style={{display:"flex",gap:18}}>
+            <div>
+              <div style={{fontSize:9.5,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em"}}>Total Received</div>
+              <div style={{fontSize:15,fontWeight:800,color:"#166534"}}>{shop.symbol}{totalReceived.toLocaleString()}</div>
+            </div>
+            <div>
+              <div style={{fontSize:9.5,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em"}}>Total Paid</div>
+              <div style={{fontSize:15,fontWeight:800,color:"#991b1b"}}>{shop.symbol}{totalPaid.toLocaleString()}</div>
+            </div>
+          </div>
           {isAdminView && (
             <button onClick={()=>setShowIssue(v=>!v)}
               style={{padding:"10px 18px",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>
-              ➕ Issue Cash
+              ➕ Top Up
             </button>
           )}
         </div>
@@ -14016,7 +14048,7 @@ const PettyCashPage = ({ shopId, shop, user, users=[] }) => {
         {isAdminView && showIssue && (
           <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap",padding:"14px 16px",borderBottom:"1px solid #f1f5f9"}}>
             <div>
-              <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Amount to Issue</label>
+              <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Amount to Add</label>
               <input type="number" value={issueAmount} onChange={e=>setIssueAmount(e.target.value)} placeholder="e.g. 1000" style={{...inp,width:130}}/>
             </div>
             <div style={{flex:1,minWidth:180}}>
@@ -14025,7 +14057,7 @@ const PettyCashPage = ({ shopId, shop, user, users=[] }) => {
             </div>
             <button onClick={handleIssue}
               style={{padding:"9px 16px",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>
-              ✅ Confirm Issue
+              ✅ Confirm
             </button>
           </div>
         )}
@@ -14033,6 +14065,14 @@ const PettyCashPage = ({ shopId, shop, user, users=[] }) => {
         <div style={{padding:"14px 16px"}}>
           <div style={{fontSize:11,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",marginBottom:8}}>Log a Spend</div>
           <div style={{display:"flex",gap:10,alignItems:"flex-end",flexWrap:"wrap"}}>
+            {isAdminView && (
+              <div>
+                <label style={{fontSize:10,fontWeight:700,color:"#94a3b8",display:"block",marginBottom:3}}>Spent By</label>
+                <select value={spendBy} onChange={e=>setSpendBy(e.target.value)} style={{...inp,width:150}}>
+                  {spendByOptions.map(o=><option key={o.name} value={o.name}>{o.label}</option>)}
+                </select>
+              </div>
+            )}
             <div>
               <label style={{fontSize:10,fontWeight:700,color:"#94a3b8",display:"block",marginBottom:3}}>Date</label>
               <input type="date" value={spendDate} onChange={e=>setSpendDate(e.target.value)} style={{...inp,width:140}}/>
@@ -14056,49 +14096,106 @@ const PettyCashPage = ({ shopId, shop, user, users=[] }) => {
               ✅ Add
             </button>
           </div>
+          {!isAdminView && <div style={{fontSize:11,color:"#94a3b8",marginTop:8}}>Logging as {fullNameOf(myName)}</div>}
         </div>
       </div>
 
-      <div style={{fontSize:13,fontWeight:800,color:"#0f172a",marginBottom:10}}>📒 Ledger{isAdminView?` — ${fullNameOf(selectedStaff)}`:""}</div>
+      {/* ── the cashbook itself — ruled like a page of a ledger book ── */}
+      <div style={{fontSize:13,fontWeight:800,color:"#0f172a",marginBottom:10}}>📒 Petty Cash Book</div>
       {ledger.length===0 ? (
         <div style={{padding:40,textAlign:"center",color:"#94a3b8"}}>No petty cash activity yet.</div>
       ) : (
-        <div style={{border:"1px solid #e2e8f0",borderRadius:12,overflow:"auto"}}>
-          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5}}>
+        <div style={{position:"relative",border:"1px solid #e5e0d0",borderRadius:8,overflow:"auto",background:"#fffdf7",boxShadow:"0 1px 3px rgba(0,0,0,0.06)"}}>
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:12.5,minWidth:820}}>
             <thead>
-              <tr style={{background:"#f8fafc"}}>
-                {["DATE","TYPE","CATEGORY","DESCRIPTION","AMOUNT","BALANCE",""].map(h=>(
-                  <th key={h} style={{padding:"8px 10px",textAlign:(h==="AMOUNT"||h==="BALANCE")?"right":"left",fontSize:10,fontWeight:800,color:"#64748b",letterSpacing:"0.05em",whiteSpace:"nowrap"}}>{h}</th>
+              <tr style={{borderBottom:"2px solid #0f172a"}}>
+                {["DATE","PARTICULARS","ENTERED BY","RECEIVED","PAID","BALANCE",""].map(h=>(
+                  <th key={h} style={{padding:"9px 10px",textAlign:(h==="RECEIVED"||h==="PAID"||h==="BALANCE")?"right":"left",fontSize:10,fontWeight:800,color:"#57534e",letterSpacing:"0.06em",whiteSpace:"nowrap",borderLeft:h==="RECEIVED"?"1px solid #e5e0d0":"none"}}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {ledger.map(r=>{
-                const canDelete = isAdminView || r.type==="SPEND";
+              {ledger.map((r,i)=>{
+                const canEdit = !r.isVoided && (isAdminView || (r.type==="SPEND" && r.staffName===myName));
+                const canDelete = isAdminView || (!r.isVoided && r.type==="SPEND" && r.staffName===myName);
+                const original = r.correctsId ? byId[r.correctsId] : null;
+                const struck = r.isVoided;
+                const rowText = struck ? {textDecoration:"line-through", color:"#a8a29e"} : {color:"#292524"};
                 return (
-                  <tr key={r.id} style={{borderTop:"1px solid #f1f5f9"}}>
-                    <td style={{padding:"8px 10px",whiteSpace:"nowrap"}}>{fmtDate(r.date)}</td>
-                    <td style={{padding:"8px 10px"}}>
-                      <span style={{fontSize:10.5,fontWeight:700,padding:"2px 8px",borderRadius:999,whiteSpace:"nowrap",
-                        background:r.type==="ISSUE"?"#ecfdf5":"#fef2f2", color:r.type==="ISSUE"?"#166534":"#991b1b"}}>
-                        {r.type==="ISSUE"?"Issued":"Spent"}
-                      </span>
+                  <tr key={r.id} style={{borderBottom:"1px solid #efebdd", background: struck ? "#faf9f4" : (i%2? "#fdfcf7" : "#fffdf7")}}>
+                    <td style={{padding:"8px 10px",whiteSpace:"nowrap",verticalAlign:"top",...rowText}}>{fmtDate(r.date)}</td>
+                    <td style={{padding:"8px 10px",verticalAlign:"top"}}>
+                      <div style={rowText}>{particularsOf(r)}</div>
+                      {struck && <div style={{fontSize:10.5,color:"#b45309",fontWeight:700,marginTop:2}}>✏️ struck — corrected below</div>}
+                      {original && <div style={{fontSize:10.5,color:"#b45309",fontWeight:700,marginTop:2}}>✏️ corrected — was {shop.symbol}{original.amount.toLocaleString()} on {fmtDate(original.date)}</div>}
                     </td>
-                    <td style={{padding:"8px 10px",color:"#64748b",whiteSpace:"nowrap"}}>{r.category||"—"}</td>
-                    <td style={{padding:"8px 10px",color:"#64748b"}}>{r.description||"—"}</td>
-                    <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,whiteSpace:"nowrap",color:r.type==="ISSUE"?"#166534":"#991b1b"}}>{r.type==="ISSUE"?"+":"−"}{shop.symbol}{r.amount.toLocaleString()}</td>
-                    <td style={{padding:"8px 10px",textAlign:"right",fontWeight:700,whiteSpace:"nowrap"}}>{shop.symbol}{r.runningBalance.toLocaleString()}</td>
-                    <td style={{padding:"8px 10px",textAlign:"right",whiteSpace:"nowrap"}}>
-                      {canDelete && (
-                        <button onClick={()=>setConfirmDelete(r)}
-                          style={{border:"none",background:"transparent",color:"#dc2626",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>Delete</button>
-                      )}
+                    <td style={{padding:"8px 10px",whiteSpace:"nowrap",verticalAlign:"top",...rowText}}>{fullNameOf(r.staffName)}</td>
+                    <td style={{padding:"8px 10px",textAlign:"right",whiteSpace:"nowrap",verticalAlign:"top",borderLeft:"1px solid #efebdd",fontWeight:700,...(struck?rowText:{color:"#166534"})}}>{r.type==="ISSUE" ? `${shop.symbol}${r.amount.toLocaleString()}` : ""}</td>
+                    <td style={{padding:"8px 10px",textAlign:"right",whiteSpace:"nowrap",verticalAlign:"top",fontWeight:700,...(struck?rowText:{color:"#991b1b"})}}>{r.type==="SPEND" ? `${shop.symbol}${r.amount.toLocaleString()}` : ""}</td>
+                    <td style={{padding:"8px 10px",textAlign:"right",whiteSpace:"nowrap",verticalAlign:"top",fontWeight:800,color:"#0f172a"}}>{struck ? "—" : `${shop.symbol}${r.runningBalance.toLocaleString()}`}</td>
+                    <td style={{padding:"8px 10px",textAlign:"right",whiteSpace:"nowrap",verticalAlign:"top"}}>
+                      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                        {canEdit && <button onClick={()=>openEdit(r)} style={{border:"none",background:"transparent",color:shop.accent,cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>Edit</button>}
+                        {canDelete && <button onClick={()=>setConfirmDelete(r)} style={{border:"none",background:"transparent",color:"#dc2626",cursor:"pointer",fontSize:11,fontWeight:700,fontFamily:"inherit"}}>Delete</button>}
+                      </div>
                     </td>
                   </tr>
                 );
               })}
             </tbody>
+            <tfoot>
+              <tr style={{borderTop:"2px solid #0f172a"}}>
+                <td colSpan={3} style={{padding:"9px 10px",fontWeight:800,fontSize:11.5}}>TOTAL</td>
+                <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800,fontSize:11.5,color:"#166534",borderLeft:"1px solid #efebdd"}}>{shop.symbol}{totalReceived.toLocaleString()}</td>
+                <td style={{padding:"9px 10px",textAlign:"right",fontWeight:800,fontSize:11.5,color:"#991b1b"}}>{shop.symbol}{totalPaid.toLocaleString()}</td>
+                <td style={{padding:"9px 10px",textAlign:"right",fontWeight:900,fontSize:13,color:balanceColor}}>{shop.symbol}{currentBalance.toLocaleString()}</td>
+                <td/>
+              </tr>
+            </tfoot>
           </table>
+        </div>
+      )}
+
+      {editingRecord && (
+        <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+          <div style={{background:"white",borderRadius:16,padding:22,maxWidth:380,width:"92%"}}>
+            <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:4}}>Edit this entry</div>
+            <p style={{fontSize:11.5,color:"#94a3b8",marginBottom:16}}>The original stays in the book, struck through — this saves a corrected line instead of erasing it.</p>
+            <div style={{display:"flex",flexDirection:"column",gap:10,marginBottom:18}}>
+              {editingRecord.type==="SPEND" && isAdminView && (
+                <div>
+                  <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Spent By</label>
+                  <select value={editSpendBy} onChange={e=>setEditSpendBy(e.target.value)} style={{...inp,width:"100%"}}>
+                    {spendByOptions.map(o=><option key={o.name} value={o.name}>{o.label}</option>)}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Date</label>
+                <input type="date" value={editDate} onChange={e=>setEditDate(e.target.value)} style={{...inp,width:"100%"}}/>
+              </div>
+              {editingRecord.type==="SPEND" && (
+                <div>
+                  <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Category</label>
+                  <select value={editCategory} onChange={e=>setEditCategory(e.target.value)} style={{...inp,width:"100%"}}>
+                    {PETTY_CASH_CATEGORIES.map(c=><option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+              )}
+              <div>
+                <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Amount</label>
+                <input type="number" value={editAmount} onChange={e=>setEditAmount(e.target.value)} style={{...inp,width:"100%"}}/>
+              </div>
+              <div>
+                <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>{editingRecord.type==="ISSUE"?"Note":"Description"}</label>
+                <input type="text" value={editDesc} onChange={e=>setEditDesc(e.target.value)} style={{...inp,width:"100%"}}/>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:10}}>
+              <button onClick={()=>setEditingRecord(null)} style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+              <button onClick={handleSaveEdit} style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Save Correction</button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -14107,7 +14204,7 @@ const PettyCashPage = ({ shopId, shop, user, users=[] }) => {
           <div style={{background:"white",borderRadius:16,padding:22,maxWidth:340,width:"92%"}}>
             <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:8}}>Delete this entry?</div>
             <p style={{fontSize:12,color:"#64748b",marginBottom:18}}>
-              {confirmDelete.type==="ISSUE" ? "This removes the issued amount from the balance calculation." : "This removes the spend, and its matching Expenses entry, for good."}
+              {confirmDelete.type==="ISSUE" ? "This removes the amount from the balance calculation." : "This removes the spend, and its matching Expenses entry, for good."} This cannot be undone.
             </p>
             <div style={{display:"flex",gap:10}}>
               <button onClick={()=>setConfirmDelete(null)} style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
