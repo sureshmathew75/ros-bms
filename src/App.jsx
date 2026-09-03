@@ -3787,10 +3787,18 @@ const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,on
     }
   },[filter,shopId,upfrontLoaded,vouchersLoaded]);
 
-  // Flatten all sales for delivery date lookup
+  // Sales for this shop only. Invoice IDs (e.g. "ROS13567") are only
+  // guaranteed unique within one shop's own sequence — ROS Selections,
+  // ROS Hairlines, and ROS India can each independently have a sale with
+  // the same ID. Flattening every shop's sales together here used to let
+  // a lookup by ID grab a different shop's same-numbered invoice instead
+  // of this shop's own, most visibly as a refund check reading the wrong
+  // sale's amount. Scoping to the current shop is also what every other
+  // per-shop sale lookup in the app already does (see PurchasePLSection
+  // callers, which pass salesData[shopId]).
   const allSales=React.useMemo(()=>{
-    return Object.values(salesData||{}).flat();
-  },[salesData]);
+    return salesData?.[shopId] || [];
+  },[salesData, shopId]);
 
   const getDeliveryDate=(saleId)=>{
     const sale=allSales.find(s=>s.id===saleId);
