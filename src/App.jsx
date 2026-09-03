@@ -8768,7 +8768,7 @@ return(
               sales={sales}
               onSaleUpdate={async (saleId, changes) => {
                 const sale = sales.find(s => s.id === saleId);
-                if (!sale) return;
+                if (!sale) return { error: `No sale with ID ${saleId} found in ${shop?.name||shopId}.` };
                 // Same auto-fulfil behaviour as the Sales page's own tracking
                 // entry (onSaveTracking above) — tracking arriving from the
                 // Despatch Log marks the sale FULFILLED unless it has already
@@ -8785,7 +8785,12 @@ return(
                   status:   isFulfilled ? currentStatus : "FULFILLED",
                   sentDate: sale.sentDate || today,
                 };
-                await dbSaveSale(shopId, updated);
+                try {
+                  await dbSaveSale(shopId, updated);
+                } catch (err) {
+                  console.error("dbSaveSale failed in onSaleUpdate:", err);
+                  return { error: err?.message || String(err) };
+                }
                 setSalesData(prev => ({
                   ...prev,
                   [shopId]: (prev[shopId] || []).map(s => s.id === saleId ? {
@@ -8796,6 +8801,7 @@ return(
                     sentDate: updated.sentDate,
                   } : s),
                 }));
+                return { ok: true };
               }}
             />
           )}

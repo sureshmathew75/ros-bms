@@ -726,7 +726,22 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
       const groupKey = linkedSale ? despatchKeyOf(linkedSale) : merged.saleId;
       const members = groupMembers[groupKey];
       const saleIds = members && members.length ? members.map(m => m.id) : [merged.saleId];
-      saleIds.forEach(id => onSaleUpdate(id, { trackingNo: merged.trackingNo, carrier: merged.shipper }));
+      // Awaited (was previously fire-and-forget) so a failure here is
+      // never silent — if the linked sale can't be marked Fulfilled, the
+      // despatch row still shows tracking saved, but the Sales tab would
+      // otherwise be left stuck on the old status with no sign anything
+      // went wrong.
+      for (const id of saleIds) {
+        try {
+          const result = await onSaleUpdate(id, { trackingNo: merged.trackingNo, carrier: merged.shipper });
+          if (result && result.error) {
+            alert(`Tracking saved here, but couldn't update the linked sale (${id}) to Fulfilled:\n\n${result.error}\n\nPlease flip its status manually on the Sales tab.`);
+          }
+        } catch (err) {
+          console.error("onSaleUpdate failed for", id, err);
+          alert(`Tracking saved here, but couldn't update the linked sale (${id}) to Fulfilled — ${err?.message || err}\n\nPlease flip its status manually on the Sales tab.`);
+        }
+      }
     }
   };
 
