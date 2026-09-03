@@ -8715,16 +8715,20 @@ return(
               salesData={salesData}
               pushDeleted={pushDeleted}
               onSyncSaleStatus={async (saleId, newStatus, extraUpdates={}) => {
-                const allSales = Object.values(salesData).flat();
-                const sale = allSales.find(s => s.id === saleId);
+                // Scoped to this shop only — invoice IDs like "ROS13567"
+                // are only unique within one shop's own sequence, so
+                // searching every shop's sales combined (as this used to)
+                // could find and silently update a different shop's
+                // same-numbered invoice instead of the one actually being
+                // acted on here. Same class of bug as the refund-amount
+                // lookup fixed in ReturnsPanel's `allSales`.
+                const sale = (salesData[shopId]||[]).find(s => s.id === saleId);
                 if (!sale) return;
-                const sid = Object.keys(salesData).find(k => (salesData[k]||[]).some(s=>s.id===saleId));
-                if (!sid) return;
                 const updated = { ...sale, ful: newStatus, status: newStatus, ...extraUpdates };
-                await dbSaveSale(sid, updated);
+                await dbSaveSale(shopId, updated);
                 setSalesData(prev => ({
                   ...prev,
-                  [sid]: (prev[sid]||[]).map(s => s.id===saleId ? {...s, ful:newStatus, status:newStatus, ...extraUpdates} : s),
+                  [shopId]: (prev[shopId]||[]).map(s => s.id===saleId ? {...s, ful:newStatus, status:newStatus, ...extraUpdates} : s),
                 }));
               }}
             />
