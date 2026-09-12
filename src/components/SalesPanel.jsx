@@ -484,7 +484,22 @@ export default function SalesPanel({
     const fromId = dragId;
     setDragId(null); setDragOverId(null);
     if (!fromId || fromId === targetId || !onInlineEdit) return;
-    const list = [...sortedSales];
+    // Renumber across the WHOLE month (periodSales), not just whatever
+    // subset is currently on screen. sortedSales is built from
+    // statusFiltered — if a status tab, the flagged toggle, or the Bank/
+    // Shop payment filter is active while dragging (e.g. filtering to
+    // "Bank" to match a bank statement, which is exactly how this drag
+    // feature tends to get used), renumbering only the visible rows as
+    // 1,2,3… collides with the sortpos values already sitting on the
+    // hidden rows from an earlier full-list reorder. Those duplicate
+    // sortpos numbers make the overall month order ambiguous again next
+    // time it's viewed unfiltered — which is exactly the "I reordered it
+    // correctly but it didn't stick" symptom. Sorting the full unfiltered
+    // month first reproduces today's on-screen order for the filtered
+    // rows (same comparator) while keeping every hidden row's relative
+    // position intact, then the move and renumber apply to that complete,
+    // collision-free list.
+    const list = [...periodSales].sort(compareSales);
     const fromIdx = list.findIndex(x => x.id === fromId);
     const toIdx = list.findIndex(x => x.id === targetId);
     if (fromIdx === -1 || toIdx === -1) return;
@@ -735,30 +750,35 @@ export default function SalesPanel({
     [periodFiltSales]
   );
 
-  /* ── Sort: FY descending → date descending → invoice number descending ── */
+  /* ── Sort: FY descending → date descending → invoice number descending ──
+     Factored out (rather than inlined in the useMemo below) so
+     handleReorderDrop above can sort the full, unfiltered period list with
+     the exact same rules used on screen — see the comment there for why
+     that matters. */
+  const compareSales = (a, b) => {
+    // Single-month view (current-month tab or an explicitly picked month):
+    // manual drag order (sortpos) wins, but ONLY between two sales that
+    // both already have one. A sale with no sortpos yet (e.g. one just
+    // added after the month was reordered) falls through to normal date
+    // order instead of always being pushed to the bottom.
+    if (pickedMonth || salesPeriod === "month") {
+      const spA = a.sortpos, spB = b.sortpos;
+      if (spA != null && spB != null && spA !== spB) return spA - spB;
+    }
+    // Primary: FY group (use fyStartYear which reads invoice suffix)
+    const fyA = fyStartYear(a) ?? 0;
+    const fyB = fyStartYear(b) ?? 0;
+    if (fyB !== fyA) return fyB - fyA;
+    // Secondary: date descending
+    const dateDiff = toSortableDate(b.date).localeCompare(toSortableDate(a.date));
+    if (dateDiff !== 0) return dateDiff;
+    // Tertiary: invoice number descending
+    const numA = parseInt((a.id||"0").replace(/[^0-9]/g,""))||0;
+    const numB = parseInt((b.id||"0").replace(/[^0-9]/g,""))||0;
+    return numB - numA;
+  };
   const sortedSales = useMemo(
-    () => [...statusFiltered].sort((a, b) => {
-      // Single-month view (current-month tab or an explicitly picked month):
-      // manual drag order (sortpos) wins, but ONLY between two sales that
-      // both already have one. A sale with no sortpos yet (e.g. one just
-      // added after the month was reordered) falls through to normal date
-      // order instead of always being pushed to the bottom.
-      if (pickedMonth || salesPeriod === "month") {
-        const spA = a.sortpos, spB = b.sortpos;
-        if (spA != null && spB != null && spA !== spB) return spA - spB;
-      }
-      // Primary: FY group (use fyStartYear which reads invoice suffix)
-      const fyA = fyStartYear(a) ?? 0;
-      const fyB = fyStartYear(b) ?? 0;
-      if (fyB !== fyA) return fyB - fyA;
-      // Secondary: date descending
-      const dateDiff = toSortableDate(b.date).localeCompare(toSortableDate(a.date));
-      if (dateDiff !== 0) return dateDiff;
-      // Tertiary: invoice number descending
-      const numA = parseInt((a.id||"0").replace(/[^0-9]/g,""))||0;
-      const numB = parseInt((b.id||"0").replace(/[^0-9]/g,""))||0;
-      return numB - numA;
-    }),
+    () => [...statusFiltered].sort(compareSales),
     [statusFiltered, pickedMonth, salesPeriod]
   );
 
@@ -2603,7 +2623,7 @@ We hope you enjoy your purchase! 💜
                         </div>
                       ) : (
                         <span style={{ fontSize: 11, color: "#94a3b8", fontStyle: "italic" }}>
-                          Enter in Despatch Log
+                          Entered from Despatch Log
                         </span>
                       )}
                     </td>
