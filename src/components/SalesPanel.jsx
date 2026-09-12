@@ -2465,6 +2465,18 @@ We hope you enjoy your purchase! 💜
                             onClick={(e) => {
                               e.stopPropagation();
                               if (!onInlineEdit) return;
+                              // ROS India only: a sale can't be marked ready to despatch
+                              // until admin has verified it against the bank statement —
+                              // applies to everyone, admins included, no override. Only
+                              // gates the "start" action; removing an already-Ready sale
+                              // is always allowed.
+                              if (!s.readyToShip && isIndiaShop && !s.verified) {
+                                alert(
+                                  "This sale hasn't been verified against the bank statement yet.\n\n" +
+                                  "Please contact admin to verify the payment before this sale can be marked ready to despatch."
+                                );
+                                return;
+                              }
                               const gKey = getInstalmentKey(s);
                               const group = gKey ? (instalmentGroups[gKey] || []) : [];
                               const groupIds = group.length > 1 ? group.map(x => x.id) : [s.id];
@@ -2479,7 +2491,9 @@ We hope you enjoy your purchase! 💜
                                 groupIds.forEach(id => onInlineEdit(id, { readyToShip: true }));
                               }
                             }}
-                            title={s.readyToShip ? "Awaiting Tracking — click to undo" : "Click here when the item is ready to despatch — surfaces it on the Despatch Log page"}
+                            title={s.readyToShip ? "Awaiting Tracking — click to undo"
+                              : (isIndiaShop && !s.verified) ? "Not verified yet — contact admin to verify against the bank statement first"
+                              : "Click here when the item is ready to despatch — surfaces it on the Despatch Log page"}
                             style={{
                               display: "inline-flex", flexDirection: "column", alignItems: "center",
                               justifyContent: "center", width: 120, textAlign: "center",
