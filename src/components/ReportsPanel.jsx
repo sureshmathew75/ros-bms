@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { showAlert } from "./PopupHost";
 
 const fmtAmt=(shop,n)=>{
   if(!n)return shop.symbol+"0.00";
@@ -94,7 +95,7 @@ const KPI=({l,v,shop})=>(
 
 function printReport(title,shop,html){
   const win=window.open("","_blank");
-  if(!win){alert("Please allow popups.");return;}
+  if(!win){showAlert("Please allow popups.");return;}
   win.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/><title>${title} — ${shop.name}</title>
 <style>*{box-sizing:border-box;}body{font-family:Arial,sans-serif;font-size:12px;color:#0f172a;padding:24px;}
 h1{font-size:20px;font-weight:900;margin:0 0 4px;}h2{font-size:13px;font-weight:800;margin:16px 0 8px;border-bottom:1px solid #e2e8f0;padding-bottom:4px;}

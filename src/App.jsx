@@ -12,6 +12,7 @@ import ReportsPanel from "./components/ReportsPanel";
 import SalesPanel from "./components/SalesPanel";
 import SuppliersPanel from "./components/SuppliersPanel";
 import DispatchPanel from "./components/DispatchPanel";
+import PopupHost, { showAlert, showConfirm } from "./components/PopupHost";
 import {
   L_SEL,
   L_HAIR,
@@ -2443,7 +2444,7 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user,sales=
     const updated={...ret,...form,...updates};
     const ok=await dbSaveReturn(updated);
     if(!ok){
-      alert("Couldn't save this — please check your connection and try again. Nothing was updated.");
+      showAlert("Couldn't save this — please check your connection and try again. Nothing was updated.");
       setSaving(false);
       return;
     }
@@ -2462,7 +2463,7 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user,sales=
     setSaving(true);
     const ok=await dbSaveReturn({...ret,...form});
     if(!ok){
-      alert("Couldn't save this — please check your connection and try again. Nothing was updated.");
+      showAlert("Couldn't save this — please check your connection and try again. Nothing was updated.");
       setSaving(false);
       return;
     }
@@ -2605,8 +2606,8 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user,sales=
 
                 {/* Step 2: Mark Received (after instructions sent) */}
                 {(form.status==="MSG_SENT"||form.status==="RETURN_IN_TRANSIT")&&(
-                  <button onClick={()=>{
-                    if(!window.confirm("Mark item as received and notify customer?"))return;
+                  <button onClick={async()=>{
+                    if(!(await showConfirm("Mark item as received and notify customer?")))return;
                     handleStatusChange("RETURN_RECEIVED").then(()=>{
                       openWA(ret.phone, MSG_RECEIVED(ret.customer, ret.id));
                     });
@@ -2628,8 +2629,8 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user,sales=
 
                 {/* Step 3a: Exchange */}
                 {["MSG_SENT","RETURN_IN_TRANSIT","RETURN_RECEIVED"].includes(form.status)&&(
-                  <button onClick={()=>{
-                    if(!window.confirm("Mark as Exchanged? This will close the case."))return;
+                  <button onClick={async()=>{
+                    if(!(await showConfirm("Mark as Exchanged? This will close the case.")))return;
                     handleStatusChange("EXCHANGED").then(()=>{
                       openWA(ret.phone, MSG_EXCHANGED(ret.customer, ret.id));
                     });
@@ -2642,8 +2643,8 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user,sales=
 
                 {/* Step 3b: Refund */}
                 {["MSG_SENT","RETURN_IN_TRANSIT","RETURN_RECEIVED"].includes(form.status)&&(
-                  <button onClick={()=>{
-                    if(!window.confirm("Mark as Refunded? This will close the case."))return;
+                  <button onClick={async()=>{
+                    if(!(await showConfirm("Mark as Refunded? This will close the case.")))return;
                     handleStatusChange("REFUNDED").then(()=>{
                       openWA(ret.phone, MSG_REFUNDED(ret.customer, ret.id));
                     });
@@ -3073,7 +3074,7 @@ const UpfrontRefundsView = ({ shopId, shop, allSales, upfrontRefunds, setUpfront
     if (data.saleId) {
       const dup = upfrontRefunds.find(r => r.saleId === data.saleId && Number(r.amount) === Number(data.amount));
       if (dup) {
-        alert(`This exact refund amount (${shop.symbol}${Number(data.amount).toLocaleString()}) has already been logged for this sale. If this is a genuinely separate refund, please double-check before proceeding.`);
+        showAlert(`This exact refund amount (${shop.symbol}${Number(data.amount).toLocaleString()}) has already been logged for this sale. If this is a genuinely separate refund, please double-check before proceeding.`);
         return;
       }
     }
@@ -3093,14 +3094,14 @@ const UpfrontRefundsView = ({ shopId, shop, allSales, upfrontRefunds, setUpfront
         const newTotal = existingRefund + (Number(data.amount)||0);
         if (newTotal > groupReceived) {
           const remaining = Math.max(groupReceived - existingRefund, 0);
-          alert(`This refund would exceed the amount received.\n\nReceived: ${shop.symbol}${groupReceived.toLocaleString()}\nAlready refunded: ${shop.symbol}${existingRefund.toLocaleString()}\nYou can refund up to ${shop.symbol}${remaining.toLocaleString()} more on this sale.`);
+          showAlert(`This refund would exceed the amount received.\n\nReceived: ${shop.symbol}${groupReceived.toLocaleString()}\nAlready refunded: ${shop.symbol}${existingRefund.toLocaleString()}\nYou can refund up to ${shop.symbol}${remaining.toLocaleString()} more on this sale.`);
           return;
         }
       }
     }
 
     const id = await dbAddUpfrontRefund(shopId, data);
-    if (!id) { alert("Couldn't save — please check your connection and try again."); return; }
+    if (!id) { showAlert("Couldn't save — please check your connection and try again."); return; }
     setUpfrontRefunds(prev => [{ ...data, id }, ...prev]);
     setShowLogRefund(false);
 
@@ -3120,7 +3121,7 @@ const UpfrontRefundsView = ({ shopId, shop, allSales, upfrontRefunds, setUpfront
     const ok = await dbDeleteUpfrontRefund(shopId, id);
     setConfirmDeleteRefund(null);
     if (ok) setUpfrontRefunds(prev => prev.filter(r => r.id !== id));
-    else alert("Couldn't delete — please check your connection and try again.");
+    else showAlert("Couldn't delete — please check your connection and try again.");
   };
 
   return (
@@ -3441,7 +3442,7 @@ const GiftVouchersView = ({ shopId, shop, allSales, allReturns, giftVouchers, se
 
   const handleSave = async (data) => {
     const id = await dbAddGiftVoucher(shopId, data);
-    if (!id) { alert("Couldn't save — please check your connection and try again."); return; }
+    if (!id) { showAlert("Couldn't save — please check your connection and try again."); return; }
     const record = { ...data, id, status:"ACTIVE", issuedDate: data.issuedDate, redeemedDate:"", redeemedNote:"" };
     setGiftVouchers(prev => [record, ...prev]);
     setShowIssueVoucher(false);
@@ -3453,7 +3454,7 @@ const GiftVouchersView = ({ shopId, shop, allSales, allReturns, giftVouchers, se
   const updateStatus = async (v, newStatus) => {
     const patch = newStatus==="REDEEMED" ? { status:newStatus, redeemedDate:new Date().toISOString().slice(0,10) } : { status:newStatus };
     const ok = await dbUpdateGiftVoucher(shopId, v.id, patch);
-    if (!ok) { alert("Couldn't update — please check your connection and try again."); return; }
+    if (!ok) { showAlert("Couldn't update — please check your connection and try again."); return; }
     setGiftVouchers(prev => prev.map(x=>x.id===v.id?{...x,...patch}:x));
   };
 
@@ -3461,7 +3462,7 @@ const GiftVouchersView = ({ shopId, shop, allSales, allReturns, giftVouchers, se
     const ok = await dbDeleteGiftVoucher(shopId, id);
     setConfirmDeleteVoucher(null);
     if (ok) setGiftVouchers(prev => prev.filter(v => v.id !== id));
-    else alert("Couldn't delete — please check your connection and try again.");
+    else showAlert("Couldn't delete — please check your connection and try again.");
   };
 
   const tabCount = (key) => key==="UPFRONT_REFUNDS" ? upfrontRefunds.length : key==="GIFT_VOUCHERS" ? giftVouchers.length : counts[key];
@@ -3762,7 +3763,7 @@ const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,on
     const ret=voucherForReturn;
     if(!ret)return;
     const id=await dbAddGiftVoucher(shopId,data);
-    if(!id){ alert("Couldn't save — please check your connection and try again."); return; }
+    if(!id){ showAlert("Couldn't save — please check your connection and try again."); return; }
     setGiftVouchers(prev=>[{...data,id,status:"ACTIVE",issuedDate:data.issuedDate,redeemedDate:"",redeemedNote:""},...prev]);
     setVoucherForReturn(null);
 
@@ -3773,7 +3774,7 @@ const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,on
       setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
       if(onSyncSaleStatus) await onSyncSaleStatus(ret.saleId,"REFUNDED",{refundAmt:Number(data.amount)||0,adjType:"Return Refund"});
     } else {
-      alert("Voucher was issued, but the return case couldn't be closed automatically — please close it manually.");
+      showAlert("Voucher was issued, but the return case couldn't be closed automatically — please close it manually.");
     }
     if(data.phone) setWaModal({phone:data.phone,customerName:data.customer,message:MSG_VOUCHER_ISSUED(data.customer,id,data.amount,shop.symbol,data.issuedDate)});
   };
@@ -3970,7 +3971,7 @@ Thank you for your cooperation.`,
             ].filter(s=>s.id===shopId||shopId===undefined).map(s=>(
               <button key={s.id} onClick={()=>{
                 const link=`https://ros-bms.vercel.app/returns?shop=${s.id}`;
-                navigator.clipboard.writeText(link).then(()=>alert("Link copied!\n"+link));
+                navigator.clipboard.writeText(link).then(()=>showAlert("Link copied!\n"+link));
               }} style={{padding:"5px 12px",borderRadius:8,border:"1px solid "+s.color+"44",
                 background:s.color+"10",color:s.color,fontSize:11,fontWeight:700,
                 cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
@@ -4069,7 +4070,7 @@ Thank you for your cooperation.`,
                 const updated={...ret,...updates};
                 const ok=await dbSaveReturn(updated);
                 if(!ok){
-                  alert("Couldn't save this — please check your connection and try again. Nothing was updated.");
+                  showAlert("Couldn't save this — please check your connection and try again. Nothing was updated.");
                   return false;
                 }
                 if(onSyncSaleStatus){
@@ -4107,8 +4108,8 @@ Thank you for your cooperation.`,
 
                   return(
                     <div style={{display:"flex",flexDirection:"column",gap:4}}>
-                      <button onClick={e=>{e.stopPropagation();
-                        if(!window.confirm("Mark item as received?"))return;
+                      <button onClick={async e=>{e.stopPropagation();
+                        if(!(await showConfirm("Mark item as received?")))return;
                         handleQuickAction("RETURN_RECEIVED").then(ok=>{ if(ok) openWA(ret.phone,MSG_RECEIVED(ret.customer,ret.id)); });
                       }} style={{padding:"4px 10px",borderRadius:7,border:"none",background:"#f59e0b",
                         color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
@@ -4116,7 +4117,7 @@ Thank you for your cooperation.`,
                       </button>
                       {showReminder&&(
                         <button onClick={async e=>{e.stopPropagation();
-                          if(!window.confirm("Send reminder to "+ret.customer+"?"))return;
+                          if(!(await showConfirm("Send reminder to "+ret.customer+"?")))return;
                           openWA(ret.phone, MSG_REMINDER(ret.customer, ret.id, hardDeadlineStr));
                           const today2=new Date().toISOString().slice(0,10);
                           const updated={...ret, reminderSentAt:today2};
@@ -4143,26 +4144,26 @@ Thank you for your cooperation.`,
                 }
                 if(!["REFUNDED","EXCHANGED","EXCHANGE_REFUND"].includes(ret.status)) return(
                   <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                    <button onClick={e=>{e.stopPropagation();
-                      if(!window.confirm("Mark as Exchanged? This closes the case."))return;
+                    <button onClick={async e=>{e.stopPropagation();
+                      if(!(await showConfirm("Mark as Exchanged? This closes the case.")))return;
                       handleQuickAction("EXCHANGED").then(()=>openWA(ret.phone,MSG_EXCHANGED(ret.customer,ret.id)));
                     }} style={{padding:"4px 8px",borderRadius:7,border:"none",background:"#a21caf",
                       color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
                       🔄 Exchange
                     </button>
-                    <button onClick={e=>{e.stopPropagation();
+                    <button onClick={async e=>{e.stopPropagation();
                       const amt=window.prompt("Refund amount (₹)?", "");
                       if(amt===null)return;
-                      if(!window.confirm("Mark as Refunded? This closes the case."))return;
+                      if(!(await showConfirm("Mark as Refunded? This closes the case.")))return;
                       handleQuickAction("REFUNDED",{refundAmount:Number(amt)||0}).then(()=>openWA(ret.phone,MSG_REFUNDED(ret.customer,ret.id)));
                     }} style={{padding:"4px 8px",borderRadius:7,border:"none",background:"#6d28d9",
                       color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
                       💰 Refund
                     </button>
-                    <button onClick={e=>{e.stopPropagation();
+                    <button onClick={async e=>{e.stopPropagation();
                       const amt=window.prompt("Refund amount for the price difference (₹)?", "");
                       if(amt===null)return;
-                      if(!window.confirm("Mark as Refund/Exchange — exchanged for a different item, with the price difference refunded? This closes the case."))return;
+                      if(!(await showConfirm("Mark as Refund/Exchange — exchanged for a different item, with the price difference refunded? This closes the case.")))return;
                       handleQuickAction("EXCHANGE_REFUND",{refundAmount:Number(amt)||0});
                     }} style={{padding:"4px 8px",borderRadius:7,border:"none",background:"#c2410c",
                       color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
@@ -4281,7 +4282,7 @@ Thank you for your cooperation.`,
                             const updated={...ret,refundMethod:e.target.value};
                             setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
                             const ok=await dbSaveReturn(updated);
-                            if(!ok)alert("Couldn't save — please check your connection and try again.");
+                            if(!ok)showAlert("Couldn't save — please check your connection and try again.");
                           }}
                           style={{width:"100%",padding:"6px 8px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:11,fontFamily:"inherit",background:"white",color:ret.refundMethod?"#0f172a":"#94a3b8",boxSizing:"border-box"}}>
                           <option value="">—</option>
@@ -4301,7 +4302,7 @@ Thank you for your cooperation.`,
                             const updated={...ret,refundToName:e.target.value};
                             setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
                             const ok=await dbSaveReturn(updated);
-                            if(!ok)alert("Couldn't save — please check your connection and try again.");
+                            if(!ok)showAlert("Couldn't save — please check your connection and try again.");
                           }}
                           style={{width:"100%",padding:"6px 8px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:11,fontFamily:"inherit",boxSizing:"border-box"}}/>
                       </div>
@@ -4317,7 +4318,7 @@ Thank you for your cooperation.`,
                         const updated={...ret,staffNotes:e.target.value};
                         setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
                         const ok=await dbSaveReturn(updated);
-                        if(!ok)alert("Couldn't save — please check your connection and try again.");
+                        if(!ok)showAlert("Couldn't save — please check your connection and try again.");
                       }}
                       style={{width:"100%",padding:"7px 9px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:12,fontFamily:"inherit",boxSizing:"border-box"}}/>
                   </div>
@@ -4485,7 +4486,7 @@ Thank you for your cooperation.`,
             }
             const ok = await dbSaveReturn(record);
             if(!ok){
-              alert("Couldn't save this return — please check your connection and try again. Nothing was saved.");
+              showAlert("Couldn't save this return — please check your connection and try again. Nothing was saved.");
               return;
             }
             setReturns(prev=>[record,...prev]);
@@ -4529,12 +4530,12 @@ const DocUploadSection=({bucket,recordUuid,docs=[],onDocsChange,accent="#059669"
 
   const handleFiles=async(files)=>{
     if(!files||files.length===0)return;
-    if(!recordUuid){alert("Save the record first before uploading documents.");return;}
+    if(!recordUuid){showAlert("Save the record first before uploading documents.");return;}
     setUploading(true);
     const newDocs=[...docs];
     for(const file of Array.from(files)){
       const result=await dbUploadDoc(bucket,recordUuid,file);
-      if(result.error){alert("Upload failed: "+result.error);continue;}
+      if(result.error){showAlert("Upload failed: "+result.error);continue;}
       newDocs.push({name:file.name,url:result.url,path:result.path,size:file.size,uploadedAt:new Date().toISOString()});
     }
     onDocsChange(newDocs);
@@ -4543,7 +4544,7 @@ const DocUploadSection=({bucket,recordUuid,docs=[],onDocsChange,accent="#059669"
   };
 
   const handleDelete=async(doc,idx)=>{
-    if(!window.confirm("Remove "+doc.name+"?"))return;
+    if(!(await showConfirm("Remove "+doc.name+"?")))return;
     await dbDeleteDoc(bucket,doc.path);
     const newDocs=docs.filter((_,i)=>i!==idx);
     onDocsChange(newDocs);
@@ -4683,7 +4684,7 @@ const SuppliersTabPanel=({shop,shopId,suppliers=[],setSuppData})=>{
     };
     const result=await dbSaveSupplier(shopId, payload);
     if(result&&result.error){
-      alert("Failed to save supplier: "+result.error);
+      showAlert("Failed to save supplier: "+result.error);
       setSaving(false);
       return;
     }
@@ -4695,7 +4696,7 @@ const SuppliersTabPanel=({shop,shopId,suppliers=[],setSuppData})=>{
   };
 
   const handleDelete=async(id)=>{
-    if(!window.confirm("Delete this supplier? This cannot be undone."))return;
+    if(!(await showConfirm("Delete this supplier? This cannot be undone.")))return;
     await dbDeleteSupplier(id,shopId).catch(e=>console.error("Delete supplier error:",e));
     setSuppData(prev=>prev.filter(s=>s.id!==id));
   };
@@ -4728,7 +4729,7 @@ const SuppliersTabPanel=({shop,shopId,suppliers=[],setSuppData})=>{
         </div>
         <div><label style={lbl}>Remarks</label><textarea value={f.remarks} onChange={e=>s("remarks",e.target.value)} rows={2} placeholder="Notes…" style={{...inp,resize:"vertical"}}/></div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingTop:4}}>
-          <button disabled={saving} onClick={()=>{if(!f.name.trim()){alert("Supplier name is required.");return;}onSave({...initial,...f});}}
+          <button disabled={saving} onClick={()=>{if(!f.name.trim()){showAlert("Supplier name is required.");return;}onSave({...initial,...f});}}
             style={{padding:"11px 0",borderRadius:10,border:"none",background:saving?"#94a3b8":shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
             {saving?"Saving…":"✅ Save Supplier"}
           </button>
@@ -4843,14 +4844,14 @@ const AgentsTabPanel=({shop,shopId,agents=[],setAgentData})=>{
   const handleSave=async(form)=>{
     setSaving(true);
     const result=await dbSaveAgent(shopId,form);
-    if(result&&result.error){alert("Failed to save: "+result.error);setSaving(false);return;}
+    if(result&&result.error){showAlert("Failed to save: "+result.error);setSaving(false);return;}
     const fresh=await dbLoadAgents(shopId).catch(()=>null);
     if(fresh) setAgentData(fresh);
     setSaving(false);setShowAdd(false);setEditAgent(null);
   };
 
   const handleDelete=async(id)=>{
-    if(!window.confirm("Delete this agent? This cannot be undone."))return;
+    if(!(await showConfirm("Delete this agent? This cannot be undone.")))return;
     await dbDeleteAgent(id).catch(console.error);
     setAgentData(prev=>prev.filter(a=>a.id!==id));
   };
@@ -4892,7 +4893,7 @@ const AgentsTabPanel=({shop,shopId,agents=[],setAgentData})=>{
           <textarea value={f.remarks} onChange={e=>s("remarks",e.target.value)} rows={2}
             placeholder="Notes about this agent…" style={{...inp,resize:"vertical"}}/></div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingTop:4}}>
-          <button disabled={saving} onClick={()=>{if(!f.name.trim()){alert("Agent name is required.");return;}onSave({...initial,...f});}}
+          <button disabled={saving} onClick={()=>{if(!f.name.trim()){showAlert("Agent name is required.");return;}onSave({...initial,...f});}}
             style={{padding:"11px 0",borderRadius:10,border:"none",background:saving?"#94a3b8":shop.accent,
               color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
             {saving?"Saving…":"✅ Save Agent"}
@@ -5494,7 +5495,7 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
     const payload={...form,payTo:form.payTo||''};
     if(editExp) payload._uuid=editExp.uuid||editExp.id;
     const result=await dbSaveExpense(shopId,payload);
-    if(result&&result.error){alert("Save failed: "+result.error);setSaving(false);return;}
+    if(result&&result.error){showAlert("Save failed: "+result.error);setSaving(false);return;}
     const fresh=await dbLoadExpenses(shopId).catch(()=>null);
     if(fresh) setExpData(fresh);
     setSaving(false);setShowForm(false);setEditExp(null);
@@ -5535,7 +5536,7 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
                       if(setExpCats) setExpCats(prev=>[...prev.filter(c=>c!==name),name].sort());
                       s("cat",name);
                     } else {
-                      alert("Failed to save category: "+r.error);
+                      showAlert("Failed to save category: "+r.error);
                     }
                   });
                 }
@@ -5574,7 +5575,7 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
             placeholder="Optional notes…" style={{...inp,resize:"vertical"}}/></div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingTop:4}}>
           <button disabled={saving} onClick={()=>{
-            if(!f.desc.trim()||!f.amount){alert("Description and amount are required.");return;}
+            if(!f.desc.trim()||!f.amount){showAlert("Description and amount are required.");return;}
             onSave(f);
           }} style={{padding:"11px 0",borderRadius:10,border:"none",
             background:saving?"#94a3b8":shop.accent,color:"white",fontWeight:800,
@@ -5640,8 +5641,8 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
                   {c}
                 </button>
                 {isCustom&&(
-                  <button onClick={()=>{
-                    if(!window.confirm("Delete category '"+c+"'?"))return;
+                  <button onClick={async()=>{
+                    if(!(await showConfirm("Delete category '"+c+"'?")))return;
                     dbDeleteExpenseCategory(shopId,c).then(()=>{
                       if(setExpCats) setExpCats(prev=>prev.filter(x=>x!==c));
                       if(catFilter===c) setCatFilter("ALL");
@@ -5887,7 +5888,7 @@ const FulfilmentPanel=({salesData,shopId,shop,messages,setMessages,returns,setRe
     setMessages(prev=>prev.map(m=>m.id===id?{...m,status:"CANCELLED"}:m));
   };
   const handleDeleteMsg=async(id)=>{
-    if(!window.confirm("Delete this message?"))return;
+    if(!(await showConfirm("Delete this message?")))return;
     await dbDeleteMessage(id);
     setMessages(prev=>prev.filter(m=>m.id!==id));
   };
@@ -6101,7 +6102,7 @@ const FulfilmentPanel=({salesData,shopId,shop,messages,setMessages,returns,setRe
                             <button onClick={()=>{
                               const msg=messages.find(m=>m.saleId===s.id&&m.messageType==="DELIVERY_CONFIRM"&&m.status==="READY");
                               if(msg)openWhatsApp(msg.phone,msg.messageBody,s.customer);
-                              else alert("No delivery message queued yet. Mark as delivered first.");
+                              else showAlert("No delivery message queued yet. Mark as delivered first.");
                             }}
                               style={{padding:"4px 9px",borderRadius:7,border:"none",background:"#25d366",
                                 color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
@@ -6457,14 +6458,14 @@ const HistoricalDataPanel=({shop,shopId,histData=[],setHistData,fmt})=>{
     };
     if(editRec) rec.id=editRec.id;
     const result=await dbSaveHistoricalRecord(shopId,rec);
-    if(result.error){alert("Save failed: "+result.error);setSaving(false);return;}
+    if(result.error){showAlert("Save failed: "+result.error);setSaving(false);return;}
     const fresh=await dbLoadHistoricalData(shopId).catch(()=>null);
     if(fresh)setHistData(fresh);
     setSaving(false);setShowForm(false);setEditRec(null);
   };
 
   const handleDelete=async(id)=>{
-    if(!window.confirm("Delete this record?"))return;
+    if(!(await showConfirm("Delete this record?")))return;
     await dbDeleteHistoricalRecord(id);
     setHistData(prev=>prev.filter(r=>r.id!==id));
   };
@@ -6487,13 +6488,13 @@ const HistoricalDataPanel=({shop,shopId,histData=[],setHistData,fmt})=>{
           rows.push(row);
         }
       }
-      if(rows.length===0){alert("No rows found for this shop in the CSV.");setImporting(false);return;}
+      if(rows.length===0){showAlert("No rows found for this shop in the CSV.");setImporting(false);return;}
       const result=await dbImportHistoricalCSV(rows);
-      if(result.error){alert("Import failed: "+result.error);setImporting(false);return;}
+      if(result.error){showAlert("Import failed: "+result.error);setImporting(false);return;}
       const fresh=await dbLoadHistoricalData(shopId).catch(()=>null);
       if(fresh)setHistData(fresh);
       setImporting(false);
-      alert(`✅ Imported ${rows.length} records successfully!`);
+      showAlert(`✅ Imported ${rows.length} records successfully!`);
     };
     reader.readAsText(file);
   };
@@ -6563,7 +6564,7 @@ const HistoricalDataPanel=({shop,shopId,histData=[],setHistData,fmt})=>{
           <input value={f.notes} onChange={e=>s("notes",e.target.value)} placeholder="e.g. Launched Shopify, Ramadan peak..." style={inp}/></div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,paddingTop:4}}>
           <button disabled={saving} onClick={()=>{
-            if(!f.month||!f.year||!f.grossSales){alert("Month, year and gross sales are required.");return;}
+            if(!f.month||!f.year||!f.grossSales){showAlert("Month, year and gross sales are required.");return;}
             onSave(f);
           }} style={{padding:"10px 0",borderRadius:9,border:"none",background:saving?"#94a3b8":shop.accent,
             color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
@@ -6760,11 +6761,11 @@ const PurchasePLSection = ({ sale, allSales, shop, shopId, onSave }) => {
   const handleSave = async () => {
     const amt = Number(purAmount)||0;
     if (amt > 0 && !purInvNo.trim()) {
-      alert("Please enter the purchase invoice number too — a purchase amount can't be saved on its own.");
+      showAlert("Please enter the purchase invoice number too — a purchase amount can't be saved on its own.");
       return;
     }
     if (amt > 0 && !purInvDate) {
-      alert("Please enter the purchase date too — a purchase amount can't be saved on its own.");
+      showAlert("Please enter the purchase date too — a purchase amount can't be saved on its own.");
       return;
     }
     setSaving(true);
@@ -6959,7 +6960,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
       }
     }catch(e){
       console.error("Undo failed:",e);
-      alert("Undo failed — the item may not have been restored. Please check and try again.");
+      showAlert("Undo failed — the item may not have been restored. Please check and try again.");
       setDeletedStack(prev=>[top,...prev]);
     }
     setUndoing(false);
@@ -7000,7 +7001,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     // Persist to Supabase then reload to confirm sync
     dbSaveSale(shopId,merged).then(reloadSalesData).catch(err=>{
       console.error("❌ Edit save failed:",err);
-      alert("Couldn't save this sale — please check your connection and try again.");
+      showAlert("Couldn't save this sale — please check your connection and try again.");
     });
     // Purchase invoice/amount/other-charges belong to the whole linked
     // order, not just this one transaction — propagate them to every
@@ -7014,7 +7015,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
         const s=sales.find(x=>x.id===id);
         if(s) dbSaveSale(shopId,{...s,...purFields}).catch(err=>{
           console.error("❌ Purchase field cascade failed:",id,err);
-          alert(`Couldn't update the linked sale ${id} with the purchase details — please check your connection and try again.`);
+          showAlert(`Couldn't update the linked sale ${id} with the purchase details — please check your connection and try again.`);
         });
       });
     }
@@ -7040,7 +7041,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
       if(!s) return Promise.resolve();
       return dbSaveSale(shopId,{...s,status:statusVal,ful:statusVal,...purFields}).catch(err=>{
         console.error("❌ Cascade save failed:",id,err);
-        alert(`Couldn't update linked sale ${id} — please check your connection and try again.`);
+        showAlert(`Couldn't update linked sale ${id} — please check your connection and try again.`);
       });
     }));
     reloadSalesData();
@@ -7237,7 +7238,7 @@ const addSale = async (form) => {
         const invoiceHTML=el2.outerHTML;
         const accentColor=inv._shop_accent||'#059669';
         const printWindow=window.open('','_blank');
-        if(!printWindow){alert('Please allow popups for this site.');return;}
+        if(!printWindow){showAlert('Please allow popups for this site.');return;}
         printWindow.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/>
 <title>Invoice ${inv.id}</title>
 <style>
@@ -7262,7 +7263,7 @@ const addSale = async (form) => {
     }
     const invoiceHTML=el.outerHTML;
     const printWindow=window.open('','_blank');
-    if(!printWindow){alert('Please allow popups for this site.');return;}
+    if(!printWindow){showAlert('Please allow popups for this site.');return;}
     printWindow.document.write(`<!DOCTYPE html><html><head><meta charset="utf-8"/>
 <title>Invoice ${inv.id}</title>
 <style>
@@ -8587,7 +8588,7 @@ return(
               onView={(p)=>setViewPurchRow(p)}
               onEdit={(p)=>setEditPurchRow(p)}
               onDelete={async(p)=>{
-                if(!window.confirm("Delete purchase "+(p.id||p.purchase_ref||"")+"? This cannot be undone."))return;
+                if(!(await showConfirm("Delete purchase "+(p.id||p.purchase_ref||"")+"? This cannot be undone.")))return;
                 const uuid=p.uuid||p.id;
                 pushDeleted("purchase",{...p});
                 await dbDeletePurchase(uuid,shopId);
@@ -8632,7 +8633,7 @@ return(
               onView={(l)=>setViewLogRow(l)}
               onEdit={(l)=>setEditLogRow(l)}
               onDelete={async(l)=>{
-                if(!window.confirm("Delete shipment "+(l.id||"")+"? This cannot be undone."))return;
+                if(!(await showConfirm("Delete shipment "+(l.id||"")+"? This cannot be undone.")))return;
                 const uuid=l.uuid||l.id;
                 pushDeleted("logistic",{...l});
                 await dbDeleteLogistic(uuid,shopId);
@@ -9282,7 +9283,7 @@ return(
             onSave={async(form)=>{
               const uuid=editLogRow.uuid||editLogRow.id;
               const result=await dbSaveLogistic(shopId,{...form,_uuid:uuid});
-              if(result&&result.error){alert("Update failed: "+result.error);return;}
+              if(result&&result.error){showAlert("Update failed: "+result.error);return;}
               const fresh=await dbLoadLogistics(shopId);
               if(fresh) setLogData(fresh);
               setEditLogRow(null);
@@ -9297,7 +9298,7 @@ return(
             onSave={async(form)=>{
               const result = await dbSaveLogistic(shopId, form);
               if(result && result.error){
-                alert("Save failed: " + result.error);
+                showAlert("Save failed: " + result.error);
                 return;
               }
               const fresh = await dbLoadLogistics(shopId);
@@ -9325,7 +9326,7 @@ return(
               const payload = {...rest, purchase_ref: id || purchaseId || ""};
               const result = await dbSavePurchase(shopId, payload);
               if(result && result.error){
-                alert("Save failed: " + result.error + "\n\nPlease check the browser console for details.");
+                showAlert("Save failed: " + result.error + "\n\nPlease check the browser console for details.");
                 return;
               }
               const fresh = await dbLoadPurchases(shopId);
@@ -9432,7 +9433,7 @@ return(
               // Use dbSavePurchase with uuid override
               const result = await dbSavePurchase(shopId, {...payload, _uuid: uuid});
               if(result && result.error){
-                alert("Update failed: " + result.error);
+                showAlert("Update failed: " + result.error);
                 return;
               }
               const fresh = await dbLoadPurchases(shopId);
@@ -9654,7 +9655,7 @@ return(
                 </button>
                 <button onClick={()=>{
                     const el=invoicePrintRef.current;
-                    if(!el){alert('Invoice not ready');return;}
+                    if(!el){showAlert('Invoice not ready');return;}
                     const load=(src)=>new Promise((res,rej)=>{
                       if(window.html2pdf){res();return;}
                       const s=document.createElement('script');
@@ -9670,7 +9671,7 @@ return(
                         html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff'},
                         jsPDF:{unit:'in',format:'a4',orientation:'portrait'}
                       }).from(el).save();
-                    }).catch(()=>alert('Could not load PDF library. Check your internet connection.'));
+                    }).catch(()=>showAlert('Could not load PDF library. Check your internet connection.'));
                   }}
                   style={{padding:"8px 18px",borderRadius:8,border:"none",background:"#1e293b",color:"white",fontWeight:800,fontSize:13,cursor:"pointer"}}>
                   ⬇ PDF
@@ -10378,7 +10379,7 @@ return(
                       }
                     }catch(err){
                       console.error("❌ Purchase & P/L save failed:",err);
-                      alert("Couldn't save the purchase details — please check your connection and try again.");
+                      showAlert("Couldn't save the purchase details — please check your connection and try again.");
                       return;
                     }
                     setSalesData(prev=>({
@@ -10790,15 +10791,15 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
   };
 
   const handleImport=()=>{
-    if(!fileObj){alert("Please select a file first.");return;}
-    if(!onSave){alert("Import not configured for this section.");return;}
+    if(!fileObj){showAlert("Please select a file first.");return;}
+    if(!onSave){showAlert("Import not configured for this section.");return;}
     setImporting(true);
 
     const isXlsx=fileObj.name.toLowerCase().endsWith(".xlsx")||fileObj.name.toLowerCase().endsWith(".xls");
 
     const processRows=(rows)=>{
       try{
-        if(rows.length<2){alert("File appears to be empty or has no data rows.");setImporting(false);return;}
+        if(rows.length<2){showAlert("File appears to be empty or has no data rows.");setImporting(false);return;}
         const norm=s=>String(s||"").toLowerCase().replace(/[^a-z0-9]/g,"");
         const headers=rows[0].map(h=>norm(h));
         const dataRows=rows.slice(1);
@@ -10865,8 +10866,8 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
         });
         setImportResult({ok,skip,errors:[]});
         if(ok>0){onSave(imported);}
-        else{alert("No valid rows found. Make sure the file has a Customer Name column.");}
-      }catch(err){alert("Error processing file: "+err.message);console.error(err);}
+        else{showAlert("No valid rows found. Make sure the file has a Customer Name column.");}
+      }catch(err){showAlert("Error processing file: "+err.message);console.error(err);}
       setImporting(false);
     };
 
@@ -10886,13 +10887,13 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
           const ws=wb.Sheets[wb.SheetNames[0]];
           const raw=XLSX.utils.sheet_to_json(ws,{header:1,raw:false,defval:""});
           processRows(raw);
-        }).catch(err=>{alert("Could not load Excel reader: "+err.message);setImporting(false);});
+        }).catch(err=>{showAlert("Could not load Excel reader: "+err.message);setImporting(false);});
       };
       reader.readAsArrayBuffer(fileObj);
     } else {
       const reader=new FileReader();
       reader.onload=(e)=>processRows(parseCSV(e.target.result));
-      reader.onerror=()=>{alert("Could not read file.");setImporting(false);};
+      reader.onerror=()=>{showAlert("Could not read file.");setImporting(false);};
       reader.readAsText(fileObj);
     }
   };
@@ -10965,7 +10966,7 @@ const ImportExportPanel=({type,entity,shop,data,onClose,shopId,onSave})=>{
   };
 
   const handleExport=()=>{
-    if(!data||data.length===0){alert("No data to export.");return;}
+    if(!data||data.length===0){showAlert("No data to export.");return;}
     const activeCols=ALL_COLS.filter(c=>cols[c.key]);
     const header=activeCols.map(c=>c.label).join(",");
     const rows=data.map(s=>{
@@ -11728,7 +11729,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           <RestockModal item={restockFor} onClose={()=>setRestockFor(null)} onSave={async(qty,note)=>{
             const ok = await dbAddInventoryMovement(shopId, restockFor.id, "restock", qty, new Date().toISOString().slice(0,10), null, null, note);
             if (ok) { setRestockFor(null); load(); }
-            else alert("Couldn't save — please check your connection and try again.");
+            else showAlert("Couldn't save — please check your connection and try again.");
           }}/>
         )}
 
@@ -11736,7 +11737,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           <LogSaleModal item={soldFor} onClose={()=>setSoldFor(null)} onSave={async(qty,customer,date,note)=>{
             const ok = await dbAddInventoryMovement(shopId, soldFor.id, "sale", qty, date, null, customer, note);
             if (ok) { setSoldFor(null); load(); }
-            else alert("Couldn't save — please check your connection and try again.");
+            else showAlert("Couldn't save — please check your connection and try again.");
           }}/>
         )}
 
@@ -11744,7 +11745,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           <CorrectStockModal item={correctFor} onClose={()=>setCorrectFor(null)} onSave={async(delta,note)=>{
             const ok = await dbAddInventoryMovement(shopId, correctFor.id, "correction", delta, new Date().toISOString().slice(0,10), null, null, note);
             if (ok) { setCorrectFor(null); load(); }
-            else alert("Couldn't save — please check your connection and try again.");
+            else showAlert("Couldn't save — please check your connection and try again.");
           }}/>
         )}
       </div>
@@ -11895,7 +11896,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
         <AddInventoryItemModal onClose={()=>setShowAddItem(false)} onSave={async(name,stock,category)=>{
           const id = await dbAddInventoryItem(shopId, name, stock, category);
           if (id) { setShowAddItem(false); load(); }
-          else alert("Couldn't add this item — please check your connection and try again.");
+          else showAlert("Couldn't add this item — please check your connection and try again.");
         }}/>
       )}
 
@@ -11903,7 +11904,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
         <LogSaleModal item={soldFor} onClose={()=>setSoldFor(null)} onSave={async(qty,customer,date,note)=>{
           const ok = await dbAddInventoryMovement(shopId, soldFor.id, "sale", qty, date, null, customer, note);
           if (ok) { setSoldFor(null); load(); }
-          else alert("Couldn't save — please check your connection and try again.");
+          else showAlert("Couldn't save — please check your connection and try again.");
         }}/>
       )}
 
@@ -11911,7 +11912,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
         <RestockModal item={restockFor} onClose={()=>setRestockFor(null)} onSave={async(qty,note)=>{
           const ok = await dbAddInventoryMovement(shopId, restockFor.id, "restock", qty, new Date().toISOString().slice(0,10), null, null, note);
           if (ok) { setRestockFor(null); load(); }
-          else alert("Couldn't save — please check your connection and try again.");
+          else showAlert("Couldn't save — please check your connection and try again.");
         }}/>
       )}
 
@@ -11924,7 +11925,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           onRename={async(itemId, patch)=>{
             const ok = await dbUpdateInventoryItem(shopId, itemId, patch);
             if (ok) load();
-            else alert("Couldn't save — please check your connection and try again.");
+            else showAlert("Couldn't save — please check your connection and try again.");
             return ok;
           }}
         />
@@ -11944,7 +11945,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
                   const ok = await dbDeleteInventoryItem(shopId, confirmDeleteId);
                   setConfirmDeleteId(null);
                   if (ok) load();
-                  else alert("Couldn't delete — please check your connection and try again.");
+                  else showAlert("Couldn't delete — please check your connection and try again.");
                 }}
                 style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#dc2626",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
                 Delete
@@ -12749,19 +12750,19 @@ const AttendancePage = ({ shopId, shop, user, users=[] }) => {
 
   const handleClockIn = async (staffName) => {
     if (!isWithinClockInWindow()) {
-      alert("Clock in is only allowed between 8:00 AM and 6:00 PM.");
+      showAlert("Clock in is only allowed between 8:00 AM and 6:00 PM.");
       return;
     }
     const rec = await dbClockIn(shopId, staffName);
     if (rec) load();
-    else alert("Couldn't clock in — please check your connection and try again.");
+    else showAlert("Couldn't clock in — please check your connection and try again.");
   };
   const handleClockOut = async (staffName) => {
     const rec = getTodayRecord(staffName);
     if (!rec) return;
     const ok = await dbClockOut(shopId, staffName, rec.id);
     if (ok) load();
-    else alert("Couldn't clock out — please check your connection and try again.");
+    else showAlert("Couldn't clock out — please check your connection and try again.");
   };
 
   // Guards against accidental taps: under 7 hours in, require typing a
@@ -12985,7 +12986,7 @@ const AttendancePage = ({ shopId, shop, user, users=[] }) => {
     if (!dayEdit) return;
     const ok = await dbSetAttendanceRecord(shopId, dayEdit.staffName, dayEdit.date, dayEdit.clockInTime||null, dayEdit.clockOutTime||null);
     if (ok) { setDayEdit(null); load(); }
-    else alert("Couldn't save — please check your connection and try again.");
+    else showAlert("Couldn't save — please check your connection and try again.");
   };
 
   return (
@@ -13099,12 +13100,12 @@ const AttendancePage = ({ shopId, shop, user, users=[] }) => {
           onAdd={async (date,label)=>{
             const ok = await dbAddAttendanceHoliday(shopId, date, label);
             if (ok) load();
-            else alert("Couldn't add — please check your connection and try again.");
+            else showAlert("Couldn't add — please check your connection and try again.");
           }}
           onRemove={async (date)=>{
             const ok = await dbRemoveAttendanceHoliday(shopId, date);
             if (ok) load();
-            else alert("Couldn't remove — please check your connection and try again.");
+            else showAlert("Couldn't remove — please check your connection and try again.");
           }}
         />
       )}
@@ -13294,7 +13295,7 @@ const loadHtml2Pdf = () => new Promise((res,rej)=>{
 
 const downloadElementAsPdf = (elementId, filename) => {
   const el = document.getElementById(elementId);
-  if (!el) { alert("Nothing to download yet."); return; }
+  if (!el) { showAlert("Nothing to download yet."); return; }
   loadHtml2Pdf().then(()=>{
     window.html2pdf().set({
       margin:[10,10,10,10],
@@ -13303,7 +13304,7 @@ const downloadElementAsPdf = (elementId, filename) => {
       html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false},
       jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},
     }).from(el).save();
-  }).catch(()=>alert('Could not load the PDF library. Check your internet connection.'));
+  }).catch(()=>showAlert('Could not load the PDF library. Check your internet connection.'));
 };
 
 /* ── PayslipDocument: the printable payslip itself, shared between the
@@ -13806,7 +13807,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
     if (!(val>=0)) return;
     const ok = await dbSaveStaffSalary(shopId, selectedStaff, val);
     if (ok) { setSalaries(prev=>({...prev,[selectedStaff]:val})); setEditingSalary(false); }
-    else alert("Couldn't save — please check your connection and try again.");
+    else showAlert("Couldn't save — please check your connection and try again.");
   };
 
   const savePosition = async () => {
@@ -13814,16 +13815,16 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
     if (!val) return;
     const ok = await dbSaveStaffPosition(shopId, selectedStaff, val);
     if (ok) { setPositions(prev=>({...prev,[selectedStaff]:val})); setEditingPosition(false); }
-    else alert("Couldn't save — please check your connection and try again.");
+    else showAlert("Couldn't save — please check your connection and try again.");
   };
 
   const handleGenerate = async () => {
     if (existingRecord) return;
     const carryNote = carryForwardOpening>0 ? ` (includes recovering ${shop.symbol}${carryForwardOpening.toLocaleString()} carried forward)` : "";
-    if (!window.confirm(`Generate the ${monthLabel} payslip for ${selectedStaff}? Net pay: ${shop.symbol}${netPay.toLocaleString()}${carryNote}.`)) return;
+    if (!(await showConfirm(`Generate the ${monthLabel} payslip for ${selectedStaff}? Net pay: ${shop.symbol}${netPay.toLocaleString()}${carryNote}.`))) return;
     const breakdown = { ...previewBreakdown, advances: unappliedAdvances.map(a=>({id:a.id,amount:a.amount})), loanDeductions: loanRows.map(x=>({id:x.id,amount:x.amount})) };
     const id = await dbSavePayrollRecord(shopId, selectedStaff, monthKey, netPay, breakdown);
-    if (!id) { alert("Couldn't save this payslip — please check your connection and try again."); return; }
+    if (!id) { showAlert("Couldn't save this payslip — please check your connection and try again."); return; }
     for (const a of unappliedAdvances) await dbMarkAdvanceApplied(a.id, monthKey);
     for (const row of loanRows) {
       const loan = activeLoans.find(l=>l.id===row.id);
@@ -13857,16 +13858,16 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
 
   const handleGenerateBonus = async () => {
     if (allBonusGenerated) return;
-    if (!(teamBonusTotal>0)) { alert("Enter this month's team sales volume first — sales under ₹4,00,000 don't earn a bonus."); return; }
+    if (!(teamBonusTotal>0)) { showAlert("Enter this month's team sales volume first — sales under ₹4,00,000 don't earn a bonus."); return; }
     const names = SALES_BONUS_TEAM.map(fullNameOf).join(" & ");
-    if (!window.confirm(`Generate ${monthLabel} Sales Bonus statements for ${names}? Team total: ${shop.symbol}${teamBonusTotal.toLocaleString()}.`)) return;
+    if (!(await showConfirm(`Generate ${monthLabel} Sales Bonus statements for ${names}? Team total: ${shop.symbol}${teamBonusTotal.toLocaleString()}.`))) return;
     for (const t of teamBonusSplit) {
       if (existingBonusByName[t.name]) continue; // this person's statement already exists for this month — leave it as-is
       const breakdown = { fullName: fullNameOf(t.name), position: positions[t.name] || "Staff" };
       const autoNote = `Team sales volume: ${shop.symbol}${(Number(teamSalesVolume)||0).toLocaleString()}. Total team bonus: ${shop.symbol}${teamBonusTotal.toLocaleString()}. Attendance: ${t.fullDays} full day(s)${t.halfDays?` + ${t.halfDays} half day(s)`:""} — share ${t.pct}%.`;
       const note = [autoNote, salesBonusNote.trim()].filter(Boolean).join(" ");
       const id = await dbSaveSalesBonusRecord(shopId, t.name, monthKey, t.amount, note, breakdown);
-      if (!id) { alert(`Couldn't save the bonus statement for ${fullNameOf(t.name)} — please check your connection and try again.`); return; }
+      if (!id) { showAlert(`Couldn't save the bonus statement for ${fullNameOf(t.name)} — please check your connection and try again.`); return; }
     }
     await refreshAll();
   };
@@ -14221,7 +14222,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
                     ) : (
                       <>
                         <span style={{fontSize:10,fontWeight:700,color:"#92400e",background:"#fffbeb",padding:"3px 9px",borderRadius:999,border:"1px solid #fde68a"}}>Pending</span>
-                        <button onClick={async()=>{if(window.confirm("Delete this advance record?")){await dbDeleteSalaryAdvance(a.id);await refreshAll();}}}
+                        <button onClick={async()=>{if(await showConfirm("Delete this advance record?")){await dbDeleteSalaryAdvance(a.id);await refreshAll();}}}
                           style={{border:"none",background:"transparent",color:"#dc2626",cursor:"pointer",fontSize:11,fontWeight:700}}>Delete</button>
                       </>
                     )}
@@ -14250,7 +14251,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
                   </div>
                   {l.notes && <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>{l.notes}</div>}
                   {l.balance===l.principal && (
-                    <button onClick={async()=>{if(window.confirm("Delete this loan record? Only do this if it was logged in error.")){await dbDeleteLoan(l.id);await refreshAll();}}}
+                    <button onClick={async()=>{if(await showConfirm("Delete this loan record? Only do this if it was logged in error.")){await dbDeleteLoan(l.id);await refreshAll();}}}
                       style={{border:"none",background:"transparent",color:"#dc2626",cursor:"pointer",fontSize:11,fontWeight:700,marginTop:6}}>Delete</button>
                   )}
                 </div>
@@ -14516,20 +14517,20 @@ const PettyCashPage = ({ shopId, shop, user, users=[] }) => {
 
   const handleIssue = async () => {
     const amt = Number(issueAmount);
-    if (!(amt>0)) { alert("Enter an amount to issue."); return; }
-    if (!window.confirm(`Add ${shop.symbol}${amt.toLocaleString()} to the office petty cash?`)) return;
+    if (!(amt>0)) { showAlert("Enter an amount to issue."); return; }
+    if (!(await showConfirm(`Add ${shop.symbol}${amt.toLocaleString()} to the office petty cash?`))) return;
     const id = await dbAddPettyCashIssue(shopId, user?.name||"admin", amt, new Date().toISOString().slice(0,10), issueNote.trim());
-    if (!id) { alert("Couldn't save — please check your connection and try again."); return; }
+    if (!id) { showAlert("Couldn't save — please check your connection and try again."); return; }
     setIssueAmount(""); setIssueNote(""); setShowIssue(false);
     await load();
   };
 
   const handleSpend = async () => {
     const amt = Number(spendAmount);
-    if (!(amt>0)) { alert("Enter the amount spent."); return; }
-    if (!spendDate) { alert("Pick a date."); return; }
+    if (!(amt>0)) { showAlert("Enter the amount spent."); return; }
+    if (!spendDate) { showAlert("Pick a date."); return; }
     const id = await dbAddPettyCashSpend(shopId, spendBy, fullNameOf(spendBy), amt, spendDate, spendCategory, spendDesc.trim());
-    if (!id) { alert("Couldn't save — please check your connection and try again."); return; }
+    if (!id) { showAlert("Couldn't save — please check your connection and try again."); return; }
     setSpendAmount(""); setSpendDesc("");
     await load();
   };
@@ -14551,15 +14552,15 @@ const PettyCashPage = ({ shopId, shop, user, users=[] }) => {
 
   const handleSaveEdit = async () => {
     const amt = Number(editAmount);
-    if (!(amt>0)) { alert("Enter a valid amount."); return; }
-    if (!editDate) { alert("Pick a date."); return; }
+    if (!(amt>0)) { showAlert("Enter a valid amount."); return; }
+    if (!editDate) { showAlert("Pick a date."); return; }
     let newId;
     if (editingRecord.type==="ISSUE") {
       newId = await dbEditPettyCashIssue(shopId, editingRecord, user?.name||"admin", amt, editDate, editDesc.trim());
     } else {
       newId = await dbEditPettyCashSpend(shopId, editingRecord, editSpendBy, fullNameOf(editSpendBy), amt, editDate, editCategory, editDesc.trim());
     }
-    if (!newId) { alert("Couldn't save the correction — please check your connection and try again."); return; }
+    if (!newId) { showAlert("Couldn't save the correction — please check your connection and try again."); return; }
     setEditingRecord(null);
     await load();
   };
@@ -16092,16 +16093,16 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
         <button onClick={()=>{
             if(form.date&&form.date>localTodayISO()){
-              alert("Sale date can't be in the future. Please pick today's date or an earlier one.");
+              showAlert("Sale date can't be in the future. Please pick today's date or an earlier one.");
               return;
             }
             const purAmt=parseFloat(form.purAmount)||0;
             if(purAmt>0 && !String(form.purInvNo||"").trim()){
-              alert("Please enter the purchase invoice number too — a purchase amount can't be saved on its own.");
+              showAlert("Please enter the purchase invoice number too — a purchase amount can't be saved on its own.");
               return;
             }
             if(purAmt>0 && !form.purInvDate){
-              alert("Please enter the purchase date too — a purchase amount can't be saved on its own.");
+              showAlert("Please enter the purchase date too — a purchase amount can't be saved on its own.");
               return;
             }
             onSave({...form,id:(form.invAssigned&&form.invoiceNo)?form.invoiceNo:((shopId==="ros-india"&&new Date(form.date||sale.date||0)>=new Date(2026,3,1)&&!String(sale.id||"").includes("-"))?`IN-${Date.now().toString().slice(-6)}`:sale.id),ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:parseFloat(form.discount)||0,otherCharges:parseFloat(form.otherCharges)||0,otherChargesLabel:form.otherChargesLabel||"Other Charges",contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""});
@@ -16367,7 +16368,7 @@ const NewSupplierForm=({shop,onSave,onClose})=>{
         <textarea value={sf.remarks} onChange={e=>ss("remarks",e.target.value)} rows={2} placeholder="Notes about this supplier" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
       </div>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingTop:4}}>
-        <button onClick={()=>{if(!sf.name.trim()){alert("Supplier name is required.");return;}onSave({id:Date.now(),name:sf.name,contact:sf.contactPerson,phone:sf.whatsapp,email:"",category:sf.tag||"General",terms:"",place:sf.place,address:sf.address,remarks:sf.remarks});}}
+        <button onClick={()=>{if(!sf.name.trim()){showAlert("Supplier name is required.");return;}onSave({id:Date.now(),name:sf.name,contact:sf.contactPerson,phone:sf.whatsapp,email:"",category:sf.tag||"General",terms:"",place:sf.place,address:sf.address,remarks:sf.remarks});}}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           ✅ Add Supplier
         </button>
@@ -16713,7 +16714,7 @@ const NewCustomerForm=({shop,onSave,onClose,customers=[]})=>{
   const bl=e=>e.target.style.borderColor="#e2e8f0";
 
   const handleSave=()=>{
-    if(!cf.name.trim()){alert("Customer name is required.");return;}
+    if(!cf.name.trim()){showAlert("Customer name is required.");return;}
     onSave({
       id:Date.now(),
       name:cf.name,phone:cf.phone,whatsapp:cf.phone,
@@ -16978,7 +16979,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
 
   const handleSave=()=>{
     if(form.date && form.date>localTodayISO()){
-      alert("Sale date can't be in the future. Please pick today's date or an earlier one.");
+      showAlert("Sale date can't be in the future. Please pick today's date or an earlier one.");
       return;
     }
     const purAmt=parseFloat(form.purAmount)||0;
@@ -17875,7 +17876,7 @@ const SettingsPanel=({users,setUsers,currentUser,onClose})=>{
   };
 
   const deleteUser=id=>{
-    if(id===currentUser.id){alert("You cannot delete your own account.");return;}
+    if(id===currentUser.id){showAlert("You cannot delete your own account.");return;}
     setUsers(prev=>prev.filter(u=>u.id!==id));
     dbDeleteUser(id).catch(err=>console.error("Delete user failed:",err));
   };
@@ -18546,8 +18547,8 @@ const LoginScreen=({onLogin,users})=>{
 export default function App(){
   // Public routes — render without login
   const path=window.location.pathname;
-  if(path==="/returns") return <ReturnsPortal/>;
-  if(path==="/return-tracking") return <ReturnTrackingPortal/>;
+  if(path==="/returns") return <><ReturnsPortal/><PopupHost/></>;
+  if(path==="/return-tracking") return <><ReturnTrackingPortal/><PopupHost/></>;
 
   // Always start logged-out — login page shown on every fresh load
   const [user,setUser]=useState(null);
@@ -18626,7 +18627,7 @@ export default function App(){
     try{localStorage.setItem("ros_shop",s);}catch{}
   };
 
-  if(!user) return <LoginScreen users={users} onLogin={handleLogin}/>;
+  if(!user) return <><LoginScreen users={users} onLogin={handleLogin}/><PopupHost/></>;
 
   const allowedShops=(user.shops&&user.shops.length>0)?user.shops:SHOP_IDS;
 
@@ -18634,7 +18635,7 @@ export default function App(){
   const activeShop = shop || (user.role==="staff" && allowedShops.length===1 ? allowedShops[0] : null);
 
   if(activeShop&&allowedShops.includes(activeShop))
-    return <ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);setInitialTab("sales");try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={updateSalesData} customers={customersAll[activeShop]||[]} setCustomers={(updater)=>setCustomersAll(prev=>({...prev,[activeShop]:typeof updater==="function"?updater(prev[activeShop]||[]):updater}))} shopItems={shopItems} saveShopItems={saveShopItems} initialTab={initialTab} users={users}/>;
+    return <><ShopDashboard shopId={activeShop} onBack={()=>{if(user.role!=="staff"){setShop(null);setInitialTab("sales");try{localStorage.removeItem("ros_shop");}catch{}}}} user={user} onLogout={handleLogout} salesData={salesData} setSalesData={updateSalesData} customers={customersAll[activeShop]||[]} setCustomers={(updater)=>setCustomersAll(prev=>({...prev,[activeShop]:typeof updater==="function"?updater(prev[activeShop]||[]):updater}))} shopItems={shopItems} saveShopItems={saveShopItems} initialTab={initialTab} users={users}/><PopupHost/></>;
 
   return(
     <>
@@ -18648,6 +18649,7 @@ export default function App(){
           currentUser={user}
           onClose={()=>setSettingsOpen(false)}/>
       )}
+      <PopupHost/>
     </>
   );
 }

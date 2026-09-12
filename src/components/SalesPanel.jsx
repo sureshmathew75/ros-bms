@@ -1,5 +1,6 @@
 import { useState, useMemo, useRef, useEffect as useEff } from "react";
 import { formatDate } from "../utils";
+import { showAlert, showConfirm } from "./PopupHost";
 /* ─────────────────────────────────────────────────────────────────────────
    SALES PANEL
    Period definitions:
@@ -938,7 +939,7 @@ We hope you enjoy your purchase! 💜
 
   const openTrackingWA = (sale, carrier, trackNo) => {
     const phone = (sale.phone || sale.contact || "").replace(/[^0-9]/g,"");
-    if (!phone) { alert("No phone number for this customer."); return; }
+    if (!phone) { showAlert("No phone number for this customer."); return; }
     const msg = buildTrackingMsg(sale, carrier, trackNo);
     setWaModal({ phone, customerName: sale.customer, message: msg });
   };
@@ -2321,11 +2322,11 @@ We hope you enjoy your purchase! 💜
                     {isIndiaShop && (
                     <td style={{ padding: "8px 6px", textAlign: "center" }} onClick={e => e.stopPropagation()}>
                       <span
-                        onClick={() => {
+                        onClick={async () => {
                           if (!isSuperadmin || !onInlineEdit) return;
                           if (s.verified) {
                             const inv = s.invoiceNo || s.id || "";
-                            if (!window.confirm("Remove verification for " + inv + "?")) return;
+                            if (!(await showConfirm("Remove verification for " + inv + "?"))) return;
                           }
                           onInlineEdit(s.id, { verified: !s.verified });
                         }}
@@ -2463,7 +2464,7 @@ We hope you enjoy your purchase! 💜
                         // confirm, tucked under the pill instead of replacing it.
                         <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
                           <div
-                            onClick={(e) => {
+                            onClick={async (e) => {
                               e.stopPropagation();
                               if (!onInlineEdit) return;
                               // ROS India only: a sale can't be marked ready to despatch
@@ -2479,13 +2480,13 @@ We hope you enjoy your purchase! 💜
                               const group = gKey ? (instalmentGroups[gKey] || []) : [];
                               const groupIds = group.length > 1 ? group.map(x => x.id) : [s.id];
                               if (s.readyToShip) {
-                                if (!window.confirm("Remove " + (s.customer || "this sale") + " from Ready to Ship?")) return;
+                                if (!(await showConfirm("Remove " + (s.customer || "this sale") + " from Ready to Ship?"))) return;
                                 groupIds.forEach(id => onInlineEdit(id, { readyToShip: false }));
                               } else {
-                                if (!window.confirm(
+                                if (!(await showConfirm(
                                   "Mark " + (s.customer || "this sale") + " ready to despatch?\n\n" +
                                   "This will surface it on the Despatch Log page."
-                                )) return;
+                                ))) return;
                                 groupIds.forEach(id => onInlineEdit(id, { readyToShip: true }));
                               }
                             }}
@@ -2516,18 +2517,18 @@ We hope you enjoy your purchase! 💜
                           </div>
                           {isAdminRole && (
                             <div
-                              onClick={(e) => {
+                              onClick={async (e) => {
                                 e.stopPropagation();
-                                if (!window.confirm(
+                                if (!(await showConfirm(
                                   "This sale's status is locked — the Despatch Log marks it " +
                                   "Fulfilled automatically once tracking + shipper are entered.\n\n" +
                                   "Unlock to override manually?"
-                                )) return;
-                                if (!window.confirm(
+                                ))) return;
+                                if (!(await showConfirm(
                                   "Confirm: you're about to manually change the status of " +
                                   (s.customer || "this sale") + " outside the normal Despatch Log flow.\n\n" +
                                   "Continue?"
-                                )) return;
+                                ))) return;
                                 setFulfilUnlockedId(s.id);
                                 setEditStatusId(s.id);
                               }}
@@ -2726,11 +2727,11 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                       <td style={{ padding: "8px 10px" }} onClick={e => e.stopPropagation()}>
                           <select
                             value={current}
-                            onChange={e => {
+                            onChange={async e => {
                               const newVal = e.target.value;
                               const currentVal = s.dispatchFrom || defaultFrom;
                               if (currentVal && currentVal !== defaultFrom && newVal !== currentVal) {
-                                if (!window.confirm("Change dispatch unit from '" + (currentVal==="India-Unit1"?"Unit 1":currentVal==="India-Unit2"?"Unit 2":currentVal) + "' to '" + (newVal==="India-Unit1"?"Unit 1":newVal==="India-Unit2"?"Unit 2":newVal) + "'?\n\nMake sure this is intentional.")) return;
+                                if (!(await showConfirm("Change dispatch unit from '" + (currentVal==="India-Unit1"?"Unit 1":currentVal==="India-Unit2"?"Unit 2":currentVal) + "' to '" + (newVal==="India-Unit1"?"Unit 1":newVal==="India-Unit2"?"Unit 2":newVal) + "'?\n\nMake sure this is intentional."))) return;
                               }
                               const changes = { dispatchFrom: newVal };
                               if (onInlineEdit) onInlineEdit(s.id, changes);

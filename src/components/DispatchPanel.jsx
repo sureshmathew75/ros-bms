@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { dbSaveDispatchEntry, dbLoadDispatchLog, dbDeleteDispatchEntry } from "../db";
+import { showAlert, showConfirm } from "./PopupHost";
 
 /* ─────────────────────────────────────────────────────────────────────────
    DISPATCH PANEL  (all three shops — daily despatch log)
@@ -637,7 +638,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
       remarks: "",
     };
     const res = await persist(null, draft);
-    if (res?.error) { alert("Could not add to dispatch log: " + res.error); return; }
+    if (res?.error) { showAlert("Could not add to dispatch log: " + res.error); return; }
     setEntries(prev => [...prev, { ...draft, uuid: res.uuid, createdAt: new Date().toISOString() }]);
     setSearch("");
     // Jump the visible week to wherever the new row landed, so it's
@@ -709,7 +710,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
     const merged = { ...current, ...patch };
     updateEntry(uuid, patch);
     const res = await persist(uuid, merged);
-    if (res?.error) { alert("Could not save change: " + res.error); return; }
+    if (res?.error) { showAlert("Could not save change: " + res.error); return; }
     // Once both tracking number and shipper are on the row — the same
     // point that unlocks the "Send Notification" button — push it back
     // to the linked sale (tracking + carrier) and mark that sale Fulfilled.
@@ -735,11 +736,11 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
         try {
           const result = await onSaleUpdate(id, { trackingNo: merged.trackingNo, carrier: merged.shipper });
           if (result && result.error) {
-            alert(`Tracking saved here, but couldn't update the linked sale (${id}) to Fulfilled:\n\n${result.error}\n\nPlease flip its status manually on the Sales tab.`);
+            showAlert(`Tracking saved here, but couldn't update the linked sale (${id}) to Fulfilled:\n\n${result.error}\n\nPlease flip its status manually on the Sales tab.`);
           }
         } catch (err) {
           console.error("onSaleUpdate failed for", id, err);
-          alert(`Tracking saved here, but couldn't update the linked sale (${id}) to Fulfilled — ${err?.message || err}\n\nPlease flip its status manually on the Sales tab.`);
+          showAlert(`Tracking saved here, but couldn't update the linked sale (${id}) to Fulfilled — ${err?.message || err}\n\nPlease flip its status manually on the Sales tab.`);
         }
       }
     }
@@ -747,7 +748,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
 
   const removeEntry = async (uuid) => {
     if (!isAdmin) return; // guarded here too, not just in the UI
-    if (!window.confirm("Remove this row from the despatch log? This cannot be undone.")) return;
+    if (!(await showConfirm("Remove this row from the despatch log? This cannot be undone."))) return;
     const removed = entries.find(e => e.uuid === uuid);
     setEntries(prev => prev.filter(e => e.uuid !== uuid));
     await dbDeleteDispatchEntry(uuid, shopId);
@@ -767,7 +768,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
 
   const notify = (entry) => {
     const phone = livePhoneFor(entry).replace(/[^0-9]/g, "");
-    if (!phone) { alert("No phone number on this row."); return; }
+    if (!phone) { showAlert("No phone number on this row."); return; }
     const message = buildDispatchTrackingMsg(entry, shop);
     setWaModal({
       phone, customerName: entry.customer, message,
@@ -786,8 +787,8 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
       lines.push("");
     });
     const text = lines.join("\n").trim();
-    try { await navigator.clipboard.writeText(text); alert("Week's despatch list copied."); }
-    catch { alert(text); }
+    try { await navigator.clipboard.writeText(text); showAlert("Week's despatch list copied."); }
+    catch { showAlert(text); }
   };
 
   /* Bulk WhatsApp — bundles the whole visible week into one message,
