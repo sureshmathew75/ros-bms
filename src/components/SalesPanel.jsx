@@ -471,6 +471,7 @@ export default function SalesPanel({
   /* Status cascade across instalment groups (Advance/Part/Final payment) */
   const [cascadeConfirm, setCascadeConfirm] = useState(null); // {saleId, newStatus, groupIds} | null
   const [balanceBlockInfo, setBalanceBlockInfo] = useState(null); // {sale, expectedTotal, received, balance} | null
+  const [notVerifiedNotice, setNotVerifiedNotice] = useState(null); // {customer} | null — ROS India "not verified yet" popup
   // Sale id currently unlocked for a manual Pending -> Fulfilled override
   // (admin only, after the two-step confirm below) — cleared again as soon
   // as the status dropdown closes, so the unlock never lingers.
@@ -2471,10 +2472,7 @@ We hope you enjoy your purchase! 💜
                               // gates the "start" action; removing an already-Ready sale
                               // is always allowed.
                               if (!s.readyToShip && isIndiaShop && !s.verified) {
-                                alert(
-                                  "This sale hasn't been verified against the bank statement yet.\n\n" +
-                                  "Please contact admin to verify the payment before this sale can be marked ready to despatch."
-                                );
+                                setNotVerifiedNotice({ customer: s.customer || "" });
                                 return;
                               }
                               const gKey = getInstalmentKey(s);
@@ -3529,6 +3527,44 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
             <button onClick={() => setBalanceBlockInfo(null)}
               style={{ width: "100%", padding: "11px 0", borderRadius: 10, border: "none", background: "#dc2626", color: "white", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
               Got it — collect the balance first
+            </button>
+          </div>
+        </div>
+      )}
+      {notVerifiedNotice && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 320,
+          background: "rgba(15,23,42,0.6)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          padding: 20,
+        }} onClick={() => setNotVerifiedNotice(null)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: "white", borderRadius: 18, padding: "28px 26px 24px",
+            maxWidth: 380, width: "92%", textAlign: "center",
+            boxShadow: "0 24px 70px rgba(0,0,0,0.35)",
+            border: "1px solid #f1f5f9",
+          }}>
+            <div style={{
+              width: 56, height: 56, borderRadius: "50%", margin: "0 auto 16px",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              background: "#fffbeb", border: "1.5px solid #fde68a", fontSize: 26,
+            }}>🔒</div>
+            <div style={{ fontSize: 16, fontWeight: 800, color: "#0f172a", marginBottom: 8 }}>
+              Not Verified Yet
+            </div>
+            <div style={{ fontSize: 13, color: "#64748b", lineHeight: 1.6, marginBottom: 22 }}>
+              {notVerifiedNotice.customer ? <>The sale for <strong style={{ color: "#334155" }}>{notVerifiedNotice.customer}</strong> hasn't</> : "This sale hasn't"} been verified against the bank statement yet.
+              <br /><br />
+              Please contact admin to verify the payment before it can be marked ready to despatch.
+            </div>
+            <button onClick={() => setNotVerifiedNotice(null)}
+              style={{
+                width: "100%", padding: "12px 0", borderRadius: 11, border: "none",
+                background: accent, color: "white", fontWeight: 700, fontSize: 13.5,
+                cursor: "pointer", fontFamily: "inherit",
+                boxShadow: `0 8px 20px ${accent}55`,
+              }}>
+              Got it
             </button>
           </div>
         </div>
