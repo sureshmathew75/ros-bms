@@ -13475,7 +13475,7 @@ const PayslipDocument = ({ shop, staffName, monthLabel, breakdown, netPay, domId
 const BonusStatementDocument = ({ shop, staffName, monthLabel, breakdown, amount, note, domId, bonusId, generatedDate, isPreview }) => {
   const sym = shop.symbol;
   const b = breakdown || {};
-  const words = numberToWordsIndian(amount);
+  const netPayable = (b.hold && b.hold.status!=="released") ? Math.max(0, Number(amount||0) - Number(b.hold.amount||0)) : Number(amount||0);
   const fmtGenDate = (() => { try { return new Date((generatedDate||"")+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"}); } catch { return generatedDate||""; } })();
   return (
     <div id={domId} style={{maxWidth:794,margin:"0 auto",fontFamily:"Arial,Helvetica,sans-serif",fontSize:13,color:"#0f172a",background:"white",position:"relative",overflow:"hidden",border:"1px solid #e5e7eb",borderRadius:4}}>
@@ -13532,17 +13532,48 @@ const BonusStatementDocument = ({ shop, staffName, monthLabel, breakdown, amount
           </div>
         )}
 
+        {/* hold, if any — money the admin is withholding from this bonus
+            pending some condition (e.g. an uncollected customer payment),
+            with the reason recorded so it's visible on the statement */}
+        {b.hold && (
+          <div style={{
+            marginTop:20,borderRadius:10,padding:"12px 16px",
+            background: b.hold.status==="released" ? "#f0fdf4" : "#fffbeb",
+            border: "1px solid " + (b.hold.status==="released" ? "#bbf7d0" : "#fde68a"),
+          }}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,flexWrap:"wrap"}}>
+              <span style={{fontSize:11,fontWeight:800,letterSpacing:"0.06em",textTransform:"uppercase",color: b.hold.status==="released" ? "#166534" : "#92400e"}}>
+                {b.hold.status==="released" ? "Held Amount — Released" : "Amount Held"}
+              </span>
+              <span style={{fontSize:14,fontWeight:800,color: b.hold.status==="released" ? "#166534" : "#92400e"}}>
+                {b.hold.status==="released" ? "+" : "−"}{sym}{Number(b.hold.amount||0).toLocaleString()}
+              </span>
+            </div>
+            <div style={{fontSize:11.5,color:"#64748b",marginTop:5}}>Reason: {b.hold.reason}</div>
+            <div style={{fontSize:10.5,color:"#94a3b8",marginTop:2}}>
+              {b.hold.status==="released"
+                ? `Held ${b.hold.heldDate||""} · Released ${b.hold.releasedDate||""} — now included as payable.`
+                : `Held on ${b.hold.heldDate||""} — will be released once resolved.`}
+            </div>
+          </div>
+        )}
+
         {/* net pay banner */}
         <div style={{
-          marginTop:22,borderRadius:12,padding:"18px 22px",
+          marginTop:16,borderRadius:12,padding:"18px 22px",
           display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,
           background:"#ecfdf5", border:"1px solid #bbf7d0", color:"#166534",
         }}>
           <div>
-            <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",opacity:0.85}}>Sales Bonus Payable</div>
-            <div style={{fontSize:11,opacity:0.85,marginTop:4,maxWidth:420}}>{words}</div>
+            <div style={{fontSize:11,fontWeight:700,letterSpacing:"0.1em",textTransform:"uppercase",opacity:0.85}}>
+              {b.hold && b.hold.status!=="released" ? "Net Sales Bonus Payable" : "Sales Bonus Payable"}
+            </div>
+            {b.hold && b.hold.status!=="released" && (
+              <div style={{fontSize:10.5,opacity:0.85,marginTop:3}}>Gross {sym}{Number(amount||0).toLocaleString()} − Held {sym}{Number(b.hold.amount||0).toLocaleString()}</div>
+            )}
+            <div style={{fontSize:11,opacity:0.85,marginTop:4,maxWidth:420}}>{numberToWordsIndian(netPayable)}</div>
           </div>
-          <div style={{fontSize:28,fontWeight:900,letterSpacing:"-0.02em",color:"#166534"}}>{sym}{Number(amount||0).toLocaleString()}</div>
+          <div style={{fontSize:28,fontWeight:900,letterSpacing:"-0.02em",color:"#166534"}}>{sym}{Number(netPayable||0).toLocaleString()}</div>
         </div>
 
         {/* footer */}
@@ -13554,6 +13585,51 @@ const BonusStatementDocument = ({ shop, staffName, monthLabel, breakdown, amount
           </div>
         </div>
 
+      </div>
+    </div>
+  );
+};
+
+/* ── SalesBonusHoldModal: lets admin withhold part or all of an already-
+   generated sales bonus (e.g. staff hasn't collected payment from a
+   customer yet, or a task is still outstanding), with a reason recorded
+   so it shows on the statement. Editable while still held; "Clear Hold"
+   removes it entirely if it was a mistake. Release happens from the
+   history row directly (a confirm, no form needed). ────────────────── */
+const SalesBonusHoldModal = ({ shop, record, onClose, onSave, onClear }) => {
+  const existing = record.breakdown?.hold;
+  const [amount, setAmount] = React.useState(existing ? String(existing.amount) : "");
+  const [reason, setReason] = React.useState(existing?.reason || "");
+  const [saving, setSaving] = React.useState(false);
+  const inp = {width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
+  const amt = Number(amount)||0;
+  const canSave = amt>0 && amt<=record.amount && reason.trim().length>0;
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}} onClick={onClose}>
+      <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:16,padding:24,maxWidth:400,width:"92%",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
+        <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:4}}>{existing ? "Edit Held Amount" : "Hold Part of this Bonus"}</div>
+        <div style={{fontSize:12,color:"#64748b",marginBottom:16}}>{record.breakdown?.fullName||record.staffName} · Bonus {shop.symbol}{record.amount.toLocaleString()}</div>
+        <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Amount to Hold</label>
+        <input type="number" value={amount} onChange={e=>setAmount(e.target.value)} placeholder="0" style={{...inp,marginBottom:4}}/>
+        {amt>record.amount && <div style={{fontSize:11,color:"#dc2626",marginBottom:8}}>Can't hold more than the bonus amount ({shop.symbol}{record.amount.toLocaleString()}).</div>}
+        <label style={{fontSize:10,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginTop:12,marginBottom:3}}>Reason for Holding</label>
+        <textarea value={reason} onChange={e=>setReason(e.target.value)} rows={3} placeholder="e.g. Payment not yet collected from the customer" style={{...inp,resize:"vertical"}}/>
+        <div style={{fontSize:11.5,color:"#64748b",marginTop:10,marginBottom:18}}>
+          Net payable will show as <strong style={{color:"#0f172a"}}>{shop.symbol}{Math.max(0,record.amount-amt).toLocaleString()}</strong> until this is released.
+        </div>
+        <div style={{display:"flex",gap:10}}>
+          {existing && (
+            <button onClick={async()=>{if(await showConfirm("Clear this hold? The bonus will show as fully payable again.")) {setSaving(true);await onClear();setSaving(false);}}} disabled={saving}
+              style={{padding:"10px 14px",borderRadius:9,border:"1px solid #fecaca",background:"#fef2f2",color:"#dc2626",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>
+              Clear
+            </button>
+          )}
+          <button onClick={onClose} style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+          <button onClick={async()=>{setSaving(true);await onSave({amount:amt,reason:reason.trim()});setSaving(false);}} disabled={!canSave||saving}
+            style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:(!canSave||saving)?"default":"pointer",fontFamily:"inherit",opacity:(!canSave||saving)?0.6:1}}>
+            {saving?"Saving…":"Save Hold"}
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -13691,6 +13767,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
   const [salesBonusSplitOverrides, setSalesBonusSplitOverrides] = React.useState({}); // staffName -> manually-typed override amount (string)
   const [salesBonusNote, setSalesBonusNote] = React.useState("");
   const [confirmDeleteBonus, setConfirmDeleteBonus] = React.useState(null);
+  const [holdModalRecord, setHoldModalRecord] = React.useState(null); // sales-bonus record currently being held/edited
 
   const refreshAll = React.useCallback(()=>{
     return Promise.all([
@@ -13869,6 +13946,41 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
       const id = await dbSaveSalesBonusRecord(shopId, t.name, monthKey, t.amount, note, breakdown);
       if (!id) { showAlert(`Couldn't save the bonus statement for ${fullNameOf(t.name)} — please check your connection and try again.`); return; }
     }
+    await refreshAll();
+  };
+
+  // Sales Bonus holds — an admin can withhold part or all of an already-
+  // generated bonus (e.g. the staff hasn't collected payment from a
+  // customer yet, or a task is outstanding) with a reason recorded, then
+  // release it later once resolved. Stored inside the record's own
+  // breakdown_json (a hold sub-object) rather than as new DB columns, so
+  // no schema change/migration is needed — dbSaveSalesBonusRecord already
+  // upserts by staffName+month, so re-saving with an updated breakdown
+  // just updates this one record's hold info in place.
+  const handleSaveBonusHold = async (record, { amount, reason }) => {
+    const updatedBreakdown = { ...(record.breakdown||{}), hold: { amount, reason, status: "held", heldDate: new Date().toISOString().slice(0,10), releasedDate: null } };
+    const id = await dbSaveSalesBonusRecord(shopId, record.staffName, record.month, record.amount, record.note, updatedBreakdown);
+    if (!id) { showAlert("Couldn't save the hold — please check your connection and try again."); return; }
+    setHoldModalRecord(null);
+    await refreshAll();
+  };
+
+  const handleClearBonusHold = async (record) => {
+    const updatedBreakdown = { ...(record.breakdown||{}) };
+    delete updatedBreakdown.hold;
+    const id = await dbSaveSalesBonusRecord(shopId, record.staffName, record.month, record.amount, record.note, updatedBreakdown);
+    if (!id) { showAlert("Couldn't clear the hold — please check your connection and try again."); return; }
+    setHoldModalRecord(null);
+    await refreshAll();
+  };
+
+  const handleReleaseBonusHold = async (record) => {
+    const hold = record.breakdown?.hold;
+    if (!hold || hold.status !== "held") return;
+    if (!(await showConfirm(`Release the held ${shop.symbol}${Number(hold.amount||0).toLocaleString()} for ${fullNameOf(record.staffName)}? It will then show as fully payable.`))) return;
+    const updatedBreakdown = { ...(record.breakdown||{}), hold: { ...hold, status: "released", releasedDate: new Date().toISOString().slice(0,10) } };
+    const id = await dbSaveSalesBonusRecord(shopId, record.staffName, record.month, record.amount, record.note, updatedBreakdown);
+    if (!id) { showAlert("Couldn't release the hold — please check your connection and try again."); return; }
     await refreshAll();
   };
 
@@ -14167,10 +14279,28 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
               <div style={{display:"flex",flexDirection:"column",gap:10}}>
                 {bonusRecords.slice().sort((a,b)=> b.month.localeCompare(a.month) || a.staffName.localeCompare(b.staffName)).map(rec=>(
                   <div key={rec.id} style={{border:"1px solid #e2e8f0",borderRadius:12,overflow:"hidden"}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:"#f8fafc"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"12px 16px",background:"#f8fafc",flexWrap:"wrap",gap:8}}>
                       <span style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{rec.breakdown?.fullName||fullNameOf(rec.staffName)} · {PAYROLL_MONTH_NAMES[Number(rec.month.split("-")[1])-1]} {rec.month.split("-")[0]}</span>
-                      <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                        <span style={{fontWeight:800,fontSize:13,color:"#166534"}}>{shop.symbol}{rec.amount.toLocaleString()}</span>
+                      <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+                        {rec.breakdown?.hold && (
+                          rec.breakdown.hold.status==="held" ? (
+                            <span style={{fontSize:10,fontWeight:800,color:"#92400e",background:"#fffbeb",padding:"3px 9px",borderRadius:999,border:"1px solid #fde68a",whiteSpace:"nowrap"}}>🔒 Holding {shop.symbol}{Number(rec.breakdown.hold.amount||0).toLocaleString()}</span>
+                          ) : (
+                            <span style={{fontSize:10,fontWeight:800,color:"#166534",background:"#f0fdf4",padding:"3px 9px",borderRadius:999,border:"1px solid #bbf7d0",whiteSpace:"nowrap"}}>✅ Released {shop.symbol}{Number(rec.breakdown.hold.amount||0).toLocaleString()}</span>
+                          )
+                        )}
+                        <span style={{fontWeight:800,fontSize:13,color:"#166534"}}>
+                          {shop.symbol}{(rec.breakdown?.hold && rec.breakdown.hold.status==="held" ? Math.max(0,rec.amount-rec.breakdown.hold.amount) : rec.amount).toLocaleString()}
+                          {rec.breakdown?.hold && rec.breakdown.hold.status==="held" && <span style={{fontWeight:600,fontSize:10.5,color:"#94a3b8"}}> net</span>}
+                        </span>
+                        <button onClick={()=>setHoldModalRecord(rec)}
+                          style={{padding:"5px 10px",borderRadius:7,border:"1px solid #e2e8f0",background:"white",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                          {rec.breakdown?.hold ? "Edit Hold" : "🔒 Hold Money"}
+                        </button>
+                        {rec.breakdown?.hold?.status==="held" && (
+                          <button onClick={()=>handleReleaseBonusHold(rec)}
+                            style={{padding:"5px 10px",borderRadius:7,border:"1px solid #bbf7d0",background:"#f0fdf4",color:"#166534",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>Release</button>
+                        )}
                         <button onClick={()=>downloadElementAsPdf(`bonus-hist-${rec.id}`, `SalesBonus-${rec.breakdown?.fullName||rec.staffName}-${rec.month}.pdf`)}
                           style={{padding:"5px 10px",borderRadius:7,border:"1px solid #e2e8f0",background:"white",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>⬇ PDF</button>
                         <button onClick={()=>setConfirmDeleteBonus(rec)}
@@ -14433,6 +14563,11 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
             </div>
           </div>
         </div>
+      )}
+      {holdModalRecord && (
+        <SalesBonusHoldModal shop={shop} record={holdModalRecord} onClose={()=>setHoldModalRecord(null)}
+          onSave={(data)=>handleSaveBonusHold(holdModalRecord, data)}
+          onClear={()=>handleClearBonusHold(holdModalRecord)}/>
       )}
     </div>
   );
