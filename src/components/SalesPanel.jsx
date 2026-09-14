@@ -2387,7 +2387,7 @@ We hope you enjoy your purchase! 💜
                       ) : (
                         <div
                           onClick={() => onInlineEdit && setEditPayId(s.id)}
-                          title={onInlineEdit ? "Click to change payment method" : undefined}
+                          title={onInlineEdit ? "Click to change which account received it" : undefined}
                           style={{ cursor: onInlineEdit ? "pointer" : "default", display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
                           <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
                             <Badge l={(isIndiaShop&&(s.pay==="BANK"||s.pay==="SIB"))?"SIB":(s.pay||"SHOP")} />

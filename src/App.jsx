@@ -15729,7 +15729,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
     { done: !!form.contact.trim(), label: "Phone number is missing 📱" },
     { done: (editLines||[]).some(l=>l.name.trim()), label: "No item added yet" },
     { done: (editLines||[]).some(l=>parseFloat(l.price)>0), label: "This item needs a price 💰" },
-    { done: !!form.payBy, label: "Payment method not set" },
+    { done: !!form.payBy, label: "Payment To not set" },
   ];
   const rosieEditActiveIdx = rosieEditSteps.findIndex(s=>!s.done);
   return(
@@ -16040,7 +16040,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
       </>}
       <Divider title="Payment"/>
       <div style={{display:"grid",gridTemplateColumns:(form.payBy==="SHOP"||form.payBy==="SHOPIFY")?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
-        <div><label style={lbl}>Payment By</label>
+        <div><label style={lbl}>Payment To</label>
           <select ref={el=>{rosieFieldRefs.current.payBy=el;}} value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
             {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
           </select></div>
@@ -17176,7 +17176,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     { done: !!form.contact.trim(), label: "Don't forget the phone number 📱" },
     { done: rosieFilledLines.length>0, label: "What are they buying? Add an item below." },
     { done: rosieHasPrice, label: "This item needs a price 💰" },
-    { done: !!form.payBy, label: "Which payment method was used?" },
+    { done: !!form.payBy, label: "Which account received the payment?" },
     { done: shopId!=="ros-india"||!(form.payBy==="SIB"||form.payBy==="HDFC")||(!!form.paymentMethod&&form.paymentMethod.trim()!==""), label: "How was the payment made — UPI, Bank Transfer, International?" },
     { done: shopId!=="ros-india"||!(form.payBy==="SIB"||form.payBy==="HDFC")||(!!form.paidBy&&form.paidBy.trim()!==""), label: "Who made the payment?" },
     { done: paymentTypeAcked, label: NEW_SALE_STEP_EXPLAIN[form.paymentType] || NEW_SALE_STEP_EXPLAIN.FULL },
@@ -17342,7 +17342,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🚚 Payment & Delivery</p>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
-                <div><label style={lbl}>Payment By</label><select ref={el=>{rosieFieldRefs.current.payBy=el;}} value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{PAY_OPTIONS.map(o=><option key={o}>{o}</option>)}</select></div>
+                <div><label style={lbl}>Payment To</label><select ref={el=>{rosieFieldRefs.current.payBy=el;}} value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{PAY_OPTIONS.map(o=><option key={o}>{o}</option>)}</select></div>
                 {(form.payBy==="SHOP"||form.payBy==="SHOPIFY") ? (
                   <div><label style={lbl}>{form.payBy==="SHOPIFY"?"Shopify Order No.":"Shop Invoice No."}</label><input value={form.shopInvoiceNo} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/></div>
                 ) : shopId==="ros-india" ? (
