@@ -12,6 +12,7 @@ import ReportsPanel from "./components/ReportsPanel";
 import SalesPanel from "./components/SalesPanel";
 import SuppliersPanel from "./components/SuppliersPanel";
 import DispatchPanel from "./components/DispatchPanel";
+import DayBookPanel from "./components/DayBookPanel";
 import PopupHost, { showAlert, showConfirm } from "./components/PopupHost";
 import {
   L_SEL,
@@ -43,7 +44,8 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadLoans, dbAddLoan, dbUpdateLoanBalance, dbDeleteLoan,
   dbLoadPayrollRecords, dbSavePayrollRecord, dbDeletePayrollRecord,
   dbLoadSalesBonusRecords, dbSaveSalesBonusRecord, dbDeleteSalesBonusRecord,
-  dbLoadPettyCash, dbAddPettyCashIssue, dbAddPettyCashSpend, dbEditPettyCashIssue, dbEditPettyCashSpend, dbDeletePettyCash } from "./db";
+  dbLoadPettyCash, dbAddPettyCashIssue, dbAddPettyCashSpend, dbEditPettyCashIssue, dbEditPettyCashSpend, dbDeletePettyCash,
+  dbLoadDayBookNotes } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -6921,6 +6923,8 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [messagesLoaded,setMessagesLoaded]=useState(false);
   const [returns,setReturns]=useState([]);
   const [returnsLoaded,setReturnsLoaded]=useState(false);
+  const [daybookNotes,setDaybookNotes]=useState([]);
+  const [daybookLoaded,setDaybookLoaded]=useState(false);
 
   // ── Undo Delete: session-only stack of recently deleted records ──
   const [deletedStack,setDeletedStack]=useState([]);
@@ -7055,6 +7059,9 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     if((tab==="fulfilment"||tab==="returns"||tab==="dashboard"||tab==="inventory")&&!returnsLoaded){
       dbLoadReturns(shopId).then(data=>{setReturns(data||[]);setReturnsLoaded(true);}).catch(()=>{});
     }
+    if(shopId==="ros-india"&&(tab==="daybook"||tab==="dashboard")&&!daybookLoaded){
+      dbLoadDayBookNotes(shopId).then(data=>{setDaybookNotes(data||[]);setDaybookLoaded(true);}).catch(()=>{});
+    }
   },[tab]);
 
   // Load purchases, expenses, logistics from Supabase on mount
@@ -7130,6 +7137,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"sales",    l:"Sales",    ic:"🛒"},
     {id:"customers",l:"Customers",ic:"👥"},
     {id:"dispatch", l:"Despatch Log", ic:"📤"},
+    {id:"daybook",  l:"Day Book", ic:"📔"},
     {id:"returns",  l:"Returns & Refunds",  ic:"↩️"},
     {id:"purchases",l:"Purchases",ic:"📦"},
     {id:"suppliers",l:"Suppliers",ic:"🏭"},
@@ -7144,7 +7152,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"documents",l:"Documents",ic:"📎"},
     {id:"analytics",l:"Analytics",ic:"📊"},
     {id:"reports",  l:"Reports",  ic:"📋"},
-  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india").filter(n=>n.id!=="payroll"||shopId==="ros-india");
+  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india").filter(n=>n.id!=="payroll"||shopId==="ros-india").filter(n=>n.id!=="daybook"||shopId==="ros-india");
 
   const filtSales=sales.filter(s=>{
     const q=search.toLowerCase();
@@ -7410,7 +7418,7 @@ return(
           {/* group labels */}
           {[
             {label:"MAIN",       ids:["dashboard"]},
-            {label:"SALES",      ids:["sales","customers","returns","dispatch"]},
+            {label:"SALES",      ids:["sales","customers","returns","dispatch","daybook"]},
             {label:"PURCHASES",  ids:["purchases","suppliers","logistics","agents"]},
             {label:"OPERATIONS", ids:["attendance","payroll","pettycash","inventory"]},
             {label:"EXPENSES",   ids:["expenses"]},
@@ -7508,6 +7516,13 @@ return(
                       {n.id==="fulfilment"&&messages.filter(m=>m.status==="READY").length>0&&!coll&&(
                         <span style={{marginLeft:"auto",minWidth:18,height:18,borderRadius:999,background:"#ef4444",color:"white",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px",flexShrink:0}}>
                           {messages.filter(m=>m.status==="READY").length}
+                        </span>
+                      )}
+
+                      {/* badge for Day Book open-note count — red if any open note is urgent, amber otherwise */}
+                      {n.id==="daybook"&&daybookNotes.filter(nt=>nt.status==="open").length>0&&!coll&&(
+                        <span style={{marginLeft:"auto",minWidth:18,height:18,borderRadius:999,background:daybookNotes.some(nt=>nt.status==="open"&&nt.urgent)?"#ef4444":"#f59e0b",color:"white",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px",flexShrink:0}}>
+                          {daybookNotes.filter(nt=>nt.status==="open").length}
                         </span>
                       )}
 
@@ -8805,6 +8820,11 @@ return(
                 return { ok: true };
               }}
             />
+          )}
+
+          {/* ── DAY BOOK (ROS India only) ── */}
+          {tab==="daybook"&&shopId==="ros-india"&&(
+            <DayBookPanel shopId={shopId} shop={shop} user={user} />
           )}
 
           {/* ── CASH FLOW ── */}
@@ -18550,13 +18570,15 @@ const INITIAL_USERS=[
    avatar:"linear-gradient(135deg,#ec4899,#db2777)", shops:["ros-india"]},
 ];
 const ROLE_NAV={
-  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","pettycash","inventory","dispatch","settings"],
-  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","pettycash","inventory","dispatch"],
+  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","pettycash","inventory","dispatch","daybook","settings"],
+  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","pettycash","inventory","dispatch","daybook"],
   // Payroll is kept admin-only (not in staff's list) — it exposes salary,
   // advances and loan balances for every staff member, not just the
   // person viewing it. Petty Cash is different — everyone shares the one
   // office float, so staff see and log into the same book as admin.
-  staff:["sales","customers","returns","attendance","pettycash","inventory","dispatch"],
+  // Day Book (ROS India only) is deliberately open to staff too — it's a
+  // shared UK/India handover log, not an admin-only record.
+  staff:["sales","customers","returns","attendance","pettycash","inventory","dispatch","daybook"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
 

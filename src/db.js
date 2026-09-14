@@ -1869,3 +1869,73 @@ export const dbDeleteDispatchEntry = async (id, shopId) => {
   if (error) console.error('Delete dispatch entry error:', error);
   else console.log('✅ Dispatch entry deleted:', id);
 };
+
+/* ═══════════════════════════════════════════════════════════
+   DAY BOOK  (ROS India — the shared UK/India handover log)
+   Independent of everything else in the app: a quick note doesn't need
+   a sale or customer to attach to, so this deliberately stays freeform.
+   `replies` is a lightweight in-place thread (no separate table) so a
+   staff nudge on an unresolved note stays attached to the same entry
+   instead of becoming a new one.
+   ═══════════════════════════════════════════════════════════ */
+export const dbLoadDayBookNotes = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('daybook_notes').select('*')
+    .eq('shop_id', shopId)
+    .order('created_at', { ascending: true });
+  if (error) { console.error('Load day book notes error:', error); return []; }
+  return (data || []).map(r => ({
+    id:           r.id,
+    author:       r.author || '',
+    authorRole:   r.author_role || 'staff',
+    text:         r.text || '',
+    urgent:       !!r.urgent,
+    status:       r.status || 'open',
+    createdAt:    r.created_at || '',
+    resolvedAt:   r.resolved_at || null,
+    resolvedBy:   r.resolved_by || '',
+    resolvedNote: r.resolved_note || '',
+    replies:      Array.isArray(r.replies) ? r.replies : [],
+  }));
+};
+
+export const dbAddDayBookNote = async (shopId, note) => {
+  if (!sb) return { error: 'No Supabase client' };
+  const payload = {
+    shop_id:     shopId,
+    author:      note.author || '',
+    author_role: note.authorRole || 'staff',
+    text:        note.text || '',
+    urgent:      !!note.urgent,
+    status:      'open',
+    replies:     [],
+  };
+  const { data, error } = await sb.from('daybook_notes').insert(payload).select('id').single();
+  if (error) { console.error('❌ Add day book note error:', error); return { error: error.message }; }
+  return { error: null, id: data?.id };
+};
+
+// Flexible partial update — covers resolving/reopening, appending a reply,
+// or toggling urgent, all through one function rather than one per action.
+export const dbUpdateDayBookNote = async (id, shopId, patch) => {
+  if (!sb) return { error: 'No Supabase client' };
+  const payload = {};
+  if (patch.status !== undefined)       payload.status = patch.status;
+  if (patch.resolvedAt !== undefined)   payload.resolved_at = patch.resolvedAt;
+  if (patch.resolvedBy !== undefined)   payload.resolved_by = patch.resolvedBy;
+  if (patch.resolvedNote !== undefined) payload.resolved_note = patch.resolvedNote;
+  if (patch.replies !== undefined)      payload.replies = patch.replies;
+  if (patch.urgent !== undefined)       payload.urgent = !!patch.urgent;
+  if (patch.text !== undefined)         payload.text = patch.text;
+  const { error } = await sb.from('daybook_notes').update(payload).eq('id', id).eq('shop_id', shopId);
+  if (error) { console.error('❌ Update day book note error:', error); return { error: error.message }; }
+  return { error: null };
+};
+
+export const dbDeleteDayBookNote = async (id, shopId) => {
+  if (!sb) return;
+  const { error } = await sb.from('daybook_notes').delete()
+    .eq('id', id).eq('shop_id', shopId);
+  if (error) console.error('Delete day book note error:', error);
+  else console.log('✅ Day book note deleted:', id);
+};
