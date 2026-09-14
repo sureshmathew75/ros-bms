@@ -1939,3 +1939,42 @@ export const dbDeleteDayBookNote = async (id, shopId) => {
   if (error) console.error('Delete day book note error:', error);
   else console.log('✅ Day book note deleted:', id);
 };
+
+/* ── Day Book Quick Templates — admin-managed, stored separately from the
+   notes themselves so adding/deleting one never touches existing notes. ── */
+export const dbLoadDayBookTemplates = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('daybook_templates').select('*')
+    .eq('shop_id', shopId)
+    .order('created_at', { ascending: true });
+  if (error) { console.error('Load day book templates error:', error); return []; }
+  return (data || []).map(r => ({
+    id:     r.id,
+    icon:   r.icon || '📝',
+    label:  r.label || 'Template',
+    urgent: !!r.urgent,
+    fields: Array.isArray(r.fields) ? r.fields : [],
+  }));
+};
+
+export const dbAddDayBookTemplate = async (shopId, tpl) => {
+  if (!sb) return { error: 'No Supabase client' };
+  const payload = {
+    shop_id: shopId,
+    icon:    tpl.icon || '📝',
+    label:   tpl.label || 'Template',
+    urgent:  !!tpl.urgent,
+    fields:  Array.isArray(tpl.fields) ? tpl.fields : [],
+  };
+  const { data, error } = await sb.from('daybook_templates').insert(payload).select('id').single();
+  if (error) { console.error('❌ Add day book template error:', error); return { error: error.message }; }
+  return { error: null, id: data?.id };
+};
+
+export const dbDeleteDayBookTemplate = async (id, shopId) => {
+  if (!sb) return;
+  const { error } = await sb.from('daybook_templates').delete()
+    .eq('id', id).eq('shop_id', shopId);
+  if (error) console.error('Delete day book template error:', error);
+  else console.log('✅ Day book template deleted:', id);
+};

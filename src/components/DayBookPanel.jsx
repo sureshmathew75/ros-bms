@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo } from "react";
-import { dbLoadDayBookNotes, dbAddDayBookNote, dbUpdateDayBookNote, dbDeleteDayBookNote } from "../db";
+import { dbLoadDayBookNotes, dbAddDayBookNote, dbUpdateDayBookNote, dbDeleteDayBookNote,
+  dbLoadDayBookTemplates, dbAddDayBookTemplate, dbDeleteDayBookTemplate } from "../db";
 import { showAlert, showConfirm } from "./PopupHost";
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -66,54 +67,47 @@ function fmtDMY(iso) {
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
-   QUICK TEMPLATES — the repeating messages staff described (refund, item
-   returned, please call, orders received today). Each is a tiny guided
-   form: staff fills in just the named fields, and `build()` assembles a
-   clean plain-text note from them — it still lands as an ordinary Day
-   Book entry, same as a freeform note, so nothing else about the page
-   (Needs Attention, Archive, replies, resolve) needs to know templates
-   exist at all.
+   QUICK TEMPLATES — admin-managed (see the ⚙️ Manage Templates control
+   below), stored in the `daybook_templates` table (see db.js) and seeded
+   with the 4 that staff originally asked for (Refund, Item Returned,
+   Please Call, Orders Received Today) — see daybook_templates_table.sql.
 
-   Fixed set for now — to add/change one, edit this array.
+   Each template is a tiny guided form: staff fills in just the named
+   fields, and buildNoteText() assembles a clean plain-text note from
+   them — it still lands as an ordinary Day Book entry, same as a
+   freeform note, so nothing else about the page (Needs Attention,
+   Archive, replies, resolve) needs to know templates exist at all.
+
+   Convention: the FIRST field is the headline (e.g. "Customer Name") and
+   shows right after the template's label; every field after that is
+   listed as its own "Label: value" line below (empty optional ones are
+   skipped). This keeps admin-authored templates simple to build — no
+   custom wording per template — while still reading cleanly.
    ───────────────────────────────────────────────────────────────────────── */
-const TEMPLATES = [
-  {
-    id: "refund", icon: "💸", label: "Refund to Customer", urgent: true,
-    fields: [
-      { key: "customer", label: "Customer Name", type: "text", required: true },
-      { key: "amount", label: "Amount", type: "text", required: true, placeholder: "e.g. £45 or ₹4,000" },
-      { key: "date", label: "Payment Received Date", type: "date", required: true },
-      { key: "reason", label: "Reason", type: "textarea", required: true, placeholder: "Why the refund is needed…" },
-    ],
-    build: v => `💸 Refund due — ${v.customer}\nAmount: ${v.amount}\nPayment received: ${fmtDMY(v.date)}\nReason: ${v.reason}`,
-  },
-  {
-    id: "returned", icon: "📦", label: "Item Returned", urgent: false,
-    fields: [
-      { key: "customer", label: "Customer Name", type: "text", required: true },
-      { key: "item", label: "Item", type: "text", required: true },
-      { key: "reason", label: "Reason", type: "textarea", required: true },
-    ],
-    build: v => `📦 Item Returned — ${v.customer}\nItem: ${v.item}\nReason: ${v.reason}`,
-  },
-  {
-    id: "call", icon: "📞", label: "Please Call Customer", urgent: true,
-    fields: [
-      { key: "customer", label: "Customer Name", type: "text", required: true },
-      { key: "phone", label: "Phone Number", type: "text", required: false },
-      { key: "reason", label: "Reason", type: "textarea", required: true, placeholder: "What to call them about…" },
-    ],
-    build: v => `📞 Please Call — ${v.customer}${v.phone ? `\nPhone: ${v.phone}` : ""}\nReason: ${v.reason}`,
-  },
-  {
-    id: "orders", icon: "🛒", label: "Orders Received Today", urgent: false,
-    fields: [
-      { key: "count", label: "Number of Orders", type: "text", required: true, placeholder: "e.g. 6" },
-      { key: "notes", label: "Notes (optional)", type: "textarea", required: false },
-    ],
-    build: v => `🛒 Orders Received Today — ${v.count} order(s)${v.notes ? `\n${v.notes}` : ""}`,
-  },
-];
+function buildNoteText(tpl, values) {
+  const fmtVal = (f) => {
+    const raw = (values[f.key] || "").toString().trim();
+    if (!raw) return "";
+    return f.type === "date" ? fmtDMY(raw) : raw;
+  };
+  const [first, ...rest] = tpl.fields || [];
+  let text = `${tpl.icon} ${tpl.label}`.trim();
+  if (first) text += ` — ${fmtVal(first)}`;
+  for (const f of rest) {
+    const v = fmtVal(f);
+    if (v) text += `\n${f.label}: ${v}`;
+  }
+  return text;
+}
+
+// Turns a field label like "Payment Received Date" into a safe, unique
+// storage key ("payment_received_date", "payment_received_date_2", …).
+function slugify(label, existingKeys) {
+  let base = (label || "field").toLowerCase().trim().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "") || "field";
+  let key = base, i = 2;
+  while (existingKeys.includes(key)) { key = `${base}_${i}`; i++; }
+  return key;
+}
 
 const NoteCard = ({ note, isAdmin, onReply, onResolve, onReopen, onDelete, replyDraft, setReplyDraft, resolveDraft, setResolveDraft, resolvingOpen, setResolvingOpen }) => {
   const isResolved = note.status === "resolved";
@@ -235,9 +229,19 @@ export default function DayBookPanel({ shopId, shop, user }) {
   const [newText, setNewText] = useState("");
   const [newUrgent, setNewUrgent] = useState(false);
   const [posting, setPosting] = useState(false);
+  const [templates, setTemplates] = useState([]);
   const [activeTemplateId, setActiveTemplateId] = useState(null); // null = plain note
   const [templateValues, setTemplateValues] = useState({});
-  const activeTemplate = TEMPLATES.find(t => t.id === activeTemplateId) || null;
+  const activeTemplate = templates.find(t => t.id === activeTemplateId) || null;
+
+  // Manage Templates (admin only)
+  const [manageOpen, setManageOpen] = useState(false);
+  const [creatingTpl, setCreatingTpl] = useState(false);
+  const [tplIcon, setTplIcon] = useState("📝");
+  const [tplLabel, setTplLabel] = useState("");
+  const [tplUrgent, setTplUrgent] = useState(false);
+  const [tplFields, setTplFields] = useState([{ label: "", type: "text", required: true }]);
+  const [savingTpl, setSavingTpl] = useState(false);
 
   const chooseTemplate = (tpl) => {
     setActiveTemplateId(tpl.id);
@@ -257,8 +261,51 @@ export default function DayBookPanel({ shopId, shop, user }) {
     const data = await dbLoadDayBookNotes(shopId);
     setNotes(data);
   };
+  const refreshTemplates = async () => {
+    const data = await dbLoadDayBookTemplates(shopId);
+    setTemplates(data);
+  };
 
-  useEffect(() => { refresh().then(() => setLoaded(true)); }, [shopId]);
+  useEffect(() => {
+    Promise.all([refresh(), refreshTemplates()]).then(() => setLoaded(true));
+  }, [shopId]);
+
+  const resetTplForm = () => {
+    setCreatingTpl(false);
+    setTplIcon("📝"); setTplLabel(""); setTplUrgent(false);
+    setTplFields([{ label: "", type: "text", required: true }]);
+  };
+
+  const handleAddField = () => setTplFields(prev => [...prev, { label: "", type: "text", required: true }]);
+  const handleRemoveField = (i) => setTplFields(prev => prev.filter((_, idx) => idx !== i));
+  const handleFieldChange = (i, patch) => setTplFields(prev => prev.map((f, idx) => idx === i ? { ...f, ...patch } : f));
+
+  const handleSaveTemplate = async () => {
+    if (!tplLabel.trim()) { showAlert("Give the template a name before saving."); return; }
+    const cleanFields = tplFields.filter(f => f.label.trim());
+    if (cleanFields.length === 0) { showAlert("Add at least one field before saving."); return; }
+    const keys = [];
+    const fieldsWithKeys = cleanFields.map(f => {
+      const key = slugify(f.label, keys);
+      keys.push(key);
+      return { key, label: f.label.trim(), type: f.type, required: !!f.required };
+    });
+    setSavingTpl(true);
+    const res = await dbAddDayBookTemplate(shopId, {
+      icon: (tplIcon || "📝").trim() || "📝", label: tplLabel.trim(), urgent: tplUrgent, fields: fieldsWithKeys,
+    });
+    setSavingTpl(false);
+    if (res.error) { showAlert("Couldn't save the template — please check your connection and try again."); return; }
+    resetTplForm();
+    await refreshTemplates();
+  };
+
+  const handleDeleteTemplate = async (tpl) => {
+    if (!(await showConfirm(`Delete the "${tpl.label}" template? Notes already written from it are not affected.`))) return;
+    await dbDeleteDayBookTemplate(tpl.id, shopId);
+    if (activeTemplateId === tpl.id) clearTemplate();
+    await refreshTemplates();
+  };
 
   const openNotes = useMemo(() => notes
     .filter(n => n.status === "open")
@@ -288,7 +335,7 @@ export default function DayBookPanel({ shopId, shop, user }) {
           return;
         }
       }
-      text = activeTemplate.build(templateValues).trim();
+      text = buildNoteText(activeTemplate, templateValues).trim();
     } else {
       if (!newText.trim()) { showAlert("Write something before adding it to the Day Book."); return; }
       text = newText.trim();
@@ -357,8 +404,8 @@ export default function DayBookPanel({ shopId, shop, user }) {
       {/* compose */}
       <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 14, padding: 16, marginBottom: 26, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
         {/* quick template chips */}
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 12 }}>
-          {TEMPLATES.map(tpl => (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 12, alignItems: "center" }}>
+          {templates.map(tpl => (
             <button key={tpl.id} onClick={() => chooseTemplate(tpl)}
               style={{
                 padding: "6px 12px", borderRadius: 999, cursor: "pointer", fontFamily: "inherit",
@@ -374,6 +421,12 @@ export default function DayBookPanel({ shopId, shop, user }) {
             <button onClick={clearTemplate}
               style={{ padding: "6px 12px", borderRadius: 999, border: "1px solid #e2e8f0", background: "white", color: "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
               ✕ Plain note instead
+            </button>
+          )}
+          {isAdmin && (
+            <button onClick={() => setManageOpen(true)}
+              style={{ marginLeft: "auto", padding: "6px 10px", borderRadius: 999, border: "1px dashed #cbd5e1", background: "transparent", color: "#94a3b8", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+              ⚙️ Manage Templates
             </button>
           )}
         </div>
@@ -484,6 +537,107 @@ export default function DayBookPanel({ shopId, shop, user }) {
           );
         })}
       </div>
+
+      {/* Manage Templates (admin only) */}
+      {manageOpen && (
+        <div
+          style={{ position: "fixed", inset: 0, zIndex: 999998, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+          onClick={() => { setManageOpen(false); resetTplForm(); }}
+        >
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: "white", borderRadius: 16, padding: 22, maxWidth: 480, width: "94%", maxHeight: "85vh", overflowY: "auto", boxShadow: "0 24px 70px rgba(0,0,0,0.35)" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <h3 style={{ margin: 0, fontSize: 15.5, fontWeight: 800, color: "#0f172a" }}>⚙️ Manage Templates</h3>
+              <button onClick={() => { setManageOpen(false); resetTplForm(); }}
+                style={{ border: "none", background: "transparent", color: "#94a3b8", fontSize: 16, cursor: "pointer", padding: 2 }}>✕</button>
+            </div>
+
+            {/* existing templates */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+              {templates.length === 0 && !creatingTpl && (
+                <p style={{ fontSize: 12.5, color: "#94a3b8", textAlign: "center", padding: "10px 0" }}>No templates yet.</p>
+              )}
+              {templates.map(tpl => (
+                <div key={tpl.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", border: "1px solid #e2e8f0", borderRadius: 10 }}>
+                  <span style={{ fontSize: 16 }}>{tpl.icon}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{tpl.label}</div>
+                    <div style={{ fontSize: 11, color: "#94a3b8" }}>
+                      {(tpl.fields || []).length} field{(tpl.fields || []).length === 1 ? "" : "s"}{tpl.urgent ? " · defaults Urgent" : ""}
+                    </div>
+                  </div>
+                  <button onClick={() => handleDeleteTemplate(tpl)} title="Delete template"
+                    style={{ border: "1px solid #fecaca", background: "#fef2f2", color: "#dc2626", borderRadius: 8, padding: "5px 10px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                    Delete
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {!creatingTpl ? (
+              <button onClick={() => setCreatingTpl(true)}
+                style={{ width: "100%", padding: "10px 0", borderRadius: 10, border: "1px dashed #cbd5e1", background: "transparent", color: "#475569", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>
+                + New Template
+              </button>
+            ) : (
+              <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: 14, background: "#f8fafc" }}>
+                <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                  <input value={tplIcon} onChange={e => setTplIcon(e.target.value)} placeholder="📝"
+                    style={{ width: 48, textAlign: "center", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 0", fontSize: 15, fontFamily: "inherit", outline: "none" }} />
+                  <input value={tplLabel} onChange={e => setTplLabel(e.target.value)} placeholder="Template name, e.g. Refund to Customer"
+                    style={{ flex: 1, border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px", fontSize: 13, fontFamily: "inherit", outline: "none" }} />
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, fontWeight: 700, color: "#64748b", cursor: "pointer", marginBottom: 12 }}>
+                  <input type="checkbox" checked={tplUrgent} onChange={e => setTplUrgent(e.target.checked)} />
+                  Default to 🔖 Urgent when this template is used
+                </label>
+
+                <div style={{ fontSize: 11, fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 6 }}>
+                  Fields — the first one becomes the headline of the note
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 10 }}>
+                  {tplFields.map((f, i) => (
+                    <div key={i} style={{ display: "flex", gap: 6, alignItems: "center" }}>
+                      <input value={f.label} onChange={e => handleFieldChange(i, { label: e.target.value })}
+                        placeholder={i === 0 ? "e.g. Customer Name" : "Field label"}
+                        style={{ flex: 1, border: "1px solid #e2e8f0", borderRadius: 8, padding: "7px 9px", fontSize: 12.5, fontFamily: "inherit", outline: "none" }} />
+                      <select value={f.type} onChange={e => handleFieldChange(i, { type: e.target.value })}
+                        style={{ border: "1px solid #e2e8f0", borderRadius: 8, padding: "7px 6px", fontSize: 12, fontFamily: "inherit", outline: "none" }}>
+                        <option value="text">Text</option>
+                        <option value="textarea">Long text</option>
+                        <option value="date">Date</option>
+                      </select>
+                      <label style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 10.5, color: "#94a3b8", whiteSpace: "nowrap" }}>
+                        <input type="checkbox" checked={!!f.required} onChange={e => handleFieldChange(i, { required: e.target.checked })} />
+                        Req.
+                      </label>
+                      {tplFields.length > 1 && (
+                        <button onClick={() => handleRemoveField(i)} title="Remove field"
+                          style={{ border: "none", background: "transparent", color: "#cbd5e1", cursor: "pointer", fontSize: 13 }}>✕</button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <button onClick={handleAddField}
+                  style={{ border: "none", background: "transparent", color: shop?.accent || "#059669", fontWeight: 700, fontSize: 11.5, cursor: "pointer", fontFamily: "inherit", padding: 0, marginBottom: 14 }}>
+                  + Add Field
+                </button>
+
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button onClick={resetTplForm}
+                    style={{ flex: 1, padding: "9px 0", borderRadius: 9, border: "1px solid #e2e8f0", background: "white", color: "#64748b", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>
+                    Cancel
+                  </button>
+                  <button onClick={handleSaveTemplate} disabled={savingTpl}
+                    style={{ flex: 1, padding: "9px 0", borderRadius: 9, border: "none", background: shop?.accent || "#059669", color: "white", fontWeight: 700, fontSize: 12.5, cursor: savingTpl ? "default" : "pointer", fontFamily: "inherit", opacity: savingTpl ? 0.6 : 1 }}>
+                    {savingTpl ? "Saving…" : "Save Template"}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
