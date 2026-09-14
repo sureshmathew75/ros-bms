@@ -57,6 +57,64 @@ function fmtDayHeader(day) {
   } catch { return day; }
 }
 
+// yyyy-mm-dd (native <input type="date"> value) → dd/mm/yyyy, matching how
+// dates read elsewhere in the app.
+function fmtDMY(iso) {
+  if (!iso) return "";
+  const p = iso.split("-");
+  return p.length === 3 ? `${p[2]}/${p[1]}/${p[0]}` : iso;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   QUICK TEMPLATES — the repeating messages staff described (refund, item
+   returned, please call, orders received today). Each is a tiny guided
+   form: staff fills in just the named fields, and `build()` assembles a
+   clean plain-text note from them — it still lands as an ordinary Day
+   Book entry, same as a freeform note, so nothing else about the page
+   (Needs Attention, Archive, replies, resolve) needs to know templates
+   exist at all.
+
+   Fixed set for now — to add/change one, edit this array.
+   ───────────────────────────────────────────────────────────────────────── */
+const TEMPLATES = [
+  {
+    id: "refund", icon: "💸", label: "Refund to Customer", urgent: true,
+    fields: [
+      { key: "customer", label: "Customer Name", type: "text", required: true },
+      { key: "amount", label: "Amount", type: "text", required: true, placeholder: "e.g. £45 or ₹4,000" },
+      { key: "date", label: "Payment Received Date", type: "date", required: true },
+      { key: "reason", label: "Reason", type: "textarea", required: true, placeholder: "Why the refund is needed…" },
+    ],
+    build: v => `💸 Refund due — ${v.customer}\nAmount: ${v.amount}\nPayment received: ${fmtDMY(v.date)}\nReason: ${v.reason}`,
+  },
+  {
+    id: "returned", icon: "📦", label: "Item Returned", urgent: false,
+    fields: [
+      { key: "customer", label: "Customer Name", type: "text", required: true },
+      { key: "item", label: "Item", type: "text", required: true },
+      { key: "reason", label: "Reason", type: "textarea", required: true },
+    ],
+    build: v => `📦 Item Returned — ${v.customer}\nItem: ${v.item}\nReason: ${v.reason}`,
+  },
+  {
+    id: "call", icon: "📞", label: "Please Call Customer", urgent: true,
+    fields: [
+      { key: "customer", label: "Customer Name", type: "text", required: true },
+      { key: "phone", label: "Phone Number", type: "text", required: false },
+      { key: "reason", label: "Reason", type: "textarea", required: true, placeholder: "What to call them about…" },
+    ],
+    build: v => `📞 Please Call — ${v.customer}${v.phone ? `\nPhone: ${v.phone}` : ""}\nReason: ${v.reason}`,
+  },
+  {
+    id: "orders", icon: "🛒", label: "Orders Received Today", urgent: false,
+    fields: [
+      { key: "count", label: "Number of Orders", type: "text", required: true, placeholder: "e.g. 6" },
+      { key: "notes", label: "Notes (optional)", type: "textarea", required: false },
+    ],
+    build: v => `🛒 Orders Received Today — ${v.count} order(s)${v.notes ? `\n${v.notes}` : ""}`,
+  },
+];
+
 const NoteCard = ({ note, isAdmin, onReply, onResolve, onReopen, onDelete, replyDraft, setReplyDraft, resolveDraft, setResolveDraft, resolvingOpen, setResolvingOpen }) => {
   const isResolved = note.status === "resolved";
   return (
@@ -177,6 +235,20 @@ export default function DayBookPanel({ shopId, shop, user }) {
   const [newText, setNewText] = useState("");
   const [newUrgent, setNewUrgent] = useState(false);
   const [posting, setPosting] = useState(false);
+  const [activeTemplateId, setActiveTemplateId] = useState(null); // null = plain note
+  const [templateValues, setTemplateValues] = useState({});
+  const activeTemplate = TEMPLATES.find(t => t.id === activeTemplateId) || null;
+
+  const chooseTemplate = (tpl) => {
+    setActiveTemplateId(tpl.id);
+    setTemplateValues({});
+    setNewUrgent(tpl.urgent);
+  };
+  const clearTemplate = () => {
+    setActiveTemplateId(null);
+    setTemplateValues({});
+    setNewUrgent(false);
+  };
   const [replyDrafts, setReplyDrafts] = useState({});
   const [resolveDrafts, setResolveDrafts] = useState({});
   const [resolvingId, setResolvingId] = useState(null);
@@ -208,15 +280,28 @@ export default function DayBookPanel({ shopId, shop, user }) {
   }, [notes]);
 
   const handleAdd = async () => {
-    if (!newText.trim()) { showAlert("Write something before adding it to the Day Book."); return; }
+    let text;
+    if (activeTemplate) {
+      for (const f of activeTemplate.fields) {
+        if (f.required && !String(templateValues[f.key] || "").trim()) {
+          showAlert(`Please fill in "${f.label}" before adding this note.`);
+          return;
+        }
+      }
+      text = activeTemplate.build(templateValues).trim();
+    } else {
+      if (!newText.trim()) { showAlert("Write something before adding it to the Day Book."); return; }
+      text = newText.trim();
+    }
     setPosting(true);
     const res = await dbAddDayBookNote(shopId, {
       author: authorName, authorRole: isAdmin ? "admin" : "staff",
-      text: newText.trim(), urgent: newUrgent,
+      text, urgent: newUrgent,
     });
     setPosting(false);
     if (res.error) { showAlert("Couldn't save — please check your connection and try again."); return; }
-    setNewText(""); setNewUrgent(false);
+    setNewText("");
+    clearTemplate();
     await refresh();
   };
 
@@ -271,16 +356,68 @@ export default function DayBookPanel({ shopId, shop, user }) {
 
       {/* compose */}
       <div style={{ background: "white", border: "1px solid #e2e8f0", borderRadius: 14, padding: 16, marginBottom: 26, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" }}>
-        <textarea
-          value={newText}
-          onChange={e => setNewText(e.target.value)}
-          rows={2}
-          placeholder="Write something that needs attention…"
-          style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", fontSize: 13.5, fontFamily: "inherit", outline: "none", resize: "vertical", boxSizing: "border-box" }}
-          onFocus={e => e.target.style.borderColor = shop?.accent || "#059669"}
-          onBlur={e => e.target.style.borderColor = "#e2e8f0"}
-        />
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 10, flexWrap: "wrap", gap: 10 }}>
+        {/* quick template chips */}
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 7, marginBottom: 12 }}>
+          {TEMPLATES.map(tpl => (
+            <button key={tpl.id} onClick={() => chooseTemplate(tpl)}
+              style={{
+                padding: "6px 12px", borderRadius: 999, cursor: "pointer", fontFamily: "inherit",
+                fontSize: 12, fontWeight: 700,
+                border: "1px solid " + (activeTemplateId === tpl.id ? (shop?.accent || "#059669") : "#e2e8f0"),
+                background: activeTemplateId === tpl.id ? (shop?.accent || "#059669") : "white",
+                color: activeTemplateId === tpl.id ? "white" : "#475569",
+              }}>
+              {tpl.icon} {tpl.label}
+            </button>
+          ))}
+          {activeTemplateId && (
+            <button onClick={clearTemplate}
+              style={{ padding: "6px 12px", borderRadius: 999, border: "1px solid #e2e8f0", background: "white", color: "#94a3b8", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+              ✕ Plain note instead
+            </button>
+          )}
+        </div>
+
+        {activeTemplate ? (
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            {activeTemplate.fields.map(f => (
+              <div key={f.key}>
+                <label style={{ display: "block", fontSize: 11.5, fontWeight: 700, color: "#64748b", marginBottom: 4 }}>
+                  {f.label}{f.required && <span style={{ color: "#dc2626" }}> *</span>}
+                </label>
+                {f.type === "textarea" ? (
+                  <textarea
+                    value={templateValues[f.key] || ""}
+                    onChange={e => setTemplateValues(prev => ({ ...prev, [f.key]: e.target.value }))}
+                    rows={2}
+                    placeholder={f.placeholder || ""}
+                    style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 10, padding: "9px 11px", fontSize: 13, fontFamily: "inherit", outline: "none", resize: "vertical", boxSizing: "border-box" }}
+                  />
+                ) : (
+                  <input
+                    type={f.type === "date" ? "date" : "text"}
+                    value={templateValues[f.key] || ""}
+                    onChange={e => setTemplateValues(prev => ({ ...prev, [f.key]: e.target.value }))}
+                    placeholder={f.placeholder || ""}
+                    style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 10, padding: "9px 11px", fontSize: 13, fontFamily: "inherit", outline: "none", boxSizing: "border-box" }}
+                  />
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <textarea
+            value={newText}
+            onChange={e => setNewText(e.target.value)}
+            rows={2}
+            placeholder="Write something that needs attention…"
+            style={{ width: "100%", border: "1px solid #e2e8f0", borderRadius: 10, padding: "10px 12px", fontSize: 13.5, fontFamily: "inherit", outline: "none", resize: "vertical", boxSizing: "border-box" }}
+            onFocus={e => e.target.style.borderColor = shop?.accent || "#059669"}
+            onBlur={e => e.target.style.borderColor = "#e2e8f0"}
+          />
+        )}
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, flexWrap: "wrap", gap: 10 }}>
           <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: newUrgent ? "#dc2626" : "#64748b", cursor: "pointer" }}>
             <input type="checkbox" checked={newUrgent} onChange={e => setNewUrgent(e.target.checked)} />
             🔖 Mark Urgent
