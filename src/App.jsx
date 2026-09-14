@@ -17108,12 +17108,11 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     purAmount:   "",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
-
-  // Paid By defaults to whoever the customer is (most payments are made by
-  // the customer themselves) but stops auto-following the customer name the
-  // moment staff types into it directly — e.g. a relative sent the money.
-  const [paidByTouched,setPaidByTouched]=useState(false);
-  const setCustomerName=(name)=>setForm(f=>({...f,customer:name,paidBy:paidByTouched?f.paidBy:name}));
+  // Paid By is never auto-filled from the customer name — it stayed silently
+  // "satisfied" that way even when nobody had actually looked at it, which
+  // defeated the point of it being a required field. Staff now always have
+  // to type it themselves.
+  const setCustomerName=(name)=>set("customer",name);
 
   const [customerList,setCustomerList]=useState(customers.length>0?[...customers]:[...CUSTOMERS]);
   const [showNewCust,setShowNewCust]=useState(false);
@@ -17357,7 +17356,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               {shopId==="ros-india"&&(form.payBy==="SIB"||form.payBy==="HDFC")&&(
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
                   <div>
-                    <label style={lbl}>Payment Method</label>
+                    <label style={lbl}>Payment Method <span style={{color:"#dc2626"}}>*</span></label>
                     <select
                       value={PAYMENT_METHOD_PRESETS.includes(form.paymentMethod)?form.paymentMethod:(form.paymentMethod?"OTHER":"")}
                       onChange={e=>set("paymentMethod",e.target.value==="OTHER"?" ":e.target.value)}
@@ -17374,8 +17373,8 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                     )}
                   </div>
                   <div>
-                    <label style={lbl}>Paid By</label>
-                    <input value={form.paidBy} onChange={e=>{setPaidByTouched(true);set("paidBy",e.target.value);}}
+                    <label style={lbl}>Paid By <span style={{color:"#dc2626"}}>*</span></label>
+                    <input value={form.paidBy} onChange={e=>set("paidBy",e.target.value)}
                       placeholder="Who sent the money…" style={inp} onFocus={fo} onBlur={bl}/>
                   </div>
                 </div>

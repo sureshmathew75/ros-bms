@@ -759,13 +759,17 @@ export default function SalesPanel({
      that matters. */
   const compareSales = (a, b) => {
     // Single-month view (current-month tab or an explicitly picked month):
-    // manual drag order (sortpos) wins, but ONLY between two sales that
-    // both already have one. A sale with no sortpos yet (e.g. one just
-    // added after the month was reordered) falls through to normal date
-    // order instead of always being pushed to the bottom.
+    // manual drag order (sortpos) wins between two sales that both already
+    // have one. A sale with no sortpos yet — freshly entered, never
+    // dragged — always floats above every sale that already has one, so a
+    // new entry always lands at the top of the month until someone drags
+    // it (or any other row) into place, at which point the whole month
+    // gets renumbered and it becomes a normal sortpos row like the rest.
     if (pickedMonth || salesPeriod === "month") {
       const spA = a.sortpos, spB = b.sortpos;
-      if (spA != null && spB != null && spA !== spB) return spA - spB;
+      const hasA = spA != null, hasB = spB != null;
+      if (hasA && hasB && spA !== spB) return spA - spB;
+      if (hasA !== hasB) return hasA ? 1 : -1;
     }
     // Primary: FY group (use fyStartYear which reads invoice suffix)
     const fyA = fyStartYear(a) ?? 0;
