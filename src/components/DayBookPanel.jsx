@@ -193,9 +193,14 @@ export default function DayBookPanel({ shopId, shop, user }) {
     .sort((a, b) => (b.urgent === a.urgent ? 0 : (b.urgent ? 1 : -1)) || (new Date(a.createdAt) - new Date(b.createdAt))),
   [notes]);
 
+  // Archive shows only RESOLVED notes, grouped by the day they were written —
+  // an open note lives solely in "Needs Attention" above until it's marked
+  // done, so nothing appears twice on screen at once. The permanent record
+  // is still complete: once resolved, a note stays in its day's Archive
+  // entry forever.
   const groupedByDay = useMemo(() => {
     const groups = {};
-    notes.forEach(n => {
+    notes.filter(n => n.status === "resolved").forEach(n => {
       const day = (n.createdAt || "").slice(0, 10) || "unknown";
       (groups[day] = groups[day] || []).push(n);
     });
@@ -317,16 +322,15 @@ export default function DayBookPanel({ shopId, shop, user }) {
           📖 Archive
         </div>
         {groupedByDay.length === 0 ? (
-          <p style={{ fontSize: 12.5, color: "#c4bda8", textAlign: "center", padding: "10px 0" }}>Nothing written yet — the first page starts today.</p>
+          <p style={{ fontSize: 12.5, color: "#c4bda8", textAlign: "center", padding: "10px 0" }}>Nothing resolved yet — completed notes will collect here, grouped by the day they were written.</p>
         ) : groupedByDay.map(([day, dayNotes]) => {
-          const allResolved = dayNotes.every(n => n.status === "resolved");
           return (
             <div key={day} style={{ marginBottom: 24, background: "#fdfbf3", borderRadius: 14, padding: "16px 18px", border: "1px solid #f1ead4" }}>
               <div style={{ display: "flex", alignItems: "baseline", gap: 9, marginBottom: 12, paddingBottom: 8, borderBottom: "1px solid #ede4cd" }}>
                 <span style={{ fontFamily: "Georgia,'Times New Roman',serif", fontSize: 15.5, fontWeight: 700, color: "#78716c" }}>
                   {fmtDayHeader(day)}
                 </span>
-                {allResolved && <span style={{ fontSize: 10.5, fontWeight: 700, color: "#166534" }}>✅ All clear</span>}
+                <span style={{ fontSize: 10.5, fontWeight: 700, color: "#166534" }}>✅ {dayNotes.length} resolved</span>
               </div>
               <div style={{ display: "flex", flexDirection: "column", gap: 8, paddingLeft: 14, borderLeft: "2px solid #ede4cd" }}>
                 {dayNotes.map(n => (
