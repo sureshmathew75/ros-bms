@@ -2401,6 +2401,14 @@ We hope you enjoy your purchase! 💜
                               {s.shopInvoiceNo}
                             </div>
                           )}
+                          {isIndiaShop && isBankPay(s) && s.paymentMethod && String(s.paymentMethod).trim() !== "" && (
+                            <div style={{
+                              fontSize: 10, color: "#64748b", whiteSpace: "nowrap",
+                              maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis",
+                            }}>
+                              {s.paymentMethod}
+                            </div>
+                          )}
                         </div>
                       )}
                     </td>

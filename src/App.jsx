@@ -15666,6 +15666,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
     otherChargesLabel: sale.otherChargesLabel||"Other Charges",
     shopInvoiceNo: sale.shopInvoiceNo||sale.shop_invoice_no||"",
     paidBy:      sale.paidBy||"",
+    paymentMethod: sale.paymentMethod||"",
     trackingNo:  sale.trackingNo||"",
     deliveryDate: sale.deliveryDate||"",
     deliveryTime: sale.deliveryTime||"",
@@ -15840,10 +15841,33 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
           <div><label style={lbl}>Saved On</label><select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>{["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}</select></div>
         </div>
         {shopId==="ros-india"&&(
-          <div style={{marginBottom:12}}>
-            <label style={lbl}>Paid By</label>
-            <input value={form.paidBy||""} onChange={e=>set("paidBy",e.target.value)}
-              placeholder="Who sent the money…" style={inp} onFocus={fo} onBlur={bl}/>
+          <div style={{display:"grid",gridTemplateColumns:(form.payBy==="SIB"||form.payBy==="HDFC"||form.payBy==="BANK")?"1fr 1fr":"1fr",gap:12,marginBottom:12}}>
+            <div>
+              <label style={lbl}>Paid By</label>
+              <input value={form.paidBy||""} onChange={e=>set("paidBy",e.target.value)}
+                placeholder="Who sent the money…" style={inp} onFocus={fo} onBlur={bl}/>
+            </div>
+            {(form.payBy==="SIB"||form.payBy==="HDFC"||form.payBy==="BANK")&&(
+              <div>
+                <label style={lbl}>Payment Method</label>
+                <select
+                  value={["UPI","Bank Transfer","International"].includes(form.paymentMethod)?form.paymentMethod:(form.paymentMethod?"OTHER":"")}
+                  onChange={e=>set("paymentMethod",e.target.value==="OTHER"?" ":e.target.value)}
+                  style={inp}>
+                  <option value="">Select…</option>
+                  <option value="UPI">UPI</option>
+                  <option value="Bank Transfer">Bank Transfer</option>
+                  <option value="International">International</option>
+                  <option value="OTHER">Other…</option>
+                </select>
+                {(!!form.paymentMethod&&!["UPI","Bank Transfer","International"].includes(form.paymentMethod))&&(
+                  <input value={form.paymentMethod.trim()===""?"":form.paymentMethod}
+                    onChange={e=>set("paymentMethod",e.target.value)}
+                    placeholder="Enter payment method…" autoFocus
+                    style={{...inp,marginTop:6,border:"1px solid "+shop.accent}} onFocus={fo} onBlur={bl}/>
+                )}
+              </div>
+            )}
           </div>
         )}
         <div style={{position:"relative"}}>
@@ -16240,7 +16264,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
               showAlert("Please enter the purchase date too — a purchase amount can't be saved on its own.");
               return;
             }
-            onSave({...form,id:(form.invAssigned&&form.invoiceNo)?form.invoiceNo:((shopId==="ros-india"&&new Date(form.date||sale.date||0)>=new Date(2026,3,1)&&!String(sale.id||"").includes("-"))?`IN-${Date.now().toString().slice(-6)}`:sale.id),ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:parseFloat(form.discount)||0,otherCharges:parseFloat(form.otherCharges)||0,otherChargesLabel:form.otherChargesLabel||"Other Charges",contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""});
+            onSave({...form,id:(form.invAssigned&&form.invoiceNo)?form.invoiceNo:((shopId==="ros-india"&&new Date(form.date||sale.date||0)>=new Date(2026,3,1)&&!String(sale.id||"").includes("-"))?`IN-${Date.now().toString().slice(-6)}`:sale.id),ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:parseFloat(form.discount)||0,otherCharges:parseFloat(form.otherCharges)||0,otherChargesLabel:form.otherChargesLabel||"Other Charges",contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""});
           }}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
@@ -17020,6 +17044,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const [showAddressModal,setShowAddressModal]=useState(false);
   const defaultPay = shopId === "ros-india" ? "SIB" : "SHOP";
   const PAY_OPTIONS = shopId === "ros-india" ? ["SIB","HDFC","SHOP"] : ["BANK","SHOP","EXCHANGE","GIFT","PROMOTION","SHOPIFY"];
+  const PAYMENT_METHOD_PRESETS = ["UPI","Bank Transfer","International"];
   const _now=new Date();
   const _yr=_now.getMonth()>=3?_now.getFullYear():_now.getFullYear()-1;
   // India uses 2-digit suffix (e.g. 27 for FY 2026-27), UK uses 1-digit
@@ -17066,6 +17091,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     payBy:       defaultPay,
     shopInvoiceNo: "",
     paidBy:      "",
+    paymentMethod: "",
     trackingNo:  "",
     dispatchFrom: shopId==="ros-india" ? "India-Unit1" : "",
     status:      "PENDING",
@@ -17083,6 +17109,12 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
+  // Paid By defaults to whoever the customer is (most payments are made by
+  // the customer themselves) but stops auto-following the customer name the
+  // moment staff types into it directly — e.g. a relative sent the money.
+  const [paidByTouched,setPaidByTouched]=useState(false);
+  const setCustomerName=(name)=>setForm(f=>({...f,customer:name,paidBy:paidByTouched?f.paidBy:name}));
+
   const [customerList,setCustomerList]=useState(customers.length>0?[...customers]:[...CUSTOMERS]);
   const [showNewCust,setShowNewCust]=useState(false);
   const [custAcOpen,setCustAcOpen]=useState(false);
@@ -17099,7 +17131,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const isRefundOnly=["EXCHANGED","REFUNDED"].includes(form.status);
   const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN RQSTD":"#c2410c","RETURN RCVD":"#991b1b","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","GOOD FEEDBACK RCVD":"#065f46","NEGATIVE FEEDBACK RCVD":"#9f1239"};
 
-  const handleAddCustomer=(newCust)=>{setCustomerList(l=>[newCust,...l]);set("customer",newCust.name);set("contact",newCust.phone);setShowNewCust(false);};
+  const handleAddCustomer=(newCust)=>{setCustomerList(l=>[newCust,...l]);setCustomerName(newCust.name);set("contact",newCust.phone);setShowNewCust(false);};
   const updateLine=(id,key,val)=>setLines(ls=>ls.map(l=>l.id===id?{...l,[key]:val}:l));
   const addLine=()=>setLines(ls=>[...ls,blankLine()]);
   const removeLine=(id)=>setLines(ls=>ls.length>1?ls.filter(l=>l.id!==id):ls);
@@ -17117,11 +17149,24 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
       showAlert("Sale date can't be in the future. Please pick today's date or an earlier one.");
       return;
     }
+    // ROS India, paid via SIB/HDFC: staff must record how the money moved
+    // and who actually sent it — this used to only get filled in later by
+    // an admin editing the sale, which is what this validation fixes.
+    if(shopId==="ros-india"&&(form.payBy==="SIB"||form.payBy==="HDFC")){
+      if(!form.paymentMethod||!form.paymentMethod.trim()){
+        showAlert("Please select how the payment was made — UPI, Bank Transfer, International, or Other.");
+        return;
+      }
+      if(!form.paidBy||!form.paidBy.trim()){
+        showAlert("Please enter who made the payment (Paid By).");
+        return;
+      }
+    }
     const purAmt=parseFloat(form.purAmount)||0;
     const filledLines=lines.filter(l=>l.name.trim()||(parseFloat(l.price)>0));
     const combinedItem=filledLines.map(l=>`${l.name}(x${l.qty})`).join(", ")||"Sale";
     const combinedQty=filledLines.reduce((s,l)=>s+(parseFloat(l.qty)||0),0)||1;
-    onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||"",dispatchFrom:form.dispatchFrom||""});
+    onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||"",dispatchFrom:form.dispatchFrom||""});
   };
 
   const rosieFilledLines = lines.filter(l=>l.name.trim());
@@ -17132,6 +17177,8 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     { done: rosieFilledLines.length>0, label: "What are they buying? Add an item below." },
     { done: rosieHasPrice, label: "This item needs a price 💰" },
     { done: !!form.payBy, label: "Which payment method was used?" },
+    { done: shopId!=="ros-india"||!(form.payBy==="SIB"||form.payBy==="HDFC")||(!!form.paymentMethod&&form.paymentMethod.trim()!==""), label: "How was the payment made — UPI, Bank Transfer, International?" },
+    { done: shopId!=="ros-india"||!(form.payBy==="SIB"||form.payBy==="HDFC")||(!!form.paidBy&&form.paidBy.trim()!==""), label: "Who made the payment?" },
     { done: paymentTypeAcked, label: NEW_SALE_STEP_EXPLAIN[form.paymentType] || NEW_SALE_STEP_EXPLAIN.FULL },
   ];
   const rosieActiveIdx = rosieSteps.findIndex(s=>!s.done);
@@ -17204,11 +17251,11 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               <div style={{marginBottom:7,position:"relative"}}>
                 <label style={lbl}>Name</label>
                 <div style={{display:"flex",gap:5}}>
-                  <input ref={el=>{rosieFieldRefs.current.customer=el;}} value={form.customer} onChange={e=>{set("customer",e.target.value);const q=e.target.value.trim().toLowerCase();if(q.length>=1){const m=customerList.filter(c=>c.name.toLowerCase().includes(q)).slice(0,6);setCustAcMatches(m);setCustAcOpen(m.length>0);}else{setCustAcOpen(false);setCustAcMatches([]);}}} onBlur={()=>setTimeout(()=>setCustAcOpen(false),180)} placeholder="Type name…" style={{...inp,flex:1}} onFocus={fo} autoComplete="off"/>
+                  <input ref={el=>{rosieFieldRefs.current.customer=el;}} value={form.customer} onChange={e=>{setCustomerName(e.target.value);const q=e.target.value.trim().toLowerCase();if(q.length>=1){const m=customerList.filter(c=>c.name.toLowerCase().includes(q)).slice(0,6);setCustAcMatches(m);setCustAcOpen(m.length>0);}else{setCustAcOpen(false);setCustAcMatches([]);}}} onBlur={()=>setTimeout(()=>setCustAcOpen(false),180)} placeholder="Type name…" style={{...inp,flex:1}} onFocus={fo} autoComplete="off"/>
                   <button type="button" onClick={()=>setShowNewCust(true)} style={{width:32,height:34,borderRadius:8,cursor:"pointer",border:"1px solid "+shop.accent+"55",background:shop.accentBg,color:shop.accent,fontSize:16,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
                 </div>
                 {custAcOpen&&custAcMatches.length>0&&(<div style={{position:"absolute",top:"100%",left:0,right:0,zIndex:200,background:"white",border:"1px solid "+shop.accent+"44",borderRadius:10,boxShadow:"0 8px 24px rgba(0,0,0,0.15)",maxHeight:180,overflowY:"auto",marginTop:3}}>
-                  {custAcMatches.map((c,i)=>(<div key={i} onMouseDown={()=>{set("customer",c.name);set("contact",c.phone||"");setCustAcOpen(false);}} style={{padding:"9px 12px",borderBottom:i<custAcMatches.length-1?"1px solid #f1f5f9":"none",display:"flex",alignItems:"center",gap:8}} onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg} onMouseLeave={e=>e.currentTarget.style.background="white"}><div style={{width:26,height:26,borderRadius:7,background:shop.sb,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11,flexShrink:0}}>{c.name.charAt(0)}</div><div><p style={{margin:0,fontSize:12,fontWeight:700,color:"#0f172a"}}>{c.name}</p><p style={{margin:0,fontSize:10,color:"#94a3b8"}}>{c.phone||"—"}</p></div></div>))}
+                  {custAcMatches.map((c,i)=>(<div key={i} onMouseDown={()=>{setCustomerName(c.name);set("contact",c.phone||"");setCustAcOpen(false);}} style={{padding:"9px 12px",borderBottom:i<custAcMatches.length-1?"1px solid #f1f5f9":"none",display:"flex",alignItems:"center",gap:8}} onMouseEnter={e=>e.currentTarget.style.background=shop.accentBg} onMouseLeave={e=>e.currentTarget.style.background="white"}><div style={{width:26,height:26,borderRadius:7,background:shop.sb,display:"flex",alignItems:"center",justifyContent:"center",color:"white",fontWeight:800,fontSize:11,flexShrink:0}}>{c.name.charAt(0)}</div><div><p style={{margin:0,fontSize:12,fontWeight:700,color:"#0f172a"}}>{c.name}</p><p style={{margin:0,fontSize:10,color:"#94a3b8"}}>{c.phone||"—"}</p></div></div>))}
                 </div>)}
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
@@ -17307,6 +17354,32 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                   </div>
                 ) : <div/>}
               </div>
+              {shopId==="ros-india"&&(form.payBy==="SIB"||form.payBy==="HDFC")&&(
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
+                  <div>
+                    <label style={lbl}>Payment Method</label>
+                    <select
+                      value={PAYMENT_METHOD_PRESETS.includes(form.paymentMethod)?form.paymentMethod:(form.paymentMethod?"OTHER":"")}
+                      onChange={e=>set("paymentMethod",e.target.value==="OTHER"?" ":e.target.value)}
+                      style={inp}>
+                      <option value="">Select…</option>
+                      {PAYMENT_METHOD_PRESETS.map(o=><option key={o} value={o}>{o}</option>)}
+                      <option value="OTHER">Other…</option>
+                    </select>
+                    {(!!form.paymentMethod&&!PAYMENT_METHOD_PRESETS.includes(form.paymentMethod))&&(
+                      <input value={form.paymentMethod.trim()===""?"":form.paymentMethod}
+                        onChange={e=>set("paymentMethod",e.target.value)}
+                        placeholder="Enter payment method…" autoFocus
+                        style={{...inp,marginTop:6,border:"1px solid "+shop.accent}} onFocus={fo} onBlur={bl}/>
+                    )}
+                  </div>
+                  <div>
+                    <label style={lbl}>Paid By</label>
+                    <input value={form.paidBy} onChange={e=>{setPaidByTouched(true);set("paidBy",e.target.value);}}
+                      placeholder="Who sent the money…" style={inp} onFocus={fo} onBlur={bl}/>
+                  </div>
+                </div>
+              )}
               <div style={{display:"grid",gridTemplateColumns:(shopId==="ros-india"&&form.payBy==="SHOP")?"1fr 1fr":"1fr",gap:7,marginBottom:7}}>
                 <div><label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["PENDING","FULFILLED","RETURN RQSTD","RETURN RCVD","EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select></div>
                 {shopId==="ros-india"&&form.payBy==="SHOP"&&(

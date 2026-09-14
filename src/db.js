@@ -87,6 +87,7 @@ export const dbSaveSale = async (shopId, sale) => {
     payment_type:        sale.paymentType || 'FULL',
     manual_link_group:   sale.manualLinkGroup || null,
     ready_to_ship:       sale.readyToShip ? true : false,
+    payment_method:      String(sale.paymentMethod || ''),
   };
 
   const payload = { ...core, ...extended, verified: sale.verified || false };
@@ -192,6 +193,7 @@ export const dbLoadSales = async (shopId) => {
     purOtherCharges: Number(r.pur_other_charges) || 0,
     purOtherChargesNote: r.pur_other_charges_note || '',
     paidBy:        r.paid_by || '',
+    paymentMethod: r.payment_method || '',
     trackingNo:    r.tracking_no || '',
     dispatchFrom:      r.dispatch_from || '',
     carrier:           r.carrier || '',
