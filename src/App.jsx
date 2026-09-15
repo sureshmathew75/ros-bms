@@ -13316,15 +13316,42 @@ const loadHtml2Pdf = () => new Promise((res,rej)=>{
 const downloadElementAsPdf = (elementId, filename) => {
   const el = document.getElementById(elementId);
   if (!el) { showAlert("Nothing to download yet."); return; }
+
+  // The compact "history" previews (payslip + sales bonus) wrap the actual
+  // printable document in a `transform:scale(0.6)` box so several fit on
+  // screen without a horizontal scrollbar. html2canvas captures an
+  // element's on-screen (post-transform) box rather than its true
+  // full-size layout, so left as-is the exported PDF comes out shrunk to
+  // that scaled box — reading as blank or cut off depending on how the
+  // maths lands. Fix: temporarily neutralise any transform on the
+  // element's ancestors for the capture, then restore it right after.
+  const scaledAncestors = [];
+  let node = el.parentElement;
+  while (node) {
+    if (node.style && node.style.transform) {
+      scaledAncestors.push({ node, transform: node.style.transform, width: node.style.width });
+      node.style.transform = "none";
+      node.style.width = "auto";
+    }
+    node = node.parentElement;
+  }
+  const restore = () => {
+    scaledAncestors.forEach(({ node, transform, width }) => {
+      node.style.transform = transform;
+      node.style.width = width;
+    });
+  };
+
   loadHtml2Pdf().then(()=>{
-    window.html2pdf().set({
+    return window.html2pdf().set({
       margin:[10,10,10,10],
       filename,
       image:{type:'jpeg',quality:0.98},
       html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false},
       jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},
     }).from(el).save();
-  }).catch(()=>showAlert('Could not load the PDF library. Check your internet connection.'));
+  }).catch(()=>showAlert('Could not load the PDF library. Check your internet connection.'))
+    .finally(restore);
 };
 
 /* ── PayslipDocument: the printable payslip itself, shared between the
