@@ -13326,56 +13326,24 @@ const waitForImagesToLoad = (el) => Promise.all(
 const downloadElementAsPdf = (elementId, filename) => {
   const el = document.getElementById(elementId);
   if (!el) { showAlert("Nothing to download yet."); return; }
-
-  // TEMPORARY DIAGNOSTIC LOGGING — helps pin down a blank-PDF report that
-  // only happens for specific records. Safe to leave on; it only writes to
-  // the browser console, never shown to end users. Remove once the blank
-  // Sales Bonus PDF issue is confirmed fixed.
-  console.log('[PDF debug] element:', elementId, el);
-  console.log('[PDF debug] bounding rect:', el.getBoundingClientRect());
-  console.log('[PDF debug] images:', Array.from(el.querySelectorAll('img')).map(img => ({
-    src: img.src, complete: img.complete, naturalWidth: img.naturalWidth, naturalHeight: img.naturalHeight,
-  })));
-
   loadHtml2Pdf()
     .then(() => waitForImagesToLoad(el))
     .then(() => window.html2pdf().set({
       margin:[10,10,10,10],
       filename,
       image:{type:'jpeg',quality:0.98},
-      html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:true},
+      // scrollX/scrollY:0 — without this, html2canvas captures blank when
+      // the page has been scrolled down before the button is clicked (e.g.
+      // a record further down a long History list). It ends up looking for
+      // the content at the wrong vertical offset — still adding the page's
+      // current scroll position even though the library's own internal
+      // preview container is already pinned to the top of the viewport —
+      // and finds empty space instead. Pinning both to 0 here fixes it
+      // regardless of how far down the page was scrolled at click time.
+      html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false,scrollX:0,scrollY:0},
       jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},
-    }).from(el).toCanvas().then(function(){
-      const canvas = this.prop.canvas;
-      console.log('[PDF debug] captured canvas size:', canvas.width, 'x', canvas.height);
-      const dataUrl = canvas.toDataURL('image/jpeg', 0.98);
-      console.log('[PDF debug] JPEG data URL length:', dataUrl.length, '(a near-blank white image is typically well under 5,000 — real content is usually 30,000+)');
-
-      // Shows the EXACT captured image on screen, bypassing the PDF step
-      // entirely — this tells us directly whether html2canvas painted the
-      // content or produced a blank canvas, before jsPDF ever touches it.
-      const old = document.getElementById('__pdf_debug_preview');
-      if (old) old.remove();
-      const wrap = document.createElement('div');
-      wrap.id = '__pdf_debug_preview';
-      wrap.style.cssText = 'position:fixed;inset:20px;z-index:999999;background:rgba(15,23,42,0.9);display:flex;flex-direction:column;align-items:center;padding:16px;overflow:auto;';
-      const label = document.createElement('div');
-      label.textContent = 'DEBUG: this is exactly what was captured for the PDF — click anywhere to close';
-      label.style.cssText = 'color:white;font-weight:700;margin-bottom:10px;font-family:sans-serif;';
-      const img = document.createElement('img');
-      img.src = dataUrl;
-      img.style.cssText = 'max-width:100%;background:white;border:4px solid #ef4444;';
-      wrap.appendChild(label);
-      wrap.appendChild(img);
-      wrap.onclick = () => wrap.remove();
-      document.body.appendChild(wrap);
-    }).save())
+    }).from(el).save())
     .catch((err) => {
-      // Previously this .catch only covered the html2pdf *library load*
-      // step — a failure inside the actual capture/save chain (e.g. a
-      // tainted-canvas error from a cross-origin image) went completely
-      // unhandled, so a broken PDF could download with no error shown at
-      // all. Logging + alerting here surfaces whatever the real cause is.
       console.error('PDF export failed:', err);
       showAlert("Couldn't create the PDF. Please try again — if it keeps happening, open the browser console (press F12) and share the red error text so it can be tracked down.");
     });
