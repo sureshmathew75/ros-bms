@@ -13326,15 +13326,28 @@ const waitForImagesToLoad = (el) => Promise.all(
 const downloadElementAsPdf = (elementId, filename) => {
   const el = document.getElementById(elementId);
   if (!el) { showAlert("Nothing to download yet."); return; }
+
+  // TEMPORARY DIAGNOSTIC LOGGING — helps pin down a blank-PDF report that
+  // only happens for specific records. Safe to leave on; it only writes to
+  // the browser console, never shown to end users. Remove once the blank
+  // Sales Bonus PDF issue is confirmed fixed.
+  console.log('[PDF debug] element:', elementId, el);
+  console.log('[PDF debug] bounding rect:', el.getBoundingClientRect());
+  console.log('[PDF debug] images:', Array.from(el.querySelectorAll('img')).map(img => ({
+    src: img.src, complete: img.complete, naturalWidth: img.naturalWidth, naturalHeight: img.naturalHeight,
+  })));
+
   loadHtml2Pdf()
     .then(() => waitForImagesToLoad(el))
     .then(() => window.html2pdf().set({
       margin:[10,10,10,10],
       filename,
       image:{type:'jpeg',quality:0.98},
-      html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:false},
+      html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:true},
       jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},
-    }).from(el).save())
+    }).from(el).toCanvas().then(function(){
+      console.log('[PDF debug] captured canvas size:', this.prop.canvas.width, 'x', this.prop.canvas.height);
+    }).save())
     .catch((err) => {
       // Previously this .catch only covered the html2pdf *library load*
       // step — a failure inside the actual capture/save chain (e.g. a
