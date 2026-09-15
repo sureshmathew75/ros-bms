@@ -18723,27 +18723,54 @@ const LoginScreen=({onLogin,users})=>{
         @keyframes ros-fadeIn{from{opacity:0;}to{opacity:1;}}
         @keyframes ros-shake{0%,100%{transform:translateX(0);}20%{transform:translateX(-9px);}40%{transform:translateX(9px);}60%{transform:translateX(-6px);}80%{transform:translateX(6px);}}
         @keyframes ros-pulse{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,0.5);}50%{box-shadow:0 0 0 8px rgba(16,185,129,0);}}
+        @keyframes orbit-spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
         .ros-user-card{transition:all 0.22s cubic-bezier(0.34,1.56,0.64,1);cursor:pointer;}
         .ros-user-card:hover{transform:translateY(-3px) scale(1.02)!important;background:rgba(255,255,255,0.08)!important;border-color:rgba(255,255,255,0.18)!important;box-shadow:0 16px 40px rgba(0,0,0,0.5)!important;}
         .ros-pin-btn{transition:background 0.12s,border-color 0.12s,transform 0.1s;cursor:pointer;}
         .ros-pin-btn:hover:not([data-empty]){background:rgba(255,255,255,0.13)!important;border-color:rgba(255,255,255,0.22)!important;}
         .ros-pin-btn:active:not([data-empty]){transform:scale(0.90)!important;}
-        @media(max-width:700px){.ros-left-panel{display:none!important;}.ros-right-panel{padding:36px 20px!important;}}
+        .ros-mobile-brand{display:none;}
+        @media(max-width:700px){.ros-left-panel{display:none!important;}.ros-right-panel{padding:36px 20px!important;}.ros-mobile-brand{display:flex!important;}}
       `}</style>
+
+      {/* ══ FULL-SCREEN ORBIT BACKDROP ══ the "ROS ORBIT" motif fills the
+           whole login screen, not just one panel: a giant faint wordmark, a
+           soft central glow standing in for the "sun", and three concentric
+           rings each carrying one slowly orbiting satellite. Purely
+           decorative — sits behind both panels, never intercepts clicks. */}
+      <div style={{position:"absolute",inset:0,zIndex:0,overflow:"hidden",pointerEvents:"none"}}>
+        <div style={{position:"absolute",inset:0,backgroundImage:"linear-gradient(rgba(255,255,255,0.020) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.020) 1px,transparent 1px)",backgroundSize:"48px 48px"}}/>
+        <div style={{position:"absolute",top:"-16%",left:"-12%",width:"48vw",height:"48vw",borderRadius:"50%",background:"radial-gradient(circle,rgba(37,99,235,0.16) 0%,transparent 68%)",animation:"ros-floatOrb 8s ease-in-out infinite"}}/>
+        <div style={{position:"absolute",bottom:"-18%",right:"-10%",width:"44vw",height:"44vw",borderRadius:"50%",background:"radial-gradient(circle,rgba(124,58,237,0.13) 0%,transparent 68%)",animation:"ros-floatOrb 10s ease-in-out infinite reverse"}}/>
+        {/* central glow — the "sun" the whole system orbits */}
+        <div style={{position:"absolute",top:"50%",left:"50%",width:"38vmin",height:"38vmin",transform:"translate(-50%,-50%)",borderRadius:"50%",background:"radial-gradient(circle,rgba(99,102,241,0.22) 0%,transparent 70%)"}}/>
+        {/* giant watermark — quietly spells out the software's name behind everything */}
+        <div style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center"}}>
+          <span style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:"clamp(140px,20vw,360px)",letterSpacing:"-0.02em",color:"white",opacity:0.028,whiteSpace:"nowrap",transform:"rotate(-6deg)"}}>ORBIT</span>
+        </div>
+        {/* three concentric orbit rings, each with one satellite, different speeds/directions */}
+        {[
+          { d:"34vmin", dur:"16s", dir:"normal",  ring:"rgba(139,92,246,0.18)", dot:"#8b5cf6" },
+          { d:"56vmin", dur:"27s", dir:"reverse", ring:"rgba(59,130,246,0.14)", dot:"#3b82f6" },
+          { d:"80vmin", dur:"40s", dir:"normal",  ring:"rgba(6,182,212,0.11)",  dot:"#06b6d4" },
+        ].map((r,i)=>(
+          <div key={i} style={{position:"absolute",top:"50%",left:"50%",width:r.d,height:r.d,transform:"translate(-50%,-50%)",borderRadius:"50%",border:"1px solid "+r.ring}}>
+            <div style={{position:"absolute",inset:0,animation:"orbit-spin "+r.dur+" linear infinite "+r.dir}}>
+              <div style={{position:"absolute",top:-4,left:"50%",marginLeft:-4,width:8,height:8,borderRadius:"50%",background:r.dot,boxShadow:"0 0 12px "+r.dot}}/>
+            </div>
+          </div>
+        ))}
+      </div>
 
       {/* LEFT — branding */}
       <div className="ros-left-panel" style={{
-        flex:"0 0 44%",
-        background:"linear-gradient(155deg,#0d1f3c 0%,#091526 55%,#060b14 100%)",
+        flex:"0 0 44%",zIndex:1,
+        background:"linear-gradient(155deg,rgba(13,31,60,0.58) 0%,rgba(9,21,38,0.50) 55%,rgba(6,11,20,0.42) 100%)",
         display:"flex",flexDirection:"column",justifyContent:"space-between",
         padding:"52px 56px",position:"relative",overflow:"hidden",
       }}>
-        <div style={{position:"absolute",top:-90,left:-90,width:420,height:420,borderRadius:"50%",background:"radial-gradient(circle,rgba(37,99,235,0.18) 0%,transparent 68%)",animation:"ros-floatOrb 7s ease-in-out infinite",pointerEvents:"none"}}/>
-        <div style={{position:"absolute",bottom:-70,right:-70,width:380,height:380,borderRadius:"50%",background:"radial-gradient(circle,rgba(124,58,237,0.14) 0%,transparent 68%)",animation:"ros-floatOrb 9s ease-in-out infinite reverse",pointerEvents:"none"}}/>
-        <div style={{position:"absolute",inset:0,backgroundImage:"linear-gradient(rgba(255,255,255,0.024) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,0.024) 1px,transparent 1px)",backgroundSize:"48px 48px",pointerEvents:"none"}}/>
-
         <div style={{position:"relative",zIndex:1,animation:"ros-fadeUp 0.7s ease both"}}>
-          <OrbitMark size={48} wordmarkSize={20} taglineText="Business Suite" dark={true} gap={14} />
+          <OrbitMark size={58} wordmarkSize={25} taglineText="Business Suite" dark={true} gap={16} />
         </div>
 
         <div style={{position:"relative",zIndex:1,animation:"ros-fadeUp 0.7s 0.15s ease both",opacity:0,animationFillMode:"forwards"}}>
@@ -18767,7 +18794,8 @@ const LoginScreen=({onLogin,users})=>{
 
       {/* RIGHT — login form */}
       <div className="ros-right-panel" style={{
-        flex:1,background:"#0a0f1a",
+        flex:1,zIndex:1,
+        background:"rgba(10,15,26,0.62)",backdropFilter:"blur(22px)",WebkitBackdropFilter:"blur(22px)",
         display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",
         padding:"48px 32px",position:"relative",
       }}>
@@ -18775,6 +18803,11 @@ const LoginScreen=({onLogin,users})=>{
         <div style={{position:"absolute",top:0,left:0,width:1,height:"100%",background:"linear-gradient(180deg,transparent 0%,rgba(255,255,255,0.06) 30%,rgba(255,255,255,0.06) 70%,transparent 100%)"}}/>
 
         <div style={{position:"relative",zIndex:1,width:"100%",maxWidth:360}}>
+          {/* compact ROS ORBIT mark — shown only on narrow screens, where the
+             branding panel is hidden, so the software's name is always visible */}
+          <div className="ros-mobile-brand" style={{display:"none",justifyContent:"center",marginBottom:28,animation:"ros-fadeUp 0.6s ease both"}}>
+            <OrbitMark size={34} wordmarkSize={16} dark={true} />
+          </div>
           {!selUser?(
             <div style={{animation:"ros-fadeUp 0.5s ease both"}}>
               <div style={{marginBottom:32}}>
