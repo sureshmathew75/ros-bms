@@ -308,12 +308,24 @@ const OrbitMark = ({ size = 36, animated = true, showWordmark = true, wordmarkSi
       </div>
       {showWordmark && (
         <div style={{ overflow: "hidden" }}>
-          <p style={{
-            margin: 0, fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: wordmarkSize,
-            letterSpacing: "0.02em", lineHeight: 1.15, whiteSpace: "nowrap",
-            background: dark ? "linear-gradient(90deg,#60a5fa,#a78bfa 55%,#22d3ee)" : "linear-gradient(90deg,#2563eb,#7c3aed 55%,#0891b2)",
-            WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
-          }}>ORBIT</p>
+          {/* "ROS ORBIT" lockup — ROS is the smaller kicker (parent brand),
+             ORBIT is the larger gradient wordmark (the software's own name).
+             Deliberate visual hierarchy: ORBIT reads as primary, ROS as the
+             family tag it belongs to — same relationship as e.g. "Adobe
+             Photoshop". */}
+          <div style={{ display: "flex", alignItems: "baseline", gap: Math.max(3, Math.round(wordmarkSize * 0.22)) }}>
+            <span style={{
+              fontFamily: "'Syne',sans-serif", fontWeight: 700, fontSize: Math.max(8, Math.round(wordmarkSize * 0.44)),
+              letterSpacing: "0.13em", textTransform: "uppercase", whiteSpace: "nowrap",
+              color: dark ? "rgba(255,255,255,0.42)" : "#94a3b8",
+            }}>ROS</span>
+            <span style={{
+              fontFamily: "'Syne',sans-serif", fontWeight: 800, fontSize: wordmarkSize,
+              letterSpacing: "0.01em", lineHeight: 1.15, whiteSpace: "nowrap",
+              background: dark ? "linear-gradient(90deg,#60a5fa,#a78bfa 55%,#22d3ee)" : "linear-gradient(90deg,#2563eb,#7c3aed 55%,#0891b2)",
+              WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent", backgroundClip: "text",
+            }}>ORBIT</span>
+          </div>
           {taglineText && (
             <p style={{
               margin: 0, fontSize: Math.max(8, Math.round(wordmarkSize * 0.52)), fontWeight: 600,
@@ -845,7 +857,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
         </div>
         <div style={{display:"flex",alignItems:"center",gap:isMobile?8:14}}>
           {!isMobile&&<span style={{fontSize:10,fontWeight:600,color:"#94a3b8",letterSpacing:"0.04em"}}>
-            Developed by <strong style={{color:"#2563eb"}}>Orbit</strong>
+            Developed by <strong style={{color:"#2563eb"}}>ROS Nexus</strong>
           </span>}
           {!isMobile&&<button onClick={()=>setCmd(true)} style={{display:"flex",alignItems:"center",gap:8,background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"7px 16px",color:"#64748b",fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
             🔍 Search… <kbd style={{background:"#e2e8f0",borderRadius:4,padding:"1px 7px",fontSize:11,marginLeft:4}}>/</kbd>
@@ -892,7 +904,7 @@ const ShopSelector=({onSelect,user,onLogout,onOpenSettings,salesData={}})=>{
           <p style={{fontSize:isMobile?13:15,color:"#64748b",margin:0}}>Choose a shop to manage sales, purchases, logistics and analytics.</p>
 
 <p></p>
-<p style={{fontSize:isMobile?7:9,color:"#64748b",lineHeight:1.1,margin:0}}>Developed by Orbit</p>
+<p style={{fontSize:isMobile?7:9,color:"#64748b",lineHeight:1.1,margin:0}}>Developed by ROS Nexus</p>
         </div>
 
         {/* ── 3 shop cards ── */}
@@ -7405,18 +7417,6 @@ return(
         transform:isMobile?(mobileOpen?"translateX(0)":"translateX(-100%)"):"none",
       }}>
 
-        {/* ── Orbit platform strip — the app's own brand, above the shop's ── */}
-        <div style={{
-          padding:coll?"9px 0":"9px 14px",
-          display:"flex",alignItems:"center",
-          justifyContent:coll?"center":"flex-start",
-          background:"rgba(0,0,0,0.16)",
-          borderBottom:"1px solid rgba(255,255,255,0.08)",
-          flexShrink:0,
-        }}>
-          <OrbitMark size={coll?22:20} wordmarkSize={12} showWordmark={!coll} />
-        </div>
-
         {/* ── brand / logo area ── */}
         <div style={{
           padding:"0 12px",height:64,
@@ -7672,6 +7672,10 @@ return(
           justifyContent:"space-between",position:"sticky",top:0,zIndex:30,
           boxShadow:"0 2px 12px "+shop.accent+"14",
         }}>
+          {/* ── ROS ORBIT — the software's own brand, always top-centre on every inner page ── */}
+          <div style={{position:"absolute",left:"50%",top:"50%",transform:"translate(-50%,-50%)",pointerEvents:"none"}}>
+            <OrbitMark size={isMobile?18:24} wordmarkSize={isMobile?11:14} showWordmark={!isMobile} dark={false} />
+          </div>
           <div style={{display:"flex",alignItems:"center",gap:14}}>
             <button onClick={()=>isMobile?setMobileOpen(o=>!o):setColl(c=>!c)}
               style={{width:36,height:36,borderRadius:10,border:"1px solid "+shop.accent+"33",background:shop.accentBg,cursor:"pointer",fontSize:15,color:shop.accent,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}}
@@ -7690,7 +7694,7 @@ return(
           <div style={{display:"flex",alignItems:"center",gap:10}}>
             {/* Orbit credit - hidden on mobile */}
             <span className="mob-hide" style={{fontSize:10,fontWeight:600,color:shop.accent+"99",letterSpacing:"0.04em",marginRight:4,whiteSpace:"nowrap"}}>
-              Developed by <strong style={{fontWeight:800,color:shop.accent}}>Orbit</strong>
+              Developed by <strong style={{fontWeight:800,color:shop.accent}}>ROS Nexus</strong>
             </span>
             {/* Search - hidden on mobile */}
             <div className="mob-hide" style={{display:"flex",alignItems:"center",gap:8,background:"white",border:"1px solid "+shop.accent+"33",borderRadius:12,padding:"8px 14px",transition:"all 0.2s"}}
@@ -18757,7 +18761,7 @@ const LoginScreen=({onLogin,users})=>{
         </div>
 
         <div style={{position:"relative",zIndex:1,animation:"ros-fadeIn 1s 0.5s ease both",opacity:0,animationFillMode:"forwards"}}>
-          <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.16)",fontWeight:500}}>© {new Date().getFullYear()} Orbit · All rights reserved</p>
+          <p style={{margin:0,fontSize:11,color:"rgba(255,255,255,0.16)",fontWeight:500}}>© {new Date().getFullYear()} ROS Nexus · All rights reserved</p>
         </div>
       </div>
 
@@ -18797,7 +18801,7 @@ const LoginScreen=({onLogin,users})=>{
                   </div>
                 ))}
               </div>
-              <p style={{textAlign:"center",marginTop:36,fontSize:11,color:"rgba(255,255,255,0.14)",fontWeight:500,letterSpacing:"0.06em"}}>DEVELOPED BY ORBIT</p>
+              <p style={{textAlign:"center",marginTop:36,fontSize:11,color:"rgba(255,255,255,0.14)",fontWeight:500,letterSpacing:"0.06em"}}>DEVELOPED BY ROS NEXUS</p>
             </div>
           ):(
             <div style={{animation:"ros-fadeUp 0.4s ease both",textAlign:"center"}}>
