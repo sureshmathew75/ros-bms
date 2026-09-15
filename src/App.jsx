@@ -13346,7 +13346,29 @@ const downloadElementAsPdf = (elementId, filename) => {
       html2canvas:{scale:2,useCORS:true,backgroundColor:'#ffffff',logging:true},
       jsPDF:{unit:'mm',format:'a4',orientation:'portrait'},
     }).from(el).toCanvas().then(function(){
-      console.log('[PDF debug] captured canvas size:', this.prop.canvas.width, 'x', this.prop.canvas.height);
+      const canvas = this.prop.canvas;
+      console.log('[PDF debug] captured canvas size:', canvas.width, 'x', canvas.height);
+      const dataUrl = canvas.toDataURL('image/jpeg', 0.98);
+      console.log('[PDF debug] JPEG data URL length:', dataUrl.length, '(a near-blank white image is typically well under 5,000 — real content is usually 30,000+)');
+
+      // Shows the EXACT captured image on screen, bypassing the PDF step
+      // entirely — this tells us directly whether html2canvas painted the
+      // content or produced a blank canvas, before jsPDF ever touches it.
+      const old = document.getElementById('__pdf_debug_preview');
+      if (old) old.remove();
+      const wrap = document.createElement('div');
+      wrap.id = '__pdf_debug_preview';
+      wrap.style.cssText = 'position:fixed;inset:20px;z-index:999999;background:rgba(15,23,42,0.9);display:flex;flex-direction:column;align-items:center;padding:16px;overflow:auto;';
+      const label = document.createElement('div');
+      label.textContent = 'DEBUG: this is exactly what was captured for the PDF — click anywhere to close';
+      label.style.cssText = 'color:white;font-weight:700;margin-bottom:10px;font-family:sans-serif;';
+      const img = document.createElement('img');
+      img.src = dataUrl;
+      img.style.cssText = 'max-width:100%;background:white;border:4px solid #ef4444;';
+      wrap.appendChild(label);
+      wrap.appendChild(img);
+      wrap.onclick = () => wrap.remove();
+      document.body.appendChild(wrap);
     }).save())
     .catch((err) => {
       // Previously this .catch only covered the html2pdf *library load*
