@@ -7408,6 +7408,7 @@ return(
            daybook-bump: a quick, energetic bounce on the icon itself,
            timed to play alongside the ring. ────────────────────────── */
         @keyframes daybook-glow{0%,100%{box-shadow:0 0 0 0 var(--db-glow,rgba(245,158,11,0.45));}50%{box-shadow:0 0 0 6px rgba(245,158,11,0);}}
+        @keyframes daybook-ripple{0%{transform:scale(1);opacity:0.65;}100%{transform:scale(2.6);opacity:0;}}
         @keyframes daybook-ring{0%{transform:scale(0.9);opacity:0.9;}100%{transform:scale(2.3);opacity:0;}}
         @keyframes daybook-bump{0%,100%{transform:scale(1) rotate(0deg);}25%{transform:scale(1.22) rotate(-8deg);}50%{transform:scale(1.05) rotate(6deg);}75%{transform:scale(1.16) rotate(-3deg);}}
         /* orbit-spin also self-defined here (not just inside OrbitMark) so the
@@ -7648,17 +7649,20 @@ return(
                          urgent, amber otherwise. */}
                       {n.id==="daybook"&&daybookOpenCount>0&&!coll&&(
                         <span style={{marginLeft:"auto",position:"relative",display:"inline-flex",flexShrink:0}}>
-                          {/* spinning comet-tail ring — a bright arc of light continuously
-                             sweeps all the way around the number itself, not just the icon,
-                             so the count can't be glanced past unnoticed. Speeds way up for
-                             the first ~1.4s after a genuinely new note arrives. */}
-                          <span style={{
-                            position:"absolute",inset:-4,borderRadius:999,
-                            background:"conic-gradient(from 0deg, transparent 0%, "+(daybookUrgent?"#ef4444":"#f59e0b")+" 14%, "+(daybookUrgent?"#ef4444":"#f59e0b")+" 26%, transparent 46%)",
-                            animation:"orbit-spin "+(daybookBurst?"0.7s":"2s")+" linear infinite",
-                            filter:"drop-shadow(0 0 3px "+(daybookUrgent?"rgba(239,68,68,0.8)":"rgba(245,158,11,0.8)")+")",
-                          }}/>
-                          {/* the count itself — sits on top of the ring, unaffected by the rotation */}
+                          {/* sonar-style ripple — two rings continuously expand outward from
+                             the number and fade, like water rippling out from a drop. Reads
+                             unambiguously as "new/pending" (unlike a spinning ring, which can
+                             look like a loading spinner). Both speed up together for ~1.4s
+                             right after a genuinely new note arrives. */}
+                          {[0,1].map(i=>(
+                            <span key={i} style={{
+                              position:"absolute",inset:0,borderRadius:999,
+                              border:"1.5px solid "+(daybookUrgent?"#ef4444":"#f59e0b"),
+                              animation:"daybook-ripple "+(daybookBurst?"1s":"1.8s")+" ease-out infinite",
+                              animationDelay:(i*(daybookBurst?0.5:0.9))+"s",
+                            }}/>
+                          ))}
+                          {/* the count itself — sits on top of the ripples, unaffected by them */}
                           <span style={{position:"relative",minWidth:18,height:18,borderRadius:999,background:daybookUrgent?"#ef4444":"#f59e0b",color:"white",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px",transition:"transform 0.2s",transform:daybookBurst?"scale(1.35)":"scale(1)"}}>
                             {daybookOpenCount}
                           </span>
