@@ -12,7 +12,7 @@ import ReportsPanel from "./components/ReportsPanel";
 import SalesPanel from "./components/SalesPanel";
 import SuppliersPanel from "./components/SuppliersPanel";
 import DispatchPanel from "./components/DispatchPanel";
-import DayBookPanel from "./components/DayBookPanel";
+import DayBookPanel, { whoseTurn } from "./components/DayBookPanel";
 import PopupHost, { showAlert, showConfirm } from "./components/PopupHost";
 import {
   L_SEL,
@@ -7160,8 +7160,18 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     daybookPrevOpenRef.current=openCount;
   },[daybookNotes]);
 
+  // ── Day Book sidebar: the NUMBER always reflects every open note (so
+  // nobody undercounts what's pending shop-wide), but the ripple/glow
+  // animation only plays when at least one of those notes is actually
+  // this logged-in person's turn to answer (same whoseTurn() rule as the
+  // card ribbons in DayBookPanel — imported from there, not reimplemented,
+  // so the two can never drift out of sync). If nothing is on your plate
+  // right now, the badge sits still and grey — informational, not a nag.
+  const daybookIsAdmin=user?.role==="superadmin"||user?.role==="admin";
   const daybookOpenCount=daybookNotes.filter(nt=>nt.status==="open").length;
-  const daybookUrgent=daybookNotes.some(nt=>nt.status==="open"&&nt.urgent);
+  const daybookMyTurnNotes=daybookNotes.filter(nt=>nt.status==="open"&&whoseTurn(nt)===(daybookIsAdmin?"admin":"staff"));
+  const daybookMyTurn=daybookMyTurnNotes.length>0;
+  const daybookUrgent=daybookMyTurnNotes.some(nt=>nt.urgent);
 
   // Load purchases, expenses, logistics from Supabase on mount
   useEffect(()=>{
@@ -7601,9 +7611,12 @@ return(
                         }}/>
                       )}
 
-                      {/* icon container — Day Book gets an ambient pulse while
-                         notes are pending, plus a one-shot bump+ring the
-                         instant a new one arrives (daybookBurst) */}
+                      {/* icon container — Day Book gets an ambient pulse ONLY when
+                         it's this logged-in person's turn on at least one note
+                         (daybookMyTurn), plus a one-shot bump+ring the instant a
+                         new note lands that's specifically theirs to answer.
+                         Pending notes waiting on the OTHER side never animate
+                         this icon — see the badge below for what they still see. */}
                       <div style={{
                         width:32,height:32,borderRadius:9,flexShrink:0,
                         display:"flex",alignItems:"center",justifyContent:"center",
@@ -7611,12 +7624,12 @@ return(
                         transition:"background 0.15s",
                         fontSize:16,
                         position:"relative",
-                        ...(n.id==="daybook"&&daybookOpenCount>0?{
+                        ...(n.id==="daybook"&&daybookMyTurn?{
                           animation:(daybookBurst?"daybook-bump 0.6s ease, ":"")+"daybook-glow 2.2s ease-in-out infinite",
                           "--db-glow":daybookUrgent?"rgba(239,68,68,0.55)":"rgba(245,158,11,0.45)",
                         }:{}),
                       }}>
-                        {n.id==="daybook"&&daybookBurst&&(
+                        {n.id==="daybook"&&daybookMyTurn&&daybookBurst&&(
                           <span style={{
                             position:"absolute",inset:0,borderRadius:9,
                             border:"2px solid "+(daybookUrgent?"#ef4444":"#f59e0b"),
@@ -7646,18 +7659,15 @@ return(
                         </span>
                       )}
 
-                      {/* badge for Day Book open-note count — a tiny satellite continuously
-                         orbits the count itself (same motif as the ROS ORBIT mark), speeding
-                         up briefly when a new note arrives. Red ring/dot if any open note is
-                         urgent, amber otherwise. */}
+                      {/* badge for Day Book open-note count — the NUMBER always shows
+                         every pending note shop-wide, so nobody undercounts. The
+                         ripple only plays when at least one of them is this
+                         person's own turn to answer; otherwise it's a plain,
+                         still, grey count — informational, not a nag aimed at
+                         someone who isn't the one holding it up. */}
                       {n.id==="daybook"&&daybookOpenCount>0&&!coll&&(
                         <span style={{marginLeft:"auto",position:"relative",display:"inline-flex",flexShrink:0}}>
-                          {/* sonar-style ripple — two rings continuously expand outward from
-                             the number and fade, like water rippling out from a drop. Reads
-                             unambiguously as "new/pending" (unlike a spinning ring, which can
-                             look like a loading spinner). Both speed up together for ~1.4s
-                             right after a genuinely new note arrives. */}
-                          {[0,1].map(i=>(
+                          {daybookMyTurn&&[0,1].map(i=>(
                             <span key={i} style={{
                               position:"absolute",inset:0,borderRadius:999,
                               border:"1.5px solid "+(daybookUrgent?"#ef4444":"#f59e0b"),
@@ -7666,7 +7676,7 @@ return(
                             }}/>
                           ))}
                           {/* the count itself — sits on top of the ripples, unaffected by them */}
-                          <span style={{position:"relative",minWidth:18,height:18,borderRadius:999,background:daybookUrgent?"#ef4444":"#f59e0b",color:"white",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px",transition:"transform 0.2s",transform:daybookBurst?"scale(1.35)":"scale(1)"}}>
+                          <span style={{position:"relative",minWidth:18,height:18,borderRadius:999,background:daybookMyTurn?(daybookUrgent?"#ef4444":"#f59e0b"):"#94a3b8",color:"white",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px",transition:"transform 0.2s",transform:(daybookMyTurn&&daybookBurst)?"scale(1.35)":"scale(1)"}}>
                             {daybookOpenCount}
                           </span>
                         </span>

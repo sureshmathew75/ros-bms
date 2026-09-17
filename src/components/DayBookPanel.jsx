@@ -59,7 +59,7 @@ function timeAgo(iso) {
    a reasonable assumption for a back-and-forth thread, and it only ever
    affects the small number of replies that already existed before this
    was added. */
-function whoseTurn(note) {
+export function whoseTurn(note) {
   if (!note || note.status !== "open") return null;
   let lastRole = note.authorRole === "admin" ? "admin" : "staff";
   (note.replies || []).forEach(r => {
