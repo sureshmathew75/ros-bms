@@ -6986,6 +6986,13 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const [returnsLoaded,setReturnsLoaded]=useState(false);
   const [daybookNotes,setDaybookNotes]=useState([]);
   const [daybookLoaded,setDaybookLoaded]=useState(false);
+  // ── Day Book sidebar eye-catcher: a one-shot "burst" animation plays the
+  // moment the open-note count goes UP (a genuinely new note), separate from
+  // the steady ambient glow that plays for as long as any note is pending.
+  // daybookPrevOpenRef starts at null so the very first load (which may
+  // already contain old pending notes) never falsely triggers a burst.
+  const [daybookBurst,setDaybookBurst]=useState(false);
+  const daybookPrevOpenRef=useRef(null);
 
   // ── Undo Delete: session-only stack of recently deleted records ──
   const [deletedStack,setDeletedStack]=useState([]);
@@ -7124,6 +7131,34 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
       dbLoadDayBookNotes(shopId).then(data=>{setDaybookNotes(data||[]);setDaybookLoaded(true);}).catch(()=>{});
     }
   },[tab]);
+
+  // ── Day Book live check: quietly re-fetches notes every 30s while a shop
+  // that has Day Book (ros-india) is open, regardless of which tab is
+  // active — this is what lets the sidebar catch a new note in real time
+  // instead of only on next tab switch / reload.
+  useEffect(()=>{
+    if(shopId!=="ros-india")return;
+    const iv=setInterval(()=>{
+      dbLoadDayBookNotes(shopId).then(data=>{if(data)setDaybookNotes(data);}).catch(()=>{});
+    },30000);
+    return ()=>clearInterval(iv);
+  },[shopId]);
+
+  // ── Day Book burst trigger: fires setDaybookBurst(true) for ~1.4s
+  // whenever the open-note count increases versus the last time we checked.
+  useEffect(()=>{
+    const openCount=daybookNotes.filter(nt=>nt.status==="open").length;
+    if(daybookPrevOpenRef.current!==null&&openCount>daybookPrevOpenRef.current){
+      setDaybookBurst(true);
+      const t=setTimeout(()=>setDaybookBurst(false),1400);
+      daybookPrevOpenRef.current=openCount;
+      return ()=>clearTimeout(t);
+    }
+    daybookPrevOpenRef.current=openCount;
+  },[daybookNotes]);
+
+  const daybookOpenCount=daybookNotes.filter(nt=>nt.status==="open").length;
+  const daybookUrgent=daybookNotes.some(nt=>nt.status==="open"&&nt.urgent);
 
   // Load purchases, expenses, logistics from Supabase on mount
   useEffect(()=>{
@@ -7365,6 +7400,16 @@ return(
         input[type=number]{-moz-appearance:textfield;appearance:textfield;}
         .sb-nav-btn:hover .sb-label{opacity:1!important;}
         .sb-nav-btn{position:relative;}
+        /* ── Day Book eye-catcher ──────────────────────────────────────
+           daybook-glow: slow ambient pulse on the icon tile, loops for as
+           long as any note is pending — a quiet "something needs you" cue.
+           daybook-ring: one-shot expanding sonar ring, fired only the
+           instant a NEW note arrives (see daybookBurst in ShopDashboard).
+           daybook-bump: a quick, energetic bounce on the icon itself,
+           timed to play alongside the ring. ────────────────────────── */
+        @keyframes daybook-glow{0%,100%{box-shadow:0 0 0 0 var(--db-glow,rgba(245,158,11,0.45));}50%{box-shadow:0 0 0 6px rgba(245,158,11,0);}}
+        @keyframes daybook-ring{0%{transform:scale(0.9);opacity:0.9;}100%{transform:scale(2.3);opacity:0;}}
+        @keyframes daybook-bump{0%,100%{transform:scale(1) rotate(0deg);}25%{transform:scale(1.22) rotate(-8deg);}50%{transform:scale(1.05) rotate(6deg);}75%{transform:scale(1.16) rotate(-3deg);}}
         .sb-tooltip{
           position:absolute;left:calc(100% + 10px);top:50%;transform:translateY(-50%);
           background:rgba(15,23,42,0.92);color:white;padding:4px 10px;border-radius:7px;
@@ -7549,14 +7594,28 @@ return(
                         }}/>
                       )}
 
-                      {/* icon container */}
+                      {/* icon container — Day Book gets an ambient pulse while
+                         notes are pending, plus a one-shot bump+ring the
+                         instant a new one arrives (daybookBurst) */}
                       <div style={{
                         width:32,height:32,borderRadius:9,flexShrink:0,
                         display:"flex",alignItems:"center",justifyContent:"center",
                         background:active?"rgba(255,255,255,0.22)":"transparent",
                         transition:"background 0.15s",
                         fontSize:16,
+                        position:"relative",
+                        ...(n.id==="daybook"&&daybookOpenCount>0?{
+                          animation:(daybookBurst?"daybook-bump 0.6s ease, ":"")+"daybook-glow 2.2s ease-in-out infinite",
+                          "--db-glow":daybookUrgent?"rgba(239,68,68,0.55)":"rgba(245,158,11,0.45)",
+                        }:{}),
                       }}>
+                        {n.id==="daybook"&&daybookBurst&&(
+                          <span style={{
+                            position:"absolute",inset:0,borderRadius:9,
+                            border:"2px solid "+(daybookUrgent?"#ef4444":"#f59e0b"),
+                            animation:"daybook-ring 0.9s ease-out",
+                          }}/>
+                        )}
                         {n.ic}
                       </div>
 
@@ -7580,10 +7639,10 @@ return(
                         </span>
                       )}
 
-                      {/* badge for Day Book open-note count — red if any open note is urgent, amber otherwise */}
-                      {n.id==="daybook"&&daybookNotes.filter(nt=>nt.status==="open").length>0&&!coll&&(
-                        <span style={{marginLeft:"auto",minWidth:18,height:18,borderRadius:999,background:daybookNotes.some(nt=>nt.status==="open"&&nt.urgent)?"#ef4444":"#f59e0b",color:"white",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px",flexShrink:0}}>
-                          {daybookNotes.filter(nt=>nt.status==="open").length}
+                      {/* badge for Day Book open-note count — red if any open note is urgent, amber otherwise; pops briefly when a new note arrives */}
+                      {n.id==="daybook"&&daybookOpenCount>0&&!coll&&(
+                        <span style={{marginLeft:"auto",minWidth:18,height:18,borderRadius:999,background:daybookUrgent?"#ef4444":"#f59e0b",color:"white",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px",flexShrink:0,transition:"transform 0.2s",transform:daybookBurst?"scale(1.35)":"scale(1)"}}>
+                          {daybookOpenCount}
                         </span>
                       )}
 
