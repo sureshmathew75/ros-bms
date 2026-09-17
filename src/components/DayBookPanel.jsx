@@ -138,6 +138,7 @@ const NoteCard = ({ note, isAdmin, onReply, onResolve, onReopen, onDelete, reply
   const isMyTurn = !!owedRole && ((isAdmin && owedRole === "admin") || (!isAdmin && owedRole === "staff"));
   return (
     <div style={{
+      position: "relative",
       background: isResolved ? "#fafaf8" : "white",
       border: "1px solid " + ((note.urgent && !isResolved) ? "#fecaca" : "#e7e2d4"),
       borderLeft: (note.urgent && !isResolved) ? "4px solid #dc2626" : "1px solid #e7e2d4",
@@ -146,6 +147,24 @@ const NoteCard = ({ note, isAdmin, onReply, onResolve, onReopen, onDelete, reply
       opacity: isResolved ? 0.75 : 1,
       animation: isMyTurn ? "daybook-card-glow 2.2s ease-in-out infinite" : "none",
     }}>
+      {isMyTurn && (
+        /* centred ribbon straddling the card's top edge — the same sonar
+           ripple as before, just repositioned so it's the first thing your
+           eye lands on regardless of how long the author/role row runs */
+        <span style={{ position: "absolute", top: -11, left: "50%", transform: "translateX(-50%)", display: "inline-flex", zIndex: 1 }}>
+          {[0, 1].map(i => (
+            <span key={i} style={{
+              position: "absolute", inset: 0, borderRadius: 999,
+              border: "1.5px solid #6366f1",
+              animation: "daybook-ripple 1.8s ease-out infinite",
+              animationDelay: (i * 0.9) + "s",
+            }} />
+          ))}
+          <span style={{ position: "relative", display: "flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 999, background: "#eef2ff", color: "#4338ca", fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap", border: "1px solid white", boxShadow: "0 1px 4px rgba(99,102,241,0.25)" }}>
+            ⏳ Your turn
+          </span>
+        </span>
+      )}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 6 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
           <span style={{ fontWeight: 800, fontSize: 12.5, color: "#0f172a" }}>{note.author || "Staff"}</span>
@@ -161,29 +180,10 @@ const NoteCard = ({ note, isAdmin, onReply, onResolve, onReopen, onDelete, reply
           )}
           <span style={{ fontSize: 10.5, color: "#94a3b8" }}>{timeAgo(note.createdAt)}</span>
         </div>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
-          {isMyTurn && (
-            <span style={{ position: "relative", display: "inline-flex" }}>
-              {/* sonar ripple — same visual language as the sidebar badge, so
-                 "it's your turn" reads as one consistent Day Book signal */}
-              {[0, 1].map(i => (
-                <span key={i} style={{
-                  position: "absolute", inset: 0, borderRadius: 999,
-                  border: "1.5px solid #6366f1",
-                  animation: "daybook-ripple 1.8s ease-out infinite",
-                  animationDelay: (i * 0.9) + "s",
-                }} />
-              ))}
-              <span style={{ position: "relative", display: "flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 999, background: "#eef2ff", color: "#4338ca", fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap" }}>
-                ⏳ Your turn
-              </span>
-            </span>
-          )}
-          {isAdmin && (
-            <button onClick={onDelete} title="Delete this note"
-              style={{ border: "none", background: "transparent", color: "#cbd5e1", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 }}>✕</button>
-          )}
-        </div>
+        {isAdmin && (
+          <button onClick={onDelete} title="Delete this note"
+            style={{ border: "none", background: "transparent", color: "#cbd5e1", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2, flexShrink: 0 }}>✕</button>
+        )}
       </div>
 
       <div style={{
