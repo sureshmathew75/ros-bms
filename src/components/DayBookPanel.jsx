@@ -148,22 +148,25 @@ const NoteCard = ({ note, isAdmin, onReply, onResolve, onReopen, onDelete, reply
       animation: isMyTurn ? "daybook-card-glow 2.2s ease-in-out infinite" : "none",
     }}>
       {isMyTurn && (
-        /* centred ribbon straddling the card's top edge — the same sonar
-           ripple as before, just repositioned so it's the first thing your
-           eye lands on regardless of how long the author/role row runs */
-        <span style={{ position: "absolute", top: -11, left: "50%", transform: "translateX(-50%)", display: "inline-flex", zIndex: 1 }}>
-          {[0, 1].map(i => (
-            <span key={i} style={{
-              position: "absolute", inset: 0, borderRadius: 999,
-              border: "1.5px solid #6366f1",
-              animation: "daybook-ripple 1.8s ease-out infinite",
-              animationDelay: (i * 0.9) + "s",
-            }} />
-          ))}
-          <span style={{ position: "relative", display: "flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 999, background: "#eef2ff", color: "#4338ca", fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap", border: "1px solid white", boxShadow: "0 1px 4px rgba(99,102,241,0.25)" }}>
-            ⏳ Your turn
+        /* centred, but fully INSIDE the card's own padding this time — the
+           earlier version poked up above the card's top edge and, with
+           cards only 10px apart in the list, overlapped the card above it.
+           Same sonar ripple, just contained within normal flow now. */
+        <div style={{ display: "flex", justifyContent: "center", marginBottom: 9 }}>
+          <span style={{ position: "relative", display: "inline-flex" }}>
+            {[0, 1].map(i => (
+              <span key={i} style={{
+                position: "absolute", inset: 0, borderRadius: 999,
+                border: "1.5px solid #6366f1",
+                animation: "daybook-ripple 1.8s ease-out infinite",
+                animationDelay: (i * 0.9) + "s",
+              }} />
+            ))}
+            <span style={{ position: "relative", display: "flex", alignItems: "center", gap: 4, padding: "3px 10px", borderRadius: 999, background: "#eef2ff", color: "#4338ca", fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap" }}>
+              ⏳ Your turn
+            </span>
           </span>
-        </span>
+        </div>
       )}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 6 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
