@@ -14,6 +14,7 @@ import SuppliersPanel from "./components/SuppliersPanel";
 import DispatchPanel from "./components/DispatchPanel";
 import DayBookPanel, { whoseTurn } from "./components/DayBookPanel";
 import AddressEntryModal from "./components/AddressEntryModal";
+import MemosPanel from "./components/MemosPanel";
 import PopupHost, { showAlert, showConfirm } from "./components/PopupHost";
 import {
   L_SEL,
@@ -46,7 +47,7 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadPayrollRecords, dbSavePayrollRecord, dbDeletePayrollRecord,
   dbLoadSalesBonusRecords, dbSaveSalesBonusRecord, dbDeleteSalesBonusRecord,
   dbLoadPettyCash, dbAddPettyCashIssue, dbAddPettyCashSpend, dbEditPettyCashIssue, dbEditPettyCashSpend, dbDeletePettyCash,
-  dbLoadDayBookNotes } from "./db";
+  dbLoadDayBookNotes, dbLoadMemos } from "./db";
 /* =========================================================
    CONFIG / CONSTANTS
    ========================================================= */
@@ -6994,6 +6995,14 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   // already contain old pending notes) never falsely triggers a burst.
   const [daybookBurst,setDaybookBurst]=useState(false);
   const daybookPrevOpenRef=useRef(null);
+  const [memos,setMemos]=useState([]);
+  const [memosLoaded,setMemosLoaded]=useState(false);
+  // ── Memos sidebar eye-catcher: same burst-on-arrival pattern as Day
+  // Book above — a one-shot "burst" plays the moment a NEW memo count
+  // lands, separate from the steady ambient glow that plays for as long
+  // as this logged-in person still has an unseen memo waiting.
+  const [memosBurst,setMemosBurst]=useState(false);
+  const memosPrevCountRef=useRef(null);
 
   // ── Undo Delete: session-only stack of recently deleted records ──
   const [deletedStack,setDeletedStack]=useState([]);
@@ -7131,6 +7140,9 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     if(shopId==="ros-india"&&(tab==="daybook"||tab==="dashboard")&&!daybookLoaded){
       dbLoadDayBookNotes(shopId).then(data=>{setDaybookNotes(data||[]);setDaybookLoaded(true);}).catch(()=>{});
     }
+    if(shopId==="ros-india"&&(tab==="memos"||tab==="dashboard")&&!memosLoaded){
+      dbLoadMemos(shopId).then(data=>{setMemos(data||[]);setMemosLoaded(true);}).catch(()=>{});
+    }
   },[tab]);
 
   // ── Day Book live check: loads notes the INSTANT a shop with Day Book
@@ -7148,6 +7160,18 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     return ()=>clearInterval(iv);
   },[shopId]);
 
+  // ── Memos live check: same immediate-fetch-then-poll pattern as Day
+  // Book above, so the sidebar badge is correct the instant ROS India is
+  // opened rather than waiting up to 30s or a manual tab visit.
+  useEffect(()=>{
+    if(shopId!=="ros-india")return;
+    dbLoadMemos(shopId).then(data=>{if(data){setMemos(data);setMemosLoaded(true);}}).catch(()=>{});
+    const iv=setInterval(()=>{
+      dbLoadMemos(shopId).then(data=>{if(data)setMemos(data);}).catch(()=>{});
+    },30000);
+    return ()=>clearInterval(iv);
+  },[shopId]);
+
   // ── Day Book burst trigger: fires setDaybookBurst(true) for ~1.4s
   // whenever the open-note count increases versus the last time we checked.
   useEffect(()=>{
@@ -7161,6 +7185,20 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     daybookPrevOpenRef.current=openCount;
   },[daybookNotes]);
 
+  // ── Memos burst trigger: fires setMemosBurst(true) for ~1.4s whenever a
+  // new memo has actually landed (the total count went up) — mirrors the
+  // Day Book burst effect above.
+  useEffect(()=>{
+    const count=memos.length;
+    if(memosPrevCountRef.current!==null&&count>memosPrevCountRef.current){
+      setMemosBurst(true);
+      const t=setTimeout(()=>setMemosBurst(false),1400);
+      memosPrevCountRef.current=count;
+      return ()=>clearTimeout(t);
+    }
+    memosPrevCountRef.current=count;
+  },[memos]);
+
   // ── Day Book sidebar: the NUMBER always reflects every open note (so
   // nobody undercounts what's pending shop-wide), but the ripple/glow
   // animation only plays when at least one of those notes is actually
@@ -7173,6 +7211,19 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   const daybookMyTurnNotes=daybookNotes.filter(nt=>nt.status==="open"&&whoseTurn(nt)===(daybookIsAdmin?"admin":"staff"));
   const daybookMyTurn=daybookMyTurnNotes.length>0;
   const daybookUrgent=daybookMyTurnNotes.some(nt=>nt.urgent);
+
+  // ── Memos sidebar: unlike Day Book's role-based "whose turn", a memo's
+  // read state is tracked per PERSON (viewedBy), so the badge/ripple here
+  // is gated on whether THIS logged-in person specifically has an unseen
+  // memo — not their role. A judgment call: matched by user id first,
+  // falling back to display name for any account without one.
+  const memosMyId=user?.id||"";
+  const memosMyName=user?.fullName||user?.name||(daybookIsAdmin?"Admin":"Staff");
+  const memosUnseenCount=memos.filter(m=>!(m.viewedBy||[]).some(v=>(memosMyId&&v.id===memosMyId)||(!memosMyId&&v.name===memosMyName))).length;
+  const memosHasUnseen=memosUnseenCount>0;
+  // ROS India staff roster, for MemosPanel's admin-facing "seen / not seen
+  // by" read-receipt list.
+  const rosIndiaStaffAccounts=(users||[]).filter(u=>u.role==="staff"&&(u.shops||[]).includes("ros-india"));
 
   // Load purchases, expenses, logistics from Supabase on mount
   useEffect(()=>{
@@ -7248,6 +7299,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"customers",l:"Customers",ic:"👥"},
     {id:"dispatch", l:"Despatch Log", ic:"📤"},
     {id:"daybook",  l:"Day Book", ic:"📔"},
+    {id:"memos",    l:"Memos",    ic:"🗒️"},
     {id:"returns",  l:"Returns & Refunds",  ic:"↩️"},
     {id:"purchases",l:"Purchases",ic:"📦"},
     {id:"suppliers",l:"Suppliers",ic:"🏭"},
@@ -7262,7 +7314,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"documents",l:"Documents",ic:"📎"},
     {id:"analytics",l:"Analytics",ic:"📊"},
     {id:"reports",  l:"Reports",  ic:"📋"},
-  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india").filter(n=>n.id!=="payroll"||shopId==="ros-india").filter(n=>n.id!=="daybook"||shopId==="ros-india");
+  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india").filter(n=>n.id!=="payroll"||shopId==="ros-india").filter(n=>n.id!=="daybook"||shopId==="ros-india").filter(n=>n.id!=="memos"||shopId==="ros-india");
 
   const filtSales=sales.filter(s=>{
     const q=search.toLowerCase();
@@ -7629,11 +7681,22 @@ return(
                           animation:(daybookBurst?"daybook-bump 0.6s ease, ":"")+"daybook-glow 2.2s ease-in-out infinite",
                           "--db-glow":daybookUrgent?"rgba(239,68,68,0.55)":"rgba(245,158,11,0.45)",
                         }:{}),
+                        ...(n.id==="memos"&&memosHasUnseen?{
+                          animation:(memosBurst?"daybook-bump 0.6s ease, ":"")+"daybook-glow 2.2s ease-in-out infinite",
+                          "--db-glow":"rgba(99,102,241,0.5)",
+                        }:{}),
                       }}>
                         {n.id==="daybook"&&daybookMyTurn&&daybookBurst&&(
                           <span style={{
                             position:"absolute",inset:0,borderRadius:9,
                             border:"2px solid "+(daybookUrgent?"#ef4444":"#f59e0b"),
+                            animation:"daybook-ring 0.9s ease-out",
+                          }}/>
+                        )}
+                        {n.id==="memos"&&memosHasUnseen&&memosBurst&&(
+                          <span style={{
+                            position:"absolute",inset:0,borderRadius:9,
+                            border:"2px solid #6366f1",
                             animation:"daybook-ring 0.9s ease-out",
                           }}/>
                         )}
@@ -7679,6 +7742,27 @@ return(
                           {/* the count itself — sits on top of the ripples, unaffected by them */}
                           <span style={{position:"relative",minWidth:18,height:18,borderRadius:999,background:daybookMyTurn?(daybookUrgent?"#ef4444":"#f59e0b"):"#94a3b8",color:"white",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px",transition:"transform 0.2s",transform:(daybookMyTurn&&daybookBurst)?"scale(1.35)":"scale(1)"}}>
                             {daybookOpenCount}
+                          </span>
+                        </span>
+                      )}
+
+                      {/* badge for Memos — unlike Day Book's shop-wide count,
+                         this only shows (and only ripples) when THIS person
+                         specifically still has an unseen memo; once they've
+                         opened everything the badge disappears entirely
+                         rather than sitting there greyed out. */}
+                      {n.id==="memos"&&memosUnseenCount>0&&!coll&&(
+                        <span style={{marginLeft:"auto",position:"relative",display:"inline-flex",flexShrink:0}}>
+                          {[0,1].map(i=>(
+                            <span key={i} style={{
+                              position:"absolute",inset:0,borderRadius:999,
+                              border:"1.5px solid #6366f1",
+                              animation:"daybook-ripple "+(memosBurst?"1s":"1.8s")+" ease-out infinite",
+                              animationDelay:(i*(memosBurst?0.5:0.9))+"s",
+                            }}/>
+                          ))}
+                          <span style={{position:"relative",minWidth:18,height:18,borderRadius:999,background:"#6366f1",color:"white",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px",transition:"transform 0.2s",transform:memosBurst?"scale(1.35)":"scale(1)"}}>
+                            {memosUnseenCount}
                           </span>
                         </span>
                       )}
@@ -8986,6 +9070,11 @@ return(
           {/* ── DAY BOOK (ROS India only) ── */}
           {tab==="daybook"&&shopId==="ros-india"&&(
             <DayBookPanel shopId={shopId} shop={shop} user={user} />
+          )}
+
+          {/* ── MEMOS (ROS India only) ── */}
+          {tab==="memos"&&shopId==="ros-india"&&(
+            <MemosPanel shopId={shopId} shop={shop} user={user} staffAccounts={rosIndiaStaffAccounts} />
           )}
 
           {/* ── CASH FLOW ── */}
@@ -18623,15 +18712,18 @@ const INITIAL_USERS=[
    avatar:"linear-gradient(135deg,#ec4899,#db2777)", shops:["ros-india"]},
 ];
 const ROLE_NAV={
-  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","pettycash","inventory","dispatch","daybook","settings"],
-  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","pettycash","inventory","dispatch","daybook"],
+  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","pettycash","inventory","dispatch","daybook","memos","settings"],
+  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","pettycash","inventory","dispatch","daybook","memos"],
   // Payroll is kept admin-only (not in staff's list) — it exposes salary,
   // advances and loan balances for every staff member, not just the
   // person viewing it. Petty Cash is different — everyone shares the one
   // office float, so staff see and log into the same book as admin.
   // Day Book (ROS India only) is deliberately open to staff too — it's a
-  // shared UK/India handover log, not an admin-only record.
-  staff:["sales","customers","returns","attendance","pettycash","inventory","dispatch","daybook"],
+  // shared UK/India handover log, not an admin-only record. Memos
+  // (ROS India only) is the same: admin posts, staff need to be able to
+  // read them, so it's on staff's list too — MemosPanel itself hides the
+  // "post" form from anyone who isn't admin/superadmin.
+  staff:["sales","customers","returns","attendance","pettycash","inventory","dispatch","daybook","memos"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
 

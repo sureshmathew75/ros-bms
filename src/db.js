@@ -1978,3 +1978,74 @@ export const dbDeleteDayBookTemplate = async (id, shopId) => {
   if (error) console.error('Delete day book template error:', error);
   else console.log('✅ Day book template deleted:', id);
 };
+
+/* ═══════════════════════════════════════════════════════════
+   MEMOS  (ROS India only — admin-issued PDF memos to staff:
+   target changes, business-pattern updates, announcements, etc.)
+   Each memo is one row with one attached PDF (stored via the same
+   dbUploadDoc/dbDeleteDoc storage helpers already used for purchase/
+   logistics documents, bucket 'memo-docs'), plus a `viewed_by` list
+   recording who has actually opened it, so admin can see it's landed.
+   ═══════════════════════════════════════════════════════════ */
+export const dbLoadMemos = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('memos').select('*')
+    .eq('shop_id', shopId)
+    .order('created_at', { ascending: false });
+  if (error) { console.error('Load memos error:', error); return []; }
+  return (data || []).map(r => ({
+    id:        r.id,
+    title:     r.title || '',
+    note:      r.note || '',
+    fileUrl:   r.file_url || '',
+    filePath:  r.file_path || '',
+    fileName:  r.file_name || '',
+    postedBy:  r.posted_by || '',
+    createdAt: r.created_at || '',
+    viewedBy:  Array.isArray(r.viewed_by) ? r.viewed_by : [],
+  }));
+};
+
+export const dbAddMemo = async (shopId, memo) => {
+  if (!sb) return { error: 'No Supabase client' };
+  const payload = {
+    shop_id:   shopId,
+    title:     memo.title || '',
+    note:      memo.note || '',
+    file_url:  memo.fileUrl || '',
+    file_path: memo.filePath || '',
+    file_name: memo.fileName || '',
+    posted_by: memo.postedBy || '',
+    // The admin who posts a memo already knows what's in it, so they start
+    // out counted as having "seen" it — otherwise they'd see their own
+    // just-posted memo showing up as unread on their own sidebar.
+    viewed_by: memo.viewedBy || [],
+  };
+  const { data, error } = await sb.from('memos').insert(payload).select('id').single();
+  if (error) { console.error('❌ Add memo error:', error); return { error: error.message }; }
+  return { error: null, id: data?.id };
+};
+
+// Flexible partial update — covers attaching the uploaded file after the
+// row is first created, and appending to viewed_by when someone opens it.
+export const dbUpdateMemo = async (id, shopId, patch) => {
+  if (!sb) return { error: 'No Supabase client' };
+  const payload = {};
+  if (patch.title !== undefined)    payload.title = patch.title;
+  if (patch.note !== undefined)     payload.note = patch.note;
+  if (patch.fileUrl !== undefined)  payload.file_url = patch.fileUrl;
+  if (patch.filePath !== undefined) payload.file_path = patch.filePath;
+  if (patch.fileName !== undefined) payload.file_name = patch.fileName;
+  if (patch.viewedBy !== undefined) payload.viewed_by = patch.viewedBy;
+  const { error } = await sb.from('memos').update(payload).eq('id', id).eq('shop_id', shopId);
+  if (error) { console.error('❌ Update memo error:', error); return { error: error.message }; }
+  return { error: null };
+};
+
+export const dbDeleteMemo = async (id, shopId) => {
+  if (!sb) return;
+  const { error } = await sb.from('memos').delete()
+    .eq('id', id).eq('shop_id', shopId);
+  if (error) console.error('Delete memo error:', error);
+  else console.log('✅ Memo deleted:', id);
+};
