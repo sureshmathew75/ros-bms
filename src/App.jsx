@@ -7594,7 +7594,7 @@ return(
           {/* group labels */}
           {[
             {label:"MAIN",       ids:["dashboard"]},
-            {label:"SALES",      ids:["sales","customers","returns","dispatch","daybook"]},
+            {label:"SALES",      ids:["sales","customers","returns","dispatch","daybook","memos"]},
             {label:"PURCHASES",  ids:["purchases","suppliers","logistics","agents"]},
             {label:"OPERATIONS", ids:["attendance","payroll","pettycash","inventory"]},
             {label:"EXPENSES",   ids:["expenses"]},
