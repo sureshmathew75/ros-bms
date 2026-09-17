@@ -48,6 +48,26 @@ function timeAgo(iso) {
   return new Date(iso).toLocaleDateString("en-GB", { day: "numeric", month: "short" });
 }
 
+/* ── Whose turn to reply — role-only (not tied to a specific named person):
+   walks the note's messages (the note itself, then each reply, in order)
+   and returns the role that's now waiting, i.e. the opposite of whoever
+   sent the LAST message. Returns null for a resolved note (nothing owed).
+
+   Replies written from now on carry their own authorRole (see handleReply
+   below); older replies saved before this feature don't have one, so for
+   those we infer a role by simply alternating from the previous message —
+   a reasonable assumption for a back-and-forth thread, and it only ever
+   affects the small number of replies that already existed before this
+   was added. */
+function whoseTurn(note) {
+  if (!note || note.status !== "open") return null;
+  let lastRole = note.authorRole === "admin" ? "admin" : "staff";
+  (note.replies || []).forEach(r => {
+    lastRole = r.authorRole === "admin" ? "admin" : r.authorRole === "staff" ? "staff" : (lastRole === "admin" ? "staff" : "admin");
+  });
+  return lastRole === "admin" ? "staff" : "admin";
+}
+
 function fmtDayHeader(day) {
   if (!day || day === "unknown") return "Undated";
   const yest = localISO(new Date(Date.now() - 86400000));
@@ -111,6 +131,11 @@ function slugify(label, existingKeys) {
 
 const NoteCard = ({ note, isAdmin, onReply, onResolve, onReopen, onDelete, replyDraft, setReplyDraft, resolveDraft, setResolveDraft, resolvingOpen, setResolvingOpen }) => {
   const isResolved = note.status === "resolved";
+  // Whose turn to reply, role-only (see whoseTurn()) — highlighted ONLY for
+  // the side that's actually waiting, so a card doesn't nag the person who
+  // just spoke and is themselves waiting on the other side.
+  const owedRole = whoseTurn(note);
+  const isMyTurn = !!owedRole && ((isAdmin && owedRole === "admin") || (!isAdmin && owedRole === "staff"));
   return (
     <div style={{
       background: isResolved ? "#fafaf8" : "white",
@@ -119,6 +144,7 @@ const NoteCard = ({ note, isAdmin, onReply, onResolve, onReopen, onDelete, reply
       borderRadius: 12,
       padding: "13px 15px",
       opacity: isResolved ? 0.75 : 1,
+      animation: isMyTurn ? "daybook-card-glow 2.2s ease-in-out infinite" : "none",
     }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10, marginBottom: 6 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 7, flexWrap: "wrap" }}>
@@ -135,10 +161,29 @@ const NoteCard = ({ note, isAdmin, onReply, onResolve, onReopen, onDelete, reply
           )}
           <span style={{ fontSize: 10.5, color: "#94a3b8" }}>{timeAgo(note.createdAt)}</span>
         </div>
-        {isAdmin && (
-          <button onClick={onDelete} title="Delete this note"
-            style={{ border: "none", background: "transparent", color: "#cbd5e1", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 }}>✕</button>
-        )}
+        <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+          {isMyTurn && (
+            <span style={{ position: "relative", display: "inline-flex" }}>
+              {/* sonar ripple — same visual language as the sidebar badge, so
+                 "it's your turn" reads as one consistent Day Book signal */}
+              {[0, 1].map(i => (
+                <span key={i} style={{
+                  position: "absolute", inset: 0, borderRadius: 999,
+                  border: "1.5px solid #6366f1",
+                  animation: "daybook-ripple 1.8s ease-out infinite",
+                  animationDelay: (i * 0.9) + "s",
+                }} />
+              ))}
+              <span style={{ position: "relative", display: "flex", alignItems: "center", gap: 4, padding: "3px 9px", borderRadius: 999, background: "#eef2ff", color: "#4338ca", fontSize: 10.5, fontWeight: 800, whiteSpace: "nowrap" }}>
+                ⏳ Your turn
+              </span>
+            </span>
+          )}
+          {isAdmin && (
+            <button onClick={onDelete} title="Delete this note"
+              style={{ border: "none", background: "transparent", color: "#cbd5e1", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 2 }}>✕</button>
+          )}
+        </div>
       </div>
 
       <div style={{
@@ -355,7 +400,7 @@ export default function DayBookPanel({ shopId, shop, user }) {
   const handleReply = async (note) => {
     const text = (replyDrafts[note.id] || "").trim();
     if (!text) return;
-    const reply = { author: authorName, text, at: new Date().toISOString() };
+    const reply = { author: authorName, authorRole: isAdmin ? "admin" : "staff", text, at: new Date().toISOString() };
     const res = await dbUpdateDayBookNote(note.id, shopId, { replies: [...(note.replies || []), reply] });
     if (res.error) { showAlert("Couldn't send — please check your connection and try again."); return; }
     setReplyDrafts(prev => ({ ...prev, [note.id]: "" }));
@@ -392,6 +437,13 @@ export default function DayBookPanel({ shopId, shop, user }) {
 
   return (
     <div style={{ maxWidth: 820, margin: "0 auto" }}>
+      {/* Self-contained keyframes for the "your turn" ripple + card glow —
+         these are also defined in App.jsx's sidebar styling, but kept here
+         too so this panel never depends on that render order. */}
+      <style>{`
+        @keyframes daybook-ripple{0%{transform:scale(1);opacity:0.65;}100%{transform:scale(2.6);opacity:0;}}
+        @keyframes daybook-card-glow{0%,100%{box-shadow:0 0 0 0 rgba(99,102,241,0.30);}50%{box-shadow:0 0 0 5px rgba(99,102,241,0);}}
+      `}</style>
       <div style={{ marginBottom: 18 }}>
         <h2 style={{ margin: "0 0 4px", fontSize: 19, fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: 8 }}>
           📔 Day Book
