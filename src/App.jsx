@@ -7132,12 +7132,15 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     }
   },[tab]);
 
-  // ── Day Book live check: quietly re-fetches notes every 30s while a shop
-  // that has Day Book (ros-india) is open, regardless of which tab is
-  // active — this is what lets the sidebar catch a new note in real time
-  // instead of only on next tab switch / reload.
+  // ── Day Book live check: loads notes the INSTANT a shop with Day Book
+  // (ros-india) is opened — regardless of which tab you land on — then
+  // keeps re-checking every 30s after that. setInterval alone only fires
+  // after its first delay, so without this immediate call the sidebar
+  // badge/animation stayed blank until you either waited 30s or clicked
+  // into Day Book/Dashboard yourself; this is what fixes that.
   useEffect(()=>{
     if(shopId!=="ros-india")return;
+    dbLoadDayBookNotes(shopId).then(data=>{if(data){setDaybookNotes(data);setDaybookLoaded(true);}}).catch(()=>{});
     const iv=setInterval(()=>{
       dbLoadDayBookNotes(shopId).then(data=>{if(data)setDaybookNotes(data);}).catch(()=>{});
     },30000);
