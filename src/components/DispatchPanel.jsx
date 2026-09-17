@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { dbSaveDispatchEntry, dbLoadDispatchLog, dbDeleteDispatchEntry } from "../db";
 import { showAlert, showConfirm } from "./PopupHost";
+import AddressEntryModal from "./AddressEntryModal";
 
 /* ─────────────────────────────────────────────────────────────────────────
    DISPATCH PANEL  (all three shops — daily despatch log)
@@ -330,6 +331,8 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
   // any stored data, just how much of it is shown at once.
   const [expandedAddresses, setExpandedAddresses] = useState({}); // uuid -> true when address is expanded
   const [openRemarksUuid, setOpenRemarksUuid] = useState(null); // uuid of the row whose remarks field is open, if any
+  const [addressModalUuid, setAddressModalUuid] = useState(null); // uuid of the row whose "edit address" popup is open, if any
+  const [savingAddress, setSavingAddress] = useState(false);
   // Keys (see despatchKeyOf) currently in the middle of being written to
   // the despatch log by the auto-add effect below. React state only
   // reflects a new row once its insert has actually returned, so if the
@@ -746,6 +749,35 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
     }
   };
 
+  // Address is entered/edited on the Sales page — this popup is just a
+  // more comfortable way to fill that in from the Despatch Log, so it
+  // writes straight back to the linked sale (never to the despatch entry
+  // itself), same as liveAddressFor/livePhoneFor already read it. Mirrors
+  // the group-member loop saveEntry already uses for tracking/shipper, so
+  // one parcel covering several linked transactions (Advance + Final)
+  // gets the same address on all of them, not just the anchor sale.
+  const saveAddressForRow = async (entry, formatted) => {
+    if (!entry?.saleId || !onSaleUpdate) { showAlert("This row isn't linked to a sale, so there's nowhere to save the address."); return; }
+    setSavingAddress(true);
+    const linkedSale = allSales.find(s => s.id === entry.saleId);
+    if (!linkedSale) { setSavingAddress(false); showAlert("Couldn't find the linked sale for this row — the address wasn't saved."); return; }
+    const groupKey = despatchKeyOf(linkedSale);
+    const members = groupMembers[groupKey];
+    const saleIds = members && members.length ? members.map(m => m.id) : [entry.saleId];
+    let hadError = false;
+    for (const id of saleIds) {
+      try {
+        const result = await onSaleUpdate(id, { address: formatted });
+        if (result && result.error) { hadError = true; showAlert(`Couldn't save the address for sale ${id}:\n\n${result.error}`); }
+      } catch (err) {
+        hadError = true;
+        showAlert(`Couldn't save the address for sale ${id} — ${err?.message || err}`);
+      }
+    }
+    setSavingAddress(false);
+    if (!hadError) setAddressModalUuid(null);
+  };
+
   const removeEntry = async (uuid) => {
     if (!isAdmin) return; // guarded here too, not just in the UI
     if (!(await showConfirm("Remove this row from the despatch log? This cannot be undone."))) return;
@@ -876,6 +908,17 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
   return (
     <div style={{ padding: "20px 22px", maxWidth: 1180, margin: "0 auto" }}>
       {waModal && <WaModal data={waModal} onClose={() => { waModal.onSent && waModal.onSent(); setWaModal(null); }} />}
+      {addressModalUuid && (() => {
+        const rowForAddress = entries.find(x => x.uuid === addressModalUuid);
+        if (!rowForAddress) return null;
+        return (
+          <AddressEntryModal
+            initialValue={liveAddressFor(rowForAddress)}
+            onClose={() => !savingAddress && setAddressModalUuid(null)}
+            onSave={(formatted) => saveAddressForRow(rowForAddress, formatted)}
+          />
+        );
+      })()}
 
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
         <div>
@@ -1095,33 +1138,46 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
                           )}
                         </td>
                         <td style={{ padding: "8px 12px", minWidth: 150, maxWidth: 220, verticalAlign: "top" }}>
-                          {/* Read-only — address is entered/edited on the Sales page only;
-                              this always shows that sale's current address live. Collapsed to
-                              its first line by default (click to expand/collapse) to keep the
-                              row compact — the full address is one click away, and always
-                              visible in full on the printout / WhatsApp sheet. */}
-                          {fullAddress ? (
-                            <div onClick={() => addressHasMore && setExpandedAddresses(p => ({ ...p, [e.uuid]: !p[e.uuid] }))}
-                              title={addressHasMore ? (isAddressExpanded ? "Click to collapse" : "Click to see full address") : undefined}
-                              style={{
-                                padding: "6px 8px", borderRadius: 7,
-                                border: "1px solid #e2e8f0", background: "#f8fafc",
-                                fontSize: 12, color: "#374151", lineHeight: 1.4,
-                                cursor: addressHasMore ? "pointer" : "default",
-                                whiteSpace: isAddressExpanded ? "pre-wrap" : "nowrap",
-                                overflow: isAddressExpanded ? "visible" : "hidden",
-                                textOverflow: "ellipsis",
-                              }}>
-                              {isAddressExpanded ? fullAddress : addressFirstLine}
-                              {addressHasMore && (
-                                <span style={{ marginLeft: 6, fontSize: 9.5, fontWeight: 800, color: "#6366f1", whiteSpace: "nowrap" }}>
-                                  {isAddressExpanded ? "▲ less" : "▼ more"}
-                                </span>
-                              )}
-                            </div>
-                          ) : (
-                            <span style={{ color: "#94a3b8", fontStyle: "italic", fontSize: 12 }}>No address — set it on Sales page</span>
-                          )}
+                          {/* The address itself still lives on the Sales record — this
+                              always shows that sale's current address live, and the
+                              small ✏️ button opens a popup that writes straight back to
+                              Sales, so it never drifts into its own separate copy here.
+                              Collapsed to its first line by default (click to expand/
+                              collapse) to keep the row compact. */}
+                          <div style={{ display: "flex", alignItems: "flex-start", gap: 5 }}>
+                            {fullAddress ? (
+                              <div onClick={() => addressHasMore && setExpandedAddresses(p => ({ ...p, [e.uuid]: !p[e.uuid] }))}
+                                title={addressHasMore ? (isAddressExpanded ? "Click to collapse" : "Click to see full address") : undefined}
+                                style={{
+                                  flex: 1, minWidth: 0,
+                                  padding: "6px 8px", borderRadius: 7,
+                                  border: "1px solid #e2e8f0", background: "#f8fafc",
+                                  fontSize: 12, color: "#374151", lineHeight: 1.4,
+                                  cursor: addressHasMore ? "pointer" : "default",
+                                  whiteSpace: isAddressExpanded ? "pre-wrap" : "nowrap",
+                                  overflow: isAddressExpanded ? "visible" : "hidden",
+                                  textOverflow: "ellipsis",
+                                }}>
+                                {isAddressExpanded ? fullAddress : addressFirstLine}
+                                {addressHasMore && (
+                                  <span style={{ marginLeft: 6, fontSize: 9.5, fontWeight: 800, color: "#6366f1", whiteSpace: "nowrap" }}>
+                                    {isAddressExpanded ? "▲ less" : "▼ more"}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span onClick={() => e.saleId && setAddressModalUuid(e.uuid)}
+                                style={{ flex: 1, color: "#94a3b8", fontStyle: "italic", fontSize: 12, cursor: e.saleId ? "pointer" : "default" }}>
+                                No address yet — tap to add one
+                              </span>
+                            )}
+                            {e.saleId && (
+                              <button onClick={() => setAddressModalUuid(e.uuid)} title="Edit address"
+                                style={{ flexShrink: 0, border: "1px solid #e2e8f0", background: "white", borderRadius: 7, width: 24, height: 24, fontSize: 11.5, cursor: "pointer", color: "#6366f1", lineHeight: 1 }}>
+                                ✏️
+                              </button>
+                            )}
+                          </div>
                         </td>
                         <td style={{ padding: "8px 12px", minWidth: 130, verticalAlign: "top" }}>
                           <input value={e.trackingNo} placeholder="Tracking no."
