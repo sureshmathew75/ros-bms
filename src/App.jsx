@@ -7410,6 +7410,9 @@ return(
         @keyframes daybook-glow{0%,100%{box-shadow:0 0 0 0 var(--db-glow,rgba(245,158,11,0.45));}50%{box-shadow:0 0 0 6px rgba(245,158,11,0);}}
         @keyframes daybook-ring{0%{transform:scale(0.9);opacity:0.9;}100%{transform:scale(2.3);opacity:0;}}
         @keyframes daybook-bump{0%,100%{transform:scale(1) rotate(0deg);}25%{transform:scale(1.22) rotate(-8deg);}50%{transform:scale(1.05) rotate(6deg);}75%{transform:scale(1.16) rotate(-3deg);}}
+        /* orbit-spin also self-defined here (not just inside OrbitMark) so the
+           Day Book badge's orbiting satellite never depends on render order */
+        @keyframes orbit-spin{from{transform:rotate(0deg);}to{transform:rotate(360deg);}}
         .sb-tooltip{
           position:absolute;left:calc(100% + 10px);top:50%;transform:translateY(-50%);
           background:rgba(15,23,42,0.92);color:white;padding:4px 10px;border-radius:7px;
@@ -7639,10 +7642,26 @@ return(
                         </span>
                       )}
 
-                      {/* badge for Day Book open-note count — red if any open note is urgent, amber otherwise; pops briefly when a new note arrives */}
+                      {/* badge for Day Book open-note count — a tiny satellite continuously
+                         orbits the count itself (same motif as the ROS ORBIT mark), speeding
+                         up briefly when a new note arrives. Red ring/dot if any open note is
+                         urgent, amber otherwise. */}
                       {n.id==="daybook"&&daybookOpenCount>0&&!coll&&(
-                        <span style={{marginLeft:"auto",minWidth:18,height:18,borderRadius:999,background:daybookUrgent?"#ef4444":"#f59e0b",color:"white",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px",flexShrink:0,transition:"transform 0.2s",transform:daybookBurst?"scale(1.35)":"scale(1)"}}>
-                          {daybookOpenCount}
+                        <span style={{marginLeft:"auto",position:"relative",display:"inline-flex",flexShrink:0}}>
+                          {/* spinning comet-tail ring — a bright arc of light continuously
+                             sweeps all the way around the number itself, not just the icon,
+                             so the count can't be glanced past unnoticed. Speeds way up for
+                             the first ~1.4s after a genuinely new note arrives. */}
+                          <span style={{
+                            position:"absolute",inset:-4,borderRadius:999,
+                            background:"conic-gradient(from 0deg, transparent 0%, "+(daybookUrgent?"#ef4444":"#f59e0b")+" 14%, "+(daybookUrgent?"#ef4444":"#f59e0b")+" 26%, transparent 46%)",
+                            animation:"orbit-spin "+(daybookBurst?"0.7s":"2s")+" linear infinite",
+                            filter:"drop-shadow(0 0 3px "+(daybookUrgent?"rgba(239,68,68,0.8)":"rgba(245,158,11,0.8)")+")",
+                          }}/>
+                          {/* the count itself — sits on top of the ring, unaffected by the rotation */}
+                          <span style={{position:"relative",minWidth:18,height:18,borderRadius:999,background:daybookUrgent?"#ef4444":"#f59e0b",color:"white",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px",transition:"transform 0.2s",transform:daybookBurst?"scale(1.35)":"scale(1)"}}>
+                            {daybookOpenCount}
+                          </span>
                         </span>
                       )}
 
