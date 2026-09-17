@@ -136,6 +136,12 @@ const NoteCard = ({ note, isAdmin, onReply, onResolve, onReopen, onDelete, reply
   // just spoke and is themselves waiting on the other side.
   const owedRole = whoseTurn(note);
   const isMyTurn = !!owedRole && ((isAdmin && owedRole === "admin") || (!isAdmin && owedRole === "staff"));
+  // The single most recent message in the thread — highlighted below, but
+  // only when it's actually this viewer's turn to answer. Since whoseTurn()
+  // always points at the OTHER side's last message, that's never confused
+  // with something the viewer just wrote themselves.
+  const hasReplies = (note.replies || []).length > 0;
+  const highlightLast = isMyTurn;
   return (
     <div style={{
       position: "relative",
@@ -191,8 +197,10 @@ const NoteCard = ({ note, isAdmin, onReply, onResolve, onReopen, onDelete, reply
 
       <div style={{
         fontSize: 13.5, lineHeight: 1.55, whiteSpace: "pre-wrap",
-        color: isResolved ? "#94a3b8" : "#334155",
+        color: isResolved ? "#94a3b8" : ((!hasReplies && highlightLast) ? "#1e1b4b" : "#334155"),
+        fontWeight: (!hasReplies && highlightLast) ? 700 : 400,
         textDecoration: isResolved ? "line-through" : "none",
+        ...((!hasReplies && highlightLast) ? { background: "#eef2ff", border: "1px solid #c7d2fe", borderRadius: 8, padding: "8px 10px" } : {}),
       }}>
         {note.text}
       </div>
@@ -206,12 +214,36 @@ const NoteCard = ({ note, isAdmin, onReply, onResolve, onReopen, onDelete, reply
 
       {note.replies && note.replies.length > 0 && (
         <div style={{ marginTop: 9, display: "flex", flexDirection: "column", gap: 5, paddingLeft: 11, borderLeft: "2px solid #f1f5f9" }}>
-          {note.replies.map((r, i) => (
-            <div key={i} style={{ fontSize: 12, color: "#475569" }}>
-              <strong style={{ color: "#0f172a" }}>{r.author}:</strong> {r.text}
-              <span style={{ marginLeft: 7, fontSize: 10, color: "#94a3b8" }}>{timeAgo(r.at)}</span>
-            </div>
-          ))}
+          {note.replies.map((r, i) => {
+            // Only the LAST reply ever highlights, and only when it's this
+            // viewer's turn to answer — older replies stay plain so the one
+            // message that actually needs a response doesn't get lost in
+            // a long back-and-forth.
+            const isLast = i === note.replies.length - 1;
+            const highlight = isLast && highlightLast;
+            return (
+              <div key={i} style={{
+                fontSize: highlight ? 13 : 12,
+                color: highlight ? "#1e1b4b" : "#475569",
+                fontWeight: highlight ? 700 : 400,
+                background: highlight ? "#eef2ff" : "transparent",
+                border: highlight ? "1px solid #c7d2fe" : "1px solid transparent",
+                borderRadius: highlight ? 8 : 0,
+                padding: highlight ? "6px 9px" : 0,
+              }}>
+                <strong style={{ color: highlight ? "#3730a3" : "#0f172a", fontWeight: 800 }}>{r.author}</strong>
+                {r.authorRole && (
+                  <span style={{
+                    marginLeft: 5, fontSize: 9, fontWeight: 700, padding: "0px 5px", borderRadius: 999,
+                    background: r.authorRole === "admin" ? "#eff6ff" : "#f1f5f9",
+                    color: r.authorRole === "admin" ? "#2563eb" : "#64748b",
+                  }}>{r.authorRole === "admin" ? "Admin" : "Staff"}</span>
+                )}
+                {": "}{r.text}
+                <span style={{ marginLeft: 7, fontSize: 10, fontWeight: 400, color: highlight ? "#6366f1" : "#94a3b8" }}>{timeAgo(r.at)}</span>
+              </div>
+            );
+          })}
         </div>
       )}
 
