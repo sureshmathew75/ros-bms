@@ -15,6 +15,7 @@ import DispatchPanel from "./components/DispatchPanel";
 import DayBookPanel, { whoseTurn } from "./components/DayBookPanel";
 import AddressEntryModal from "./components/AddressEntryModal";
 import MemosPanel from "./components/MemosPanel";
+import WeeklyRoutinePanel from "./components/WeeklyRoutinePanel";
 import PopupHost, { showAlert, showConfirm } from "./components/PopupHost";
 import {
   L_SEL,
@@ -7561,11 +7562,12 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"payroll",  l:"Payroll",   ic:"💰"},
     {id:"pettycash",l:"Petty Cash",ic:"💵"},
     {id:"inventory",l:"Stock",ic:"📦"},
+    {id:"weeklyroutine",l:"Weekly Routine",ic:"🗓️"},
     {id:"expenses", l:"Expenses", ic:"💳"},
     {id:"documents",l:"Documents",ic:"📎"},
     {id:"analytics",l:"Analytics",ic:"📊"},
     {id:"reports",  l:"Reports",  ic:"📋"},
-  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india").filter(n=>n.id!=="payroll"||shopId==="ros-india").filter(n=>n.id!=="daybook"||shopId==="ros-india").filter(n=>n.id!=="memos"||shopId==="ros-india");
+  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india").filter(n=>n.id!=="payroll"||shopId==="ros-india").filter(n=>n.id!=="daybook"||shopId==="ros-india").filter(n=>n.id!=="memos"||shopId==="ros-india").filter(n=>n.id!=="weeklyroutine"||shopId==="ros-india");
 
   const filtSales=sales.filter(s=>{
     const q=search.toLowerCase();
@@ -7847,7 +7849,7 @@ return(
             {label:"MAIN",       ids:["dashboard"]},
             {label:"SALES",      ids:["sales","customers","returns","dispatch","daybook","memos"]},
             {label:"PURCHASES",  ids:["purchases","suppliers","logistics","agents"]},
-            {label:"OPERATIONS", ids:["attendance","payroll","pettycash","inventory"]},
+            {label:"OPERATIONS", ids:["attendance","payroll","pettycash","inventory","weeklyroutine"]},
             {label:"EXPENSES",   ids:["expenses"]},
             {label:"INSIGHTS",   ids:["documents","analytics","reports"]},
           ].map(group=>{
@@ -9330,6 +9332,14 @@ return(
           {/* ── MEMOS (ROS India only) ── */}
           {tab==="memos"&&shopId==="ros-india"&&(
             <MemosPanel shopId={shopId} shop={shop} user={user} staffAccounts={rosIndiaStaffAccounts} />
+          )}
+
+          {/* ── WEEKLY ROUTINE (ROS India only) ── */}
+          {tab==="weeklyroutine"&&shopId==="ros-india"&&(
+            <WeeklyRoutinePanel shopId={shopId} shop={shop} user={user} rosieTasks={rosieTasks} isRosieTaskDue={isRosieTaskDue}
+              onMarkTaskDone={async(t)=>{ await dbMarkRosieTaskDone(t); reloadRosieTasks(); }}
+              staffAccounts={rosIndiaStaffAccounts}
+              onAddTask={async(task)=>{ await dbSaveRosieTask({...task,shopId}); reloadRosieTasks(); }} />
           )}
 
           {/* ── CASH FLOW ── */}
@@ -18967,8 +18977,8 @@ const INITIAL_USERS=[
    avatar:"linear-gradient(135deg,#ec4899,#db2777)", shops:["ros-india"]},
 ];
 const ROLE_NAV={
-  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","pettycash","inventory","dispatch","daybook","memos","settings"],
-  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","pettycash","inventory","dispatch","daybook","memos"],
+  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","pettycash","inventory","dispatch","daybook","memos","weeklyroutine","settings"],
+  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","pettycash","inventory","dispatch","daybook","memos","weeklyroutine"],
   // Payroll is kept admin-only (not in staff's list) — it exposes salary,
   // advances and loan balances for every staff member, not just the
   // person viewing it. Petty Cash is different — everyone shares the one
@@ -18978,7 +18988,7 @@ const ROLE_NAV={
   // (ROS India only) is the same: admin posts, staff need to be able to
   // read them, so it's on staff's list too — MemosPanel itself hides the
   // "post" form from anyone who isn't admin/superadmin.
-  staff:["sales","customers","returns","attendance","pettycash","inventory","dispatch","daybook","memos"],
+  staff:["sales","customers","returns","attendance","pettycash","inventory","dispatch","daybook","memos","weeklyroutine"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
 
