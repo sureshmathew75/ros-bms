@@ -2345,6 +2345,29 @@ const RETURN_STATUS_STYLE={
   EXCHANGE_REFUND:  {bg:"#fff7ed",border:"#fdba74",text:"#9a3412",label:"Refund/Exchange"},
   RETURN_EXPIRED:   {bg:"#fef2f2",border:"#fca5a5",text:"#991b1b",label:"Expired"},
 };
+const RETURN_STATUS_ICON={
+  RETURN_APPROVED:"✅",MSG_SENT:"💬",RETURN_IN_TRANSIT:"🚚",RETURN_RECEIVED:"📦",
+  REFUNDED:"💰",EXCHANGED:"🔄",EXCHANGE_REFUND:"🔄💰",RETURN_EXPIRED:"⛔",
+};
+// The colored pill shown in a card's header once the customer's intent has
+// been captured — replaces the plain "days since arrival" chip.
+const RETURN_INTENT_BADGE={
+  refund:         {label:"💰 Wants Refund",         bg:"#f5f3ff",border:"#ddd6fe",color:"#6d28d9"},
+  exchange:       {label:"🔄 Wants Exchange",       bg:"#fdf4ff",border:"#f5d0fe",color:"#a21caf"},
+  exchange_refund:{label:"🔄💰 Wants Refund/Exchange",bg:"#fff7ed",border:"#fed7aa",color:"#c2410c"},
+  voucher:        {label:"🎁 Wants Voucher",        bg:"#fdf2f8",border:"#fbcfe8",color:"#db2777"},
+};
+// "3 days since arrival" style chip shown while a received item's
+// resolution is still undecided.
+const daysSinceLabel=(dateStr)=>{
+  if(!dateStr) return "";
+  const d=new Date(String(dateStr).split("T")[0]); d.setHours(0,0,0,0);
+  const t=new Date(); t.setHours(0,0,0,0);
+  const days=Math.round((t-d)/86400000);
+  if(days<=0) return "Received today";
+  if(days===1) return "1 day since arrival";
+  return days+" days since arrival";
+};
 
 // WhatsApp message templates
 const MSG_REMINDER = (customer, retId, hardDeadline) =>
@@ -4162,6 +4185,25 @@ Thank you for your cooperation.`,
                 return true;
               };
 
+              // Shared by the header's intent badge and the resolve-on-receipt
+              // panel below: the sale this return is linked to (for its value),
+              // setting/clearing the customer's stated intent, and saving a
+              // single field (exchange link, tracking no., deduction override).
+              const linkedSale = ret.saleId ? allSales.find(s=>s.id===ret.saleId) : null;
+              const setIntent=async newResolution=>{
+                const updated={...ret,resolution:newResolution};
+                setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
+                const ok=await dbSaveReturn(updated);
+                if(!ok)showAlert("Couldn't save — please check your connection and try again.");
+              };
+              const saveField=async(field,value)=>{
+                if(value===(ret[field]||""))return;
+                const updated={...ret,[field]:value};
+                setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
+                const ok=await dbSaveReturn(updated);
+                if(!ok)showAlert("Couldn't save — please check your connection and try again.");
+              };
+
               // Determine next action button
               const nextAction=()=>{
                 if(isClosed) return <span style={{fontSize:11,color:"#94a3b8"}}>✅ Closed</span>;
@@ -4242,16 +4284,37 @@ Thank you for your cooperation.`,
                   onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 16px "+shop.accent+"26"}
                   onMouseLeave={e=>e.currentTarget.style.boxShadow="0 1px 3px rgba(0,0,0,0.04)"}>
 
-                  {/* Top row: checkbox, ID/customer, status pill */}
+                  {/* Top row: checkbox, ID + status + intent/age pill, customer, subline */}
                   <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
                     <input type="checkbox" checked={isSelected} onClick={e=>e.stopPropagation()}
                       onChange={()=>setSelected(prev=>{const s=new Set(prev);s.has(ret.id)?s.delete(ret.id):s.add(ret.id);return s;})}
-                      style={{width:15,height:15,cursor:"pointer",accentColor:shop.accent,marginTop:3,flexShrink:0}}/>
+                      style={{width:15,height:15,cursor:"pointer",accentColor:shop.accent,marginTop:4,flexShrink:0}}/>
 
-                    <div style={{flex:1,minWidth:0,cursor:"pointer"}} onClick={()=>setSelectedReturn(ret)}>
+                    <div style={{flex:1,minWidth:0}}>
                       <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                        <span style={{fontSize:12,fontWeight:800,color:shop.accent,fontFamily:"DM Mono,monospace"}}>{ret.id}</span>
-                        <span style={{fontSize:10,color:"#94a3b8"}}>{ret.resolution==="exchange"?"🔄":ret.resolution==="exchange_refund"?"🔄💰":ret.resolution==="voucher"?"🎁":"💰"} {ret.resolution==="exchange_refund"?"return/exchange":ret.resolution==="voucher"?"gift voucher":ret.resolution}</span>
+                        <span style={{fontSize:12,fontWeight:800,color:shop.accent,fontFamily:"DM Mono,monospace",cursor:"pointer"}}
+                          onClick={()=>setSelectedReturn(ret)}>{ret.id}</span>
+                        <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:999,flexShrink:0,
+                          background:statusStyle.bg,border:"1px solid "+statusStyle.border,color:statusStyle.text,whiteSpace:"nowrap"}}>
+                          {RETURN_STATUS_ICON[ret.status]||""} {statusStyle.label}
+                        </span>
+                        {ret.status==="RETURN_RECEIVED" && (
+                          ret.resolution && ret.resolution!=="undecided" ? (
+                            <span onClick={e=>{e.stopPropagation();setIntent("undecided");}}
+                              title="Click to change what the customer wants"
+                              style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:999,cursor:"pointer",whiteSpace:"nowrap",
+                                background:(RETURN_INTENT_BADGE[ret.resolution]||{}).bg,
+                                border:"1px solid "+(RETURN_INTENT_BADGE[ret.resolution]||{}).border,
+                                color:(RETURN_INTENT_BADGE[ret.resolution]||{}).color}}>
+                              {(RETURN_INTENT_BADGE[ret.resolution]||{}).label}
+                            </span>
+                          ) : ret.receivedDate ? (
+                            <span style={{fontSize:11,fontWeight:600,padding:"3px 10px",borderRadius:999,whiteSpace:"nowrap",
+                              background:"#f1f5f9",color:"#64748b"}}>
+                              {daysSinceLabel(ret.receivedDate)}
+                            </span>
+                          ) : null
+                        )}
                         {(()=>{
                           if(ret.status!=="MSG_SENT"&&ret.status!=="RETURN_IN_TRANSIT")return null;
                           if(ret.reminderSentAt)return null;
@@ -4265,15 +4328,18 @@ Thank you for your cooperation.`,
                             border:"1px solid #fca5a5"}}>🔔 Reminder Due</span>;
                         })()}
                       </div>
-                      <div style={{marginTop:4,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ret.customer}</div>
-                      <div style={{fontSize:11,color:"#64748b"}}>{ret.saleId}</div>
+                      <div style={{marginTop:6,fontSize:13,fontWeight:700,color:"#0f172a",cursor:"pointer"}}
+                        onClick={()=>setSelectedReturn(ret)}>{ret.customer}</div>
+                      <div style={{marginTop:1,fontSize:11,color:"#64748b"}}>
+                        {["Sale "+(ret.saleId||"—"),
+                          (linkedSale&&linkedSale.amount!=null)?("₹"+Number(linkedSale.amount).toLocaleString("en-IN")):null,
+                          ret.reason||null,
+                        ].filter(Boolean).join(" · ")}
+                      </div>
                     </div>
-
-                    <span style={{fontSize:11,fontWeight:700,padding:"4px 11px",borderRadius:999,flexShrink:0,
-                      background:statusStyle.bg,border:"1px solid "+statusStyle.border,color:statusStyle.text,whiteSpace:"nowrap"}}>
-                      {statusStyle.label}
-                    </span>
                   </div>
+
+                  <div style={{marginTop:10,marginLeft:27,borderTop:"1px solid #f1f5f9"}}/>
 
                   {/* Expecting-stage summary: delivered / requested / return-window
                       dates right on the card, no need to expand — this is the info
@@ -4305,7 +4371,6 @@ Thank you for your cooperation.`,
                       refund (sale value minus the deduction), links the new
                       exchange order, and records its tracking number. */}
                   {ret.status==="RETURN_RECEIVED" && (()=>{
-                    const linkedSale = ret.saleId ? allSales.find(s=>s.id===ret.saleId) : null;
                     const getOrderValue=()=>{
                       if(linkedSale) return Number(linkedSale.amount)||0;
                       const el=document.getElementById('oval-'+ret.id);
@@ -4316,69 +4381,68 @@ Thank you for your cooperation.`,
                       const dedEl=document.getElementById('ded-'+ret.id);
                       if(out) out.textContent='₹'+Math.max(0,getOrderValue()-(Number(dedEl?.value)||0)).toLocaleString('en-IN');
                     };
-                    const autoDeduction=calcReturnServiceCharge(shopId, getOrderValue());
+                    // ROS India is the only shop with an agreed deduction
+                    // formula (the Return Service Charge memo) — everywhere
+                    // else there's no rule yet, so the deduction is left for
+                    // staff to key in rather than guessed at as ₹0.
+                    const hasRule=shopId==="ros-india";
+                    const autoDeduction=hasRule?calcReturnServiceCharge(shopId, getOrderValue()):0;
                     const savedDeduction=Number(ret.refundDeduction)||0;
+                    const hasDeductionValue=hasRule||savedDeduction>0;
                     const initialDeduction=savedDeduction>0?savedDeduction:autoDeduction;
                     const exchangeLinkedSale=ret.exchangeSaleId?allSales.find(s=>s.id===ret.exchangeSaleId):null;
 
-                    const setIntent=async newResolution=>{
-                      const updated={...ret,resolution:newResolution};
-                      setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
-                      const ok=await dbSaveReturn(updated);
-                      if(!ok)showAlert("Couldn't save — please check your connection and try again.");
-                    };
-                    const saveField=async(field,value)=>{
-                      if(value===(ret[field]||""))return;
-                      const updated={...ret,[field]:value};
-                      setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
-                      const ok=await dbSaveReturn(updated);
-                      if(!ok)showAlert("Couldn't save — please check your connection and try again.");
-                    };
-
-                    const box={marginTop:10,marginLeft:27,padding:"10px 12px",borderRadius:10,background:"#f8fafc",border:"1px solid "+shop.accent+"33"};
-                    const flbl={display:"block",fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:3};
-                    const finp={width:"100%",padding:"6px 8px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:12,fontFamily:"inherit",boxSizing:"border-box"};
-                    const changeIntent=(
-                      <button onClick={()=>setIntent("undecided")}
-                        style={{border:"none",background:"transparent",color:"#94a3b8",fontSize:10,fontWeight:700,cursor:"pointer",padding:0}}>
-                        ↺ change intent
-                      </button>
-                    );
+                    const sectionLabel={fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em",marginTop:10,marginLeft:27,marginBottom:6};
+                    const finp={padding:"6px 8px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:12,fontFamily:"inherit",boxSizing:"border-box",background:"white"};
+                    // Neutral, outlined style for the choice buttons — the
+                    // colored/solid treatment is reserved for the single
+                    // "commit" action (Mark Refunded / Mark Exchanged) so the
+                    // card doesn't read as a wall of colored buttons.
+                    const choiceBtn={padding:"7px 14px",borderRadius:8,border:"1px solid #e2e8f0",background:"white",
+                      color:"#374151",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",display:"flex",alignItems:"center",gap:6};
 
                     if(ret.resolution==="exchange"||ret.resolution==="exchange_refund"){
                       const isBoth=ret.resolution==="exchange_refund";
-                      return(
+                      const tint=isBoth?{bg:"#fff7ed",border:"#fed7aa",accent:"#c2410c"}:{bg:"#fdf4ff",border:"#f5d0fe",accent:"#a21caf"};
+                      const box={marginLeft:27,padding:"12px 14px",borderRadius:10,background:tint.bg,border:"1px solid "+tint.border};
+                      return(<>
+                        <div style={sectionLabel}>Exchange Order{isBoth?" + Balance Refund":""}</div>
                         <div style={box} onClick={e=>e.stopPropagation()}>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                            <div style={{fontSize:11,fontWeight:800,color:"#0f172a"}}>{isBoth?"🔄💰 Exchange + balance refund":"🔄 Exchange due"}</div>
-                            {changeIntent}
+                          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
+                            <span style={{fontSize:10.5,fontWeight:800,padding:"3px 9px",borderRadius:999,whiteSpace:"nowrap",
+                              background:exchangeLinkedSale?"#f0fdf4":"#fef2f2",
+                              color:exchangeLinkedSale?"#166534":"#dc2626",
+                              border:"1px solid "+(exchangeLinkedSale?"#bbf7d0":"#fecaca")}}>
+                              {exchangeLinkedSale?"✅ Linked":"⚠ No new order yet"}
+                            </span>
+                            <span style={{fontSize:10.5,color:"#94a3b8"}}>
+                              {exchangeLinkedSale?(exchangeLinkedSale.customer+" · ₹"+Number(exchangeLinkedSale.amount||0).toLocaleString("en-IN")):"— link once the replacement is sold"}
+                            </span>
                           </div>
-                          <div style={{marginBottom:8}}>
-                            <label style={flbl}>New exchange order</label>
-                            <input id={"exch-input-"+ret.id} list={"exch-list-"+ret.id} defaultValue={ret.exchangeSaleId||""}
-                              placeholder="Search invoice # or customer…"
-                              onBlur={e=>saveField("exchangeSaleId",e.target.value.trim())} style={finp}/>
-                            <datalist id={"exch-list-"+ret.id}>
-                              {allSales.slice(0,400).map(s=>(<option key={s.id} value={s.id}>{s.customer}</option>))}
-                            </datalist>
-                            {exchangeLinkedSale ? (
-                              <div style={{fontSize:10.5,color:"#166534",marginTop:4}}>✅ Linked: {exchangeLinkedSale.customer} · ₹{Number(exchangeLinkedSale.amount||0).toLocaleString("en-IN")}</div>
-                            ):(
-                              <div style={{fontSize:10.5,color:"#b45309",marginTop:4}}>⚠ No new exchange order linked yet</div>
-                            )}
-                          </div>
-                          <div style={{marginBottom:isBoth?8:10}}>
-                            <label style={flbl}>Tracking Number</label>
-                            <input id={"track-"+ret.id} defaultValue={ret.exchangeTrackingNo||""} placeholder="Courier tracking #"
-                              onBlur={e=>saveField("exchangeTrackingNo",e.target.value.trim())} style={finp}/>
+                          <input id={"exch-input-"+ret.id} list={"exch-list-"+ret.id} defaultValue={ret.exchangeSaleId||""}
+                            placeholder="Search or paste new order ID…"
+                            onBlur={e=>saveField("exchangeSaleId",e.target.value.trim())}
+                            style={{...finp,width:"100%",marginBottom:10}}/>
+                          <datalist id={"exch-list-"+ret.id}>
+                            {allSales.slice(0,400).map(s=>(<option key={s.id} value={s.id}>{s.customer}</option>))}
+                          </datalist>
+                          <div style={{display:"flex",alignItems:"center",gap:8}}>
+                            <span style={{fontSize:11,color:tint.accent,whiteSpace:"nowrap"}}>🚚 Tracking No.</span>
+                            <input id={"track-"+ret.id} defaultValue={ret.exchangeTrackingNo||""} placeholder="Not shipped yet"
+                              onBlur={e=>saveField("exchangeTrackingNo",e.target.value.trim())}
+                              style={{...finp,flex:1,minWidth:0}}/>
                           </div>
                           {isBoth && (
-                            <div style={{marginBottom:10}}>
-                              <label style={flbl}>Price Difference to Refund (₹)</label>
-                              <input id={"pricediff-"+ret.id} type="number" defaultValue={ret.refundAmount||""} placeholder="0" style={finp}/>
-                              <div style={{fontSize:9.5,color:"#94a3b8",marginTop:3}}>Exchanges are exempt from the return service charge — enter only the balance owed back.</div>
+                            <div style={{marginTop:10,paddingTop:10,borderTop:"1px dashed "+tint.border,display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+                              <span style={{fontSize:11,color:"#7c2d12"}}>Price difference to refund<br/><span style={{fontSize:9.5,color:"#9a3412"}}>Exempt from the return service charge</span></span>
+                              <span style={{display:"flex",alignItems:"center",fontSize:13,fontWeight:700,color:"#0f172a"}}>₹
+                                <input id={"pricediff-"+ret.id} type="number" defaultValue={ret.refundAmount||""} placeholder="0"
+                                  style={{width:70,textAlign:"right",border:"none",background:"transparent",fontSize:13,fontWeight:700,color:"#0f172a",fontFamily:"inherit",padding:0,marginLeft:2}}/>
+                              </span>
                             </div>
                           )}
+                        </div>
+                        <div style={{marginLeft:27,marginTop:8,display:"flex",justifyContent:"flex-end"}}>
                           <button onClick={async e=>{e.stopPropagation();
                               const trackEl=document.getElementById('track-'+ret.id);
                               const exchEl=document.getElementById('exch-input-'+ret.id);
@@ -4393,86 +4457,106 @@ Thank you for your cooperation.`,
                                 if(!(await showConfirm("Mark as Exchanged? This closes the case.")))return;
                                 handleQuickAction("EXCHANGED",{exchangeSaleId,exchangeTrackingNo:trackingNo}).then(ok=>{ if(ok) openWA(ret.phone,MSG_EXCHANGED(ret.customer,ret.id)); });
                               }
-                            }} style={{padding:"6px 14px",borderRadius:8,border:"none",background:isBoth?"#c2410c":"#a21caf",
-                              color:"white",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>
+                            }} style={{padding:"7px 16px",borderRadius:8,border:"none",background:tint.accent,
+                              color:"white",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
                             {isBoth?"✓ Mark Refund/Exchange":"✓ Mark Exchanged"}
                           </button>
                         </div>
-                      );
+                      </>);
                     }
 
-                    if(ret.resolution==="refund") return(
-                      <div style={box} onClick={e=>e.stopPropagation()}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-                          <div style={{fontSize:11,fontWeight:800,color:"#0f172a"}}>💰 Refund due</div>
-                          {changeIntent}
-                        </div>
-                        <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:8}}>
-                          {linkedSale ? (
-                            <div style={{flex:"1 1 110px"}}>
-                              <label style={flbl}>Order Value</label>
-                              <div style={{fontSize:13,fontWeight:700,color:"#0f172a",padding:"6px 0"}}>₹{Number(linkedSale.amount||0).toLocaleString("en-IN")}</div>
-                            </div>
-                          ):(
-                            <div style={{flex:"1 1 110px"}}>
-                              <label style={flbl}>Order Value (₹)</label>
-                              <input id={"oval-"+ret.id} type="number" placeholder="0" onInput={updateEligible} style={finp}/>
-                            </div>
-                          )}
-                          <div style={{flex:"1 1 110px"}}>
-                            <label style={flbl}>Deduction (₹)</label>
-                            <input id={"ded-"+ret.id} type="number" defaultValue={initialDeduction} onInput={updateEligible}
-                              onBlur={e=>saveField("refundDeduction",Number(e.target.value)||0)} style={finp}/>
+                    if(ret.resolution==="refund"){
+                      const box={marginLeft:27,padding:"12px 14px",borderRadius:10,background:"#f5f3ff",border:"1px solid #ddd6fe"};
+                      const row={display:"flex",alignItems:"center",justifyContent:"space-between",fontSize:12.5,color:"#374151",padding:"3px 0"};
+                      return(<>
+                        <div style={sectionLabel}>Refund Calculation</div>
+                        <div style={box} onClick={e=>e.stopPropagation()}>
+                          <div style={row}>
+                            <span>Sale amount</span>
+                            {linkedSale ? (
+                              <span style={{fontWeight:700,color:"#0f172a"}}>₹{Number(linkedSale.amount||0).toLocaleString("en-IN")}</span>
+                            ):(
+                              <span style={{display:"flex",alignItems:"center",fontWeight:700,color:"#0f172a"}}>₹
+                                <input id={"oval-"+ret.id} type="number" placeholder="0" onInput={updateEligible}
+                                  style={{width:70,textAlign:"right",border:"none",background:"transparent",fontSize:12.5,fontWeight:700,color:"#0f172a",fontFamily:"inherit",padding:0,marginLeft:2}}/>
+                              </span>
+                            )}
                           </div>
-                          <div style={{flex:"1 1 110px"}}>
-                            <label style={flbl}>Eligible Refund</label>
-                            <div id={"elig-"+ret.id} style={{fontSize:14,fontWeight:800,color:"#166534",padding:"6px 0"}}>
-                              ₹{Math.max(0,getOrderValue()-initialDeduction).toLocaleString("en-IN")}
-                            </div>
+                          <div style={row}>
+                            <span>Return deduction{hasRule?"":" "}{!hasRule && <em style={{fontStyle:"italic",color:"#94a3b8"}}>(rule pending)</em>}</span>
+                            <span style={{display:"flex",alignItems:"center",fontWeight:700,color:"#0f172a"}}>− ₹
+                              <input id={"ded-"+ret.id} type="number"
+                                defaultValue={hasDeductionValue?initialDeduction:""}
+                                placeholder="???"
+                                onInput={updateEligible}
+                                onBlur={e=>saveField("refundDeduction",Number(e.target.value)||0)}
+                                style={{width:70,textAlign:"right",border:"none",background:"transparent",fontSize:12.5,fontWeight:700,color:"#0f172a",fontFamily:"inherit",padding:0,marginLeft:2}}/>
+                            </span>
+                          </div>
+                          <div style={{borderTop:"1px dashed #ddd6fe",margin:"6px 0"}}/>
+                          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                            <span style={{fontSize:13,fontWeight:800,color:"#6d28d9"}}>Eligible refund</span>
+                            <span id={"elig-"+ret.id} style={{fontSize:15,fontWeight:800,color:"#6d28d9"}}>
+                              {hasDeductionValue?("₹"+Math.max(0,getOrderValue()-initialDeduction).toLocaleString("en-IN")):"₹???"}
+                            </span>
                           </div>
                         </div>
-                        {shopId==="ros-india" && (
-                          <div style={{fontSize:9.5,color:"#94a3b8",marginBottom:8}}>Auto-suggested per the Return Service Charge schedule — editable if this case is different.</div>
-                        )}
-                        <button onClick={async e=>{e.stopPropagation();
-                            const dedEl=document.getElementById('ded-'+ret.id);
-                            const deduction=Number(dedEl?.value)||0;
-                            const eligible=Math.max(0,getOrderValue()-deduction);
-                            if(!(await showConfirm("Mark as Refunded — ₹"+eligible.toLocaleString("en-IN")+" after deduction? This closes the case.")))return;
-                            handleQuickAction("REFUNDED",{refundAmount:eligible,refundDeduction:deduction}).then(ok=>{ if(ok) openWA(ret.phone,MSG_REFUNDED(ret.customer,ret.id)); });
-                          }} style={{padding:"6px 14px",borderRadius:8,border:"none",background:"#6d28d9",
-                            color:"white",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>
-                          ✓ Mark Refunded
-                        </button>
-                      </div>
-                    );
+                        <div style={{marginLeft:27,marginTop:8,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}}>
+                          <select id={"method-"+ret.id} defaultValue={ret.refundMethod||""}
+                            onChange={e=>saveField("refundMethod",e.target.value)}
+                            style={{padding:"7px 10px",borderRadius:8,border:"1px solid #e2e8f0",fontSize:11.5,fontFamily:"inherit",
+                              background:"white",color:ret.refundMethod?"#0f172a":"#94a3b8"}}>
+                            <option value="">Refund method…</option>
+                            <option value="Cash">Cash</option>
+                            <option value="UPI">UPI</option>
+                            <option value="Bank Transfer">Bank Transfer</option>
+                            <option value="Card">Card</option>
+                            <option value="Cheque">Cheque</option>
+                            <option value="Other">Other</option>
+                          </select>
+                          <button onClick={async e=>{e.stopPropagation();
+                              const dedEl=document.getElementById('ded-'+ret.id);
+                              const deduction=Number(dedEl?.value)||0;
+                              const eligible=Math.max(0,getOrderValue()-deduction);
+                              if(!(await showConfirm("Mark as Refunded — ₹"+eligible.toLocaleString("en-IN")+" after deduction? This closes the case.")))return;
+                              handleQuickAction("REFUNDED",{refundAmount:eligible,refundDeduction:deduction}).then(ok=>{ if(ok) openWA(ret.phone,MSG_REFUNDED(ret.customer,ret.id)); });
+                            }} style={{padding:"7px 16px",borderRadius:8,border:"none",background:"#6d28d9",
+                              color:"white",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+                            ✓ Mark Refunded
+                          </button>
+                        </div>
+                      </>);
+                    }
 
-                    if(ret.resolution==="voucher") return(
-                      <div style={box} onClick={e=>e.stopPropagation()}>
-                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                          <div style={{fontSize:11,color:"#374151"}}>🎁 Customer opted for a gift voucher instead.</div>
-                          {changeIntent}
-                        </div>
+                    if(ret.resolution==="voucher") return(<>
+                      <div style={sectionLabel}>Gift Voucher</div>
+                      <div style={{marginLeft:27,padding:"12px 14px",borderRadius:10,background:"#fdf2f8",border:"1px solid #fbcfe8",
+                        display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+                        <span style={{fontSize:12,color:"#831843"}}>🎁 Customer opted for a gift voucher instead.</span>
                         <button onClick={()=>setVoucherForReturn(ret)}
-                          style={{marginTop:8,padding:"6px 14px",borderRadius:8,border:"none",background:"#db2777",
-                            color:"white",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>
+                          style={{padding:"7px 16px",borderRadius:8,border:"none",background:"#db2777",
+                            color:"white",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
                           🎁 Issue Voucher
                         </button>
                       </div>
-                    );
+                    </>);
 
                     // Undecided — the default state right after an item
                     // arrives, until staff records what the customer wants.
+                    // ROS India settled on refund / exchange / both only —
+                    // no gift-voucher option there.
                     return(
-                      <div style={box} onClick={e=>e.stopPropagation()}>
-                        <div style={{fontSize:11,fontWeight:800,color:"#0f172a",marginBottom:8}}>📥 Item received — what does {(ret.customer||"the customer").split(" ")[0]} want?</div>
-                        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-                          <button onClick={()=>setIntent("refund")} style={{padding:"6px 12px",borderRadius:8,border:"none",background:"#6d28d9",color:"white",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>💰 Refund</button>
-                          <button onClick={()=>setIntent("exchange")} style={{padding:"6px 12px",borderRadius:8,border:"none",background:"#a21caf",color:"white",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>🔄 Exchange</button>
-                          <button onClick={()=>setIntent("exchange_refund")} style={{padding:"6px 12px",borderRadius:8,border:"none",background:"#c2410c",color:"white",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>🔄💰 Refund/Exchange</button>
-                          <button onClick={()=>setVoucherForReturn(ret)} style={{padding:"6px 12px",borderRadius:8,border:"none",background:"#db2777",color:"white",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>🎁 Voucher</button>
+                      <>
+                        <div style={sectionLabel}>What does the customer want?</div>
+                        <div style={{marginLeft:27,display:"flex",gap:8,flexWrap:"wrap"}} onClick={e=>e.stopPropagation()}>
+                          <button onClick={()=>setIntent("refund")} style={choiceBtn}>💰 Refund</button>
+                          <button onClick={()=>setIntent("exchange")} style={choiceBtn}>🔄 Exchange</button>
+                          <button onClick={()=>setIntent("exchange_refund")} style={choiceBtn}>🔄💰 Both</button>
+                          {shopId!=="ros-india" && (
+                            <button onClick={()=>setVoucherForReturn(ret)} style={choiceBtn}>🎁 Voucher</button>
+                          )}
                         </div>
-                      </div>
+                      </>
                     );
                   })()}
 
