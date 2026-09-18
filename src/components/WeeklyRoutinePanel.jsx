@@ -68,7 +68,7 @@ function timeAgo(iso) {
   return `${days}d ago`;
 }
 
-export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = [], isRosieTaskDue, onMarkTaskDone, onDeleteTask, staffAccounts = [], onAddTask }) {
+export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = [], isRosieTaskDue, onMarkTaskDone, onDeleteTask, staffAccounts = [], onAddTask, returnsExpecting = 0, refundsAwaiting = 0, exchangesAwaiting = 0 }) {
   const myId = user?.id || "";
   const myName = user?.fullName || user?.name || "Staff";
   const isAdmin = user?.role === "superadmin" || user?.role === "admin";
@@ -384,6 +384,13 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
                       </button>
                     )}
                   </div>
+                  {c.key === "returns" && (
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8, marginLeft: 24 }}>
+                      <span style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", whiteSpace: "nowrap" }}>📥 {returnsExpecting} expecting</span>
+                      <span style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, background: "#f5f3ff", color: "#6d28d9", border: "1px solid #ddd6fe", whiteSpace: "nowrap" }}>💰 {refundsAwaiting} awaiting refund</span>
+                      <span style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, background: "#fdf4ff", color: "#a21caf", border: "1px solid #f5d0fe", whiteSpace: "nowrap" }}>🔄 {exchangesAwaiting} awaiting exchange</span>
+                    </div>
+                  )}
                   <input defaultValue={c.note || ""} placeholder="Note (optional)…" onBlur={e => updateDocNote(c.key, e.target.value)}
                     style={{ marginTop: 6, marginLeft: 24, width: "calc(100% - 24px)", padding: "5px 8px", borderRadius: 7, border: "1px solid #e2e8f0", fontSize: 11.5, fontFamily: "inherit", boxSizing: "border-box" }} />
                 </div>

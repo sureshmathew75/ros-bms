@@ -9335,13 +9335,25 @@ return(
           )}
 
           {/* ── WEEKLY ROUTINE (ROS India only) ── */}
-          {tab==="weeklyroutine"&&shopId==="ros-india"&&(
-            <WeeklyRoutinePanel shopId={shopId} shop={shop} user={user} rosieTasks={rosieTasks} isRosieTaskDue={isRosieTaskDue}
-              onMarkTaskDone={async(t)=>{ await dbMarkRosieTaskDone(t); reloadRosieTasks(); }}
-              onDeleteTask={async(id)=>{ await dbDeleteRosieTask(id); reloadRosieTasks(); }}
-              staffAccounts={rosIndiaStaffAccounts}
-              onAddTask={async(task)=>{ await dbSaveRosieTask({...task,shopId}); reloadRosieTasks(); }} />
-          )}
+          {tab==="weeklyroutine"&&shopId==="ros-india"&&(()=>{
+            // Same status/resolution vocabulary the Returns panel and
+            // Dashboard "Actions Today" card already use (see ACTIVE_STATUSES
+            // in ReturnsPanel and refundsPending on the Dashboard tab) — kept
+            // in sync with those rather than introducing a new definition of
+            // "expecting"/"awaiting" for returns.
+            const wrActiveStatuses=["RETURN_APPROVED","MSG_SENT","RETURN_IN_TRANSIT"];
+            const wrReturnsExpecting=returns.filter(r=>wrActiveStatuses.includes(r.status)).length;
+            const wrRefundsAwaiting=returns.filter(r=>r.status==="RETURN_RECEIVED"&&(r.resolution==="refund"||r.resolution==="exchange_refund")).length;
+            const wrExchangesAwaiting=returns.filter(r=>r.status==="RETURN_RECEIVED"&&(r.resolution==="exchange"||r.resolution==="exchange_refund")).length;
+            return (
+              <WeeklyRoutinePanel shopId={shopId} shop={shop} user={user} rosieTasks={rosieTasks} isRosieTaskDue={isRosieTaskDue}
+                onMarkTaskDone={async(t)=>{ await dbMarkRosieTaskDone(t); reloadRosieTasks(); }}
+                onDeleteTask={async(id)=>{ await dbDeleteRosieTask(id); reloadRosieTasks(); }}
+                staffAccounts={rosIndiaStaffAccounts}
+                onAddTask={async(task)=>{ await dbSaveRosieTask({...task,shopId}); reloadRosieTasks(); }}
+                returnsExpecting={wrReturnsExpecting} refundsAwaiting={wrRefundsAwaiting} exchangesAwaiting={wrExchangesAwaiting} />
+            );
+          })()}
 
           {/* ── CASH FLOW ── */}
           {tab==="cashflow"&&(()=>{
