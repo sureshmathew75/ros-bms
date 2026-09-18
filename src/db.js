@@ -2099,3 +2099,17 @@ export const dbSaveWeeklyRoutine = async (routine) => {
   if (error) { console.error('Save weekly routine error:', error); return false; }
   return true;
 };
+
+// Lightweight list for the "past weeks" history picker — every week ever
+// saved for this shop stays in the table (nothing is ever deleted by the
+// weekly reset), this just surfaces it so it's actually reachable.
+export const dbListWeeklyRoutines = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('weekly_routines').select('id,week_ending,status,completed_by,completed_at')
+    .eq('shop_id', shopId).order('week_ending', { ascending: false });
+  if (error) { console.error('List weekly routines error:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id, weekEnding: r.week_ending, status: r.status || 'in_progress',
+    completedBy: r.completed_by || '', completedAt: r.completed_at || null,
+  }));
+};

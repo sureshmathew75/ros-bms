@@ -9338,6 +9338,7 @@ return(
           {tab==="weeklyroutine"&&shopId==="ros-india"&&(
             <WeeklyRoutinePanel shopId={shopId} shop={shop} user={user} rosieTasks={rosieTasks} isRosieTaskDue={isRosieTaskDue}
               onMarkTaskDone={async(t)=>{ await dbMarkRosieTaskDone(t); reloadRosieTasks(); }}
+              onDeleteTask={async(id)=>{ await dbDeleteRosieTask(id); reloadRosieTasks(); }}
               staffAccounts={rosIndiaStaffAccounts}
               onAddTask={async(task)=>{ await dbSaveRosieTask({...task,shopId}); reloadRosieTasks(); }} />
           )}
