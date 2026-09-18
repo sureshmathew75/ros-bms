@@ -3245,6 +3245,7 @@ const UpfrontRefundsView = ({ shopId, shop, allSales, upfrontRefunds, setUpfront
         {[
           {key:"ACTIVE",    label:"Expecting"},
           {key:"RETURN_RECEIVED", label:"Received"},
+          {key:"EXCHANGE_PROGRESS", label:"🔄 Exchange in Progress"},
           {key:"EXCHANGED", label:"Exchanged"},
           {key:"REFUNDED",  label:"Refunded"},
           {key:"EXCHANGE_REFUND", label:"Refund/Exchange"},
@@ -3588,6 +3589,7 @@ const GiftVouchersView = ({ shopId, shop, allSales, allReturns, giftVouchers, se
         {[
           {key:"ACTIVE",    label:"Expecting"},
           {key:"RETURN_RECEIVED", label:"Received"},
+          {key:"EXCHANGE_PROGRESS", label:"🔄 Exchange in Progress"},
           {key:"EXCHANGED", label:"Exchanged"},
           {key:"REFUNDED",  label:"Refunded"},
           {key:"EXCHANGE_REFUND", label:"Refund/Exchange"},
@@ -3983,12 +3985,25 @@ Thank you for your cooperation.`,
   },[returns.length]);
 
   const ACTIVE_STATUSES=["RETURN_APPROVED","MSG_SENT","RETURN_IN_TRANSIT"];
+  // Once a received item's resolution is set to Exchange or Refund/Exchange,
+  // it moves out of "Received" and into its own "Exchange in Progress" tab
+  // — same status (RETURN_RECEIVED) under the hood, just split by intent so
+  // the two queues (needs a decision vs. waiting on the courier) don't mix.
+  const isExchangeInProgress=r=>r.status==="RETURN_RECEIVED"&&(r.resolution==="exchange"||r.resolution==="exchange_refund");
   const filtered=returns.filter(r=>{
-    const matchStatus=filter==="ACTIVE"?ACTIVE_STATUSES.includes(r.status):r.status===filter;
+    const matchStatus=filter==="ACTIVE"?ACTIVE_STATUSES.includes(r.status)
+      :filter==="EXCHANGE_PROGRESS"?isExchangeInProgress(r)
+      :filter==="RETURN_RECEIVED"?(r.status==="RETURN_RECEIVED"&&!isExchangeInProgress(r))
+      :r.status===filter;
     const q=search.toLowerCase();
     const matchSearch=!q||r.id.toLowerCase().includes(q)||r.customer.toLowerCase().includes(q)||r.saleId.toLowerCase().includes(q)||r.phone.includes(q);
     return matchStatus&&matchSearch;
   });
+  // Exchange in Progress reads oldest-first — the longest-waiting exchange
+  // (by when it was physically received) should surface at the top.
+  if(filter==="EXCHANGE_PROGRESS"){
+    filtered.sort((a,b)=>(a.receivedDate||"").localeCompare(b.receivedDate||""));
+  }
 
   // Refund Method / Refunded To only make sense once money has actually
   // moved — hide them on tabs where nothing's been refunded yet.
@@ -3996,7 +4011,8 @@ Thank you for your cooperation.`,
 
   const counts={
     ACTIVE:returns.filter(r=>ACTIVE_STATUSES.includes(r.status)).length,
-    RETURN_RECEIVED:returns.filter(r=>r.status==="RETURN_RECEIVED").length,
+    RETURN_RECEIVED:returns.filter(r=>r.status==="RETURN_RECEIVED"&&!isExchangeInProgress(r)).length,
+    EXCHANGE_PROGRESS:returns.filter(isExchangeInProgress).length,
     EXCHANGED:returns.filter(r=>r.status==="EXCHANGED").length,
     REFUNDED:returns.filter(r=>r.status==="REFUNDED").length,
     EXCHANGE_REFUND:returns.filter(r=>r.status==="EXCHANGE_REFUND").length,
@@ -4088,6 +4104,7 @@ Thank you for your cooperation.`,
           {[
             {key:"ACTIVE",    label:"Expecting"},
             {key:"RETURN_RECEIVED", label:"Received"},
+            {key:"EXCHANGE_PROGRESS", label:"🔄 Exchange in Progress"},
             {key:"EXCHANGED", label:"Exchanged"},
             {key:"REFUNDED",  label:"Refunded"},
             {key:"EXCHANGE_REFUND", label:"Refund/Exchange"},
@@ -4319,6 +4336,16 @@ Thank you for your cooperation.`,
                               {daysSinceLabel(ret.receivedDate)}
                             </span>
                           ) : null
+                        )}
+                        {/* Exchange in Progress cards get their own waiting-time
+                            badge alongside the "Wants Exchange" pill above, so
+                            a case that's been sitting a while stands out even
+                            though the intent badge no longer shows plain days. */}
+                        {isExchangeInProgress(ret) && ret.receivedDate && (
+                          <span style={{fontSize:10.5,fontWeight:700,padding:"3px 9px",borderRadius:999,whiteSpace:"nowrap",
+                            background:"#fffbeb",border:"1px solid #fde68a",color:"#92400e"}}>
+                            ⏱ {daysSinceLabel(ret.receivedDate)}
+                          </span>
                         )}
                         {(()=>{
                           if(ret.status!=="MSG_SENT"&&ret.status!=="RETURN_IN_TRANSIT")return null;
