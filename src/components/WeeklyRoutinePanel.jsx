@@ -256,7 +256,7 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
   // live count computed from today's Returns data (never persisted as-is);
   // what IS persisted per week is what staff typed in against it.
   const wrMetrics = [
-    { key: "expecting", icon: "📥", label: "Expecting", system: returnsExpecting, bg: "#eff6ff", border: "#bfdbfe", color: "#1d4ed8" },
+    { key: "expecting", icon: "📥", label: "Return Expecting", system: returnsExpecting, bg: "#eff6ff", border: "#bfdbfe", color: "#1d4ed8" },
     { key: "refund", icon: "💰", label: "Awaiting Refund", system: refundsAwaiting, bg: "#f5f3ff", border: "#ddd6fe", color: "#6d28d9" },
     { key: "exchange", icon: "🔄", label: "Awaiting Exchange", system: exchangesAwaiting, bg: "#fdf4ff", border: "#f5d0fe", color: "#a21caf" },
   ];
@@ -342,7 +342,7 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
                         {["expecting", "refund", "exchange"].map(mk => {
                           const saved = display.returnsCheck[mk];
                           if (!saved || saved.counted === null || saved.counted === undefined) return null;
-                          const lbl = mk === "expecting" ? "📥 Expecting" : mk === "refund" ? "💰 Awaiting Refund" : "🔄 Awaiting Exchange";
+                          const lbl = mk === "expecting" ? "📥 Return Expecting" : mk === "refund" ? "💰 Awaiting Refund" : "🔄 Awaiting Exchange";
                           return (
                             <div key={mk} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
                               <span style={{ flex: 1, minWidth: 0, fontWeight: 700, color: "#334155" }}>{lbl}</span>
