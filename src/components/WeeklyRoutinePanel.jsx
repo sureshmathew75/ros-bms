@@ -257,8 +257,8 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
   // what IS persisted per week is what staff typed in against it.
   const wrMetrics = [
     { key: "expecting", icon: "📥", label: "Return Expecting", system: returnsExpecting, bg: "#eff6ff", border: "#bfdbfe", color: "#1d4ed8" },
-    { key: "refund", icon: "💰", label: "Awaiting Refund", system: refundsAwaiting, bg: "#f5f3ff", border: "#ddd6fe", color: "#6d28d9" },
-    { key: "exchange", icon: "🔄", label: "Awaiting Exchange", system: exchangesAwaiting, bg: "#fdf4ff", border: "#f5d0fe", color: "#a21caf" },
+    { key: "refund", icon: "💰", label: "Pending to Refund", system: refundsAwaiting, bg: "#f5f3ff", border: "#ddd6fe", color: "#6d28d9" },
+    { key: "exchange", icon: "🔄", label: "Pending to Exchange", system: exchangesAwaiting, bg: "#fdf4ff", border: "#f5d0fe", color: "#a21caf" },
   ];
 
   return (
