@@ -4412,15 +4412,25 @@ Thank you for your cooperation.`,
                       return(<>
                         <div style={sectionLabel}>Exchange{isBoth?" + Balance Refund":""}</div>
                         <div style={box} onClick={e=>e.stopPropagation()}>
-                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                          <div style={{display:"flex",alignItems:"center",gap:8}}>
                             <span style={{fontSize:11,color:tint.accent,whiteSpace:"nowrap",flexShrink:0}}>🚚 Tracking No.</span>
                             <input id={"track-"+ret.id} defaultValue={ret.exchangeTrackingNo||""} placeholder="Not shipped yet"
+                              onInput={e=>{
+                                const row=document.getElementById('despatch-row-'+ret.id);
+                                if(row) row.style.display=e.target.value.trim()?"flex":"none";
+                              }}
                               onBlur={e=>saveField("exchangeTrackingNo",e.target.value.trim())}
                               style={{...finp,flex:1,minWidth:0}}/>
                           </div>
-                          <div style={{display:"flex",alignItems:"center",gap:8}}>
+                          {/* Hidden until a tracking number is entered, so
+                              staff aren't shown today's date pre-filled as
+                              if it were already the despatch date — that
+                              read as misleading. Once there's a tracking
+                              number, this reveals with the date left blank
+                              for staff to actually pick. */}
+                          <div id={"despatch-row-"+ret.id} style={{display:(ret.exchangeTrackingNo||ret.exchangeDate)?"flex":"none",alignItems:"center",gap:8,marginTop:8}}>
                             <span style={{fontSize:11,color:tint.accent,whiteSpace:"nowrap",flexShrink:0}}>📅 Date of Despatch</span>
-                            <input id={"despatch-"+ret.id} type="date" defaultValue={ret.exchangeDate?ret.exchangeDate.slice(0,10):today}
+                            <input id={"despatch-"+ret.id} type="date" defaultValue={ret.exchangeDate?ret.exchangeDate.slice(0,10):""}
                               onBlur={e=>saveField("exchangeDate",e.target.value)}
                               style={{...finp,flex:1,minWidth:0}}/>
                           </div>
