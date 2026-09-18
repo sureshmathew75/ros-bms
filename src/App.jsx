@@ -2975,12 +2975,6 @@ const ManualReturnModal = ({ shopId, shop, sales, onClose, onSave }) => {
   const [staffNotes, setStaffNotes] = React.useState("");
   const [saving, setSaving] = React.useState(false);
 
-  React.useEffect(() => {
-    setStaffNotes(stage==="received"
-      ? "Customer returned this item directly, without going through the return request process."
-      : "Customer asked us to log this return on their behalf — they weren't able to use the online return form.");
-  }, [stage]);
-
   const matches = query.trim().length > 0
     ? (sales||[]).filter(s =>
         (s.customer||"").toLowerCase().includes(query.trim().toLowerCase()) ||
@@ -3119,8 +3113,12 @@ const ManualReturnModal = ({ shopId, shop, sales, onClose, onSave }) => {
         </div>
 
         <div style={{ marginBottom:18 }}>
-          <label style={lbl}>Staff Notes</label>
-          <textarea value={staffNotes} onChange={e=>setStaffNotes(e.target.value)} rows={2} style={{...inp,resize:"vertical",fontFamily:"inherit"}}/>
+          <label style={lbl}>Staff Notes (optional)</label>
+          <textarea value={staffNotes} onChange={e=>setStaffNotes(e.target.value)} rows={2}
+            placeholder={stage==="received"
+              ? "e.g. Customer returned this item directly, without going through the return request process."
+              : "e.g. Customer asked us to log this return on their behalf — they weren't able to use the online return form."}
+            style={{...inp,resize:"vertical",fontFamily:"inherit"}}/>
         </div>
 
         <div style={{ display:"flex", gap:10 }}>
@@ -4237,9 +4235,9 @@ Thank you for your cooperation.`,
                 <div key={ret.id}
                   style={{padding:"12px 16px",
                     borderRadius:12,
-                    border:"1px solid "+(isSelected?shop.accent:statusStyle.border),
+                    border:"1px solid "+(isSelected?shop.accent:"#e5e7eb"),
                     borderLeft:"4px solid "+(isSelected?shop.accent:statusStyle.text),
-                    background:isSelected?shop.accent+"10":statusStyle.bg,
+                    background:isSelected?shop.accent+"08":"white",
                     transition:"box-shadow 0.15s",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}
                   onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 16px "+shop.accent+"26"}
                   onMouseLeave={e=>e.currentTarget.style.boxShadow="0 1px 3px rgba(0,0,0,0.04)"}>
@@ -4337,7 +4335,7 @@ Thank you for your cooperation.`,
                       if(!ok)showAlert("Couldn't save — please check your connection and try again.");
                     };
 
-                    const box={marginTop:10,marginLeft:27,padding:"10px 12px",borderRadius:10,background:"white",border:"1px solid "+shop.accent+"33"};
+                    const box={marginTop:10,marginLeft:27,padding:"10px 12px",borderRadius:10,background:"#f8fafc",border:"1px solid "+shop.accent+"33"};
                     const flbl={display:"block",fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:3};
                     const finp={width:"100%",padding:"6px 8px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:12,fontFamily:"inherit",boxSizing:"border-box"};
                     const changeIntent=(
