@@ -2059,3 +2059,43 @@ export const dbDeleteMemo = async (id, shopId) => {
   if (error) console.error('Delete memo error:', error);
   else console.log('✅ Memo deleted:', id);
 };
+
+/* ── Weekly Routine (ROS India only) — one row per shop per week, keyed by
+   that week's Saturday date. Holds the full stock count, the documentation
+   checklist, and who/when completed it. "Work assigned" is NOT stored here
+   — it's read live from rosie_tasks by the component, so it's never stale. */
+export const dbLoadWeeklyRoutine = async (shopId, weekEnding) => {
+  if (!sb) return null;
+  const { data, error } = await sb.from('weekly_routines').select('*')
+    .eq('shop_id', shopId).eq('week_ending', weekEnding).maybeSingle();
+  if (error) { console.error('Load weekly routine error:', error); return null; }
+  if (!data) return null;
+  return {
+    id: data.id,
+    shopId: data.shop_id,
+    weekEnding: data.week_ending,
+    stockItems: Array.isArray(data.stock_items) ? data.stock_items : [],
+    docChecks: Array.isArray(data.doc_checks) ? data.doc_checks : [],
+    status: data.status || 'in_progress',
+    completedBy: data.completed_by || '',
+    completedAt: data.completed_at || null,
+    createdAt: data.created_at,
+  };
+};
+
+export const dbSaveWeeklyRoutine = async (routine) => {
+  if (!sb) return false;
+  const payload = {
+    id: routine.id,
+    shop_id: routine.shopId,
+    week_ending: routine.weekEnding,
+    stock_items: routine.stockItems || [],
+    doc_checks: routine.docChecks || [],
+    status: routine.status || 'in_progress',
+    completed_by: routine.completedBy || '',
+    completed_at: routine.completedAt || null,
+  };
+  const { error } = await sb.from('weekly_routines').upsert(payload, { onConflict: 'id' });
+  if (error) { console.error('Save weekly routine error:', error); return false; }
+  return true;
+};
