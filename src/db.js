@@ -2076,6 +2076,10 @@ export const dbLoadWeeklyRoutine = async (shopId, weekEnding) => {
     weekEnding: data.week_ending,
     stockItems: Array.isArray(data.stock_items) ? data.stock_items : [],
     docChecks: Array.isArray(data.doc_checks) ? data.doc_checks : [],
+    // Staff-entered figures for "expecting / awaiting refund / awaiting
+    // exchange", each snapshotted alongside the live system count at the
+    // moment staff verified it — see returns_check column.
+    returnsCheck: (data.returns_check && typeof data.returns_check === 'object') ? data.returns_check : {},
     status: data.status || 'in_progress',
     completedBy: data.completed_by || '',
     completedAt: data.completed_at || null,
@@ -2091,6 +2095,7 @@ export const dbSaveWeeklyRoutine = async (routine) => {
     week_ending: routine.weekEnding,
     stock_items: routine.stockItems || [],
     doc_checks: routine.docChecks || [],
+    returns_check: routine.returnsCheck || {},
     status: routine.status || 'in_progress',
     completed_by: routine.completedBy || '',
     completed_at: routine.completedAt || null,

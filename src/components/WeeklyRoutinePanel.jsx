@@ -107,8 +107,9 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
     // saved for it (this preserves admin-added/removed items for THIS
     // week); only fall back to the standard 5 when there's no saved row yet.
     const docChecks = existing?.docChecks && existing.docChecks.length ? existing.docChecks : blankDocChecks();
-    setRoutine(existing ? { ...existing, stockItems, docChecks } : {
-      id: routineId, shopId, weekEnding, stockItems, docChecks, status: "in_progress", completedBy: "", completedAt: null,
+    const returnsCheck = existing?.returnsCheck || {};
+    setRoutine(existing ? { ...existing, stockItems, docChecks, returnsCheck } : {
+      id: routineId, shopId, weekEnding, stockItems, docChecks, returnsCheck, status: "in_progress", completedBy: "", completedAt: null,
     });
     setLoaded(true);
   };
@@ -144,7 +145,7 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
     const items = await dbLoadInventoryItems(shopId);
     const stockItems = items.map(it => ({ itemId: it.id, itemName: it.name, category: it.category || "", systemQty: it.currentStock, countedQty: null, countedBy: "", countedAt: null, wasCorrected: false }));
     setSaving(false);
-    await persist({ ...routine, stockItems, docChecks: blankDocChecks(), status: "in_progress", completedBy: "", completedAt: null });
+    await persist({ ...routine, stockItems, docChecks: blankDocChecks(), returnsCheck: {}, status: "in_progress", completedBy: "", completedAt: null });
   };
 
   const handleDeleteTask = async (task) => {
@@ -212,6 +213,20 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
     await persist({ ...routine, docChecks: nextChecks });
   };
 
+  // Staff enter what they actually find when they check the Returns &
+  // Refunds page — each entry is saved alongside the live system count at
+  // the moment it was entered, so a mismatch (staff counted something the
+  // system doesn't show, or vice versa) is visible rather than assumed away.
+  const handleReturnsCountBlur = async (metricKey, systemValue, value) => {
+    if (value === "") return;
+    const counted = Number(value);
+    if (Number.isNaN(counted)) return;
+    const current = routine.returnsCheck?.[metricKey];
+    if (current && current.counted === counted && current.system === systemValue) return;
+    const nextCheck = { ...(routine.returnsCheck || {}), [metricKey]: { system: systemValue, counted, countedBy: myName, countedAt: new Date().toISOString() } };
+    await persist({ ...routine, returnsCheck: nextCheck });
+  };
+
   const handleComplete = async () => {
     if (!(await showConfirm("Mark this week's Saturday Routine as complete?"))) return;
     await persist({ ...routine, status: "completed", completedBy: myName, completedAt: new Date().toISOString() });
@@ -235,6 +250,16 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
   const sectionTitle = { margin: "0 0 4px", fontSize: 14.5, fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: 7 };
   const sectionSub = { margin: "0 0 14px", fontSize: 11.5, color: "#94a3b8" };
   const pastWeeks = historyList.filter(h => h.weekEnding !== weekEnding);
+
+  // The three figures staff verify against the Returns & Refunds page for
+  // the "returns up to date" documentation check. `system` is always the
+  // live count computed from today's Returns data (never persisted as-is);
+  // what IS persisted per week is what staff typed in against it.
+  const wrMetrics = [
+    { key: "expecting", icon: "📥", label: "Expecting", system: returnsExpecting, bg: "#eff6ff", border: "#bfdbfe", color: "#1d4ed8" },
+    { key: "refund", icon: "💰", label: "Awaiting Refund", system: refundsAwaiting, bg: "#f5f3ff", border: "#ddd6fe", color: "#6d28d9" },
+    { key: "exchange", icon: "🔄", label: "Awaiting Exchange", system: exchangesAwaiting, bg: "#fdf4ff", border: "#f5d0fe", color: "#a21caf" },
+  ];
 
   return (
     <div style={{ maxWidth: 820, margin: "0 auto" }}>
@@ -312,6 +337,27 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
                         {c.note && <div style={{ fontSize: 11, color: "#64748b", marginTop: 4, fontStyle: "italic" }}>"{c.note}"</div>}
                       </div>
                     </div>
+                    {c.key === "returns" && display?.returnsCheck && Object.keys(display.returnsCheck).length > 0 && (
+                      <div style={{ marginTop: 8, marginLeft: 24, display: "flex", flexDirection: "column", gap: 5 }}>
+                        {["expecting", "refund", "exchange"].map(mk => {
+                          const saved = display.returnsCheck[mk];
+                          if (!saved || saved.counted === null || saved.counted === undefined) return null;
+                          const lbl = mk === "expecting" ? "📥 Expecting" : mk === "refund" ? "💰 Awaiting Refund" : "🔄 Awaiting Exchange";
+                          return (
+                            <div key={mk} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+                              <span style={{ flex: 1, minWidth: 0, fontWeight: 700, color: "#334155" }}>{lbl}</span>
+                              <span style={{ color: "#64748b" }}>System: <strong style={{ color: "#0f172a" }}>{saved.system}</strong></span>
+                              <span style={{ color: "#64748b" }}>Counted: <strong style={{ color: "#0f172a" }}>{saved.counted}</strong></span>
+                              {saved.counted === saved.system ? (
+                                <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 999, background: "#f0fdf4", color: "#166534" }}>✓</span>
+                              ) : (
+                                <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 999, background: "#fff7ed", color: "#c2410c" }}>⚠</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -385,10 +431,28 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
                     )}
                   </div>
                   {c.key === "returns" && (
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8, marginLeft: 24 }}>
-                      <span style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, background: "#eff6ff", color: "#1d4ed8", border: "1px solid #bfdbfe", whiteSpace: "nowrap" }}>📥 {returnsExpecting} expecting</span>
-                      <span style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, background: "#f5f3ff", color: "#6d28d9", border: "1px solid #ddd6fe", whiteSpace: "nowrap" }}>💰 {refundsAwaiting} awaiting refund</span>
-                      <span style={{ fontSize: 10.5, fontWeight: 800, padding: "3px 9px", borderRadius: 999, background: "#fdf4ff", color: "#a21caf", border: "1px solid #f5d0fe", whiteSpace: "nowrap" }}>🔄 {exchangesAwaiting} awaiting exchange</span>
+                    <div style={{ marginTop: 8, marginLeft: 24, display: "flex", flexDirection: "column", gap: 5 }}>
+                      <div style={{ fontSize: 10, color: "#94a3b8" }}>Check the Returns &amp; Refunds page and enter what you actually find:</div>
+                      {wrMetrics.map(m => {
+                        const saved = routine.returnsCheck?.[m.key];
+                        const hasCount = saved && saved.counted !== null && saved.counted !== undefined;
+                        return (
+                          <div key={m.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 8px", borderRadius: 8, background: m.bg, border: "1px solid " + m.border }}>
+                            <span style={{ fontSize: 11, fontWeight: 700, color: m.color, flex: 1, minWidth: 0 }}>{m.icon} {m.label}</span>
+                            <span style={{ fontSize: 10.5, color: "#64748b", whiteSpace: "nowrap" }}>System: <strong style={{ color: "#0f172a" }}>{m.system}</strong></span>
+                            <input type="number" defaultValue={hasCount ? saved.counted : ""} placeholder="Count"
+                              onBlur={e => handleReturnsCountBlur(m.key, m.system, e.target.value)}
+                              style={{ width: 54, padding: "4px 6px", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 11.5, fontFamily: "inherit", textAlign: "right", boxSizing: "border-box", background: "white" }} />
+                            {hasCount && (
+                              saved.counted === saved.system ? (
+                                <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 999, background: "#f0fdf4", color: "#166534", whiteSpace: "nowrap" }}>✓ matched</span>
+                              ) : (
+                                <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 999, background: "#fff7ed", color: "#c2410c", whiteSpace: "nowrap" }}>⚠ mismatch</span>
+                              )
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   )}
                   <input defaultValue={c.note || ""} placeholder="Note (optional)…" onBlur={e => updateDocNote(c.key, e.target.value)}
