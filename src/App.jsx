@@ -7848,15 +7848,19 @@ return(
         <header className="mob-topbar" style={{
           background:"linear-gradient(90deg,"+shop.accent+"18 0%,white 40%)",
           borderBottom:"1px solid "+shop.accent+"22",
-          height:64,display:"flex",alignItems:"center",padding:"0 28px",
-          justifyContent:"space-between",position:"sticky",top:0,zIndex:30,
+          height:64,display:"grid",gridTemplateColumns:"auto minmax(0,1fr) auto",alignItems:"center",
+          padding:"0 28px",gap:12,position:"sticky",top:0,zIndex:30,
           boxShadow:"0 2px 12px "+shop.accent+"14",
         }}>
-          {/* ── ROS ORBIT — the software's own brand, always top-centre on every inner page ── */}
-          <div style={{position:"absolute",left:"50%",top:"50%",transform:"translate(-50%,-50%)",pointerEvents:"none"}}>
+          {/* ── ROS ORBIT — the software's own brand, top-centre on every inner page.
+             A real grid column (not absolute positioning) so it only ever uses
+             whatever space is left over once the left/right controls have taken
+             what they need — on a narrower window it shrinks and clips instead
+             of drawing on top of the search box or the "Developed by" credit. ── */}
+          <div style={{gridColumn:2,minWidth:0,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
             <OrbitMark size={isMobile?18:24} wordmarkSize={isMobile?11:14} showWordmark={!isMobile} dark={false} />
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:14}}>
+          <div style={{gridColumn:1,display:"flex",alignItems:"center",gap:14,minWidth:0}}>
             <button onClick={()=>isMobile?setMobileOpen(o=>!o):setColl(c=>!c)}
               style={{width:36,height:36,borderRadius:10,border:"1px solid "+shop.accent+"33",background:shop.accentBg,cursor:"pointer",fontSize:15,color:shop.accent,display:"flex",alignItems:"center",justifyContent:"center",transition:"all 0.15s"}}
               onMouseEnter={e=>{e.currentTarget.style.background=shop.accent;e.currentTarget.style.color="white";}}
@@ -7871,7 +7875,7 @@ return(
               </div>
             </div>
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <div style={{gridColumn:3,display:"flex",alignItems:"center",gap:10,minWidth:0}}>
             {/* Orbit credit - hidden on mobile */}
             <span className="mob-hide" style={{fontSize:10,fontWeight:600,color:shop.accent+"99",letterSpacing:"0.04em",marginRight:4,whiteSpace:"nowrap"}}>
               Developed by <strong style={{fontWeight:800,color:shop.accent}}>ROS Nexus</strong>
