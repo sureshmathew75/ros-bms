@@ -13,12 +13,13 @@ import { showAlert, showConfirm } from "./PopupHost";
       applied as a 'correction' movement through the same mechanism the
       Stock page already uses (dbAddInventoryMovement), so this is just a
       guided weekly prompt to use it, not a second way of tracking stock.
-   2. Documentation check — a short fixed checklist (invoices attached,
-      sales complete, returns up to date, etc.), tick + optional note.
+   2. Documentation check — a checklist (invoices attached, sales complete,
+      returns up to date, etc.), tick + optional note. Starts from a fixed
+      set of 5 but admins can add or remove items for the current week.
    3. Work assigned — read live from Rosie Tasks (not stored here at all)
       so it's never stale: whatever's due for the logged-in staff member
       this week, with a way to mark it done without leaving the page.
-      Admins also get a "manage all tasks" list here so tasks created for
+      Admins also get add/delete controls here so tasks created for
       testing (or for other staff) can be cleaned up without hunting
       around elsewhere.
 
@@ -79,6 +80,7 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
   const [routine, setRoutine] = useState(null);
   const [newTask, setNewTask] = useState({ assignedTo: "", message: "", recurrence: "once", dueDate: "" });
   const [addingTask, setAddingTask] = useState(false);
+  const [newCheckLabel, setNewCheckLabel] = useState("");
 
   // Past-weeks history: the picker lists every week ever saved (loaded
   // lightweight via dbListWeeklyRoutines); selecting one loads its full
@@ -101,8 +103,10 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
       if (ex) return ex;
       return { itemId: it.id, itemName: it.name, category: it.category || "", systemQty: it.currentStock, countedQty: null, countedBy: "", countedAt: null, wasCorrected: false };
     });
-    const existingChecksMap = new Map((existing?.docChecks || []).map(c => [c.key, c]));
-    const docChecks = WEEKLY_DOC_CHECKS.map(d => existingChecksMap.get(d.key) || { ...d, checked: false, checkedBy: "", checkedAt: null, note: "" });
+    // Documentation checklist for the week: start from whatever was already
+    // saved for it (this preserves admin-added/removed items for THIS
+    // week); only fall back to the standard 5 when there's no saved row yet.
+    const docChecks = existing?.docChecks && existing.docChecks.length ? existing.docChecks : blankDocChecks();
     setRoutine(existing ? { ...existing, stockItems, docChecks } : {
       id: routineId, shopId, weekEnding, stockItems, docChecks, status: "in_progress", completedBy: "", completedAt: null,
     });
@@ -131,7 +135,7 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
 
   const handleReset = async () => {
     const ok = await showConfirm(
-      "Reset this week's routine? This clears all stock counts, documentation checks and the completion status so staff start fresh.\n\n" +
+      "Reset this week's routine? This clears all stock counts, documentation checks (back to the standard 5) and the completion status so staff start fresh.\n\n" +
       "Important: any stock corrections already applied from counts entered so far (for example test/dummy numbers) are NOT undone by this — " +
       "those already changed the real stock quantities. If test numbers threw off real stock, fix the affected items manually on the Stock page after resetting."
     );
@@ -190,6 +194,21 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
   const updateDocNote = async (key, note) => {
     if (note === (routine.docChecks.find(c => c.key === key)?.note || "")) return;
     const nextChecks = routine.docChecks.map(c => c.key === key ? { ...c, note } : c);
+    await persist({ ...routine, docChecks: nextChecks });
+  };
+
+  const handleDeleteDocCheck = async (check) => {
+    const ok = await showConfirm(`Remove this check from this week's list?\n\n"${check.label}"`);
+    if (!ok) return;
+    await persist({ ...routine, docChecks: routine.docChecks.filter(c => c.key !== check.key) });
+  };
+
+  const handleAddDocCheck = async () => {
+    const label = newCheckLabel.trim();
+    if (!label) { showAlert("Enter what needs to be checked."); return; }
+    const key = "custom-" + Date.now();
+    const nextChecks = [...routine.docChecks, { key, label, checked: false, checkedBy: "", checkedAt: null, note: "" }];
+    setNewCheckLabel("");
     await persist({ ...routine, docChecks: nextChecks });
   };
 
@@ -350,18 +369,38 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {routine.docChecks.map(c => (
                 <div key={c.key} style={{ padding: "9px 11px", borderRadius: 9, background: c.checked ? "#f0fdf4" : "#f8fafc", border: "1px solid " + (c.checked ? "#bbf7d0" : "#f1f5f9") }}>
-                  <label style={{ display: "flex", alignItems: "flex-start", gap: 9, cursor: "pointer" }}>
-                    <input type="checkbox" checked={c.checked} onChange={() => toggleDocCheck(c.key)} style={{ width: 15, height: 15, marginTop: 2, cursor: "pointer", accentColor: shop?.accent || "#059669", flexShrink: 0 }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, color: "#0f172a", fontWeight: c.checked ? 700 : 500 }}>{c.label}</div>
-                      {c.checked && <div style={{ fontSize: 10.5, color: "#166534", marginTop: 2 }}>✓ {c.checkedBy} · {timeAgo(c.checkedAt)}</div>}
-                    </div>
-                  </label>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 9 }}>
+                    <label style={{ display: "flex", alignItems: "flex-start", gap: 9, cursor: "pointer", flex: 1, minWidth: 0 }}>
+                      <input type="checkbox" checked={c.checked} onChange={() => toggleDocCheck(c.key)} style={{ width: 15, height: 15, marginTop: 2, cursor: "pointer", accentColor: shop?.accent || "#059669", flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, color: "#0f172a", fontWeight: c.checked ? 700 : 500 }}>{c.label}</div>
+                        {c.checked && <div style={{ fontSize: 10.5, color: "#166534", marginTop: 2 }}>✓ {c.checkedBy} · {timeAgo(c.checkedAt)}</div>}
+                      </div>
+                    </label>
+                    {isAdmin && (
+                      <button onClick={() => handleDeleteDocCheck(c)} title="Remove this check"
+                        style={{ border: "none", background: "transparent", color: "#b91c1c", fontSize: 13, cursor: "pointer", padding: "2px 4px", lineHeight: 1, flexShrink: 0 }}>
+                        🗑
+                      </button>
+                    )}
+                  </div>
                   <input defaultValue={c.note || ""} placeholder="Note (optional)…" onBlur={e => updateDocNote(c.key, e.target.value)}
                     style={{ marginTop: 6, marginLeft: 24, width: "calc(100% - 24px)", padding: "5px 8px", borderRadius: 7, border: "1px solid #e2e8f0", fontSize: 11.5, fontFamily: "inherit", boxSizing: "border-box" }} />
                 </div>
               ))}
             </div>
+
+            {isAdmin && (
+              <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px dashed #e2e8f0", display: "flex", gap: 8 }}>
+                <input value={newCheckLabel} onChange={e => setNewCheckLabel(e.target.value)} placeholder="Add a check for this week…"
+                  onKeyDown={e => { if (e.key === "Enter") handleAddDocCheck(); }}
+                  style={{ flex: 1, minWidth: 0, padding: "8px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 12.5, fontFamily: "inherit", boxSizing: "border-box" }} />
+                <button onClick={handleAddDocCheck}
+                  style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: shop?.accent || "#059669", color: "white", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                  + Add Check
+                </button>
+              </div>
+            )}
           </div>
 
           {/* ── 3. Work Assigned (live from Rosie Tasks) ── */}
@@ -378,10 +417,18 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
                       <div style={{ fontSize: 12.5, color: "#0f172a", fontWeight: 700 }}>{t.message}</div>
                       <div style={{ fontSize: 10.5, color: "#92400e", marginTop: 2 }}>{t.recurrence !== "once" ? t.recurrence + " · " : ""}{t.dueDate ? "due " + t.dueDate : ""}</div>
                     </div>
-                    <button onClick={async () => { if (onMarkTaskDone) await onMarkTaskDone(t); }}
-                      style={{ padding: "6px 12px", borderRadius: 8, border: "none", background: "#f59e0b", color: "white", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
-                      ✓ Mark Done
-                    </button>
+                    <div style={{ display: "flex", alignItems: "center", gap: 6, flexShrink: 0 }}>
+                      <button onClick={async () => { if (onMarkTaskDone) await onMarkTaskDone(t); }}
+                        style={{ padding: "6px 12px", borderRadius: 8, border: "none", background: "#f59e0b", color: "white", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                        ✓ Mark Done
+                      </button>
+                      {isAdmin && (
+                        <button onClick={() => handleDeleteTask(t)} title="Delete this task"
+                          style={{ padding: "6px 9px", borderRadius: 8, border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c", fontSize: 11.5, cursor: "pointer", fontFamily: "inherit" }}>
+                          🗑
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
