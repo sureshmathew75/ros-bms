@@ -2451,6 +2451,23 @@ const daysRemaining=(deadlineStr)=>{
   return Math.ceil((dl-today)/(1000*60*60*24));
 };
 
+// ── Return Service Charge (ROS India only) — per the internal memo
+// effective 15 August 2026: a flat, tiered deduction on REFUNDS only,
+// based on the linked sale's order value. Exchanges are explicitly
+// exempt (see the memo), so this is never applied to a pure exchange —
+// only to "refund" and the refund portion of "exchange_refund" is a
+// separate price-difference amount, not this table (see the card's
+// refund calculator for that distinction). UK shops have no such table
+// today, so this always returns 0 for them.
+const calcReturnServiceCharge=(shopId,orderValue)=>{
+  if(shopId!=="ros-india")return 0;
+  const v=Number(orderValue)||0;
+  if(v<=7500)return 250;
+  if(v<=15000)return 500;
+  if(v<=25000)return 1000;
+  return 1500;
+};
+
 const DaysChip=({days})=>{
   if(days===null)return null;
   if(days<0)return <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:999,background:"#fef2f2",color:"#dc2626",border:"1px solid #fca5a5"}}>Expired</span>;
@@ -4207,41 +4224,12 @@ Thank you for your cooperation.`,
                     </div>
                   );
                 }
-                if(!["REFUNDED","EXCHANGED","EXCHANGE_REFUND"].includes(ret.status)) return(
-                  <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                    <button onClick={async e=>{e.stopPropagation();
-                      if(!(await showConfirm("Mark as Exchanged? This closes the case.")))return;
-                      handleQuickAction("EXCHANGED").then(()=>openWA(ret.phone,MSG_EXCHANGED(ret.customer,ret.id)));
-                    }} style={{padding:"4px 8px",borderRadius:7,border:"none",background:"#a21caf",
-                      color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
-                      🔄 Exchange
-                    </button>
-                    <button onClick={async e=>{e.stopPropagation();
-                      const amt=window.prompt("Refund amount (₹)?", "");
-                      if(amt===null)return;
-                      if(!(await showConfirm("Mark as Refunded? This closes the case.")))return;
-                      handleQuickAction("REFUNDED",{refundAmount:Number(amt)||0}).then(()=>openWA(ret.phone,MSG_REFUNDED(ret.customer,ret.id)));
-                    }} style={{padding:"4px 8px",borderRadius:7,border:"none",background:"#6d28d9",
-                      color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
-                      💰 Refund
-                    </button>
-                    <button onClick={async e=>{e.stopPropagation();
-                      const amt=window.prompt("Refund amount for the price difference (₹)?", "");
-                      if(amt===null)return;
-                      if(!(await showConfirm("Mark as Refund/Exchange — exchanged for a different item, with the price difference refunded? This closes the case.")))return;
-                      handleQuickAction("EXCHANGE_REFUND",{refundAmount:Number(amt)||0});
-                    }} style={{padding:"4px 8px",borderRadius:7,border:"none",background:"#c2410c",
-                      color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
-                      🔄💰 Refund/Exchange
-                    </button>
-                    <button onClick={e=>{e.stopPropagation();
-                      setVoucherForReturn(ret);
-                    }} style={{padding:"4px 8px",borderRadius:7,border:"none",background:"#db2777",
-                      color:"white",fontSize:11,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>
-                      🎁 Voucher
-                    </button>
-                  </div>
-                );
+                // RETURN_RECEIVED is the only status that can still reach
+                // here (earlier stages return above, closed ones are
+                // handled by the isClosed check) — its actions now live in
+                // the "resolve on receipt" panel on the card itself, right
+                // under the Expecting-stage summary, so there's nothing to
+                // duplicate here.
                 return <span style={{fontSize:11,color:"#94a3b8"}}>—</span>;
               };
 
@@ -4307,6 +4295,185 @@ Thank you for your cooperation.`,
                         <span style={{fontSize:11,color:"#374151"}}>📋 <span style={{color:"#94a3b8"}}>Requested:</span> <strong>{ret.createdAt?fmtShort(ret.createdAt):"—"}</strong></span>
                         <span style={{fontSize:11,color:"#374151"}}>⏳ <span style={{color:"#94a3b8"}}>Window closes:</span> <strong>{windowCloses?fmtShort(windowCloses):"—"}</strong></span>
                         <DaysChip days={days}/>
+                      </div>
+                    );
+                  })()}
+
+                  {/* Resolve-on-receipt panel: once an item is back with us,
+                      this is the single place to capture what the customer
+                      wants and, when ready, close the case out — replaces
+                      the old prompt()-based Exchange/Refund/Refund-Exchange
+                      buttons with a proper form that shows the eligible
+                      refund (sale value minus the deduction), links the new
+                      exchange order, and records its tracking number. */}
+                  {ret.status==="RETURN_RECEIVED" && (()=>{
+                    const linkedSale = ret.saleId ? allSales.find(s=>s.id===ret.saleId) : null;
+                    const getOrderValue=()=>{
+                      if(linkedSale) return Number(linkedSale.amount)||0;
+                      const el=document.getElementById('oval-'+ret.id);
+                      return el?Number(el.value)||0:0;
+                    };
+                    const updateEligible=()=>{
+                      const out=document.getElementById('elig-'+ret.id);
+                      const dedEl=document.getElementById('ded-'+ret.id);
+                      if(out) out.textContent='₹'+Math.max(0,getOrderValue()-(Number(dedEl?.value)||0)).toLocaleString('en-IN');
+                    };
+                    const autoDeduction=calcReturnServiceCharge(shopId, getOrderValue());
+                    const savedDeduction=Number(ret.refundDeduction)||0;
+                    const initialDeduction=savedDeduction>0?savedDeduction:autoDeduction;
+                    const exchangeLinkedSale=ret.exchangeSaleId?allSales.find(s=>s.id===ret.exchangeSaleId):null;
+
+                    const setIntent=async newResolution=>{
+                      const updated={...ret,resolution:newResolution};
+                      setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
+                      const ok=await dbSaveReturn(updated);
+                      if(!ok)showAlert("Couldn't save — please check your connection and try again.");
+                    };
+                    const saveField=async(field,value)=>{
+                      if(value===(ret[field]||""))return;
+                      const updated={...ret,[field]:value};
+                      setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
+                      const ok=await dbSaveReturn(updated);
+                      if(!ok)showAlert("Couldn't save — please check your connection and try again.");
+                    };
+
+                    const box={marginTop:10,marginLeft:27,padding:"10px 12px",borderRadius:10,background:"white",border:"1px solid "+shop.accent+"33"};
+                    const flbl={display:"block",fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:3};
+                    const finp={width:"100%",padding:"6px 8px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:12,fontFamily:"inherit",boxSizing:"border-box"};
+                    const changeIntent=(
+                      <button onClick={()=>setIntent("undecided")}
+                        style={{border:"none",background:"transparent",color:"#94a3b8",fontSize:10,fontWeight:700,cursor:"pointer",padding:0}}>
+                        ↺ change intent
+                      </button>
+                    );
+
+                    if(ret.resolution==="exchange"||ret.resolution==="exchange_refund"){
+                      const isBoth=ret.resolution==="exchange_refund";
+                      return(
+                        <div style={box} onClick={e=>e.stopPropagation()}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                            <div style={{fontSize:11,fontWeight:800,color:"#0f172a"}}>{isBoth?"🔄💰 Exchange + balance refund":"🔄 Exchange due"}</div>
+                            {changeIntent}
+                          </div>
+                          <div style={{marginBottom:8}}>
+                            <label style={flbl}>New exchange order</label>
+                            <input id={"exch-input-"+ret.id} list={"exch-list-"+ret.id} defaultValue={ret.exchangeSaleId||""}
+                              placeholder="Search invoice # or customer…"
+                              onBlur={e=>saveField("exchangeSaleId",e.target.value.trim())} style={finp}/>
+                            <datalist id={"exch-list-"+ret.id}>
+                              {allSales.slice(0,400).map(s=>(<option key={s.id} value={s.id}>{s.customer}</option>))}
+                            </datalist>
+                            {exchangeLinkedSale ? (
+                              <div style={{fontSize:10.5,color:"#166534",marginTop:4}}>✅ Linked: {exchangeLinkedSale.customer} · ₹{Number(exchangeLinkedSale.amount||0).toLocaleString("en-IN")}</div>
+                            ):(
+                              <div style={{fontSize:10.5,color:"#b45309",marginTop:4}}>⚠ No new exchange order linked yet</div>
+                            )}
+                          </div>
+                          <div style={{marginBottom:isBoth?8:10}}>
+                            <label style={flbl}>Tracking Number</label>
+                            <input id={"track-"+ret.id} defaultValue={ret.exchangeTrackingNo||""} placeholder="Courier tracking #"
+                              onBlur={e=>saveField("exchangeTrackingNo",e.target.value.trim())} style={finp}/>
+                          </div>
+                          {isBoth && (
+                            <div style={{marginBottom:10}}>
+                              <label style={flbl}>Price Difference to Refund (₹)</label>
+                              <input id={"pricediff-"+ret.id} type="number" defaultValue={ret.refundAmount||""} placeholder="0" style={finp}/>
+                              <div style={{fontSize:9.5,color:"#94a3b8",marginTop:3}}>Exchanges are exempt from the return service charge — enter only the balance owed back.</div>
+                            </div>
+                          )}
+                          <button onClick={async e=>{e.stopPropagation();
+                              const trackEl=document.getElementById('track-'+ret.id);
+                              const exchEl=document.getElementById('exch-input-'+ret.id);
+                              const trackingNo=trackEl?trackEl.value.trim():"";
+                              const exchangeSaleId=exchEl?exchEl.value.trim():"";
+                              if(isBoth){
+                                const diffEl=document.getElementById('pricediff-'+ret.id);
+                                const diff=Number(diffEl?.value)||0;
+                                if(!(await showConfirm("Mark as Refund/Exchange — ₹"+diff.toLocaleString("en-IN")+" price difference refunded? This closes the case.")))return;
+                                handleQuickAction("EXCHANGE_REFUND",{refundAmount:diff,exchangeSaleId,exchangeTrackingNo:trackingNo});
+                              } else {
+                                if(!(await showConfirm("Mark as Exchanged? This closes the case.")))return;
+                                handleQuickAction("EXCHANGED",{exchangeSaleId,exchangeTrackingNo:trackingNo}).then(ok=>{ if(ok) openWA(ret.phone,MSG_EXCHANGED(ret.customer,ret.id)); });
+                              }
+                            }} style={{padding:"6px 14px",borderRadius:8,border:"none",background:isBoth?"#c2410c":"#a21caf",
+                              color:"white",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>
+                            {isBoth?"✓ Mark Refund/Exchange":"✓ Mark Exchanged"}
+                          </button>
+                        </div>
+                      );
+                    }
+
+                    if(ret.resolution==="refund") return(
+                      <div style={box} onClick={e=>e.stopPropagation()}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                          <div style={{fontSize:11,fontWeight:800,color:"#0f172a"}}>💰 Refund due</div>
+                          {changeIntent}
+                        </div>
+                        <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:8}}>
+                          {linkedSale ? (
+                            <div style={{flex:"1 1 110px"}}>
+                              <label style={flbl}>Order Value</label>
+                              <div style={{fontSize:13,fontWeight:700,color:"#0f172a",padding:"6px 0"}}>₹{Number(linkedSale.amount||0).toLocaleString("en-IN")}</div>
+                            </div>
+                          ):(
+                            <div style={{flex:"1 1 110px"}}>
+                              <label style={flbl}>Order Value (₹)</label>
+                              <input id={"oval-"+ret.id} type="number" placeholder="0" onInput={updateEligible} style={finp}/>
+                            </div>
+                          )}
+                          <div style={{flex:"1 1 110px"}}>
+                            <label style={flbl}>Deduction (₹)</label>
+                            <input id={"ded-"+ret.id} type="number" defaultValue={initialDeduction} onInput={updateEligible}
+                              onBlur={e=>saveField("refundDeduction",Number(e.target.value)||0)} style={finp}/>
+                          </div>
+                          <div style={{flex:"1 1 110px"}}>
+                            <label style={flbl}>Eligible Refund</label>
+                            <div id={"elig-"+ret.id} style={{fontSize:14,fontWeight:800,color:"#166534",padding:"6px 0"}}>
+                              ₹{Math.max(0,getOrderValue()-initialDeduction).toLocaleString("en-IN")}
+                            </div>
+                          </div>
+                        </div>
+                        {shopId==="ros-india" && (
+                          <div style={{fontSize:9.5,color:"#94a3b8",marginBottom:8}}>Auto-suggested per the Return Service Charge schedule — editable if this case is different.</div>
+                        )}
+                        <button onClick={async e=>{e.stopPropagation();
+                            const dedEl=document.getElementById('ded-'+ret.id);
+                            const deduction=Number(dedEl?.value)||0;
+                            const eligible=Math.max(0,getOrderValue()-deduction);
+                            if(!(await showConfirm("Mark as Refunded — ₹"+eligible.toLocaleString("en-IN")+" after deduction? This closes the case.")))return;
+                            handleQuickAction("REFUNDED",{refundAmount:eligible,refundDeduction:deduction}).then(ok=>{ if(ok) openWA(ret.phone,MSG_REFUNDED(ret.customer,ret.id)); });
+                          }} style={{padding:"6px 14px",borderRadius:8,border:"none",background:"#6d28d9",
+                            color:"white",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>
+                          ✓ Mark Refunded
+                        </button>
+                      </div>
+                    );
+
+                    if(ret.resolution==="voucher") return(
+                      <div style={box} onClick={e=>e.stopPropagation()}>
+                        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                          <div style={{fontSize:11,color:"#374151"}}>🎁 Customer opted for a gift voucher instead.</div>
+                          {changeIntent}
+                        </div>
+                        <button onClick={()=>setVoucherForReturn(ret)}
+                          style={{marginTop:8,padding:"6px 14px",borderRadius:8,border:"none",background:"#db2777",
+                            color:"white",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>
+                          🎁 Issue Voucher
+                        </button>
+                      </div>
+                    );
+
+                    // Undecided — the default state right after an item
+                    // arrives, until staff records what the customer wants.
+                    return(
+                      <div style={box} onClick={e=>e.stopPropagation()}>
+                        <div style={{fontSize:11,fontWeight:800,color:"#0f172a",marginBottom:8}}>📥 Item received — what does {(ret.customer||"the customer").split(" ")[0]} want?</div>
+                        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                          <button onClick={()=>setIntent("refund")} style={{padding:"6px 12px",borderRadius:8,border:"none",background:"#6d28d9",color:"white",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>💰 Refund</button>
+                          <button onClick={()=>setIntent("exchange")} style={{padding:"6px 12px",borderRadius:8,border:"none",background:"#a21caf",color:"white",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>🔄 Exchange</button>
+                          <button onClick={()=>setIntent("exchange_refund")} style={{padding:"6px 12px",borderRadius:8,border:"none",background:"#c2410c",color:"white",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>🔄💰 Refund/Exchange</button>
+                          <button onClick={()=>setVoucherForReturn(ret)} style={{padding:"6px 12px",borderRadius:8,border:"none",background:"#db2777",color:"white",fontSize:11.5,fontWeight:700,cursor:"pointer"}}>🎁 Voucher</button>
+                        </div>
                       </div>
                     );
                   })()}

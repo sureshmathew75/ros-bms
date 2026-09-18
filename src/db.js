@@ -742,24 +742,31 @@ export const dbSaveReturn = async (ret) => {
     refund_to_name:         ret.refundToName || '',
     stock_status:           ret.stockStatus || 'in_office',
   };
-  // resold_to/resold_date are an optional migration — until "alter table
+  // resold_to/resold_date, and (newer) refund_deduction/exchange_sale_id/
+  // exchange_tracking_no, are all optional migrations — until "alter table
   // returns add column ..." has been run on the live database, sending
-  // these two fields makes Supabase reject the WHOLE save with a schema
-  // error, blocking every return (not just resold ones). So: try with
-  // them first, and if that specific save fails, silently retry without
-  // them rather than losing the return entirely.
-  const fullPayload = { ...basePayload, resold_to: ret.resoldTo || '', resold_date: ret.resoldDate || null };
+  // these fields makes Supabase reject the WHOLE save with a schema
+  // error, blocking every return (not just ones using the new fields). So:
+  // try with them first, and if that specific save fails, silently retry
+  // without them rather than losing the return entirely.
+  const fullPayload = {
+    ...basePayload,
+    resold_to: ret.resoldTo || '', resold_date: ret.resoldDate || null,
+    refund_deduction: Number(ret.refundDeduction) || 0,
+    exchange_sale_id: ret.exchangeSaleId || '',
+    exchange_tracking_no: ret.exchangeTrackingNo || '',
+  };
   const { data: existing } = await sb.from('returns').select('id').eq('id', ret.id).maybeSingle();
   const { error } = existing
     ? await sb.from('returns').update(fullPayload).eq('id', ret.id)
     : await sb.from('returns').insert(fullPayload);
   if (error) {
-    console.warn('Save return failed with resold_to/resold_date — retrying without them (run the pending ALTER TABLE to enable that field):', error.message);
+    console.warn('Save return failed with the newer optional fields — retrying without them (run the pending ALTER TABLE to enable them):', error.message);
     const { error: error2 } = existing
       ? await sb.from('returns').update(basePayload).eq('id', ret.id)
       : await sb.from('returns').insert(basePayload);
     if (error2) { console.error('Save return error:', error2); return false; }
-    console.log('✅ Return saved (without resold_to/resold_date):', ret.id);
+    console.log('✅ Return saved (without the newer optional fields):', ret.id);
     return true;
   }
   console.log('✅ Return saved:', ret.id);
@@ -802,6 +809,9 @@ export const dbLoadReturns = async (shopId) => {
     stockStatus:          r.stock_status || 'in_office',
     resoldTo:             r.resold_to || '',
     resoldDate:           r.resold_date || '',
+    refundDeduction:      Number(r.refund_deduction) || 0,
+    exchangeSaleId:       r.exchange_sale_id || '',
+    exchangeTrackingNo:   r.exchange_tracking_no || '',
   }));
 };
 
