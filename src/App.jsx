@@ -4168,8 +4168,12 @@ Thank you for your cooperation.`,
                 if(newStatus==="MSG_SENT") updates.instructionsSentAt=today;
                 if(newStatus==="RETURN_RECEIVED") updates.receivedDate=today;
                 if(newStatus==="REFUNDED") updates.refundDate=today;
-                if(newStatus==="EXCHANGED") updates.exchangeDate=today;
-                if(newStatus==="EXCHANGE_REFUND"){ updates.refundDate=today; updates.exchangeDate=today; }
+                // exchangeDate defaults to today but respects an explicit
+                // despatch date passed in via extraUpdates (the "Date of
+                // Despatch" field on the exchange card) instead of always
+                // overwriting it with today's date.
+                if(newStatus==="EXCHANGED") updates.exchangeDate=extraUpdates.exchangeDate||today;
+                if(newStatus==="EXCHANGE_REFUND"){ updates.refundDate=today; updates.exchangeDate=extraUpdates.exchangeDate||today; }
                 const updated={...ret,...updates};
                 const ok=await dbSaveReturn(updated);
                 if(!ok){
@@ -4390,7 +4394,6 @@ Thank you for your cooperation.`,
                     const savedDeduction=Number(ret.refundDeduction)||0;
                     const hasDeductionValue=hasRule||savedDeduction>0;
                     const initialDeduction=savedDeduction>0?savedDeduction:autoDeduction;
-                    const exchangeLinkedSale=ret.exchangeSaleId?allSales.find(s=>s.id===ret.exchangeSaleId):null;
 
                     const sectionLabel={fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.06em",marginTop:10,marginLeft:27,marginBottom:6};
                     const finp={padding:"6px 8px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:12,fontFamily:"inherit",boxSizing:"border-box",background:"white"};
@@ -4405,31 +4408,20 @@ Thank you for your cooperation.`,
                       const isBoth=ret.resolution==="exchange_refund";
                       const tint=isBoth?{bg:"#fff7ed",border:"#fed7aa",accent:"#c2410c"}:{bg:"#fdf4ff",border:"#f5d0fe",accent:"#a21caf"};
                       const box={marginLeft:27,padding:"12px 14px",borderRadius:10,background:tint.bg,border:"1px solid "+tint.border};
+                      const today=new Date().toISOString().slice(0,10);
                       return(<>
-                        <div style={sectionLabel}>Exchange Order{isBoth?" + Balance Refund":""}</div>
+                        <div style={sectionLabel}>Exchange{isBoth?" + Balance Refund":""}</div>
                         <div style={box} onClick={e=>e.stopPropagation()}>
-                          <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",marginBottom:8}}>
-                            <span style={{fontSize:10.5,fontWeight:800,padding:"3px 9px",borderRadius:999,whiteSpace:"nowrap",
-                              background:exchangeLinkedSale?"#f0fdf4":"#fef2f2",
-                              color:exchangeLinkedSale?"#166534":"#dc2626",
-                              border:"1px solid "+(exchangeLinkedSale?"#bbf7d0":"#fecaca")}}>
-                              {exchangeLinkedSale?"✅ Linked":"⚠ No new order yet"}
-                            </span>
-                            <span style={{fontSize:10.5,color:"#94a3b8"}}>
-                              {exchangeLinkedSale?(exchangeLinkedSale.customer+" · ₹"+Number(exchangeLinkedSale.amount||0).toLocaleString("en-IN")):"— link once the replacement is sold"}
-                            </span>
-                          </div>
-                          <input id={"exch-input-"+ret.id} list={"exch-list-"+ret.id} defaultValue={ret.exchangeSaleId||""}
-                            placeholder="Search or paste new order ID…"
-                            onBlur={e=>saveField("exchangeSaleId",e.target.value.trim())}
-                            style={{...finp,width:"100%",marginBottom:10}}/>
-                          <datalist id={"exch-list-"+ret.id}>
-                            {allSales.slice(0,400).map(s=>(<option key={s.id} value={s.id}>{s.customer}</option>))}
-                          </datalist>
-                          <div style={{display:"flex",alignItems:"center",gap:8}}>
-                            <span style={{fontSize:11,color:tint.accent,whiteSpace:"nowrap"}}>🚚 Tracking No.</span>
+                          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                            <span style={{fontSize:11,color:tint.accent,whiteSpace:"nowrap",flexShrink:0}}>🚚 Tracking No.</span>
                             <input id={"track-"+ret.id} defaultValue={ret.exchangeTrackingNo||""} placeholder="Not shipped yet"
                               onBlur={e=>saveField("exchangeTrackingNo",e.target.value.trim())}
+                              style={{...finp,flex:1,minWidth:0}}/>
+                          </div>
+                          <div style={{display:"flex",alignItems:"center",gap:8}}>
+                            <span style={{fontSize:11,color:tint.accent,whiteSpace:"nowrap",flexShrink:0}}>📅 Date of Despatch</span>
+                            <input id={"despatch-"+ret.id} type="date" defaultValue={ret.exchangeDate?ret.exchangeDate.slice(0,10):today}
+                              onBlur={e=>saveField("exchangeDate",e.target.value)}
                               style={{...finp,flex:1,minWidth:0}}/>
                           </div>
                           {isBoth && (
@@ -4445,17 +4437,17 @@ Thank you for your cooperation.`,
                         <div style={{marginLeft:27,marginTop:8,display:"flex",justifyContent:"flex-end"}}>
                           <button onClick={async e=>{e.stopPropagation();
                               const trackEl=document.getElementById('track-'+ret.id);
-                              const exchEl=document.getElementById('exch-input-'+ret.id);
+                              const despatchEl=document.getElementById('despatch-'+ret.id);
                               const trackingNo=trackEl?trackEl.value.trim():"";
-                              const exchangeSaleId=exchEl?exchEl.value.trim():"";
+                              const despatchDate=despatchEl&&despatchEl.value?despatchEl.value:today;
                               if(isBoth){
                                 const diffEl=document.getElementById('pricediff-'+ret.id);
                                 const diff=Number(diffEl?.value)||0;
                                 if(!(await showConfirm("Mark as Refund/Exchange — ₹"+diff.toLocaleString("en-IN")+" price difference refunded? This closes the case.")))return;
-                                handleQuickAction("EXCHANGE_REFUND",{refundAmount:diff,exchangeSaleId,exchangeTrackingNo:trackingNo});
+                                handleQuickAction("EXCHANGE_REFUND",{refundAmount:diff,exchangeTrackingNo:trackingNo,exchangeDate:despatchDate});
                               } else {
                                 if(!(await showConfirm("Mark as Exchanged? This closes the case.")))return;
-                                handleQuickAction("EXCHANGED",{exchangeSaleId,exchangeTrackingNo:trackingNo}).then(ok=>{ if(ok) openWA(ret.phone,MSG_EXCHANGED(ret.customer,ret.id)); });
+                                handleQuickAction("EXCHANGED",{exchangeTrackingNo:trackingNo,exchangeDate:despatchDate}).then(ok=>{ if(ok) openWA(ret.phone,MSG_EXCHANGED(ret.customer,ret.id)); });
                               }
                             }} style={{padding:"7px 16px",borderRadius:8,border:"none",background:tint.accent,
                               color:"white",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
