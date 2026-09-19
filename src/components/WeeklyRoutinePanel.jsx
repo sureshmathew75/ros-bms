@@ -84,7 +84,7 @@ function timeAgo(iso) {
   return `${days}d ago`;
 }
 
-export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = [], isRosieTaskDue, onMarkTaskDone, onDeleteTask, staffAccounts = [], onAddTask, returnsExpecting = 0, refundsAwaiting = 0, exchangesAwaiting = 0, awaitingConfirmation = 0 }) {
+export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = [], isRosieTaskDue, onMarkTaskDone, onDeleteTask, staffAccounts = [], onAddTask, returnsExpecting = 0, refundsAwaiting = 0, exchangesAwaiting = 0, awaitingConfirmation = 0, returnedStockSource = [] }) {
   const myId = user?.id || "";
   const myName = user?.fullName || user?.name || "Staff";
   const isAdmin = user?.role === "superadmin" || user?.role === "admin";
@@ -124,8 +124,19 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
     // week); only fall back to the standard 5 when there's no saved row yet.
     const docChecks = existing?.docChecks && existing.docChecks.length ? existing.docChecks : blankDocChecks();
     const returnsCheck = existing?.returnsCheck || {};
-    setRoutine(existing ? { ...existing, stockItems, docChecks, returnsCheck } : {
-      id: routineId, shopId, weekEnding, stockItems, docChecks, returnsCheck, status: "in_progress", completedBy: "", completedAt: null,
+    // Returned-stock physical verification: same merge pattern as stock
+    // items above — items already tracked this week keep their verified
+    // state, items newly "In Office" since last refresh get added fresh,
+    // and anything that's since left "In Office" (resold, handed over)
+    // simply drops off the live list.
+    const existingReturnedMap = new Map((existing?.returnedStockItems || []).map(ri => [ri.returnId, ri]));
+    const returnedStockItems = (returnedStockSource || []).map(rs => {
+      const ex = existingReturnedMap.get(rs.returnId);
+      if (ex) return { ...ex, item: rs.item, customer: rs.customer, receivedDate: rs.receivedDate };
+      return { returnId: rs.returnId, item: rs.item, customer: rs.customer, receivedDate: rs.receivedDate, verified: false, verifiedBy: "", verifiedAt: null };
+    });
+    setRoutine(existing ? { ...existing, stockItems, docChecks, returnsCheck, returnedStockItems } : {
+      id: routineId, shopId, weekEnding, stockItems, docChecks, returnsCheck, returnedStockItems, status: "in_progress", completedBy: "", completedAt: null,
     });
     setLoaded(true);
   };
@@ -160,8 +171,9 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
     setSaving(true);
     const items = await dbLoadInventoryItems(shopId);
     const stockItems = items.map(it => ({ itemId: it.id, itemName: it.name, category: it.category || "", systemQty: it.currentStock, countedQty: null, countedBy: "", countedAt: null, wasCorrected: false }));
+    const returnedStockItems = (returnedStockSource || []).map(rs => ({ returnId: rs.returnId, item: rs.item, customer: rs.customer, receivedDate: rs.receivedDate, verified: false, verifiedBy: "", verifiedAt: null }));
     setSaving(false);
-    await persist({ ...routine, stockItems, docChecks: blankDocChecks(), returnsCheck: {}, status: "in_progress", completedBy: "", completedAt: null });
+    await persist({ ...routine, stockItems, docChecks: blankDocChecks(), returnsCheck: {}, returnedStockItems, status: "in_progress", completedBy: "", completedAt: null });
   };
 
   const handleDeleteTask = async (task) => {
@@ -176,9 +188,11 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
   const isViewingHistory = !!viewingWeek;
   const display = isViewingHistory ? historyRoutine : routine;
   const displayStockItems = display?.stockItems || [];
+  const displayReturnedStockItems = display?.returnedStockItems || [];
   const displayDocChecks = (display?.docChecks && display.docChecks.length) ? display.docChecks : blankDocChecks();
   const isCompleted = display?.status === "completed";
   const countedCount = displayStockItems.filter(si => si.countedQty !== null && si.countedQty !== undefined).length;
+  const verifiedReturnedCount = displayReturnedStockItems.filter(ri => ri.verified).length;
   const checkedCount = displayDocChecks.filter(c => c.checked).length;
   const myTasks = (rosieTasks || []).filter(t => t.assignedTo === myId && (typeof isRosieTaskDue === "function" ? isRosieTaskDue(t) : !t.doneAt));
   const allTasksForAdmin = [...(rosieTasks || [])].sort((a, b) => (a.assignedTo || "").localeCompare(b.assignedTo || ""));
@@ -199,6 +213,17 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
     }
     const updatedItem = { ...item, systemQty: counted, countedQty: counted, countedBy: myName, countedAt: new Date().toISOString(), wasCorrected: item.wasCorrected || delta !== 0 };
     await persist({ ...routine, stockItems: routine.stockItems.map(si => si.itemId === item.itemId ? updatedItem : si) });
+  };
+
+  // Physical verification of returned-stock items still "In Office" (see
+  // the Returned Stock tab on the Stock page) — a simple found-it toggle
+  // per item, same idea as the documentation checklist rather than a
+  // quantity count, since each row is a specific customer's return.
+  const toggleReturnedStockVerify = async (returnId) => {
+    const nextItems = (routine.returnedStockItems || []).map(ri => ri.returnId === returnId
+      ? { ...ri, verified: !ri.verified, verifiedBy: !ri.verified ? myName : "", verifiedAt: !ri.verified ? new Date().toISOString() : null }
+      : ri);
+    await persist({ ...routine, returnedStockItems: nextItems });
   };
 
   const toggleDocCheck = async (key) => {
@@ -353,6 +378,54 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
               )}
             </div>
 
+            {/* Total Stock Summary bar — combined Fresh + Returned figures,
+                sitting right under Stock Count so staff see the full
+                picture of everything they're responsible for at a glance. */}
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: -8, marginBottom: 18 }}>
+              <div style={{ flex: "1 1 150px", padding: "10px 14px", borderRadius: 10, background: "#f8fafc", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 9 }}>
+                <span style={{ fontSize: 17 }}>📦</span>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Fresh Stock</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 800, color: "#0f172a" }}>{displayStockItems.length} items <span style={{ fontWeight: 600, color: "#64748b", fontSize: 11 }}>· {countedCount} counted</span></div>
+                </div>
+              </div>
+              <div style={{ flex: "1 1 150px", padding: "10px 14px", borderRadius: 10, background: "#fff7ed", border: "1px solid #fed7aa", display: "flex", alignItems: "center", gap: 9 }}>
+                <span style={{ fontSize: 17 }}>↩️</span>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: "#c2410c", textTransform: "uppercase", letterSpacing: "0.05em" }}>Returned Stock</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 800, color: "#0f172a" }}>{displayReturnedStockItems.length} items <span style={{ fontWeight: 600, color: "#9a3412", fontSize: 11 }}>· {verifiedReturnedCount} verified</span></div>
+                </div>
+              </div>
+              <div style={{ flex: "1 1 130px", padding: "10px 14px", borderRadius: 10, background: (shop?.accent || "#059669") + "12", border: "1px solid " + (shop?.accent || "#059669") + "33", display: "flex", alignItems: "center", gap: 9 }}>
+                <span style={{ fontSize: 17 }}>🧮</span>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: shop?.accent || "#059669", textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Stock</div>
+                  <div style={{ fontSize: 13.5, fontWeight: 800, color: "#0f172a" }}>{displayStockItems.length + displayReturnedStockItems.length} items</div>
+                </div>
+              </div>
+            </div>
+
+            <div style={sectionCard}>
+              <h3 style={sectionTitle}>↩️ Returned Stock <span style={{ fontWeight: 600, color: "#94a3b8", fontSize: 11.5 }}>({verifiedReturnedCount} of {displayReturnedStockItems.length} verified)</span></h3>
+              {displayReturnedStockItems.length === 0 ? <div style={{ fontSize: 12.5, color: "#94a3b8" }}>No returned-stock items recorded for this week.</div> : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {displayReturnedStockItems.map(ri => (
+                    <div key={ri.returnId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: 9, background: "#f8fafc" }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ri.item}</div>
+                        <div style={{ fontSize: 10.5, color: "#94a3b8" }}>{ri.customer}</div>
+                      </div>
+                      {ri.verified ? (
+                        <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 7px", borderRadius: 999, background: "#f0fdf4", color: "#166534", whiteSpace: "nowrap" }}>✓ verified</span>
+                      ) : (
+                        <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 7px", borderRadius: 999, background: "#fef2f2", color: "#b91c1c", whiteSpace: "nowrap" }}>○ not verified</span>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div style={sectionCard}>
               <h3 style={sectionTitle}>📋 Documentation Check <span style={{ fontWeight: 600, color: "#94a3b8", fontSize: 11.5 }}>({checkedCount} of {displayDocChecks.length})</span></h3>
               <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -438,6 +511,58 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
                         <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 7px", borderRadius: 999, background: "#f0fdf4", color: "#166534", whiteSpace: "nowrap" }}>✓ matched</span>
                       )
                     )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Total Stock Summary bar — combined Fresh + Returned figures,
+              sitting right under Stock Count so staff see the full picture
+              of everything they're responsible for at a glance. */}
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: -8, marginBottom: 18 }}>
+            <div style={{ flex: "1 1 150px", padding: "10px 14px", borderRadius: 10, background: "#f8fafc", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 9 }}>
+              <span style={{ fontSize: 17 }}>📦</span>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Fresh Stock</div>
+                <div style={{ fontSize: 13.5, fontWeight: 800, color: "#0f172a" }}>{routine.stockItems.length} items <span style={{ fontWeight: 600, color: "#64748b", fontSize: 11 }}>· {countedCount} counted</span></div>
+              </div>
+            </div>
+            <div style={{ flex: "1 1 150px", padding: "10px 14px", borderRadius: 10, background: "#fff7ed", border: "1px solid #fed7aa", display: "flex", alignItems: "center", gap: 9 }}>
+              <span style={{ fontSize: 17 }}>↩️</span>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 800, color: "#c2410c", textTransform: "uppercase", letterSpacing: "0.05em" }}>Returned Stock</div>
+                <div style={{ fontSize: 13.5, fontWeight: 800, color: "#0f172a" }}>{(routine.returnedStockItems || []).length} items <span style={{ fontWeight: 600, color: "#9a3412", fontSize: 11 }}>· {verifiedReturnedCount} verified</span></div>
+              </div>
+            </div>
+            <div style={{ flex: "1 1 130px", padding: "10px 14px", borderRadius: 10, background: (shop?.accent || "#059669") + "12", border: "1px solid " + (shop?.accent || "#059669") + "33", display: "flex", alignItems: "center", gap: 9 }}>
+              <span style={{ fontSize: 17 }}>🧮</span>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 800, color: shop?.accent || "#059669", textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Stock</div>
+                <div style={{ fontSize: 13.5, fontWeight: 800, color: "#0f172a" }}>{routine.stockItems.length + (routine.returnedStockItems || []).length} items</div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── 1b. Returned Stock (physical verification) ── */}
+          <div style={sectionCard}>
+            <h3 style={sectionTitle}>↩️ Returned Stock <span style={{ fontWeight: 600, color: "#94a3b8", fontSize: 11.5 }}>({verifiedReturnedCount} of {(routine.returnedStockItems || []).length} verified)</span></h3>
+            <p style={sectionSub}>Physically confirm every returned item still marked "In Office" on the Stock page's Returned Stock tab is actually there.</p>
+            {(routine.returnedStockItems || []).length === 0 ? (
+              <div style={{ fontSize: 12.5, color: "#94a3b8" }}>Nothing to verify — no returned items are currently marked "In Office".</div>
+            ) : (
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {routine.returnedStockItems.map(ri => (
+                  <div key={ri.returnId} style={{ padding: "7px 10px", borderRadius: 9, background: ri.verified ? "#f0fdf4" : "#f8fafc", border: "1px solid " + (ri.verified ? "#bbf7d0" : "#f1f5f9") }}>
+                    <label style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}>
+                      <input type="checkbox" checked={!!ri.verified} onChange={() => toggleReturnedStockVerify(ri.returnId)}
+                        style={{ width: 15, height: 15, cursor: "pointer", accentColor: shop?.accent || "#059669", flexShrink: 0 }} />
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ri.item}</div>
+                        <div style={{ fontSize: 10.5, color: "#94a3b8" }}>{ri.customer}</div>
+                      </div>
+                      {ri.verified && <div style={{ fontSize: 10, color: "#166534", whiteSpace: "nowrap" }}>✓ {ri.verifiedBy} · {timeAgo(ri.verifiedAt)}</div>}
+                    </label>
                   </div>
                 ))}
               </div>

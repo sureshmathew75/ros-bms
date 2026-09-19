@@ -2080,6 +2080,12 @@ export const dbLoadWeeklyRoutine = async (shopId, weekEnding) => {
     // exchange", each snapshotted alongside the live system count at the
     // moment staff verified it — see returns_check column.
     returnsCheck: (data.returns_check && typeof data.returns_check === 'object') ? data.returns_check : {},
+    // Physical verification of returned-stock items still sitting "In
+    // Office" (see the Returned Stock tab on the Stock page) — one entry
+    // per return, snapshotting the item/customer at persist time so past
+    // weeks still read correctly even after the item's real stockStatus
+    // has since moved on (resold, handed over, etc).
+    returnedStockItems: Array.isArray(data.returned_stock_items) ? data.returned_stock_items : [],
     status: data.status || 'in_progress',
     completedBy: data.completed_by || '',
     completedAt: data.completed_at || null,
@@ -2096,6 +2102,7 @@ export const dbSaveWeeklyRoutine = async (routine) => {
     stock_items: routine.stockItems || [],
     doc_checks: routine.docChecks || [],
     returns_check: routine.returnsCheck || {},
+    returned_stock_items: routine.returnedStockItems || [],
     status: routine.status || 'in_progress',
     completed_by: routine.completedBy || '',
     completed_at: routine.completedAt || null,

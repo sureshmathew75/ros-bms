@@ -9387,6 +9387,15 @@ return(
             // what the customer wants (the "What does the customer want?"
             // panel is still showing) — the Received tab's own backlog.
             const wrAwaitingConfirmation=returns.filter(r=>r.status==="RETURN_RECEIVED"&&(!r.resolution||r.resolution==="undecided")).length;
+            // Physical items on the "Returned Stock" tab of the Stock page
+            // that are still sitting "In Office" — the same relevant-status
+            // filter ReturnedStockList uses, narrowed to ones that should
+            // still physically be here (excludes Resold/Handed Over, which
+            // have already left).
+            const wrReturnedStockRelevant=["RETURN_RECEIVED","EXCHANGED","REFUNDED","EXCHANGE_REFUND"];
+            const wrReturnedStockSource=returns
+              .filter(r=>wrReturnedStockRelevant.includes(r.status)&&(r.stockStatus||"in_office")==="in_office")
+              .map(r=>({returnId:r.id,item:r.item||"—",customer:r.customer||"—",receivedDate:r.receivedDate||r.refundDate||r.exchangeDate||""}));
             return (
               <WeeklyRoutinePanel shopId={shopId} shop={shop} user={user} rosieTasks={rosieTasks} isRosieTaskDue={isRosieTaskDue}
                 onMarkTaskDone={async(t)=>{ await dbMarkRosieTaskDone(t); reloadRosieTasks(); }}
@@ -9394,7 +9403,7 @@ return(
                 staffAccounts={rosIndiaStaffAccounts}
                 onAddTask={async(task)=>{ await dbSaveRosieTask({...task,shopId}); reloadRosieTasks(); }}
                 returnsExpecting={wrReturnsExpecting} refundsAwaiting={wrRefundsAwaiting} exchangesAwaiting={wrExchangesAwaiting}
-                awaitingConfirmation={wrAwaitingConfirmation} />
+                awaitingConfirmation={wrAwaitingConfirmation} returnedStockSource={wrReturnedStockSource} />
             );
           })()}
 
