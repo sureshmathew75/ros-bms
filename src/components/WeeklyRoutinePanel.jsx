@@ -136,7 +136,7 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
       return { returnId: rs.returnId, item: rs.item, customer: rs.customer, receivedDate: rs.receivedDate, verified: false, verifiedBy: "", verifiedAt: null };
     });
     setRoutine(existing ? { ...existing, stockItems, docChecks, returnsCheck, returnedStockItems } : {
-      id: routineId, shopId, weekEnding, stockItems, docChecks, returnsCheck, returnedStockItems, status: "in_progress", completedBy: "", completedAt: null,
+      id: routineId, shopId, weekEnding, stockItems, docChecks, returnsCheck, returnedStockItems, returnedStockManual: [], status: "in_progress", completedBy: "", completedAt: null,
     });
     setLoaded(true);
   };
@@ -173,7 +173,7 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
     const stockItems = items.map(it => ({ itemId: it.id, itemName: it.name, category: it.category || "", systemQty: it.currentStock, countedQty: null, countedBy: "", countedAt: null, wasCorrected: false }));
     const returnedStockItems = (returnedStockSource || []).map(rs => ({ returnId: rs.returnId, item: rs.item, customer: rs.customer, receivedDate: rs.receivedDate, verified: false, verifiedBy: "", verifiedAt: null }));
     setSaving(false);
-    await persist({ ...routine, stockItems, docChecks: blankDocChecks(), returnsCheck: {}, returnedStockItems, status: "in_progress", completedBy: "", completedAt: null });
+    await persist({ ...routine, stockItems, docChecks: blankDocChecks(), returnsCheck: {}, returnedStockItems, returnedStockManual: [], status: "in_progress", completedBy: "", completedAt: null });
   };
 
   const handleDeleteTask = async (task) => {
@@ -189,10 +189,26 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
   const display = isViewingHistory ? historyRoutine : routine;
   const displayStockItems = display?.stockItems || [];
   const displayReturnedStockItems = display?.returnedStockItems || [];
+  const displayReturnedStockManual = display?.returnedStockManual || [];
   const displayDocChecks = (display?.docChecks && display.docChecks.length) ? display.docChecks : blankDocChecks();
   const isCompleted = display?.status === "completed";
   const countedCount = displayStockItems.filter(si => si.countedQty !== null && si.countedQty !== undefined).length;
   const verifiedReturnedCount = displayReturnedStockItems.filter(ri => ri.verified).length;
+  // Two grand totals for the summary bar: what the system says should be on
+  // hand (every Fresh Stock system quantity, plus one unit per Returned
+  // Stock item the system has marked "In Office") versus what's actually
+  // been physically confirmed so far (counted quantities entered, verified
+  // returned items, plus any manually-logged extra items) — uncounted
+  // items simply contribute 0 to the physical total until staff get to
+  // them, so this fills in as the week progresses rather than pretending
+  // to be final from the start. Manual items have no system expectation
+  // behind them, so they only ever add to the physical side.
+  const freshSystemTotal = displayStockItems.reduce((a, it) => a + (Number(it.systemQty) || 0), 0);
+  const freshCountedTotal = displayStockItems.reduce((a, it) => a + ((it.countedQty !== null && it.countedQty !== undefined) ? (Number(it.countedQty) || 0) : 0), 0);
+  const manualCountedTotal = displayReturnedStockManual.reduce((a, m) => a + (Number(m.count) || 0), 0);
+  const totalSystemStock = freshSystemTotal + displayReturnedStockItems.length;
+  const totalPhysicalStock = freshCountedTotal + verifiedReturnedCount + manualCountedTotal;
+  const allStockChecked = displayStockItems.length > 0 && countedCount === displayStockItems.length && verifiedReturnedCount === displayReturnedStockItems.length;
   const checkedCount = displayDocChecks.filter(c => c.checked).length;
   const myTasks = (rosieTasks || []).filter(t => t.assignedTo === myId && (typeof isRosieTaskDue === "function" ? isRosieTaskDue(t) : !t.doneAt));
   const allTasksForAdmin = [...(rosieTasks || [])].sort((a, b) => (a.assignedTo || "").localeCompare(b.assignedTo || ""));
@@ -224,6 +240,30 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
       ? { ...ri, verified: !ri.verified, verifiedBy: !ri.verified ? myName : "", verifiedAt: !ri.verified ? new Date().toISOString() : null }
       : ri);
     await persist({ ...routine, returnedStockItems: nextItems });
+  };
+
+  // Extra returned-stock items staff physically find that aren't linked to
+  // any specific return record — a free-form item name + count list, kept
+  // alongside (not instead of) the per-return checklist above.
+  const getManualItems = () => routine.returnedStockManual || [];
+
+  const saveManualItems = (items) => persist({ ...routine, returnedStockManual: items });
+
+  const handleAddManualItem = () => {
+    saveManualItems([...getManualItems(), { id: "m-" + Date.now(), item: "", count: "", enteredBy: myName, enteredAt: new Date().toISOString() }]);
+  };
+
+  const handleManualItemBlur = (idx, field, rawValue) => {
+    const items = [...getManualItems()];
+    const cur = items[idx];
+    const value = field === "count" ? (rawValue === "" ? "" : Number(rawValue)) : rawValue;
+    if (cur[field] === value) return;
+    items[idx] = { ...cur, [field]: value };
+    saveManualItems(items);
+  };
+
+  const handleRemoveManualItem = (idx) => {
+    saveManualItems(getManualItems().filter((_, i) => i !== idx));
   };
 
   const toggleDocCheck = async (key) => {
@@ -378,29 +418,24 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
               )}
             </div>
 
-            {/* Total Stock Summary bar — combined Fresh + Returned figures,
-                sitting right under Stock Count so staff see the full
-                picture of everything they're responsible for at a glance. */}
+            {/* Total Stock Summary bar — the two figures that matter: what
+                the system says total stock (Fresh quantities + Returned
+                items expected) should be, versus what's actually been
+                physically confirmed so far (counts entered + items
+                verified). Sits right under Stock Count. */}
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: -8, marginBottom: 18 }}>
-              <div style={{ flex: "1 1 150px", padding: "10px 14px", borderRadius: 10, background: "#f8fafc", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 9 }}>
-                <span style={{ fontSize: 17 }}>📦</span>
-                <div>
-                  <div style={{ fontSize: 10, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Fresh Stock</div>
-                  <div style={{ fontSize: 13.5, fontWeight: 800, color: "#0f172a" }}>{displayStockItems.length} items <span style={{ fontWeight: 600, color: "#64748b", fontSize: 11 }}>· {countedCount} counted</span></div>
-                </div>
-              </div>
-              <div style={{ flex: "1 1 150px", padding: "10px 14px", borderRadius: 10, background: "#fff7ed", border: "1px solid #fed7aa", display: "flex", alignItems: "center", gap: 9 }}>
-                <span style={{ fontSize: 17 }}>↩️</span>
-                <div>
-                  <div style={{ fontSize: 10, fontWeight: 800, color: "#c2410c", textTransform: "uppercase", letterSpacing: "0.05em" }}>Returned Stock</div>
-                  <div style={{ fontSize: 13.5, fontWeight: 800, color: "#0f172a" }}>{displayReturnedStockItems.length} items <span style={{ fontWeight: 600, color: "#9a3412", fontSize: 11 }}>· {verifiedReturnedCount} verified</span></div>
-                </div>
-              </div>
-              <div style={{ flex: "1 1 130px", padding: "10px 14px", borderRadius: 10, background: (shop?.accent || "#059669") + "12", border: "1px solid " + (shop?.accent || "#059669") + "33", display: "flex", alignItems: "center", gap: 9 }}>
+              <div style={{ flex: "1 1 200px", padding: "10px 14px", borderRadius: 10, background: "#f8fafc", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 9 }}>
                 <span style={{ fontSize: 17 }}>🧮</span>
                 <div>
-                  <div style={{ fontSize: 10, fontWeight: 800, color: shop?.accent || "#059669", textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Stock</div>
-                  <div style={{ fontSize: 13.5, fontWeight: 800, color: "#0f172a" }}>{displayStockItems.length + displayReturnedStockItems.length} items</div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Stock — As Per System</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{totalSystemStock} <span style={{ fontWeight: 600, color: "#64748b", fontSize: 11 }}>({freshSystemTotal} fresh + {displayReturnedStockItems.length} returned)</span></div>
+                </div>
+              </div>
+              <div style={{ flex: "1 1 200px", padding: "10px 14px", borderRadius: 10, background: allStockChecked ? "#f0fdf4" : "#fffbeb", border: "1px solid " + (allStockChecked ? "#bbf7d0" : "#fde68a"), display: "flex", alignItems: "center", gap: 9 }}>
+                <span style={{ fontSize: 17 }}>{allStockChecked ? "✅" : "📝"}</span>
+                <div>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: allStockChecked ? "#166534" : "#92400e", textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Stock — Physical Count</div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{totalPhysicalStock} <span style={{ fontWeight: 600, color: allStockChecked ? "#166534" : "#92400e", fontSize: 11 }}>{allStockChecked ? "· fully counted" : `· ${countedCount + verifiedReturnedCount} of ${displayStockItems.length + displayReturnedStockItems.length} checked so far`}</span></div>
                 </div>
               </div>
             </div>
@@ -422,6 +457,21 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
                       )}
                     </div>
                   ))}
+                </div>
+              )}
+              {displayReturnedStockManual.length > 0 && (
+                <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px dashed #e2e8f0" }}>
+                  <div style={{ fontSize: 10, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                    Additional Items Found
+                  </div>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+                    {displayReturnedStockManual.map(m => (
+                      <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
+                        <span style={{ flex: 1, minWidth: 0, fontWeight: 700, color: "#334155" }}>{m.item || "—"}</span>
+                        <span style={{ color: "#64748b" }}>Count: <strong style={{ color: "#0f172a" }}>{m.count === "" || m.count === null || m.count === undefined ? "—" : m.count}</strong></span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
@@ -517,29 +567,25 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
             )}
           </div>
 
-          {/* Total Stock Summary bar — combined Fresh + Returned figures,
-              sitting right under Stock Count so staff see the full picture
-              of everything they're responsible for at a glance. */}
+          {/* Total Stock Summary bar — the two figures that matter: what the
+              system says total stock (Fresh quantities + Returned items
+              expected) should be, versus what's actually been physically
+              confirmed so far (counts entered + items verified). `display`
+              equals `routine` here (we're not viewing history), so the same
+              totals computed above apply directly. */}
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: -8, marginBottom: 18 }}>
-            <div style={{ flex: "1 1 150px", padding: "10px 14px", borderRadius: 10, background: "#f8fafc", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 9 }}>
-              <span style={{ fontSize: 17 }}>📦</span>
-              <div>
-                <div style={{ fontSize: 10, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Fresh Stock</div>
-                <div style={{ fontSize: 13.5, fontWeight: 800, color: "#0f172a" }}>{routine.stockItems.length} items <span style={{ fontWeight: 600, color: "#64748b", fontSize: 11 }}>· {countedCount} counted</span></div>
-              </div>
-            </div>
-            <div style={{ flex: "1 1 150px", padding: "10px 14px", borderRadius: 10, background: "#fff7ed", border: "1px solid #fed7aa", display: "flex", alignItems: "center", gap: 9 }}>
-              <span style={{ fontSize: 17 }}>↩️</span>
-              <div>
-                <div style={{ fontSize: 10, fontWeight: 800, color: "#c2410c", textTransform: "uppercase", letterSpacing: "0.05em" }}>Returned Stock</div>
-                <div style={{ fontSize: 13.5, fontWeight: 800, color: "#0f172a" }}>{(routine.returnedStockItems || []).length} items <span style={{ fontWeight: 600, color: "#9a3412", fontSize: 11 }}>· {verifiedReturnedCount} verified</span></div>
-              </div>
-            </div>
-            <div style={{ flex: "1 1 130px", padding: "10px 14px", borderRadius: 10, background: (shop?.accent || "#059669") + "12", border: "1px solid " + (shop?.accent || "#059669") + "33", display: "flex", alignItems: "center", gap: 9 }}>
+            <div style={{ flex: "1 1 200px", padding: "10px 14px", borderRadius: 10, background: "#f8fafc", border: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 9 }}>
               <span style={{ fontSize: 17 }}>🧮</span>
               <div>
-                <div style={{ fontSize: 10, fontWeight: 800, color: shop?.accent || "#059669", textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Stock</div>
-                <div style={{ fontSize: 13.5, fontWeight: 800, color: "#0f172a" }}>{routine.stockItems.length + (routine.returnedStockItems || []).length} items</div>
+                <div style={{ fontSize: 10, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Stock — As Per System</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{totalSystemStock} <span style={{ fontWeight: 600, color: "#64748b", fontSize: 11 }}>({freshSystemTotal} fresh + {(routine.returnedStockItems || []).length} returned)</span></div>
+              </div>
+            </div>
+            <div style={{ flex: "1 1 200px", padding: "10px 14px", borderRadius: 10, background: allStockChecked ? "#f0fdf4" : "#fffbeb", border: "1px solid " + (allStockChecked ? "#bbf7d0" : "#fde68a"), display: "flex", alignItems: "center", gap: 9 }}>
+              <span style={{ fontSize: 17 }}>{allStockChecked ? "✅" : "📝"}</span>
+              <div>
+                <div style={{ fontSize: 10, fontWeight: 800, color: allStockChecked ? "#166534" : "#92400e", textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Stock — Physical Count</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{totalPhysicalStock} <span style={{ fontWeight: 600, color: allStockChecked ? "#166534" : "#92400e", fontSize: 11 }}>{allStockChecked ? "· fully counted" : `· ${countedCount + verifiedReturnedCount} of ${routine.stockItems.length + (routine.returnedStockItems || []).length} checked so far`}</span></div>
               </div>
             </div>
           </div>
@@ -567,6 +613,35 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
                 ))}
               </div>
             )}
+
+            {/* Extra items staff physically find that aren't linked to a
+                specific return — a free-form item + count list, separate
+                from the checklist above rather than replacing it. */}
+            <div style={{ marginTop: 14, paddingTop: 14, borderTop: "1px dashed #e2e8f0" }}>
+              <div style={{ fontSize: 10, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 8 }}>
+                Additional Items Found (not linked to a specific return)
+              </div>
+              {(routine.returnedStockManual || []).length > 0 && (
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
+                  {routine.returnedStockManual.map((m, idx) => (
+                    <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <input defaultValue={m.item} placeholder="Item name"
+                        onBlur={e => handleManualItemBlur(idx, "item", e.target.value)}
+                        style={{ flex: 1, minWidth: 0, padding: "6px 8px", borderRadius: 7, border: "1px solid #e2e8f0", fontSize: 12, fontFamily: "inherit", boxSizing: "border-box" }} />
+                      <input type="number" defaultValue={m.count === "" || m.count === null || m.count === undefined ? "" : m.count} placeholder="Count"
+                        onBlur={e => handleManualItemBlur(idx, "count", e.target.value)}
+                        style={{ width: 70, padding: "6px 8px", borderRadius: 7, border: "1px solid #e2e8f0", fontSize: 12, fontFamily: "inherit", textAlign: "right", boxSizing: "border-box" }} />
+                      <button onClick={() => handleRemoveManualItem(idx)} title="Remove this item"
+                        style={{ border: "none", background: "transparent", color: "#b91c1c", fontSize: 13, cursor: "pointer", padding: "2px 4px", lineHeight: 1, flexShrink: 0 }}>🗑</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <button onClick={handleAddManualItem}
+                style={{ padding: "6px 14px", borderRadius: 8, border: "1px dashed #cbd5e1", background: "white", color: "#475569", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                + Add Item
+              </button>
+            </div>
           </div>
 
           {/* ── 2. Documentation Check ── */}

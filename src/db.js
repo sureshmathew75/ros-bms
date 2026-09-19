@@ -2086,6 +2086,10 @@ export const dbLoadWeeklyRoutine = async (shopId, weekEnding) => {
     // weeks still read correctly even after the item's real stockStatus
     // has since moved on (resold, handed over, etc).
     returnedStockItems: Array.isArray(data.returned_stock_items) ? data.returned_stock_items : [],
+    // Extra returned-stock items staff physically found but that aren't
+    // linked to any specific return record — free-form item name + count,
+    // alongside (not replacing) the per-return checklist above.
+    returnedStockManual: Array.isArray(data.returned_stock_manual) ? data.returned_stock_manual : [],
     status: data.status || 'in_progress',
     completedBy: data.completed_by || '',
     completedAt: data.completed_at || null,
@@ -2103,6 +2107,7 @@ export const dbSaveWeeklyRoutine = async (routine) => {
     doc_checks: routine.docChecks || [],
     returns_check: routine.returnsCheck || {},
     returned_stock_items: routine.returnedStockItems || [],
+    returned_stock_manual: routine.returnedStockManual || [],
     status: routine.status || 'in_progress',
     completed_by: routine.completedBy || '',
     completed_at: routine.completedAt || null,
