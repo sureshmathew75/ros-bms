@@ -472,13 +472,30 @@ function QueueRow({ entry, narrow, onOpen, leftColWidth, rightColWidth }) {
 function DetailDrawer({ entry, onClose, onMarkPaid, onAdvance, onSaveRemarks, onCopyWhatsApp, narrow }) {
   const [msg, setMsg] = useState(() => buildWhatsAppMessage(entry));
   const [remarksDraft, setRemarksDraft] = useState(entry.remarks || "");
+  const [remarksSavedFlash, setRemarksSavedFlash] = useState(false);
   useEffect(() => { setMsg(buildWhatsAppMessage(entry)); }, [entry]);
   useEffect(() => { setRemarksDraft(entry.remarks || ""); }, [entry]);
+
+  // Relying on the textarea's onBlur alone missed cases where the drawer
+  // closes without a normal blur first (Escape key, a fast click on the
+  // backdrop) — the edit was silently dropped. flushRemarks() is now called
+  // from every way of leaving the drawer, not just onBlur, and
+  // handleSaveClick() gives staff an explicit, visible "it's saved" action.
+  const flushRemarks = () => {
+    if (remarksDraft !== (entry.remarks || "")) onSaveRemarks(entry, remarksDraft);
+  };
+  const handleSaveClick = () => {
+    onSaveRemarks(entry, remarksDraft);
+    setRemarksSavedFlash(true);
+    setTimeout(() => setRemarksSavedFlash(false), 1400);
+  };
+  const handleClose = () => { flushRemarks(); onClose(); };
+
   useEffect(() => {
-    const onKey = (ev) => { if (ev.key === "Escape") onClose(); };
+    const onKey = (ev) => { if (ev.key === "Escape") handleClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, entry, remarksDraft]);
 
   const cat = CATEGORY[entry.category];
   const canMarkPaid = entry.queueType !== "refund" && entry.balanceDue > 0;
@@ -488,7 +505,7 @@ function DetailDrawer({ entry, onClose, onMarkPaid, onAdvance, onSaveRemarks, on
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 200 }}>
-      <div onClick={onClose} style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,0.45)" }} />
+      <div onClick={handleClose} style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,0.45)" }} />
       <div style={{
         position: "absolute", top: 0, right: 0, bottom: 0, width: narrow ? "100%" : 440, maxWidth: "100%",
         background: "white", boxShadow: "-8px 0 30px rgba(15,23,42,0.18)", display: "flex", flexDirection: "column",
@@ -503,7 +520,7 @@ function DetailDrawer({ entry, onClose, onMarkPaid, onAdvance, onSaveRemarks, on
               <Badge bg={cat.bg} color={cat.text}>{cat.label}</Badge>
             </div>
           </div>
-          <button onClick={onClose} title="Close" style={{ border: "none", background: "#f1f5f9", color: "#475569", borderRadius: 8, width: 30, height: 30, fontSize: 15, cursor: "pointer", flexShrink: 0 }}>✕</button>
+          <button onClick={handleClose} title="Close" style={{ border: "none", background: "#f1f5f9", color: "#475569", borderRadius: 8, width: 30, height: 30, fontSize: 15, cursor: "pointer", flexShrink: 0 }}>✕</button>
         </div>
 
         <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
@@ -552,10 +569,20 @@ function DetailDrawer({ entry, onClose, onMarkPaid, onAdvance, onSaveRemarks, on
             <textarea
               value={remarksDraft}
               onChange={(e) => setRemarksDraft(e.target.value)}
-              onBlur={() => onSaveRemarks(entry, remarksDraft)}
+              onBlur={flushRemarks}
               placeholder="Who's on it and why it's delayed — e.g. &quot;Fabric delay, awaiting restock (Priya, 18 Sep)&quot;"
               rows={3}
               style={{ width: "100%", boxSizing: "border-box", border: "1px solid #fde68a", background: "#fffbeb", borderRadius: 10, padding: 10, fontSize: 12.5, fontFamily: FONT_BODY, color: "#78350f", resize: "vertical" }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 8 }}>
+              <button
+                onClick={handleSaveClick}
+                style={{ border: "1px solid #fde68a", background: "#78350f", color: "#fffbeb", borderRadius: 8, padding: "7px 14px", fontSize: 12, fontWeight: 800, cursor: "pointer", fontFamily: "inherit" }}>
+                💾 Save Remarks
+              </button>
+              {remarksSavedFlash && (
+                <span style={{ fontSize: 11.5, color: "#166534", fontWeight: 700 }}>✓ Saved</span>
+              )}
+            </div>
           </div>
 
           <div style={{ marginBottom: 18, display: "flex", flexDirection: "column", gap: 8 }}>
