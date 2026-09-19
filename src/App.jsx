@@ -9325,6 +9325,29 @@ return(
               onSaleUpdate={async (saleId, changes) => {
                 const sale = sales.find(s => s.id === saleId);
                 if (!sale) return { error: `No sale with ID ${saleId} found in ${shop?.name||shopId}.` };
+                // "Mark Delivered" on a Despatch Log row only ever sends a
+                // lone deliveryDate change — route it through the same
+                // dedicated delivery-confirmation path the Sales tab's own
+                // Mark Delivered modal uses (dbSaveDelivery), which patches
+                // just delivery_date and leaves status/ful untouched. Going
+                // through the generic path below instead would force the
+                // sale's status back to FULFILLED every time, which could
+                // silently undo further progress (e.g. a return raised after
+                // delivery) — this keeps delivery confirmation independent of
+                // fulfilment status, exactly like it already is elsewhere.
+                if ("deliveryDate" in changes && Object.keys(changes).length === 1) {
+                  try {
+                    await dbSaveDelivery(shopId, saleId, changes.deliveryDate);
+                  } catch (err) {
+                    console.error("dbSaveDelivery failed in onSaleUpdate:", err);
+                    return { error: err?.message || String(err) };
+                  }
+                  setSalesData(prev => ({
+                    ...prev,
+                    [shopId]: (prev[shopId] || []).map(s => s.id === saleId ? { ...s, deliveryDate: changes.deliveryDate } : s),
+                  }));
+                  return { ok: true };
+                }
                 // Same auto-fulfil behaviour as the Sales page's own tracking
                 // entry (onSaveTracking above) — tracking arriving from the
                 // Despatch Log marks the sale FULFILLED unless it has already

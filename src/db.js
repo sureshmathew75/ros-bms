@@ -1836,6 +1836,8 @@ export const dbSaveDispatchEntry = async (shopId, e) => {
     shipper:       e.shipper || '',
     notified:      !!e.notified,
     remarks:       e.remarks || '',
+    delivered:      !!e.delivered,
+    delivered_date: e.deliveredDate || '',
   };
 
   if (e._uuid) {
@@ -1868,6 +1870,8 @@ export const dbLoadDispatchLog = async (shopId) => {
     shipper:      r.shipper || '',
     notified:     !!r.notified,
     remarks:      r.remarks || '',
+    delivered:    !!r.delivered,
+    deliveredDate: r.delivered_date || '',
     createdAt:    r.created_at || '',
   }));
 };

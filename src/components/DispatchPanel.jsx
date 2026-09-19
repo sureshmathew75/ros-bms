@@ -331,6 +331,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
   // any stored data, just how much of it is shown at once.
   const [expandedAddresses, setExpandedAddresses] = useState({}); // uuid -> true when address is expanded
   const [openRemarksUuid, setOpenRemarksUuid] = useState(null); // uuid of the row whose remarks field is open, if any
+  const [openDeliveryUuid, setOpenDeliveryUuid] = useState(null); // uuid of the row whose delivered-date editor is open, if any
   const [addressModalUuid, setAddressModalUuid] = useState(null); // uuid of the row whose "edit address" popup is open, if any
   const [savingAddress, setSavingAddress] = useState(false);
   // Keys (see despatchKeyOf) currently in the middle of being written to
@@ -618,7 +619,11 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
     const total = weekEntries.length;
     const noTracking = weekEntries.filter(e => !e.trackingNo).length;
     const notNotified = weekEntries.filter(e => !e.notified).length;
-    return { total, noTracking, notNotified };
+    const delivered = weekEntries.filter(e => e.delivered).length;
+    // Has tracking + shipper (so it CAN be tracked/marked) but hasn't been
+    // confirmed delivered yet — the "still needs checking" queue.
+    const awaitingDelivery = weekEntries.filter(e => e.trackingNo && e.shipper && !e.delivered).length;
+    return { total, noTracking, notNotified, delivered, awaitingDelivery };
   }, [weekEntries]);
 
   const persist = async (uuidOrNull, payload) => {
@@ -747,6 +752,41 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
         }
       }
     }
+    // Delivery confirmation — once a row is marked (or unmarked) delivered,
+    // push the delivery date back to the linked sale(s) too, using the same
+    // group-aware fan-out as tracking above, so it shows up wherever the
+    // Sales tab already reads deliveryDate from. Kept separate from the
+    // Fulfilled push above since this can happen well after tracking was
+    // first saved.
+    if ("delivered" in patch && merged.saleId && onSaleUpdate) {
+      const linkedSale = allSales.find(s => s.id === merged.saleId);
+      const groupKey = linkedSale ? despatchKeyOf(linkedSale) : merged.saleId;
+      const members = groupMembers[groupKey];
+      const saleIds = members && members.length ? members.map(m => m.id) : [merged.saleId];
+      for (const id of saleIds) {
+        try {
+          const result = await onSaleUpdate(id, { deliveryDate: merged.delivered ? (merged.deliveredDate || todayISO()) : "" });
+          if (result && result.error) {
+            showAlert(`Delivery status saved here, but couldn't update the linked sale (${id}):\n\n${result.error}`);
+          }
+        } catch (err) {
+          console.error("onSaleUpdate (delivery) failed for", id, err);
+          showAlert(`Delivery status saved here, but couldn't update the linked sale (${id}) — ${err?.message || err}`);
+        }
+      }
+    }
+  };
+
+  // "Mark Delivered" — defaults to today, editable afterwards by clicking
+  // the green date badge (see the Delivery column below). Undo clears both
+  // the flag and the date, including on the linked sale, in case it was
+  // marked by mistake.
+  const markDelivered = (entry, date) => {
+    saveEntry(entry.uuid, { delivered: true, deliveredDate: date || todayISO() });
+    setOpenDeliveryUuid(null);
+  };
+  const undoDelivered = (entry) => {
+    saveEntry(entry.uuid, { delivered: false, deliveredDate: "" });
   };
 
   // Address is entered/edited on the Sales page — this popup is just a
@@ -814,7 +854,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
       const dayList = entriesByDate[d];
       lines.push(`${ddmmyyyy(d)} (${dayList.length})`);
       dayList.forEach((e, i) => lines.push(
-        `  ${i + 1}. ${e.customer || "—"} — ${livePhoneFor(e) || "—"} — ${e.trackingNo || "no tracking yet"} (${e.shipper || "no shipper"})`
+        `  ${i + 1}. ${e.customer || "—"} — ${livePhoneFor(e) || "—"} — ${e.trackingNo || "no tracking yet"} (${e.shipper || "no shipper"})${e.delivered ? ` ✅ delivered ${ddmmyyyy(e.deliveredDate || "")}` : ""}`
       ));
       lines.push("");
     });
@@ -837,6 +877,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
         lines.push(liveAddressFor(e) || "No address on file");
         lines.push(`Phone: ${livePhoneFor(e) || "—"}`);
         lines.push(`Tracking: ${e.trackingNo || "—"} (${e.shipper || "no shipper"})`);
+        if (e.delivered) lines.push(`✅ Delivered: ${ddmmyyyy(e.deliveredDate || "")}`);
         if (e.remarks) lines.push(`Remarks: ${e.remarks}`);
         lines.push("");
       });
@@ -862,11 +903,12 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
           <td>${livePhoneFor(e) || "—"}</td>
           <td>${e.trackingNo || "—"}</td>
           <td>${e.shipper || "—"}</td>
+          <td>${e.delivered ? ("✅ " + ddmmyyyy(e.deliveredDate || "")) : "—"}</td>
           <td>${e.remarks || "—"}</td>
         </tr>`).join("");
       return `
         <h2>${weekdayName(d)}, ${ddmmyyyy(d)} — ${dayList.length} item${dayList.length !== 1 ? "s" : ""}</h2>
-        <table><thead><tr><th>#</th><th>Customer</th><th>Address</th><th>Phone</th><th>Tracking No.</th><th>Shipper</th><th>Remarks</th></tr></thead><tbody>${rows}</tbody></table>`;
+        <table><thead><tr><th>#</th><th>Customer</th><th>Address</th><th>Phone</th><th>Tracking No.</th><th>Shipper</th><th>Delivered</th><th>Remarks</th></tr></thead><tbody>${rows}</tbody></table>`;
     }).join("") || `<p style="color:#94a3b8;font-size:12px;">No despatches recorded this week.</p>`;
     w.document.write(`<!DOCTYPE html><html><head><title>Despatch Log — ${ddmmyyyy(weekDates[0])} to ${ddmmyyyy(weekDates[6])}</title>
       <style>
@@ -962,6 +1004,8 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
         <SummaryChip label="Rows this week" value={summary.total} bg="#f1f5f9" color="#334155" />
         <SummaryChip label="Awaiting tracking" value={summary.noTracking} bg={summary.noTracking ? "#fef3c7" : "#f1f5f9"} color={summary.noTracking ? "#92400e" : "#334155"} />
         <SummaryChip label="Not yet notified" value={summary.notNotified} bg={summary.notNotified ? "#fee2e2" : "#f1f5f9"} color={summary.notNotified ? "#991b1b" : "#334155"} />
+        <SummaryChip label="Awaiting delivery" value={summary.awaitingDelivery} bg={summary.awaitingDelivery ? "#fef3c7" : "#f1f5f9"} color={summary.awaitingDelivery ? "#92400e" : "#334155"} />
+        <SummaryChip label="Delivered" value={summary.delivered} bg={summary.delivered ? "#dcfce7" : "#f1f5f9"} color={summary.delivered ? "#15803d" : "#334155"} />
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button onClick={handlePrint} disabled={!weekEntries.length}
             style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #e2e8f0", background: "white", color: "#334155", fontWeight: 700, fontSize: 12.5, cursor: weekEntries.length ? "pointer" : "not-allowed", opacity: weekEntries.length ? 1 : 0.5, fontFamily: "inherit" }}>
@@ -1085,14 +1129,14 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
               <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 680, fontSize: 12.5 }}>
                 <thead>
                   <tr style={{ background: "#f8fafc" }}>
-                    {["#", "Customer", "Address", "Tracking No.", "Shipper", ""].map(h => (
+                    {["#", "Customer", "Address", "Tracking No.", "Shipper", "Delivery", ""].map(h => (
                       <th key={h} style={{ textAlign: "left", padding: "10px 12px", fontWeight: 800, color: "#475569", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
                   {dayList.length === 0 ? (
-                    <tr><td colSpan={6} style={{ padding: 18, textAlign: "center", color: "#94a3b8" }}>Nothing despatched this day.</td></tr>
+                    <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "#94a3b8" }}>Nothing despatched this day.</td></tr>
                   ) : dayList.map((e, idx) => {
                     const dupKey = (e.trackingNo || "").replace(/\s+/g, "").toUpperCase();
                     const isDup = dupKey && (trackingIndex[dupKey] || []).length > 1;
@@ -1117,7 +1161,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
                     const isAddressExpanded = !!expandedAddresses[e.uuid];
                     const phone = livePhoneFor(e);
                     return (
-                      <tr key={e.uuid} style={{ borderBottom: "1px solid #f1f5f9", background: idx % 2 ? "#fdfbf3" : "white" }}>
+                      <tr key={e.uuid} style={{ borderBottom: "1px solid #f1f5f9", background: e.delivered ? "#f0fdf4" : (idx % 2 ? "#fdfbf3" : "white") }}>
                         <td style={{ padding: "8px 12px", color: "#94a3b8", fontWeight: 700, verticalAlign: "top" }}>{idx + 1}</td>
                         <td style={{ padding: "8px 12px", minWidth: 130, maxWidth: 170, verticalAlign: "top" }}>
                           {/* Phone lives on the Sales page only — shown here read-only,
@@ -1193,6 +1237,50 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
                             <option value="">Select…</option>
                             {SHIPPERS.map(s => <option key={s} value={s}>{s}</option>)}
                           </select>
+                        </td>
+                        <td style={{ padding: "8px 12px", minWidth: 130, verticalAlign: "top" }}>
+                          {/* Track + Mark Delivered — deep-links straight to the
+                              carrier's own tracking page (no paid API — see
+                              trackingURL() above), and once staff have seen it
+                              show as delivered there, one click records that
+                              here and pushes the date back to the linked
+                              sale(s). The date defaults to today but stays
+                              editable by clicking the green badge afterwards,
+                              and can be undone with ↺ if marked by mistake. */}
+                          <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+                            {canNotify && (trackingURLValue => trackingURLValue ? (
+                              <a href={trackingURLValue} target="_blank" rel="noreferrer"
+                                style={{ fontSize: 11, fontWeight: 700, color: "#4338ca", textDecoration: "none", background: "#e0e7ff", borderRadius: 7, padding: "4px 8px", whiteSpace: "nowrap" }}>
+                                🔎 Track
+                              </a>
+                            ) : (
+                              <span style={{ fontSize: 10, color: "#94a3b8", fontStyle: "italic" }}>Check {e.shipper} directly</span>
+                            ))(trackingURL(e.shipper, e.trackingNo))}
+                            {e.delivered ? (
+                              openDeliveryUuid === e.uuid ? (
+                                <input autoFocus type="date" defaultValue={e.deliveredDate || todayISO()} max={todayISO()}
+                                  onBlur={ev => markDelivered(e, ev.target.value)}
+                                  style={{ ...cellInputStyle, width: 128 }} />
+                              ) : (
+                                <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                                  <span onClick={() => setOpenDeliveryUuid(e.uuid)} title="Click to correct the delivery date"
+                                    style={{ fontSize: 10.5, fontWeight: 800, color: "#15803d", background: "#dcfce7", borderRadius: 999, padding: "3px 8px", cursor: "pointer", whiteSpace: "nowrap" }}>
+                                    ✅ {ddmmyyyy(e.deliveredDate || todayISO())}
+                                  </span>
+                                  <button onClick={() => undoDelivered(e)} title="Undo — not actually delivered"
+                                    style={{ border: "none", background: "transparent", color: "#94a3b8", cursor: "pointer", fontSize: 13, padding: 0 }}>↺</button>
+                                </div>
+                              )
+                            ) : (
+                              canNotify && (
+                                <button onClick={() => markDelivered(e, todayISO())}
+                                  title="Mark this parcel delivered today — click the date afterwards to correct it"
+                                  style={{ border: "none", borderRadius: 7, padding: "4px 8px", fontSize: 10.5, fontWeight: 700, cursor: "pointer", background: "#f1f5f9", color: "#334155", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                                  📬 Mark Delivered
+                                </button>
+                              )
+                            )}
+                          </div>
                         </td>
                         <td style={{ padding: "8px 12px", verticalAlign: "top" }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
