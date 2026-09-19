@@ -69,29 +69,44 @@ const trackingURL = (shipper, trackNo) => {
   }
 };
 
+// Staff-only tracking destination for the in-app "🔎 Track" button — kept
+// separate from trackingURL() above (which also builds the link sent to
+// CUSTOMERS in the WhatsApp tracking message, and stays pointed at each
+// carrier's own official site so customers land somewhere recognisably
+// "theirs"). For DTDC specifically, dtdc.com sits behind a manual
+// verification checkbox/captcha that can't be filled in from a link, so
+// for staff use only this instead deep-links to trackcourier.io — a free,
+// no-signup public tracking lookup site that takes the consignment number
+// straight in the URL and shows the result with no captcha. It's an
+// unofficial third-party aggregator, not DTDC itself, so if it ever shows
+// nothing for a very fresh shipment, DTDC's own site (still one tap away —
+// see the manual-entry fallback below) is the authoritative source.
+const staffTrackingURL = (shipper, trackNo) => {
+  const cleanNo = (trackNo || "").replace(/\s+/g, "");
+  if ((shipper || "").toLowerCase() === "dtdc" && cleanNo) {
+    return `https://trackcourier.io/track-and-trace/dtdc/${encodeURIComponent(cleanNo)}`;
+  }
+  return trackingURL(shipper, trackNo);
+};
+
 // Carriers whose tracking page has no URL parameter to carry the tracking
-// number in (DTDC's page also sits behind a manual verification checkbox/
-// captcha) — trackingURL() above can only point at the generic page for
-// these, so the number has to be typed in by hand. For every other carrier
-// the link above already lands directly on that shipment's result.
-const MANUAL_ENTRY_SHIPPERS = new Set(["DTDC", "SPEEDPOST"]);
+// number in — trackingURL()/staffTrackingURL() above can only point at the
+// generic page for these, so the number has to be typed in by hand. Every
+// other carrier's link already lands directly on that shipment's result.
+const MANUAL_ENTRY_SHIPPERS = new Set(["SPEEDPOST"]);
 
 // "One click track" for a despatch row: opens the carrier's tracking page,
-// and for the carriers above also copies the tracking number to the
+// and for the carrier above also copies the tracking number to the
 // clipboard first so staff just paste it in rather than retyping it — the
-// closest this can get to one-click when the carrier's own site requires
-// manual entry (and, for DTDC, a captcha/verification tick that can't be
-// automated from here). window.open() is called synchronously, before the
-// clipboard write, so it isn't blocked as a popup.
+// closest this can get to one-click when the site requires manual entry.
+// window.open() is called synchronously, before the clipboard write, so
+// it isn't blocked as a popup.
 const trackClick = (entry, url) => {
   window.open(url, "_blank", "noopener,noreferrer");
   const shipperUpper = (entry.shipper || "").toUpperCase();
   if (MANUAL_ENTRY_SHIPPERS.has(shipperUpper) && entry.trackingNo) {
     navigator.clipboard?.writeText(entry.trackingNo).catch(() => {});
-    showAlert(
-      `📋 Tracking number ${entry.trackingNo} copied.\n\nPaste it into ${entry.shipper}'s tracking field` +
-      (shipperUpper === "DTDC" ? ", tick the verification checkbox, then press Track Order Now." : " and search.")
-    );
+    showAlert(`📋 Tracking number ${entry.trackingNo} copied.\n\nPaste it into ${entry.shipper}'s tracking field and search.`);
   }
 };
 
@@ -1262,7 +1277,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
                               </button>
                             ) : (
                               <span style={{ fontSize: 10, color: "#94a3b8", fontStyle: "italic" }}>Check {e.shipper} directly</span>
-                            ))(trackingURL(e.shipper, e.trackingNo))}
+                            ))(staffTrackingURL(e.shipper, e.trackingNo))}
                             {e.delivered ? (
                               openDeliveryUuid === e.uuid ? (
                                 <input autoFocus type="date" defaultValue={e.deliveredDate || todayISO()} max={todayISO()}
