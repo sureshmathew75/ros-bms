@@ -12503,12 +12503,32 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
   // off that day's own movements can't drift, and a day with nothing
   // logged is simply blank — future days included, automatically, since
   // nothing is ever dated in the future.
+  // Signed value of one movement — restock/correction add, sale subtracts.
+  // Corrections are already stored signed (can be + or −), same convention
+  // used everywhere else this ledger is replayed (the day-cell popover,
+  // the item History list).
+  const signedQty = (m) => m.type === "correction" ? (Number(m.qty)||0) : (m.type === "restock" ? (Number(m.qty)||0) : -(Number(m.qty)||0));
+
   const rows = React.useMemo(() => {
+    const firstOfMonth = `${sheetMonth}-01`;
     return items.map(item => {
       const itemMoves = movementsByItem[item.id] || [];
+      // Opening Balance — not stored anywhere on its own; it's replayed
+      // from the same movement ledger everything else on this sheet reads
+      // (every restock/sale/correction, including an item's very first
+      // "Initial stock" restock, is logged there — see dbAddInventoryMovement
+      // in db.js, the only place current_stock is ever written). Summing
+      // every movement dated BEFORE this month started gives exactly what
+      // the month opened with, so it can never drift out of sync with the
+      // Current Stock figure or with any other month's own numbers — and
+      // this month's Closing Balance becomes next month's Opening Balance
+      // automatically, with no separate bookkeeping required.
+      const openingBalance = itemMoves.filter(m => m.date < firstOfMonth).reduce((s,m)=>s+signedQty(m), 0);
       const monthMoves = itemMoves.filter(m => m.date.slice(0,7) === sheetMonth);
       const soldThisMonth = monthMoves.filter(m=>m.type==="sale").reduce((s,m)=>s+(Number(m.qty)||0),0);
       const addedThisMonth = monthMoves.filter(m=>m.type==="restock").reduce((s,m)=>s+(Number(m.qty)||0),0);
+      const correctedThisMonth = monthMoves.filter(m=>m.type==="correction").reduce((s,m)=>s+(Number(m.qty)||0),0);
+      const closingBalance = openingBalance + addedThisMonth - soldThisMonth + correctedThisMonth;
       const byDate = {};
       monthMoves.forEach(m => { (byDate[m.date] ||= []).push(m); });
       const cells = days.map(d => {
@@ -12518,7 +12538,7 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
         const corrected = dayMoves.filter(m=>m.type==="correction").reduce((s,m)=>s+(Number(m.qty)||0),0);
         return { date:d, sold, added, corrected, hasMoves: dayMoves.length>0 };
       });
-      return { item, cells, soldThisMonth, addedThisMonth, monthMoves };
+      return { item, cells, openingBalance, soldThisMonth, addedThisMonth, correctedThisMonth, closingBalance, monthMoves };
     });
   }, [items, movementsByItem, days.join(","), sheetMonth]);
 
@@ -12537,13 +12557,15 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
       .map(cat => ({ category: cat, rows: byCat[cat] }));
   }, [rows]);
 
-  // Five columns stay frozen on the left as the sheet scrolls sideways
-  // through the month — Item (full name, never truncated), Sold/Added this
-  // month, Current stock, and the two quick actions. The shadow on the
-  // right edge of the frozen block is what makes it visually obvious those
-  // columns are pinned, like Excel's freeze-pane line.
-  const ITEM_W = 190, SOLD_W = 60, ADDED_W = 60, CURRENT_W = 68, ACTIONS_W = 88;
-  const LEFT_SOLD = ITEM_W, LEFT_ADDED = ITEM_W+SOLD_W, LEFT_CURRENT = ITEM_W+SOLD_W+ADDED_W, LEFT_ACTIONS = ITEM_W+SOLD_W+ADDED_W+CURRENT_W;
+  // Six columns stay frozen on the left as the sheet scrolls sideways
+  // through the month — Item (full name, never truncated), the full
+  // Opening → Added → Sold → Closing balance chain (in that order, so it
+  // reads left-to-right the same way it's calculated), and the two quick
+  // actions. The shadow on the right edge of the frozen block is what makes
+  // it visually obvious those columns are pinned, like Excel's freeze-pane
+  // line.
+  const ITEM_W = 190, OPEN_W = 66, ADDED_W = 60, SOLD_W = 60, CLOSE_W = 72, ACTIONS_W = 88;
+  const LEFT_OPEN = ITEM_W, LEFT_ADDED = ITEM_W+OPEN_W, LEFT_SOLD = ITEM_W+OPEN_W+ADDED_W, LEFT_CLOSE = ITEM_W+OPEN_W+ADDED_W+SOLD_W, LEFT_ACTIONS = ITEM_W+OPEN_W+ADDED_W+SOLD_W+CLOSE_W;
   const FROZEN_EDGE = "6px 0 10px -6px rgba(15,23,42,0.22)";
 
   const pillBtn = { padding:"7px 12px", borderRadius:8, border:"1px solid #e2e8f0", background:"white", color:"#475569", fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit" };
@@ -12568,6 +12590,8 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
 
       <div style={{ fontSize:11, color:"#94a3b8", marginBottom:10 }}>
         <span style={{color:"#b91c1c",fontWeight:700}}>S</span> = sold that day · <span style={{color:"#166534",fontWeight:700}}>I</span> = stock added that day · click a tagged day, or the Sold/Added totals, to see who/what · future days are intentionally blank
+        <br/>
+        <b>Opening</b> = what the month started with · <b>Closing</b> = Opening + Added − Sold (± any <span style={{color:"#7c3aed",fontWeight:700}}>⚖ corrections</span>) · this month's Closing becomes next month's Opening automatically
       </div>
 
       <div style={{ overflowX:"auto", overflowY:"hidden", border:"1px solid #e2e8f0", borderRadius:12 }}>
@@ -12575,9 +12599,10 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
           <thead>
             <tr>
               <th style={{ ...stickyHead, left:0, zIndex:4, minWidth:ITEM_W, width:ITEM_W }}>Item</th>
-              <th style={{ ...stickyHead, left:LEFT_SOLD, zIndex:4, minWidth:SOLD_W, width:SOLD_W, textAlign:"center" }}>Sold</th>
+              <th style={{ ...stickyHead, left:LEFT_OPEN, zIndex:4, minWidth:OPEN_W, width:OPEN_W, textAlign:"center" }}>Opening</th>
               <th style={{ ...stickyHead, left:LEFT_ADDED, zIndex:4, minWidth:ADDED_W, width:ADDED_W, textAlign:"center" }}>Added</th>
-              <th style={{ ...stickyHead, left:LEFT_CURRENT, zIndex:4, minWidth:CURRENT_W, width:CURRENT_W, textAlign:"center" }}>Current</th>
+              <th style={{ ...stickyHead, left:LEFT_SOLD, zIndex:4, minWidth:SOLD_W, width:SOLD_W, textAlign:"center" }}>Sold</th>
+              <th style={{ ...stickyHead, left:LEFT_CLOSE, zIndex:4, minWidth:CLOSE_W, width:CLOSE_W, textAlign:"center" }}>Closing</th>
               <th style={{ ...stickyHead, left:LEFT_ACTIONS, zIndex:4, minWidth:ACTIONS_W, width:ACTIONS_W, textAlign:"center", boxShadow:FROZEN_EDGE }}>Stock In / Out</th>
               {days.map(d => {
                 const dayNum = Number(d.slice(-2));
@@ -12600,13 +12625,13 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
             {groupedRows.map(({ category, rows: catRows }) => (
               <React.Fragment key={category}>
                 <tr>
-                  <td colSpan={5 + days.length} style={{
+                  <td colSpan={6 + days.length} style={{
                     position:"sticky", left:0, padding:"7px 10px", background:"#f1f5f9",
                     borderTop:"1px solid #e2e8f0", borderBottom:"1px solid #e2e8f0",
                     fontWeight:800, fontSize:11, color:"#334155", textTransform:"uppercase", letterSpacing:"0.05em",
                   }}>{category}</td>
                 </tr>
-                {catRows.map(({ item, cells, soldThisMonth, addedThisMonth, monthMoves }, ridx) => {
+                {catRows.map(({ item, cells, openingBalance, soldThisMonth, addedThisMonth, correctedThisMonth, closingBalance, monthMoves }, ridx) => {
               const rowBg = ridx % 2 ? "#fdfbf3" : "white";
               return (
                 <tr key={item.id}>
@@ -12616,20 +12641,33 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                       <span style={{ fontWeight:700, fontSize:13, color:"#0f172a", lineHeight:1.3 }}>{item.name}</span>
                     </div>
                   </td>
-                  <td onClick={(e)=> soldThisMonth>0 && setMonthPopover({ itemId:item.id, type:"sale", anchor:rectOf(e.currentTarget) })}
-                    style={{ ...stickyCell, left:LEFT_SOLD, zIndex:2, background:rowBg, textAlign:"center", position:"sticky", cursor: soldThisMonth>0?"pointer":"default" }}>
-                    <span style={{ fontWeight:800, fontSize:13, color: soldThisMonth>0?"#b91c1c":"#cbd5e1" }}>{soldThisMonth>0?soldThisMonth:"—"}</span>
+                  <td title="What this item's stock stood at when the month began"
+                    style={{ ...stickyCell, left:LEFT_OPEN, zIndex:2, background:rowBg, textAlign:"center" }}>
+                    <span style={{ fontWeight:800, fontSize:13, color:"#475569" }}>{openingBalance}</span>
                   </td>
                   <td onClick={(e)=> addedThisMonth>0 && setMonthPopover({ itemId:item.id, type:"restock", anchor:rectOf(e.currentTarget) })}
                     style={{ ...stickyCell, left:LEFT_ADDED, zIndex:2, background:rowBg, textAlign:"center", position:"sticky", cursor: addedThisMonth>0?"pointer":"default" }}>
                     <span style={{ fontWeight:800, fontSize:13, color: addedThisMonth>0?"#166534":"#cbd5e1" }}>{addedThisMonth>0?addedThisMonth:"—"}</span>
                   </td>
-                  <td style={{ ...stickyCell, left:LEFT_CURRENT, zIndex:2, background:rowBg, textAlign:"center" }}>
-                    <span style={{
-                      display:"inline-block", minWidth:34, padding:"3px 0", borderRadius:999, fontWeight:900, fontSize:14,
-                      color: item.currentStock<=0?"#dc2626":item.currentStock<=2?"#d97706":"#166534",
-                      background: item.currentStock<=0?"#fef2f2":item.currentStock<=2?"#fffbeb":"#f0fdf4",
-                    }}>{item.currentStock}</span>
+                  <td onClick={(e)=> soldThisMonth>0 && setMonthPopover({ itemId:item.id, type:"sale", anchor:rectOf(e.currentTarget) })}
+                    style={{ ...stickyCell, left:LEFT_SOLD, zIndex:2, background:rowBg, textAlign:"center", position:"sticky", cursor: soldThisMonth>0?"pointer":"default" }}>
+                    <span style={{ fontWeight:800, fontSize:13, color: soldThisMonth>0?"#b91c1c":"#cbd5e1" }}>{soldThisMonth>0?soldThisMonth:"—"}</span>
+                  </td>
+                  <td style={{ ...stickyCell, left:LEFT_CLOSE, zIndex:2, background:rowBg, textAlign:"center" }}>
+                    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
+                      <span title="Opening + Added − Sold, plus any corrections this month" style={{
+                        display:"inline-block", minWidth:34, padding:"3px 0", borderRadius:999, fontWeight:900, fontSize:14,
+                        color: closingBalance<=0?"#dc2626":closingBalance<=2?"#d97706":"#166534",
+                        background: closingBalance<=0?"#fef2f2":closingBalance<=2?"#fffbeb":"#f0fdf4",
+                      }}>{closingBalance}</span>
+                      {correctedThisMonth!==0 && (
+                        <span onClick={(e)=>{ e.stopPropagation(); setMonthPopover({ itemId:item.id, type:"correction", anchor:rectOf(e.currentTarget) }); }}
+                          title="Stock correction(s) folded into this month's Closing Balance — click for detail"
+                          style={{ fontSize:9, fontWeight:800, color:"#7c3aed", background:"#f5f3ff", borderRadius:5, padding:"1px 5px", cursor:"pointer", whiteSpace:"nowrap" }}>
+                          ⚖ {correctedThisMonth>0?"+":""}{correctedThisMonth}
+                        </span>
+                      )}
+                    </div>
                   </td>
                   <td style={{ ...stickyCell, left:LEFT_ACTIONS, zIndex:2, background:rowBg, textAlign:"center", boxShadow:FROZEN_EDGE }}>
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
@@ -12784,7 +12822,12 @@ const CellMovementPopover = ({ item, date, anchor, movements, fmtDate, onClose }
 const MonthMovementsPopover = ({ item, type, anchor, monthLabel, moves, fmtDate, onClose }) => {
   const ref = usePopoverOutsideClose(onClose);
   const sorted = [...moves].sort((a,b)=> a.date.localeCompare(b.date));
+  // Sale/restock quantities are stored unsigned (always positive); a
+  // correction is stored already signed (+ or −), so its raw sum is its
+  // own correct net total — same convention used everywhere else this
+  // ledger is read.
   const total = sorted.reduce((s,m)=>s+(Number(m.qty)||0),0);
+  const typeLabel = type==="sale" ? "Sold" : type==="restock" ? "Added" : "Corrected";
   const style = popoverFixedStyle(anchor, 230, 56 + Math.max(sorted.length,1)*24);
   return ReactDOM.createPortal(
     <div ref={ref} onClick={e=>e.stopPropagation()} style={{
@@ -12792,15 +12835,17 @@ const MonthMovementsPopover = ({ item, type, anchor, monthLabel, moves, fmtDate,
       boxShadow:"0 10px 30px rgba(15,23,42,0.18)", padding:"10px 12px", textAlign:"left",
     }}>
       <div style={{ fontSize:11, fontWeight:800, color:"#0f172a" }}>{item.name}</div>
-      <div style={{ fontSize:10.5, color:"#94a3b8", marginBottom:6 }}>{type==="sale"?"Sold":"Added"} in {monthLabel} · {total} total</div>
+      <div style={{ fontSize:10.5, color:"#94a3b8", marginBottom:6 }}>{typeLabel} in {monthLabel} · {type==="correction" && total>=0 ? "+" : ""}{total} total</div>
       {sorted.length === 0 ? (
         <div style={{ fontSize:11, color:"#94a3b8" }}>Nothing logged.</div>
       ) : sorted.map(m => (
         <div key={m.id} style={{ display:"flex", justifyContent:"space-between", gap:8, fontSize:11, padding:"4px 0", borderTop:"1px solid #f1f5f9" }}>
           <span style={{ color:"#475569" }}>
-            {fmtDate(m.date)}{type==="sale" && m.customer ? " — "+m.customer : ""}{type==="restock" && m.note ? " — "+m.note : ""}
+            {fmtDate(m.date)}{type==="sale" && m.customer ? " — "+m.customer : ""}{(type==="restock"||type==="correction") && m.note ? " — "+m.note : ""}
           </span>
-          <span style={{ fontWeight:800, color: type==="sale"?"#991b1b":"#166534", whiteSpace:"nowrap" }}>{type==="sale"?"−":"+"}{Number(m.qty)||0}</span>
+          <span style={{ fontWeight:800, color: type==="sale"?"#991b1b":type==="restock"?"#166534":(Number(m.qty)>=0?"#166534":"#991b1b"), whiteSpace:"nowrap" }}>
+            {type==="sale" ? "−" : type==="restock" ? "+" : (Number(m.qty)>=0?"+":"")}{Number(m.qty)||0}
+          </span>
         </div>
       ))}
     </div>,
@@ -12826,9 +12871,9 @@ function printStockSheet(rows, monthLabel, shop, fmtDate) {
   });
   const summaryRows = [...STOCK_CATEGORIES, OTHER_CATEGORY]
     .filter(cat => byCat[cat] && byCat[cat].length > 0)
-    .map(cat => `<tr><td colspan="4" style="text-align:left;font-weight:800;background:#f8fafc;text-transform:uppercase;letter-spacing:0.04em;font-size:10px;">${cat}</td></tr>` +
-      byCat[cat].map(({ item, soldThisMonth, addedThisMonth }) =>
-        `<tr><td style="text-align:left;font-weight:700">${item.name}</td><td style="font-weight:800">${item.currentStock}</td><td>${soldThisMonth||"—"}</td><td>${addedThisMonth||"—"}</td></tr>`
+    .map(cat => `<tr><td colspan="6" style="text-align:left;font-weight:800;background:#f8fafc;text-transform:uppercase;letter-spacing:0.04em;font-size:10px;">${cat}</td></tr>` +
+      byCat[cat].map(({ item, openingBalance, addedThisMonth, soldThisMonth, correctedThisMonth, closingBalance }) =>
+        `<tr><td style="text-align:left;font-weight:700">${item.name}</td><td>${openingBalance}</td><td>${addedThisMonth||"—"}</td><td>${soldThisMonth||"—"}</td><td>${correctedThisMonth?(correctedThisMonth>0?"+":"")+correctedThisMonth:"—"}</td><td style="font-weight:800">${closingBalance}</td></tr>`
       ).join("")
     ).join("");
 
@@ -12863,7 +12908,8 @@ function printStockSheet(rows, monthLabel, shop, fmtDate) {
     <p>${monthLabel}</p>
 
     <h2>Summary</h2>
-    <table><thead><tr><th style="text-align:left">Item</th><th>Current Stock</th><th>Sold This Month</th><th>Added This Month</th></tr></thead><tbody>${summaryRows}</tbody></table>
+    <p style="margin-bottom:6px;">Opening + Added − Sold ± Corrected = Closing — each row below checks out end to end, and this month's Closing carries forward as next month's Opening.</p>
+    <table><thead><tr><th style="text-align:left">Item</th><th>Opening</th><th>Added</th><th>Sold</th><th>Corrected</th><th>Closing</th></tr></thead><tbody>${summaryRows}</tbody></table>
 
     <h2>Sales — who we sold to, by date</h2>
     <table><thead><tr><th>Date</th><th style="text-align:left">Item</th><th>Qty</th><th style="text-align:left">Customer</th><th style="text-align:left">Note</th></tr></thead><tbody>${saleTable}</tbody></table>
