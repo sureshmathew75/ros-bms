@@ -12952,19 +12952,19 @@ function printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock = []) {
       </div>
     </div>
 
-    <h2>Summary — ${monthLabel}</h2>
+    <h2>📦 Fresh Stock — ${monthLabel}</h2>
     <p style="margin-bottom:6px;">Opening + Added − Sold ± Corrected = Closing — each row below checks out end to end, and this month's Closing carries forward as next month's Opening.</p>
     <table><thead><tr><th style="text-align:left">Item</th><th>Opening</th><th>Added</th><th>Sold</th><th>Corrected</th><th>Closing</th></tr></thead><tbody>${summaryRows}</tbody></table>
-
-    <h2>Sales — who we sold to, by date</h2>
-    <table><thead><tr><th>Date</th><th style="text-align:left">Item</th><th>Qty</th><th style="text-align:left">Customer</th><th style="text-align:left">Note</th></tr></thead><tbody>${saleTable}</tbody></table>
-
-    <h2>Stock Added</h2>
-    <table><thead><tr><th>Date</th><th style="text-align:left">Item</th><th>Qty</th><th style="text-align:left">Note</th></tr></thead><tbody>${restockTable}</tbody></table>
 
     <h2>↩️ Returned Stock — Currently In Office (${returnedStock.length})</h2>
     <p style="margin-bottom:6px;">Separate from Fresh Stock above — items customers returned that are still physically here, not yet resold or written off. Always "right now", not scoped to ${monthLabel}.</p>
     <table><thead><tr><th style="text-align:left">Item</th><th>Qty</th></tr></thead><tbody>${returnedRows}</tbody></table>
+
+    <h2>Stock Added This Month</h2>
+    <table><thead><tr><th>Date</th><th style="text-align:left">Item</th><th>Qty</th><th style="text-align:left">Note</th></tr></thead><tbody>${restockTable}</tbody></table>
+
+    <h2>Sales — who we sold to, by date</h2>
+    <table><thead><tr><th>Date</th><th style="text-align:left">Item</th><th>Qty</th><th style="text-align:left">Customer</th><th style="text-align:left">Note</th></tr></thead><tbody>${saleTable}</tbody></table>
     </body></html>`);
   w.document.close();
   setTimeout(() => w.print(), 300);
