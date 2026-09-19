@@ -84,6 +84,16 @@ function timeAgo(iso) {
   return `${days}d ago`;
 }
 
+// A fixed date+time for the printed/PDF export — "3h ago" only makes sense
+// live on screen, not on a document someone opens weeks later.
+function fmtDateTime(iso) {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) + " " + d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+  } catch { return iso; }
+}
+
 export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = [], isRosieTaskDue, onMarkTaskDone, onDeleteTask, staffAccounts = [], onAddTask, returnsExpecting = 0, refundsAwaiting = 0, exchangesAwaiting = 0, awaitingConfirmation = 0, returnedStockSource = [] }) {
   const myId = user?.id || "";
   const myName = user?.fullName || user?.name || "Staff";
@@ -342,6 +352,111 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
     setNewTask({ assignedTo: "", message: "", recurrence: "once", dueDate: "" });
   };
 
+  // Exports whichever week is currently on screen (live current week, or a
+  // past week loaded from history) as a printable document — opens a new
+  // tab and triggers the browser's print dialog, where "Save as PDF" gives
+  // a real PDF file. Same pattern already used for the Returned Stock
+  // print/export on the Stock page, so no new dependency is needed and the
+  // exported page keeps matching the app's own look.
+  const handlePrintRoutine = () => {
+    const data = display;
+    if (!data) { showAlert("Nothing to export yet."); return; }
+    const stockItems = data.stockItems || [];
+    const returnedItems = data.returnedStockItems || [];
+    const manualItems = data.returnedStockManual || [];
+    const docChecks = (data.docChecks && data.docChecks.length) ? data.docChecks : blankDocChecks();
+    const returnsCheck = data.returnsCheck || {};
+
+    const freshSystemTotal = stockItems.reduce((a, it) => a + (Number(it.systemQty) || 0), 0);
+    const freshCountedTotal = stockItems.reduce((a, it) => a + ((it.countedQty !== null && it.countedQty !== undefined) ? (Number(it.countedQty) || 0) : 0), 0);
+    const verifiedCount = returnedItems.filter(ri => ri.verified).length;
+    const manualCountedTotal = manualItems.reduce((a, m) => a + (Number(m.count) || 0), 0);
+    const totalSystem = freshSystemTotal + returnedItems.length;
+    const totalPhysical = freshCountedTotal + verifiedCount + manualCountedTotal;
+
+    const stockRows = stockItems.map(it => `
+      <tr>
+        <td>${it.itemName || "—"}</td>
+        <td>${it.category || "—"}</td>
+        <td style="text-align:right">${it.systemQty ?? "—"}</td>
+        <td style="text-align:right">${it.countedQty === null || it.countedQty === undefined ? "—" : it.countedQty}</td>
+        <td>${it.countedQty === null || it.countedQty === undefined ? "Not counted" : (it.wasCorrected ? "⚠ Corrected" : "✓ Matched")}</td>
+      </tr>`).join("");
+
+    const returnedRows = returnedItems.map(ri => `
+      <tr>
+        <td>${ri.item || "—"}</td>
+        <td>${ri.customer || "—"}</td>
+        <td>${ri.verified ? "✓ Verified" : "○ Not verified"}</td>
+        <td>${ri.verified ? ((ri.verifiedBy || "—") + " · " + fmtDateTime(ri.verifiedAt)) : "—"}</td>
+      </tr>`).join("");
+
+    const manualRows = manualItems.map(m => `
+      <tr><td>${m.item || "—"}</td><td style="text-align:right">${m.count === "" || m.count === null || m.count === undefined ? "—" : m.count}</td></tr>`).join("");
+
+    const docRows = docChecks.map(c => {
+      let extra = "";
+      if (c.key === "returns" && returnsCheck && Object.keys(returnsCheck).length) {
+        extra = RETURNS_METRIC_META.map(m => {
+          const saved = returnsCheck[m.key];
+          if (!saved || saved.counted === null || saved.counted === undefined) return "";
+          const names = (saved.names || []).filter(Boolean);
+          return `<div style="margin-top:4px;font-size:10.5px;color:#334155;"><strong>${m.icon} ${m.label}:</strong> System ${saved.system} · Counted ${saved.counted}${names.length ? " — " + names.map((n, i) => (i + 1) + ". " + n).join(", ") : ""}</div>`;
+        }).join("");
+      }
+      return `
+      <tr>
+        <td>${c.checked ? "☑" : "☐"} ${c.label}</td>
+        <td>${c.checked ? ("✓ " + (c.checkedBy || "—") + " · " + fmtDateTime(c.checkedAt)) : "—"}</td>
+        <td>${c.note || "—"}${extra}</td>
+      </tr>`;
+    }).join("");
+
+    const w = window.open("", "_blank");
+    w.document.write(`<!DOCTYPE html><html><head><title>Weekly Routine — ${shop?.name || shopId} — ${fmtSaturday(data.weekEnding)}</title>
+      <style>
+        body{font-family:Arial,sans-serif;padding:28px;color:#0f172a;}
+        h1{font-size:19px;margin:0 0 2px;} h2{font-size:13px;margin:22px 0 8px;border-bottom:2px solid #e2e8f0;padding-bottom:4px;}
+        p.meta{color:#64748b;font-size:11.5px;margin:0 0 4px;}
+        table{width:100%;border-collapse:collapse;margin-top:6px;} th,td{border:1px solid #e2e8f0;padding:6px 8px;font-size:10.5px;text-align:left;vertical-align:top;}
+        th{background:#f8fafc;text-transform:uppercase;letter-spacing:0.03em;font-size:9.5px;}
+        .totals{display:flex;gap:14px;margin-top:8px;}
+        .totalbox{flex:1;border:1px solid #e2e8f0;border-radius:8px;padding:10px 12px;}
+        .totalbox .lbl{font-size:9.5px;color:#94a3b8;text-transform:uppercase;letter-spacing:0.04em;}
+        .totalbox .val{font-size:15px;font-weight:800;margin-top:2px;}
+        .status{display:inline-block;padding:3px 10px;border-radius:999px;font-size:10.5px;font-weight:700;margin-top:4px;}
+      </style></head><body>
+      <h1>🗓️ Weekly Routine — ${shop?.name || shopId}</h1>
+      <p class="meta">Week ending: ${fmtSaturday(data.weekEnding)}</p>
+      <span class="status" style="background:${data.status === "completed" ? "#f0fdf4" : "#fffbeb"};color:${data.status === "completed" ? "#166534" : "#92400e"};">
+        ${data.status === "completed" ? "✅ Completed by " + (data.completedBy || "—") + " · " + fmtDateTime(data.completedAt) : "⏳ In Progress"}
+      </span>
+      <p class="meta" style="margin-top:14px;">Generated ${fmtDateTime(new Date().toISOString())}</p>
+
+      <h2>📦 Stock Count</h2>
+      <table><thead><tr><th>Item</th><th>Category</th><th>System Qty</th><th>Counted Qty</th><th>Status</th></tr></thead>
+      <tbody>${stockRows || '<tr><td colspan="5">No stock items recorded.</td></tr>'}</tbody></table>
+
+      <div class="totals">
+        <div class="totalbox"><div class="lbl">Total Stock — As Per System</div><div class="val">${totalSystem}</div></div>
+        <div class="totalbox"><div class="lbl">Total Stock — Physical Count</div><div class="val">${totalPhysical}</div></div>
+      </div>
+
+      <h2>↩️ Returned Stock</h2>
+      <table><thead><tr><th>Item</th><th>Customer</th><th>Verified</th><th>Verified By / At</th></tr></thead>
+      <tbody>${returnedRows || '<tr><td colspan="4">No returned-stock items recorded.</td></tr>'}</tbody></table>
+      ${manualItems.length ? `<h2 style="font-size:11.5px;">Additional Items Found</h2>
+      <table><thead><tr><th>Item</th><th>Count</th></tr></thead><tbody>${manualRows}</tbody></table>` : ""}
+
+      <h2>📋 Documentation Check</h2>
+      <table><thead><tr><th>Check</th><th>Checked</th><th>Note / Details</th></tr></thead>
+      <tbody>${docRows || '<tr><td colspan="3">No documentation checks recorded.</td></tr>'}</tbody></table>
+
+      </body></html>`);
+    w.document.close();
+    setTimeout(() => w.print(), 300);
+  };
+
   const sectionCard = { background: "white", border: "1px solid #e2e8f0", borderRadius: 14, padding: 16, marginBottom: 18, boxShadow: "0 1px 3px rgba(0,0,0,0.04)" };
   const sectionTitle = { margin: "0 0 4px", fontSize: 14.5, fontWeight: 800, color: "#0f172a", display: "flex", alignItems: "center", gap: 7 };
   const sectionSub = { margin: "0 0 14px", fontSize: 11.5, color: "#94a3b8" };
@@ -372,6 +487,10 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
               <option key={h.weekEnding} value={h.weekEnding}>{fmtSaturday(h.weekEnding)}{h.status === "completed" ? " ✓" : ""}</option>
             ))}
           </select>
+          <button onClick={handlePrintRoutine} title="Opens a printable version — choose 'Save as PDF' in the print dialog"
+            style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid #cbd5e1", background: "white", color: "#334155", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+            🖨️ Print / Export PDF
+          </button>
           {isAdmin && !isViewingHistory && (
             <button onClick={handleReset}
               style={{ padding: "7px 12px", borderRadius: 8, border: "1px solid #fca5a5", background: "#fef2f2", color: "#b91c1c", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
