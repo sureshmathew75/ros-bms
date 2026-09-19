@@ -467,6 +467,21 @@ const getGroupBalanceInfo=(groupIds,allSales)=>{
   return {expectedTotal,received,balance:expectedTotal-received};
 };
 
+// Same item-text cleanup used in SalesPanel — strips the internal
+// __LINES__:{...} encoding (used to preserve multi-line sale items across
+// the Supabase round-trip), keeping just the readable text. Read-only,
+// duplicated here (not imported) since the original lives inside a
+// different component's local scope.
+const cleanItemTextFQ=(s)=>{
+  if(Array.isArray(s.saleLines)&&s.saleLines.length>0){
+    return s.saleLines.map(l=>`${l.name}${l.qty&&l.qty!=="1"?` (x${l.qty})`:""}`).join(", ");
+  }
+  const raw=s.item||"";
+  const idx=raw.indexOf("\n");
+  if(raw.startsWith("__LINES__:")&&idx!==-1) return raw.slice(idx+1).trim();
+  return raw;
+};
+
 const SHOP_LABELS={"ros-selections":"ROS Selections","ros-hairlines":"ROS Hairlines","ros-india":"ROS India"};
 
 /* ── runAudit: scans every sale in every shop for the five agreed
@@ -7609,6 +7624,85 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"factoryqueue",l:"Factory Queue",ic:"🏭"},
   ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india").filter(n=>n.id!=="payroll"||shopId==="ros-india").filter(n=>n.id!=="daybook"||shopId==="ros-india").filter(n=>n.id!=="memos"||shopId==="ros-india").filter(n=>n.id!=="weeklyroutine"||shopId==="ros-india").filter(n=>n.id!=="factoryqueue"||shopId==="ros-india");
 
+  /* ── Factory Queue real-data mapping (ROS India only) ──────────────────
+     Read-only. Maps real `sales`/`returns` into the shapes FactoryQueuePanel
+     expects — nothing here writes back to sales/returns or changes their
+     own logic, it only reshapes what's already there for display.
+
+     "Pending factory fulfilment" reuses the SAME Advance/Part/Final
+     instalment grouping (findInstalmentGroupIds/getGroupBalanceInfo)
+     the Sales panel itself relies on, so a multi-payment order shows up
+     ONCE with its real expected total + amount received — not as separate
+     fragments per instalment row (a single-row PENDING/FULFILLED check
+     would either double-count or miss those deals, since the code comment
+     on findInstalmentGroupIds notes status alone is not a reliable signal
+     for a part-paid deal). A deal counts as still "pending" here when its
+     most recently dated row hasn't reached FULFILLED yet.
+
+     Exchange/Refund queues reuse the exact same status+resolution filters
+     already used elsewhere in this file for the Dashboard's own pending
+     counts (isExchangeInProgress, and the RETURN_RECEIVED+resolution
+     "refund"+no refundDate check used for the refundsPending KPI). */
+  const fqSalesData = shopId!=="ros-india" ? [] : (() => {
+    const seenGroups = new Set();
+    const out = [];
+    sales.forEach(s => {
+      const groupIds = findInstalmentGroupIds(s, sales);
+      const groupKey = [...groupIds].sort().join("|");
+      if (seenGroups.has(groupKey)) return;
+      seenGroups.add(groupKey);
+      const group = sales.filter(x => groupIds.includes(x.id));
+      const byDate = [...group].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+      const latest = byDate[byDate.length - 1];
+      const earliest = byDate[0];
+      const latestStatus = (latest.ful || latest.status || "PENDING").toUpperCase();
+      if (latestStatus !== "PENDING") return; // already fulfilled or further along (returned/refunded/etc.)
+      const bal = getGroupBalanceInfo(groupIds, sales);
+      const totalAmount = bal ? bal.expectedTotal : group.reduce((a, x) => a + (Number(x.amount) || 0), 0);
+      const paidAmount = bal ? bal.received : group.filter(x => x.pay === "Paid").reduce((a, x) => a + (Number(x.amount) || 0), 0);
+      out.push({
+        orderId: earliest.id,
+        customerName: earliest.customer || "",
+        phone: earliest.phone || earliest.contact || "",
+        item: cleanItemTextFQ(earliest),
+        orderDate: earliest.date || "",
+        paidAmount,
+        totalAmount,
+        factoryStatus: "in_production",
+      });
+    });
+    return out;
+  })();
+
+  const fqExchangeData = shopId!=="ros-india" ? [] : returns
+    .filter(r => r.status === "RETURN_RECEIVED" && (r.resolution === "exchange" || r.resolution === "exchange_refund"))
+    .map(r => ({
+      returnId: r.id,
+      originalOrderId: r.saleId || "",
+      customerName: r.customer || "",
+      phone: r.phone || "",
+      returnedItem: r.item || "",
+      // Real returns don't track a separate "requested replacement" item —
+      // exchanges are almost always the same item (different size/colour),
+      // so this reuses the returned item text rather than showing blank.
+      exchangeItemRequested: r.item || "replacement item",
+      returnReceivedDate: r.receivedDate || r.date || "",
+      balanceAdjustment: 0, // no equivalent field in the real return record
+    }));
+
+  const fqRefundData = shopId!=="ros-india" ? [] : returns
+    .filter(r => r.status === "RETURN_RECEIVED" && r.resolution === "refund" && !r.refundDate)
+    .map(r => ({
+      refundId: r.id,
+      originalOrderId: r.saleId || "",
+      customerName: r.customer || "",
+      phone: r.phone || "",
+      returnedItem: r.item || "",
+      refundAmountDue: Number(r.refundAmount) || 0,
+      returnReceivedDate: r.receivedDate || r.date || "",
+      refundStatus: "pending",
+    }));
+
   const filtSales=sales.filter(s=>{
     const q=search.toLowerCase();
     const matchSearch=!q||
@@ -9261,11 +9355,15 @@ return(
           )}
 
           {/* ── FACTORY QUEUE (ROS India only) ──
-              Currently runs on its own built-in mock data (see
-              FactoryQueuePanel.jsx) rather than live sales/returns/refunds —
-              wiring it to real Supabase data is a separate follow-up. */}
+              Fed from real sales/returns data via fqSalesData/fqExchangeData/
+              fqRefundData above (mapped read-only, see the comment there for
+              exactly how "pending" is determined). */}
           {tab==="factoryqueue"&&shopId==="ros-india"&&(
-            <FactoryQueuePanel/>
+            <FactoryQueuePanel
+              salesData={fqSalesData}
+              returnsExchangeData={fqExchangeData}
+              refundsData={fqRefundData}
+            />
           )}
 
           {/* ── RETURNS TAB ── */}
