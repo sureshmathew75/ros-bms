@@ -310,7 +310,13 @@ function saveDismissed(shopId, map) {
 export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [weekAnchor, setWeekAnchor] = useState(todayISO()); // any date within the visible week
+  // Which date chip is selected in the Log view — "all" shows every
+  // despatch ever logged in one continuous list (no per-day grouping/
+  // collapsing); a "YYYY-MM-DD" value filters to just that day. Replaces
+  // the old week-by-week navigation entirely, per explicit request: one
+  // flat, scrollable list instead of a collapsible day-by-day bar, with
+  // per-day totals still visible via the chip counts.
+  const [dateFilter, setDateFilter] = useState("all");
   const [addDate, setAddDate] = useState(todayISO());       // which day new adds land on
   const [search, setSearch] = useState("");
   const [waModal, setWaModal] = useState(null);
@@ -318,12 +324,6 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
   const [viewMode, setViewMode] = useState("log"); // "log" | "calendar"
   const [calMonth, setCalMonth] = useState(currentMonthKey()); // "YYYY-MM" shown in Calendar view
   const [dismissedSaleIds, setDismissedSaleIds] = useState({}); // sale id -> true, blocks auto-re-add after a manual delete
-  // Per-day collapse state for the Log view — only holds entries the user
-  // has explicitly toggled THIS session; any date not in here just falls
-  // back to the default (today expanded, every other day collapsed), and
-  // that default is what you get again on the next page load/refresh —
-  // collapse state is intentionally not persisted.
-  const [collapsedDates, setCollapsedDates] = useState({});
   // Log-view row compactness: the Address cell shows just its first line
   // by default (click to expand) and Remarks lives behind a small icon
   // instead of an always-visible input — both purely to keep the table
@@ -474,16 +474,6 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
     })[0];
   };
 
-  // The 7 dates (Mon→Sun) of the week currently in view.
-  const weekDates = useMemo(() => {
-    const mon = mondayOf(weekAnchor);
-    return Array.from({ length: 7 }, (_, i) => {
-      const d = new Date(mon);
-      d.setDate(d.getDate() + i);
-      return localISO(d);
-    });
-  }, [weekAnchor]);
-
   // Sale ids already present anywhere in the log — used to badge search
   // results as "already added" (still addable again, e.g. multi-parcel).
   const loggedSaleIds = useMemo(() => {
@@ -519,27 +509,35 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
       .slice(0, 12);
   }, [allSales, search]);
 
-  // Entries for the visible week, grouped by date — every date in
-  // weekDates gets an array (empty ones included) so each day block
-  // always renders, matching the "show the date even if nothing shipped"
-  // layout.
-  const entriesByDate = useMemo(() => {
+  // Every entry, grouped by dispatchDate — used by the Print/WhatsApp/Copy
+  // exports so they can still present a day-by-day breakdown even though
+  // the on-screen Log view is now one flat, continuous list.
+  const entriesByDateAll = useMemo(() => {
     const m = {};
-    weekDates.forEach(d => { m[d] = []; });
-    entries.forEach(e => { if (m[e.dispatchDate]) m[e.dispatchDate].push(e); });
-    weekDates.forEach(d => { m[d].sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || "")); });
+    entries.forEach(e => { (m[e.dispatchDate] ||= []).push(e); });
+    Object.values(m).forEach(list => list.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || "")));
     return m;
-  }, [entries, weekDates]);
+  }, [entries]);
 
-  const weekEntries = useMemo(() => weekDates.flatMap(d => entriesByDate[d]), [weekDates, entriesByDate]);
+  // Distinct dispatch dates across the ENTIRE log, most recent first —
+  // feeds the date-filter chip strip ("All dates N" + one chip per day
+  // with its own count), replacing the old week-navigation controls.
+  const chipDates = useMemo(() => {
+    return Object.keys(entriesByDateAll).filter(Boolean).sort((a, b) => b.localeCompare(a));
+  }, [entriesByDateAll]);
 
-  // Only show days that (a) aren't in the future — a future date can't
-  // have despatches yet, so it's just clutter — and (b) actually have at
-  // least one entry, so an empty past day doesn't take up space either.
-  const visibleWeekDates = useMemo(() => {
-    const today = todayISO();
-    return weekDates.filter(d => d <= today && entriesByDate[d].length > 0);
-  }, [weekDates, entriesByDate]);
+  // The entries the flat Log-view table actually shows: everything, or
+  // just the one date currently selected via the chip strip.
+  const filteredEntries = useMemo(() => {
+    const list = dateFilter === "all"
+      ? entries.slice().sort((a, b) => {
+          const d = (b.dispatchDate || "").localeCompare(a.dispatchDate || "");
+          if (d !== 0) return d;
+          return (a.createdAt || "").localeCompare(b.createdAt || "");
+        })
+      : (entriesByDateAll[dateFilter] || []);
+    return list;
+  }, [entries, entriesByDateAll, dateFilter]);
 
   // Per-day counts across the ENTIRE log (not just the visible week) —
   // feeds the Calendar view's day badges.
@@ -616,15 +614,15 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
   }, [entries, allSales, saleGroupKey]);
 
   const summary = useMemo(() => {
-    const total = weekEntries.length;
-    const noTracking = weekEntries.filter(e => !e.trackingNo).length;
-    const notNotified = weekEntries.filter(e => !e.notified).length;
-    const delivered = weekEntries.filter(e => e.delivered).length;
+    const total = filteredEntries.length;
+    const noTracking = filteredEntries.filter(e => !e.trackingNo).length;
+    const notNotified = filteredEntries.filter(e => !e.notified).length;
+    const delivered = filteredEntries.filter(e => e.delivered).length;
     // Has tracking + shipper (so it CAN be tracked/marked) but hasn't been
     // confirmed delivered yet — the "still needs checking" queue.
-    const awaitingDelivery = weekEntries.filter(e => e.trackingNo && e.shipper && !e.delivered).length;
+    const awaitingDelivery = filteredEntries.filter(e => e.trackingNo && e.shipper && !e.delivered).length;
     return { total, noTracking, notNotified, delivered, awaitingDelivery };
-  }, [weekEntries]);
+  }, [filteredEntries]);
 
   const persist = async (uuidOrNull, payload) => {
     setSavingIds(p => ({ ...p, [uuidOrNull || "__new__"]: true }));
@@ -649,9 +647,9 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
     if (res?.error) { showAlert("Could not add to dispatch log: " + res.error); return; }
     setEntries(prev => [...prev, { ...draft, uuid: res.uuid, createdAt: new Date().toISOString() }]);
     setSearch("");
-    // Jump the visible week to wherever the new row landed, so it's
-    // immediately visible even if addDate falls outside the current view.
-    setWeekAnchor(addDate);
+    // Select the date chip the new row landed on, so it's immediately
+    // visible even if addDate isn't today / isn't the currently selected chip.
+    setDateFilter(addDate);
   };
 
   // Auto-add: any sale flagged "Ready to Ship" in the Sales tab that
@@ -848,10 +846,22 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
     });
   };
 
+  // Dates covered by the exports below: every date that actually has
+  // entries (chronological) when "All dates" is selected, or just the one
+  // selected chip's date otherwise. Exports stay grouped by day internally
+  // for a readable paper/WhatsApp record even though the on-screen table
+  // no longer is.
+  const exportDates = dateFilter === "all"
+    ? chipDates.slice().sort((a, b) => a.localeCompare(b))
+    : [dateFilter];
+  const exportRangeLabel = dateFilter === "all"
+    ? (chipDates.length ? `${ddmmyyyy(exportDates[0])} – ${ddmmyyyy(exportDates[exportDates.length - 1])}` : "No despatches yet")
+    : ddmmyyyy(dateFilter);
+
   const copyWeekList = async () => {
-    const lines = [`Despatch — ${ddmmyyyy(weekDates[0])} to ${ddmmyyyy(weekDates[6])}`, ""];
-    visibleWeekDates.forEach(d => {
-      const dayList = entriesByDate[d];
+    const lines = [`Despatch — ${exportRangeLabel}`, ""];
+    exportDates.forEach(d => {
+      const dayList = entriesByDateAll[d] || [];
       lines.push(`${ddmmyyyy(d)} (${dayList.length})`);
       dayList.forEach((e, i) => lines.push(
         `  ${i + 1}. ${e.customer || "—"} — ${livePhoneFor(e) || "—"} — ${e.trackingNo || "no tracking yet"} (${e.shipper || "no shipper"})${e.delivered ? ` ✅ delivered ${ddmmyyyy(e.deliveredDate || "")}` : ""}`
@@ -859,18 +869,18 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
       lines.push("");
     });
     const text = lines.join("\n").trim();
-    try { await navigator.clipboard.writeText(text); showAlert("Week's despatch list copied."); }
+    try { await navigator.clipboard.writeText(text); showAlert("Despatch list copied."); }
     catch { showAlert(text); }
   };
 
-  /* Bulk WhatsApp — bundles the whole visible week into one message,
-     grouped by day, with no fixed recipient — for pinging an internal
-     despatch group chat. Mirrors the old Dispatch Sheet's "Send via
-     WhatsApp" button in SalesPanel.jsx. */
+  /* Bulk WhatsApp — bundles the currently selected date range into one
+     message, grouped by day, with no fixed recipient — for pinging an
+     internal despatch group chat. Mirrors the old Dispatch Sheet's "Send
+     via WhatsApp" button in SalesPanel.jsx. */
   const sendBulkWhatsApp = () => {
-    const lines = [`🚚 *Despatch Log* — ${ddmmyyyy(weekDates[0])} to ${ddmmyyyy(weekDates[6])}`, `${weekEntries.length} item${weekEntries.length !== 1 ? "s" : ""}`, ""];
-    visibleWeekDates.forEach(d => {
-      const dayList = entriesByDate[d];
+    const lines = [`🚚 *Despatch Log* — ${exportRangeLabel}`, `${filteredEntries.length} item${filteredEntries.length !== 1 ? "s" : ""}`, ""];
+    exportDates.forEach(d => {
+      const dayList = entriesByDateAll[d] || [];
       lines.push(`*${ddmmyyyy(d)}*`);
       dayList.forEach((e, i) => {
         lines.push(`${i + 1}. ${e.customer || "—"}`);
@@ -885,16 +895,15 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
     setWaModal({ phone: "", customerName: "", message: lines.join("\n").trim() });
   };
 
-  /* Print — clean tabular printout of the visible week, one table per
-     day that actually has despatches (matching the on-screen Log view —
-     no empty or future-dated sections). Mirrors the old Dispatch Sheet's
-     "Print / Export" button in SalesPanel.jsx, extended with this page's
-     extra columns. */
+  /* Print — clean tabular printout of the currently selected date range,
+     one table per day that actually has despatches. Mirrors the old
+     Dispatch Sheet's "Print / Export" button in SalesPanel.jsx, extended
+     with this page's extra columns. */
   const handlePrint = () => {
     const w = window.open("", "_blank");
     if (!w) return;
-    const sections = visibleWeekDates.map(d => {
-      const dayList = entriesByDate[d];
+    const sections = exportDates.map(d => {
+      const dayList = entriesByDateAll[d] || [];
       const rows = dayList.map((e, i) => `
         <tr>
           <td>${i + 1}</td>
@@ -909,8 +918,8 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
       return `
         <h2>${weekdayName(d)}, ${ddmmyyyy(d)} — ${dayList.length} item${dayList.length !== 1 ? "s" : ""}</h2>
         <table><thead><tr><th>#</th><th>Customer</th><th>Address</th><th>Phone</th><th>Tracking No.</th><th>Shipper</th><th>Delivered</th><th>Remarks</th></tr></thead><tbody>${rows}</tbody></table>`;
-    }).join("") || `<p style="color:#94a3b8;font-size:12px;">No despatches recorded this week.</p>`;
-    w.document.write(`<!DOCTYPE html><html><head><title>Despatch Log — ${ddmmyyyy(weekDates[0])} to ${ddmmyyyy(weekDates[6])}</title>
+    }).join("") || `<p style="color:#94a3b8;font-size:12px;">No despatches recorded.</p>`;
+    w.document.write(`<!DOCTYPE html><html><head><title>Despatch Log — ${exportRangeLabel}</title>
       <style>
         body{font-family:Arial,sans-serif;padding:24px;color:#0f172a;}
         h1{font-size:18px;margin-bottom:4px;} p{color:#64748b;font-size:12px;margin-top:0;}
@@ -919,21 +928,12 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
         th{background:#f8fafc;text-transform:uppercase;letter-spacing:0.04em;font-size:10px;}
       </style></head><body>
       <h1>🚚 Despatch Log</h1>
-      <p>${ddmmyyyy(weekDates[0])} – ${ddmmyyyy(weekDates[6])} · ${weekEntries.length} item${weekEntries.length !== 1 ? "s" : ""}</p>
+      <p>${exportRangeLabel} · ${filteredEntries.length} item${filteredEntries.length !== 1 ? "s" : ""}</p>
       ${sections}
       </body></html>`);
     w.document.close();
     setTimeout(() => w.print(), 300);
   };
-
-  const shiftWeek = (offsetWeeks) => {
-    const mon = mondayOf(weekAnchor);
-    mon.setDate(mon.getDate() + offsetWeeks * 7);
-    setWeekAnchor(localISO(mon));
-  };
-  // Can't navigate past the week that contains today — future weeks are
-  // guaranteed empty, so there's nothing useful to page forward into.
-  const atCurrentWeekOrLater = mondayOf(weekAnchor).getTime() >= mondayOf(todayISO()).getTime();
 
   const shiftMonth = (offset) => {
     const [y, m] = calMonth.split("-").map(Number);
@@ -944,7 +944,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
 
   const jumpToDay = (iso) => {
     setViewMode("log");
-    setWeekAnchor(iso);
+    setDateFilter(iso);
   };
 
   return (
@@ -967,7 +967,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
           <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a" }}>🚚 Despatch Log</div>
           <div style={{ fontSize: 12.5, color: "#64748b", marginTop: 2 }}>
             {viewMode === "log"
-              ? `${ddmmyyyy(weekDates[0])} – ${ddmmyyyy(weekDates[6])} · one row per parcel, grouped by day`
+              ? `${entries.length} despatch${entries.length !== 1 ? "es" : ""} logged · one row per parcel`
               : "Calendar & monthly trend"}
           </div>
         </div>
@@ -982,43 +982,48 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
               📅 Calendar
             </button>
           </div>
-          {viewMode === "log" && (
-            <>
-              <button onClick={() => shiftWeek(-1)} style={pillBtnStyle}>← Previous Week</button>
-              <input type="date" value={weekAnchor} max={todayISO()} onChange={e => setWeekAnchor(e.target.value)}
-                style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, fontFamily: "inherit" }} />
-              <button onClick={() => setWeekAnchor(todayISO())} style={pillBtnStyle}>This Week</button>
-              <button onClick={() => !atCurrentWeekOrLater && shiftWeek(1)} disabled={atCurrentWeekOrLater}
-                style={{ ...pillBtnStyle, opacity: atCurrentWeekOrLater ? 0.4 : 1, cursor: atCurrentWeekOrLater ? "not-allowed" : "pointer" }}>
-                Next Week →
-              </button>
-            </>
-          )}
         </div>
       </div>
 
       {viewMode === "log" && (
       <>
+      {/* Date-filter chip strip — "All dates N" plus one chip per day that
+          has despatches, each showing its own count. Replaces the old
+          week-by-week navigation: everything is one flat, scrollable list,
+          and this is how "how many we sent each day" stays visible. */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", overflowX: "auto", paddingBottom: 4, marginBottom: 14 }}>
+        <button onClick={() => setDateFilter("all")}
+          style={{ flex: "0 0 auto", padding: "8px 14px", borderRadius: 999, border: dateFilter === "all" ? "1px solid #0f172a" : "1px solid #e2e8f0", background: dateFilter === "all" ? "#0f172a" : "white", color: dateFilter === "all" ? "white" : "#334155", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+          All dates {entries.length}
+        </button>
+        {chipDates.map(d => (
+          <button key={d} onClick={() => setDateFilter(d)}
+            style={{ flex: "0 0 auto", padding: "8px 14px", borderRadius: 999, border: dateFilter === d ? "1px solid #0f172a" : "1px solid #e2e8f0", background: dateFilter === d ? "#0f172a" : "white", color: dateFilter === d ? "white" : "#334155", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+            {ddmmyyyy(d)} {(entriesByDateAll[d] || []).length}
+          </button>
+        ))}
+      </div>
+
       {/* Summary strip */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
-        <SummaryChip label="Rows this week" value={summary.total} bg="#f1f5f9" color="#334155" />
+        <SummaryChip label="Despatches shown" value={summary.total} bg="#f1f5f9" color="#334155" />
         <SummaryChip label="Awaiting tracking" value={summary.noTracking} bg={summary.noTracking ? "#fef3c7" : "#f1f5f9"} color={summary.noTracking ? "#92400e" : "#334155"} />
         <SummaryChip label="Not yet notified" value={summary.notNotified} bg={summary.notNotified ? "#fee2e2" : "#f1f5f9"} color={summary.notNotified ? "#991b1b" : "#334155"} />
         <SummaryChip label="Awaiting delivery" value={summary.awaitingDelivery} bg={summary.awaitingDelivery ? "#fef3c7" : "#f1f5f9"} color={summary.awaitingDelivery ? "#92400e" : "#334155"} />
         <SummaryChip label="Delivered" value={summary.delivered} bg={summary.delivered ? "#dcfce7" : "#f1f5f9"} color={summary.delivered ? "#15803d" : "#334155"} />
         <div style={{ marginLeft: "auto", display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <button onClick={handlePrint} disabled={!weekEntries.length}
-            style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #e2e8f0", background: "white", color: "#334155", fontWeight: 700, fontSize: 12.5, cursor: weekEntries.length ? "pointer" : "not-allowed", opacity: weekEntries.length ? 1 : 0.5, fontFamily: "inherit" }}>
+          <button onClick={handlePrint} disabled={!filteredEntries.length}
+            style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #e2e8f0", background: "white", color: "#334155", fontWeight: 700, fontSize: 12.5, cursor: filteredEntries.length ? "pointer" : "not-allowed", opacity: filteredEntries.length ? 1 : 0.5, fontFamily: "inherit" }}>
             🖨️ Print / Export
           </button>
-          <button onClick={sendBulkWhatsApp} disabled={!weekEntries.length}
-            title="Send the whole week's sheet as one message, grouped by day — no fixed recipient, for your despatch team chat"
-            style={{ padding: "8px 14px", borderRadius: 10, border: "none", background: weekEntries.length ? "#25D366" : "#f1f5f9", color: weekEntries.length ? "white" : "#94a3b8", fontWeight: 700, fontSize: 12.5, cursor: weekEntries.length ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
+          <button onClick={sendBulkWhatsApp} disabled={!filteredEntries.length}
+            title="Send the shown despatches as one message, grouped by day — no fixed recipient, for your despatch team chat"
+            style={{ padding: "8px 14px", borderRadius: 10, border: "none", background: filteredEntries.length ? "#25D366" : "#f1f5f9", color: filteredEntries.length ? "white" : "#94a3b8", fontWeight: 700, fontSize: 12.5, cursor: filteredEntries.length ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
             💬 Send Sheet via WhatsApp
           </button>
-          <button onClick={copyWeekList} disabled={!weekEntries.length}
-            style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #e2e8f0", background: "white", color: "#334155", fontWeight: 700, fontSize: 12.5, cursor: weekEntries.length ? "pointer" : "not-allowed", opacity: weekEntries.length ? 1 : 0.5, fontFamily: "inherit" }}>
-            📋 Copy Week's List
+          <button onClick={copyWeekList} disabled={!filteredEntries.length}
+            style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #e2e8f0", background: "white", color: "#334155", fontWeight: 700, fontSize: 12.5, cursor: filteredEntries.length ? "pointer" : "not-allowed", opacity: filteredEntries.length ? 1 : 0.5, fontFamily: "inherit" }}>
+            📋 Copy List
           </button>
         </div>
       </div>
@@ -1067,77 +1072,22 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
 
       {loading ? (
         <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", border: "1px solid #e2e8f0", borderRadius: 12 }}>Loading…</div>
-      ) : visibleWeekDates.length === 0 ? (
+      ) : filteredEntries.length === 0 ? (
         <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", border: "1px dashed #e2e8f0", borderRadius: 12 }}>
-          No despatches recorded this week yet.
+          {dateFilter === "all" ? "No despatches recorded yet." : `Nothing despatched on ${ddmmyyyy(dateFilter)}.`}
         </div>
-      ) : visibleWeekDates.map(d => {
-        const dayList = entriesByDate[d];
-        const isToday = d === todayISO();
-        // Default: today expanded, every other day collapsed — unless the
-        // user has explicitly toggled this date already this session.
-        const isCollapsed = collapsedDates[d] !== undefined ? collapsedDates[d] : !isToday;
-        const noTrackingCount = dayList.filter(e => !e.trackingNo).length;
-        const notNotifiedCount = dayList.filter(e => !e.notified).length;
-        return (
-          <div key={d} style={{ marginBottom: 22 }}>
-            {/* Strong date header — the whole point is to spot the day at
-                a glance, so it gets its own high-contrast band rather than
-                blending into the table below. Click to collapse/expand;
-                collapsed days show date + item count (+ a small badge for
-                anything still unfinished) with no table beneath. */}
-            <div
-              onClick={() => setCollapsedDates(prev => ({ ...prev, [d]: !isCollapsed }))}
-              title={isCollapsed ? "Click to expand" : "Click to collapse"}
-              style={{
-                display: "flex", alignItems: "center", gap: 10, marginBottom: 0,
-                padding: "10px 16px", borderRadius: isCollapsed ? 12 : "12px 12px 0 0",
-                // Themed per shop — today gets the shop's solid accent color
-                // (same "accent bg + white text" pattern used everywhere else
-                // in the app), other days get its soft tint instead of a
-                // fixed indigo, so the whole log matches whichever shop it's
-                // for rather than looking the same for all three.
-                background: isToday ? (shop?.accent || "#0f172a") : (shop?.accentBg || "#eef2ff"),
-                cursor: "pointer", userSelect: "none",
-              }}>
-              <span style={{ fontSize: 11, width: 12, textAlign: "center", display: "inline-block", color: isToday ? "rgba(255,255,255,0.75)" : "#64748b" }}>
-                {isCollapsed ? "▶" : "▼"}
-              </span>
-              <span style={{ fontSize: 17, fontWeight: 900, color: isToday ? "white" : "#1e293b", letterSpacing: "0.01em" }}>{ddmmyyyy(d)}</span>
-              <span style={{ fontSize: 12.5, fontWeight: 700, color: isToday ? "rgba(255,255,255,0.75)" : (shop?.accentText || "#4338ca") }}>{weekdayName(d)}</span>
-              {isToday && (
-                <span style={{ fontSize: 10, fontWeight: 800, color: "#0f172a", background: "#dcfce7", borderRadius: 999, padding: "2px 8px" }}>TODAY</span>
-              )}
-              <span style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 6 }}>
-                {isCollapsed && noTrackingCount > 0 && (
-                  <span style={{ fontSize: 10.5, fontWeight: 800, color: "#92400e", background: "#fef3c7", borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>
-                    ⏳ {noTrackingCount} awaiting tracking
-                  </span>
-                )}
-                {isCollapsed && notNotifiedCount > 0 && (
-                  <span style={{ fontSize: 10.5, fontWeight: 800, color: "#9a3412", background: "#ffedd5", borderRadius: 999, padding: "2px 8px", whiteSpace: "nowrap" }}>
-                    📨 {notNotifiedCount} not notified
-                  </span>
-                )}
-                <span style={{ fontSize: 12, fontWeight: 700, color: isToday ? "rgba(255,255,255,0.75)" : "#64748b" }}>
-                  {dayList.length} item{dayList.length !== 1 ? "s" : ""}
-                </span>
-              </span>
-            </div>
-            {!isCollapsed && (
-            <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderTop: "none", borderRadius: "0 0 12px 12px" }}>
-              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 680, fontSize: 12.5 }}>
+      ) : (
+            <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 12 }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720, fontSize: 12.5 }}>
                 <thead>
                   <tr style={{ background: "#f8fafc" }}>
-                    {["#", "Customer", "Address", "Tracking No.", "Shipper", "Delivery", ""].map(h => (
+                    {["Date", "Customer", "Address", "Tracking No.", "Shipper", "Delivery", ""].map(h => (
                       <th key={h} style={{ textAlign: "left", padding: "10px 12px", fontWeight: 800, color: "#475569", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.04em", borderBottom: "1px solid #e2e8f0", whiteSpace: "nowrap" }}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {dayList.length === 0 ? (
-                    <tr><td colSpan={7} style={{ padding: 18, textAlign: "center", color: "#94a3b8" }}>Nothing despatched this day.</td></tr>
-                  ) : dayList.map((e, idx) => {
+                  {filteredEntries.map((e, idx) => {
                     const dupKey = (e.trackingNo || "").replace(/\s+/g, "").toUpperCase();
                     const isDup = dupKey && (trackingIndex[dupKey] || []).length > 1;
                     const canNotify = !!(e.trackingNo && e.shipper);
@@ -1160,9 +1110,13 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
                     const addressHasMore = hasNewline || fullAddress.length > ONE_LINE_CHARS;
                     const isAddressExpanded = !!expandedAddresses[e.uuid];
                     const phone = livePhoneFor(e);
+                    const isRowToday = e.dispatchDate === todayISO();
                     return (
                       <tr key={e.uuid} style={{ borderBottom: "1px solid #f1f5f9", background: e.delivered ? "#f0fdf4" : (idx % 2 ? "#fdfbf3" : "white") }}>
-                        <td style={{ padding: "8px 12px", color: "#94a3b8", fontWeight: 700, verticalAlign: "top" }}>{idx + 1}</td>
+                        <td style={{ padding: "8px 12px", verticalAlign: "top", whiteSpace: "nowrap" }}>
+                          <div style={{ fontWeight: 800, color: isRowToday ? (shop?.accentText || "#4338ca") : "#334155", fontSize: 12.5 }}>{ddmmyyyy(e.dispatchDate)}</div>
+                          <div style={{ fontSize: 10.5, color: "#94a3b8" }}>{weekdayName(e.dispatchDate)}{isRowToday ? " · Today" : ""}</div>
+                        </td>
                         <td style={{ padding: "8px 12px", minWidth: 130, maxWidth: 170, verticalAlign: "top" }}>
                           {/* Phone lives on the Sales page only — shown here read-only,
                               stacked under the name instead of its own column. */}
@@ -1322,10 +1276,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
                 </tbody>
               </table>
             </div>
-            )}
-          </div>
-        );
-      })}
+      )}
       </>
       )}
 
