@@ -7621,7 +7621,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"documents",l:"Documents",ic:"📎"},
     {id:"analytics",l:"Analytics",ic:"📊"},
     {id:"reports",  l:"Reports",  ic:"📋"},
-    {id:"factoryqueue",l:"Factory Queue",ic:"🏭"},
+    {id:"factoryqueue",l:"Fulfilment Tracker",ic:"🏭"},
   ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india").filter(n=>n.id!=="payroll"||shopId==="ros-india").filter(n=>n.id!=="daybook"||shopId==="ros-india").filter(n=>n.id!=="memos"||shopId==="ros-india").filter(n=>n.id!=="weeklyroutine"||shopId==="ros-india").filter(n=>n.id!=="factoryqueue"||shopId==="ros-india");
 
   /* ── Factory Queue real-data mapping (ROS India only) ──────────────────
@@ -7678,6 +7678,10 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
         paidAmount,
         totalAmount,
         factoryStatus: "in_production",
+        // Despatch unit is usually set on just one row of a multi-payment
+        // deal (whichever one the field was shown for at save time) — use
+        // whichever row in the group actually has it set.
+        unit: (group.find(x => x.dispatchFrom) || {}).dispatchFrom || "",
       });
     });
     return out;
@@ -16515,6 +16519,10 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
     deliveryTime: sale.deliveryTime||"",
     expectedTotal: sale.expectedTotal||"",
     paymentType: inferPaymentType(sale),
+    // Left blank (not defaulted to Unit 1) for sales that predate this field
+    // or were created before a unit was picked — an empty value here means
+    // "not set" rather than silently claiming a unit that was never chosen.
+    dispatchFrom: sale.dispatchFrom||"",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -16893,7 +16901,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
       </div>
 
       <Divider title="Delivery"/>
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16,background:"#f8fafc",borderRadius:12,padding:"14px",border:"1px solid #e2e8f0"}}>
+      <div style={{display:"grid",gridTemplateColumns:shopId==="ros-india"?"1fr 1fr 1fr":"1fr 1fr",gap:12,marginBottom:16,background:"#f8fafc",borderRadius:12,padding:"14px",border:"1px solid #e2e8f0"}}>
         <div>
           <label style={lbl}>
             Delivery Status
@@ -16924,6 +16932,17 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
           <label style={lbl}>Sent / Dispatch Date</label>
           <input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
         </div>
+        {shopId==="ros-india"&&(
+          <div>
+            <label style={lbl}>Dispatch Unit</label>
+            <select value={form.dispatchFrom} onChange={e=>set("dispatchFrom",e.target.value)} style={inp}>
+              <option value="">— Not set —</option>
+              <option value="India-Unit1">🇮🇳 Unit 1</option>
+              <option value="India-Unit2">🇮🇳 Unit 2</option>
+              <option value="UK-Unit">🇬🇧 UK Unit</option>
+            </select>
+          </div>
+        )}
       </div>
 
       {/* ── Tracking & Delivery ── */}
@@ -18192,6 +18211,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                     <select value={form.dispatchFrom} onChange={e=>set("dispatchFrom",e.target.value)} style={inp}>
                       <option value="India-Unit1">🇮🇳 Unit 1 (Default)</option>
                       <option value="India-Unit2">🇮🇳 Unit 2</option>
+                      <option value="UK-Unit">🇬🇧 UK Unit</option>
                     </select>
                   </div>
                 ) : <div/>}
@@ -18229,6 +18249,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                     <select value={form.dispatchFrom} onChange={e=>set("dispatchFrom",e.target.value)} style={inp}>
                       <option value="India-Unit1">🇮🇳 Unit 1 (Default)</option>
                       <option value="India-Unit2">🇮🇳 Unit 2</option>
+                      <option value="UK-Unit">🇬🇧 UK Unit</option>
                     </select>
                   </div>
                 )}

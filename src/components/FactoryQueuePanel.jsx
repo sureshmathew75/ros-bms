@@ -1,7 +1,10 @@
 import { useState, useMemo, useEffect } from "react";
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   FACTORY PIPELINE & CUSTOMER WAIT-TIME DASHBOARD — ROS INDIA ONLY
+   FULFILMENT TRACKER — ROS INDIA ONLY
+   (component/file name kept as FactoryQueuePanel — renaming the file would
+   touch the import in App.jsx and git history for no functional benefit;
+   "Fulfilment Tracker" is the name shown in the sidebar and on the page)
    ───────────────────────────────────────────────────────────────────────────
    Scoped to the ROS India factory/production queue specifically (not UK) —
    mock data below is India-only, one currency (₹), no per-row shop badge.
@@ -56,18 +59,22 @@ const daysAgo = (n) => {
 /* ────────────────────────────────────────────────────────────────────────
    1) salesData — Sales Orders pending factory fulfilment
    Shape: { orderId, customerName, phone, item, orderDate, paidAmount,
-            totalAmount, factoryStatus: 'in_production' | 'ready_to_ship' }
-   (shop/currency are additive extras — harmless if your real data omits them)
+            totalAmount, factoryStatus: 'in_production' | 'ready_to_ship',
+            unit: 'India-Unit1' | 'India-Unit2' | 'UK-Unit' | '' }
+   (shop/currency are additive extras — harmless if your real data omits them.
+   unit is the despatch unit the order is fulfilled from — matches the same
+   "Dispatch Unit" field/values used on the Sales form; '' means not set,
+   e.g. an order created before this field existed.)
    ──────────────────────────────────────────────────────────────────────── */
 const MOCK_SALES_DATA = [
-  { orderId: "SO-1042", customerName: "Aisha Verma", phone: "+91 98765 43210", item: "Bridal Lehenga Set", orderDate: daysAgo(2), paidAmount: 15000, totalAmount: 32000, factoryStatus: "in_production", shop: "ROS India", currency: "₹" },
-  { orderId: "SO-1039", customerName: "Rahul Mehta", phone: "+91 98200 12345", item: "Groom Sherwani", orderDate: daysAgo(5), paidAmount: 18000, totalAmount: 22000, factoryStatus: "in_production", shop: "ROS India", currency: "₹" },
-  { orderId: "SO-1031", customerName: "Priya Nair", phone: "+91 98450 11223", item: "Silk Saree — Custom Blouse", orderDate: daysAgo(8), paidAmount: 6000, totalAmount: 14500, factoryStatus: "in_production", shop: "ROS India", currency: "₹" },
-  { orderId: "SO-1024", customerName: "Kavya Iyer", phone: "+91 90080 33445", item: "Anarkali Suit", orderDate: daysAgo(12), paidAmount: 9000, totalAmount: 9000, factoryStatus: "ready_to_ship", shop: "ROS India", currency: "₹" },
-  { orderId: "SO-1015", customerName: "Fatima Sheikh", phone: "+91 99870 55667", item: "Designer Lehenga", orderDate: daysAgo(16), paidAmount: 12000, totalAmount: 28000, factoryStatus: "in_production", shop: "ROS India", currency: "₹", remarks: "Fabric delay — zari border restock expected Thu (noted by Priya)" },
-  { orderId: "SO-1006", customerName: "Neha Kapoor", phone: "+91 98450 65432", item: "Wedding Gown Alteration", orderDate: daysAgo(19), paidAmount: 6500, totalAmount: 6500, factoryStatus: "ready_to_ship", shop: "ROS India", currency: "₹" },
-  { orderId: "SO-0998", customerName: "Sana Ali", phone: "+91 98220 77889", item: "Party Wear Suit", orderDate: daysAgo(24), paidAmount: 5000, totalAmount: 11000, factoryStatus: "in_production", shop: "ROS India", currency: "₹", remarks: "Tailor on leave — resuming Monday, then 2 days to finish (Arun)" },
-  { orderId: "SO-0987", customerName: "Divya Reddy", phone: "+91 90360 99001", item: "Reception Outfit Set", orderDate: daysAgo(29), paidAmount: 14000, totalAmount: 26000, factoryStatus: "in_production", shop: "ROS India", currency: "₹" },
+  { orderId: "SO-1042", customerName: "Aisha Verma", phone: "+91 98765 43210", item: "Bridal Lehenga Set", orderDate: daysAgo(2), paidAmount: 15000, totalAmount: 32000, factoryStatus: "in_production", shop: "ROS India", currency: "₹", unit: "India-Unit1" },
+  { orderId: "SO-1039", customerName: "Rahul Mehta", phone: "+91 98200 12345", item: "Groom Sherwani", orderDate: daysAgo(5), paidAmount: 18000, totalAmount: 22000, factoryStatus: "in_production", shop: "ROS India", currency: "₹", unit: "India-Unit2" },
+  { orderId: "SO-1031", customerName: "Priya Nair", phone: "+91 98450 11223", item: "Silk Saree — Custom Blouse", orderDate: daysAgo(8), paidAmount: 6000, totalAmount: 14500, factoryStatus: "in_production", shop: "ROS India", currency: "₹", unit: "India-Unit1" },
+  { orderId: "SO-1024", customerName: "Kavya Iyer", phone: "+91 90080 33445", item: "Anarkali Suit", orderDate: daysAgo(12), paidAmount: 9000, totalAmount: 9000, factoryStatus: "ready_to_ship", shop: "ROS India", currency: "₹", unit: "UK-Unit" },
+  { orderId: "SO-1015", customerName: "Fatima Sheikh", phone: "+91 99870 55667", item: "Designer Lehenga", orderDate: daysAgo(16), paidAmount: 12000, totalAmount: 28000, factoryStatus: "in_production", shop: "ROS India", currency: "₹", unit: "India-Unit1", remarks: "Fabric delay — zari border restock expected Thu (noted by Priya)" },
+  { orderId: "SO-1006", customerName: "Neha Kapoor", phone: "+91 98450 65432", item: "Wedding Gown Alteration", orderDate: daysAgo(19), paidAmount: 6500, totalAmount: 6500, factoryStatus: "ready_to_ship", shop: "ROS India", currency: "₹", unit: "India-Unit2" },
+  { orderId: "SO-0998", customerName: "Sana Ali", phone: "+91 98220 77889", item: "Party Wear Suit", orderDate: daysAgo(24), paidAmount: 5000, totalAmount: 11000, factoryStatus: "in_production", shop: "ROS India", currency: "₹", unit: "India-Unit1", remarks: "Tailor on leave — resuming Monday, then 2 days to finish (Arun)" },
+  { orderId: "SO-0987", customerName: "Divya Reddy", phone: "+91 90360 99001", item: "Reception Outfit Set", orderDate: daysAgo(29), paidAmount: 14000, totalAmount: 26000, factoryStatus: "in_production", shop: "ROS India", currency: "₹", unit: "" },
 ];
 
 /* ────────────────────────────────────────────────────────────────────────
@@ -122,6 +129,25 @@ const CATEGORY = {
   exchange: { bar: "#6366f1", barGrad: "linear-gradient(90deg,#818cf8,#4338ca)", bg: "#e0e7ff", text: "#3730a3", label: "Exchange" },
   refund:   { bar: "#f43f5e", barGrad: "linear-gradient(90deg,#fb7185,#e11d48)", bg: "#ffe4e6", text: "#9f1239", label: "Refund" },
 };
+
+// Matches the "Dispatch Unit" field/values on the Sales form exactly (see
+// dispatchFrom in App.jsx) — three despatch units, plus an "unassigned"
+// bucket for orders saved before this field existed or without one picked.
+// Only production (sales) entries carry a real unit today — returns don't
+// track one yet, so exchange/refund entries fall through to unassigned.
+const UNIT_META = {
+  "India-Unit1": { label: "Unit 1", flag: "🇮🇳", bg: "#e0f2fe", text: "#075985" },
+  "India-Unit2": { label: "Unit 2", flag: "🇮🇳", bg: "#ede9fe", text: "#5b21b6" },
+  "UK-Unit":     { label: "UK Unit", flag: "🇬🇧", bg: "#fce7f3", text: "#9d174d" },
+  "":            { label: "Unassigned", flag: "❔", bg: "#f1f5f9", text: "#64748b" },
+};
+const UNIT_TABS = [
+  { key: "all", label: "All Units" },
+  { key: "India-Unit1", label: "🇮🇳 Unit 1" },
+  { key: "India-Unit2", label: "🇮🇳 Unit 2" },
+  { key: "UK-Unit", label: "🇬🇧 UK Unit" },
+  { key: "", label: "Unassigned" },
+];
 
 // ── formatting helpers ──────────────────────────────────────────────────
 const round2 = (n) => Math.round((n + Number.EPSILON) * 100) / 100;
@@ -187,6 +213,7 @@ export function normalizeQueue(salesData = [], returnsExchangeData = [], refunds
       factoryStatus: s.factoryStatus || "in_production",
       shop: s.shop || "",
       currency: s.currency || "₹",
+      unit: s.unit || "", // despatch unit — Unit 1 / Unit 2 / UK Unit / unset
       remarks: s.remarks || "", // staff note on why this is delayed, or any custom context
     });
   });
@@ -212,6 +239,7 @@ export function normalizeQueue(salesData = [], returnsExchangeData = [], refunds
       originalOrderId: r.originalOrderId,
       shop: r.shop || "",
       currency: r.currency || "₹",
+      unit: r.unit || "", // returns don't track a despatch unit today — stays unassigned
       remarks: r.remarks || "",
     });
   });
@@ -238,6 +266,7 @@ export function normalizeQueue(salesData = [], returnsExchangeData = [], refunds
       originalOrderId: r.originalOrderId,
       shop: r.shop || "",
       currency: r.currency || "₹",
+      unit: r.unit || "", // returns don't track a despatch unit today — stays unassigned
       remarks: r.remarks || "",
     });
   });
@@ -399,6 +428,11 @@ function QueueRow({ entry, narrow, onOpen, leftColWidth, rightColWidth }) {
         <div style={{ display: "flex", gap: 5, marginTop: 6, flexWrap: "wrap" }}>
           <Badge bg={cat.bg} color={cat.text}>{cat.label}</Badge>
           {isReady && <Badge bg="#dbeafe" color="#1e40af">✅ Ready</Badge>}
+          {entry.unit && (
+            <Badge bg={UNIT_META[entry.unit]?.bg || UNIT_META[""].bg} color={UNIT_META[entry.unit]?.text || UNIT_META[""].text}>
+              {UNIT_META[entry.unit]?.flag} {UNIT_META[entry.unit]?.label || entry.unit}
+            </Badge>
+          )}
         </div>
       </div>
 
@@ -525,6 +559,11 @@ function DetailDrawer({ entry, onClose, onMarkPaid, onAdvance, onSaveRemarks, on
             <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{entry.phone}</div>
             <div style={{ display: "flex", gap: 5, marginTop: 8, flexWrap: "wrap" }}>
               <Badge bg={cat.bg} color={cat.text}>{cat.label}</Badge>
+              {entry.unit && (
+                <Badge bg={UNIT_META[entry.unit]?.bg || UNIT_META[""].bg} color={UNIT_META[entry.unit]?.text || UNIT_META[""].text}>
+                  {UNIT_META[entry.unit]?.flag} {UNIT_META[entry.unit]?.label || entry.unit}
+                </Badge>
+              )}
             </div>
           </div>
           <button onClick={handleClose} title="Close" style={{ border: "none", background: "#f1f5f9", color: "#475569", borderRadius: 8, width: 30, height: 30, fontSize: 15, cursor: "pointer", flexShrink: 0 }}>✕</button>
@@ -672,9 +711,14 @@ export default function FactoryQueuePanel({
   refundsData = MOCK_REFUNDS_DATA,
 }) {
   const narrow = useIsNarrow();
+  // True only when the caller didn't pass real data (e.g. the standalone
+  // preview HTML) — the App.jsx wiring always passes real arrays (even if
+  // empty), so this correctly stays false once live in the app.
+  const isDemoData = salesData === MOCK_SALES_DATA && returnsExchangeData === MOCK_RETURNS_EXCHANGE_DATA && refundsData === MOCK_REFUNDS_DATA;
   const [overrides, setOverrides] = useState({});     // id -> patch layered on top of the source data
   const [completedIds, setCompletedIds] = useState(() => new Set());
   const [filter, setFilter] = useState("all");
+  const [unitFilter, setUnitFilter] = useState("all"); // "all" | a UNIT_META key (incl. "" for Unassigned)
   const [sortBy, setSortBy] = useState("overdue_first"); // most-overdue-first, per ROS India's default triage
   const [search, setSearch] = useState("");
   const [activeId, setActiveId] = useState(null);
@@ -721,12 +765,24 @@ export default function FactoryQueuePanel({
     refund: activeQueue.filter((e) => e.queueType === "refund").length,
   }), [activeQueue]);
 
+  // Counts per despatch unit — independent of the category filter/search,
+  // same convention as filterCounts above, so "see each unit's pending
+  // separately" works as its own dimension alongside All/Production/etc.
+  const unitCounts = useMemo(() => {
+    const counts = { all: activeQueue.length };
+    UNIT_TABS.forEach((t) => { if (t.key !== "all") counts[t.key] = 0; });
+    activeQueue.forEach((e) => { counts[e.unit] = (counts[e.unit] || 0) + 1; });
+    return counts;
+  }, [activeQueue]);
+
   const visible = useMemo(() => {
     let list = activeQueue;
     if (filter === "production") list = list.filter((e) => e.queueType === "production");
     else if (filter === "overdue") list = list.filter((e) => e.queueType === "production" && e.category === "overdue");
     else if (filter === "exchange") list = list.filter((e) => e.queueType === "exchange");
     else if (filter === "refund") list = list.filter((e) => e.queueType === "refund");
+
+    if (unitFilter !== "all") list = list.filter((e) => e.unit === unitFilter);
 
     const q = search.trim().toLowerCase();
     if (q) {
@@ -755,7 +811,7 @@ export default function FactoryQueuePanel({
     else if (sortBy === "shortest") sorted.sort((a, b) => a.daysWaiting - b.daysWaiting);
     else if (sortBy === "balance") sorted.sort((a, b) => Math.abs(b.balanceDue) - Math.abs(a.balanceDue));
     return sorted;
-  }, [activeQueue, filter, search, sortBy]);
+  }, [activeQueue, filter, unitFilter, search, sortBy]);
 
   const activeEntry = activeId ? activeQueue.find((e) => e.id === activeId) : null;
 
@@ -802,8 +858,8 @@ export default function FactoryQueuePanel({
           <div style={{ flex: "1 1 260px", minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 9, flexWrap: "wrap" }}>
               <div style={{ fontFamily: FONT_DISPLAY, fontSize: narrow ? 20 : 26, fontWeight: 800, color: "#0f172a", letterSpacing: "-0.01em" }}>
-                Factory Pipeline{" "}
-                <span style={{ background: "linear-gradient(90deg,#4f46e5,#db2777)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>& Wait-Time</span>
+                Fulfilment{" "}
+                <span style={{ background: "linear-gradient(90deg,#4f46e5,#db2777)", WebkitBackgroundClip: "text", backgroundClip: "text", color: "transparent" }}>Tracker</span>
               </div>
               <Badge bg="linear-gradient(135deg,#4f46e5,#7c3aed)" color="white">🇮🇳 ROS India</Badge>
             </div>
@@ -812,7 +868,9 @@ export default function FactoryQueuePanel({
               {completedJustNow > 0 && <span style={{ color: "#166534", fontWeight: 700 }}> · {completedJustNow} completed this session</span>}
             </div>
           </div>
-          <Badge bg="rgba(255,255,255,0.75)" color="#4338ca" title="Populated with sample data — pass real salesData/returnsExchangeData/refundsData props to go live">✨ Demo data</Badge>
+          {isDemoData && (
+            <Badge bg="rgba(255,255,255,0.75)" color="#4338ca" title="Populated with sample data — pass real salesData/returnsExchangeData/refundsData props to go live">✨ Demo data</Badge>
+          )}
         </div>
       </div>
 
@@ -848,6 +906,22 @@ export default function FactoryQueuePanel({
           style={{ marginLeft: "auto", border: "1px solid #e2e8f0", borderRadius: 10, padding: "9px 11px", fontSize: 12.5, fontFamily: FONT_BODY, fontWeight: 600, color: "#334155", background: "white" }}>
           {SORTS.map((s) => <option key={s.key} value={s.key}>Sort: {s.label}</option>)}
         </select>
+      </div>
+
+      {/* Unit tabs — see each despatch unit's pending queue separately */}
+      <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
+        <span style={{ fontSize: 10.5, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginRight: 2 }}>Unit:</span>
+        {UNIT_TABS.map((t) => (
+          <button key={t.key || "unassigned"} onClick={() => setUnitFilter(t.key)}
+            style={{
+              border: unitFilter === t.key ? "1px solid transparent" : "1px solid #e2e8f0",
+              background: unitFilter === t.key ? "linear-gradient(135deg,#4f46e5,#7c3aed)" : "white",
+              color: unitFilter === t.key ? "white" : "#334155", borderRadius: 999, padding: "6px 13px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: FONT_BODY, whiteSpace: "nowrap",
+              boxShadow: unitFilter === t.key ? "0 6px 14px -6px rgba(79,70,229,0.5)" : "none", transition: "all 0.15s ease",
+            }}>
+            {t.label} <span style={{ opacity: 0.7 }}>({unitCounts[t.key] || 0})</span>
+          </button>
+        ))}
       </div>
 
       {/* Search */}
