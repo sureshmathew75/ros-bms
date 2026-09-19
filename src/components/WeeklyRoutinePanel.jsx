@@ -38,6 +38,22 @@ const WEEKLY_DOC_CHECKS = [
   { key: "customers", label: "Customer/supplier contact details are accurate for this week's transactions" },
 ];
 
+// Config (icon/label only — no live numbers here) for the four Returns
+// metrics shown inside the "returns" documentation check, shared between
+// the live entry form and the read-only history view so both stay in sync.
+const RETURNS_METRIC_META = [
+  { key: "expecting", icon: "📥", label: "Return Expecting" },
+  { key: "refund", icon: "💰", label: "Awaiting Refund" },
+  { key: "exchange", icon: "🔄", label: "Awaiting Exchange" },
+  { key: "confirmation", icon: "❓", label: "Received – Awaiting Customer Confirmation" },
+];
+const RETURNS_METRIC_STYLE = {
+  expecting: { bg: "#eff6ff", border: "#bfdbfe", color: "#1d4ed8" },
+  refund: { bg: "#f5f3ff", border: "#ddd6fe", color: "#6d28d9" },
+  exchange: { bg: "#fdf4ff", border: "#f5d0fe", color: "#a21caf" },
+  confirmation: { bg: "#fff7ed", border: "#fed7aa", color: "#c2410c" },
+};
+
 function blankDocChecks() {
   return WEEKLY_DOC_CHECKS.map(d => ({ ...d, checked: false, checkedBy: "", checkedAt: null, note: "" }));
 }
@@ -68,7 +84,7 @@ function timeAgo(iso) {
   return `${days}d ago`;
 }
 
-export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = [], isRosieTaskDue, onMarkTaskDone, onDeleteTask, staffAccounts = [], onAddTask, returnsExpecting = 0, refundsAwaiting = 0, exchangesAwaiting = 0 }) {
+export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = [], isRosieTaskDue, onMarkTaskDone, onDeleteTask, staffAccounts = [], onAddTask, returnsExpecting = 0, refundsAwaiting = 0, exchangesAwaiting = 0, awaitingConfirmation = 0 }) {
   const myId = user?.id || "";
   const myName = user?.fullName || user?.name || "Staff";
   const isAdmin = user?.role === "superadmin" || user?.role === "admin";
@@ -213,18 +229,33 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
     await persist({ ...routine, docChecks: nextChecks });
   };
 
-  // Staff enter what they actually find when they check the Returns &
-  // Refunds page — each entry is saved alongside the live system count at
-  // the moment it was entered, so a mismatch (staff counted something the
-  // system doesn't show, or vice versa) is visible rather than assumed away.
-  const handleReturnsCountBlur = async (metricKey, systemValue, value) => {
-    if (value === "") return;
-    const counted = Number(value);
-    if (Number.isNaN(counted)) return;
-    const current = routine.returnsCheck?.[metricKey];
-    if (current && current.counted === counted && current.system === systemValue) return;
-    const nextCheck = { ...(routine.returnsCheck || {}), [metricKey]: { system: systemValue, counted, countedBy: myName, countedAt: new Date().toISOString() } };
+  // Staff enter WHO they actually find in each category on the Returns &
+  // Refunds page (a named list, not just a number) — each entry is saved
+  // alongside the live system count at the moment it was entered, so a
+  // mismatch (staff found a name the system doesn't show, or vice versa)
+  // is visible rather than assumed away. `counted` is derived from the
+  // non-blank names and kept for the matched/mismatch comparison.
+  const getMetricNames = (metricKey) => (routine.returnsCheck?.[metricKey]?.names) || [];
+
+  const saveMetricNames = async (metricKey, systemValue, names) => {
+    const counted = names.filter(n => n && n.trim() !== "").length;
+    const nextCheck = { ...(routine.returnsCheck || {}), [metricKey]: { system: systemValue, names, counted, countedBy: myName, countedAt: new Date().toISOString() } };
     await persist({ ...routine, returnsCheck: nextCheck });
+  };
+
+  const handleAddMetricName = (metricKey, systemValue) => {
+    saveMetricNames(metricKey, systemValue, [...getMetricNames(metricKey), ""]);
+  };
+
+  const handleMetricNameBlur = (metricKey, systemValue, idx, value) => {
+    const names = [...getMetricNames(metricKey)];
+    if (names[idx] === value) return;
+    names[idx] = value;
+    saveMetricNames(metricKey, systemValue, names);
+  };
+
+  const handleRemoveMetricName = (metricKey, systemValue, idx) => {
+    saveMetricNames(metricKey, systemValue, getMetricNames(metricKey).filter((_, i) => i !== idx));
   };
 
   const handleComplete = async () => {
@@ -251,15 +282,13 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
   const sectionSub = { margin: "0 0 14px", fontSize: 11.5, color: "#94a3b8" };
   const pastWeeks = historyList.filter(h => h.weekEnding !== weekEnding);
 
-  // The three figures staff verify against the Returns & Refunds page for
+  // The four figures staff verify against the Returns & Refunds page for
   // the "returns up to date" documentation check. `system` is always the
   // live count computed from today's Returns data (never persisted as-is);
-  // what IS persisted per week is what staff typed in against it.
-  const wrMetrics = [
-    { key: "expecting", icon: "📥", label: "Return Expecting", system: returnsExpecting, bg: "#eff6ff", border: "#bfdbfe", color: "#1d4ed8" },
-    { key: "refund", icon: "💰", label: "Awaiting Refund", system: refundsAwaiting, bg: "#f5f3ff", border: "#ddd6fe", color: "#6d28d9" },
-    { key: "exchange", icon: "🔄", label: "Awaiting Exchange", system: exchangesAwaiting, bg: "#fdf4ff", border: "#f5d0fe", color: "#a21caf" },
-  ];
+  // what IS persisted per week is the list of customer names staff typed
+  // in against it.
+  const wrMetricSystemValue = { expecting: returnsExpecting, refund: refundsAwaiting, exchange: exchangesAwaiting, confirmation: awaitingConfirmation };
+  const wrMetrics = RETURNS_METRIC_META.map(m => ({ ...m, ...RETURNS_METRIC_STYLE[m.key], system: wrMetricSystemValue[m.key] }));
 
   return (
     <div style={{ maxWidth: 820, margin: "0 auto" }}>
@@ -338,20 +367,27 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
                       </div>
                     </div>
                     {c.key === "returns" && display?.returnsCheck && Object.keys(display.returnsCheck).length > 0 && (
-                      <div style={{ marginTop: 8, marginLeft: 24, display: "flex", flexDirection: "column", gap: 5 }}>
-                        {["expecting", "refund", "exchange"].map(mk => {
-                          const saved = display.returnsCheck[mk];
+                      <div style={{ marginTop: 8, marginLeft: 24, display: "flex", flexDirection: "column", gap: 7 }}>
+                        {RETURNS_METRIC_META.map(m => {
+                          const saved = display.returnsCheck[m.key];
                           if (!saved || saved.counted === null || saved.counted === undefined) return null;
-                          const lbl = mk === "expecting" ? "📥 Return Expecting" : mk === "refund" ? "💰 Awaiting Refund" : "🔄 Awaiting Exchange";
+                          const names = saved.names || [];
                           return (
-                            <div key={mk} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
-                              <span style={{ flex: 1, minWidth: 0, fontWeight: 700, color: "#334155" }}>{lbl}</span>
-                              <span style={{ color: "#64748b" }}>System: <strong style={{ color: "#0f172a" }}>{saved.system}</strong></span>
-                              <span style={{ color: "#64748b" }}>Counted: <strong style={{ color: "#0f172a" }}>{saved.counted}</strong></span>
-                              {saved.counted === saved.system ? (
-                                <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 999, background: "#f0fdf4", color: "#166534" }}>✓</span>
-                              ) : (
-                                <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 999, background: "#fff7ed", color: "#c2410c" }}>⚠</span>
+                            <div key={m.key} style={{ fontSize: 11 }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <span style={{ flex: 1, minWidth: 0, fontWeight: 700, color: "#334155" }}>{m.icon} {m.label}</span>
+                                <span style={{ color: "#64748b" }}>System: <strong style={{ color: "#0f172a" }}>{saved.system}</strong></span>
+                                <span style={{ color: "#64748b" }}>Counted: <strong style={{ color: "#0f172a" }}>{saved.counted}</strong></span>
+                                {saved.counted === saved.system ? (
+                                  <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 999, background: "#f0fdf4", color: "#166534" }}>✓</span>
+                                ) : (
+                                  <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 999, background: "#fff7ed", color: "#c2410c" }}>⚠</span>
+                                )}
+                              </div>
+                              {names.length > 0 && (
+                                <div style={{ marginTop: 3, marginLeft: 2, fontSize: 10.5, color: "#475569" }}>
+                                  {names.map((n, i) => (i + 1) + ". " + (n && n.trim() ? n : "—")).join("   ")}
+                                </div>
                               )}
                             </div>
                           );
@@ -431,25 +467,41 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
                     )}
                   </div>
                   {c.key === "returns" && (
-                    <div style={{ marginTop: 8, marginLeft: 24, display: "flex", flexDirection: "column", gap: 5 }}>
-                      <div style={{ fontSize: 10, color: "#94a3b8" }}>Check the Returns &amp; Refunds page and enter what you actually find:</div>
+                    <div style={{ marginTop: 8, marginLeft: 24, display: "flex", flexDirection: "column", gap: 8 }}>
+                      <div style={{ fontSize: 10, color: "#94a3b8" }}>Check the Returns &amp; Refunds page and list the customers in each category:</div>
                       {wrMetrics.map(m => {
                         const saved = routine.returnsCheck?.[m.key];
-                        const hasCount = saved && saved.counted !== null && saved.counted !== undefined;
+                        const names = saved?.names || [];
+                        const hasEntry = saved && saved.counted !== null && saved.counted !== undefined;
                         return (
-                          <div key={m.key} style={{ display: "flex", alignItems: "center", gap: 8, padding: "5px 8px", borderRadius: 8, background: m.bg, border: "1px solid " + m.border }}>
-                            <span style={{ fontSize: 11, fontWeight: 700, color: m.color, flex: 1, minWidth: 0 }}>{m.icon} {m.label}</span>
-                            <span style={{ fontSize: 10.5, color: "#64748b", whiteSpace: "nowrap" }}>System: <strong style={{ color: "#0f172a" }}>{m.system}</strong></span>
-                            <input type="number" defaultValue={hasCount ? saved.counted : ""} placeholder="Count"
-                              onBlur={e => handleReturnsCountBlur(m.key, m.system, e.target.value)}
-                              style={{ width: 54, padding: "4px 6px", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 11.5, fontFamily: "inherit", textAlign: "right", boxSizing: "border-box", background: "white" }} />
-                            {hasCount && (
-                              saved.counted === saved.system ? (
-                                <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 999, background: "#f0fdf4", color: "#166534", whiteSpace: "nowrap" }}>✓ matched</span>
-                              ) : (
-                                <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 999, background: "#fff7ed", color: "#c2410c", whiteSpace: "nowrap" }}>⚠ mismatch</span>
-                              )
-                            )}
+                          <div key={m.key} style={{ padding: "7px 8px", borderRadius: 8, background: m.bg, border: "1px solid " + m.border }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <span style={{ fontSize: 11, fontWeight: 700, color: m.color, flex: 1, minWidth: 0 }}>{m.icon} {m.label}</span>
+                              <span style={{ fontSize: 10.5, color: "#64748b", whiteSpace: "nowrap" }}>System: <strong style={{ color: "#0f172a" }}>{m.system}</strong></span>
+                              {hasEntry && (
+                                saved.counted === saved.system ? (
+                                  <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 999, background: "#f0fdf4", color: "#166534", whiteSpace: "nowrap" }}>✓ {saved.counted} matched</span>
+                                ) : (
+                                  <span style={{ fontSize: 9, fontWeight: 800, padding: "2px 6px", borderRadius: 999, background: "#fff7ed", color: "#c2410c", whiteSpace: "nowrap" }}>⚠ {saved.counted} vs {saved.system}</span>
+                                )
+                              )}
+                            </div>
+                            <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+                              {names.map((n, idx) => (
+                                <div key={idx} style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                                  <span style={{ fontSize: 10.5, color: "#94a3b8", width: 16, textAlign: "right", flexShrink: 0 }}>{idx + 1}.</span>
+                                  <input defaultValue={n} placeholder="Customer name"
+                                    onBlur={e => handleMetricNameBlur(m.key, m.system, idx, e.target.value)}
+                                    style={{ flex: 1, minWidth: 0, padding: "4px 7px", borderRadius: 6, border: "1px solid #e2e8f0", fontSize: 11.5, fontFamily: "inherit", boxSizing: "border-box", background: "white" }} />
+                                  <button onClick={() => handleRemoveMetricName(m.key, m.system, idx)} title="Remove this name"
+                                    style={{ border: "none", background: "transparent", color: "#b91c1c", fontSize: 12, cursor: "pointer", padding: "2px 4px", lineHeight: 1, flexShrink: 0 }}>✕</button>
+                                </div>
+                              ))}
+                              <button onClick={() => handleAddMetricName(m.key, m.system)}
+                                style={{ alignSelf: "flex-start", marginTop: 2, padding: "3px 9px", borderRadius: 6, border: "1px dashed " + m.border, background: "white", color: m.color, fontSize: 10.5, fontWeight: 700, cursor: "pointer", fontFamily: "inherit" }}>
+                                + Add Name
+                              </button>
+                            </div>
                           </div>
                         );
                       })}

@@ -4184,7 +4184,14 @@ Thank you for your cooperation.`,
                 const today=new Date().toISOString().slice(0,10);
                 const updates={status:newStatus,...extraUpdates};
                 if(newStatus==="MSG_SENT") updates.instructionsSentAt=today;
-                if(newStatus==="RETURN_RECEIVED") updates.receivedDate=today;
+                // Marking an item received resets the resolution back to
+                // "undecided" even if the customer stated a preference (e.g.
+                // exchange) when they first requested the return — staff
+                // must reconfirm what the customer wants via the "What does
+                // the customer want?" panel once the item is actually back,
+                // so a case never skips the Received tab and lands straight
+                // in Exchange in Progress before that confirmation happens.
+                if(newStatus==="RETURN_RECEIVED"){ updates.receivedDate=today; updates.resolution="undecided"; }
                 if(newStatus==="REFUNDED") updates.refundDate=today;
                 // exchangeDate defaults to today but respects an explicit
                 // despatch date passed in via extraUpdates (the "Date of
@@ -4301,10 +4308,14 @@ Thank you for your cooperation.`,
                     borderRadius:12,
                     border:"1px solid "+(isSelected?shop.accent:"#e5e7eb"),
                     borderLeft:"4px solid "+(isSelected?shop.accent:statusStyle.text),
-                    background:isSelected?shop.accent+"08":"white",
-                    transition:"box-shadow 0.15s",boxShadow:"0 1px 3px rgba(0,0,0,0.04)"}}
-                  onMouseEnter={e=>e.currentTarget.style.boxShadow="0 4px 16px "+shop.accent+"26"}
-                  onMouseLeave={e=>e.currentTarget.style.boxShadow="0 1px 3px rgba(0,0,0,0.04)"}>
+                    // A faint wash of the shop's own accent colour (instead
+                    // of flat white) plus a layered shadow gives the card a
+                    // touch of depth without competing with the content.
+                    background:isSelected?shop.accent+"14":"linear-gradient(145deg, "+shop.accent+"0a 0%, #ffffff 55%)",
+                    transition:"box-shadow 0.15s, transform 0.15s",
+                    boxShadow:"0 1px 2px rgba(15,23,42,0.06), 0 3px 8px rgba(15,23,42,0.07)"}}
+                  onMouseEnter={e=>{e.currentTarget.style.boxShadow="0 10px 24px "+shop.accent+"33, 0 2px 6px rgba(15,23,42,0.08)";e.currentTarget.style.transform="translateY(-2px)";}}
+                  onMouseLeave={e=>{e.currentTarget.style.boxShadow="0 1px 2px rgba(15,23,42,0.06), 0 3px 8px rgba(15,23,42,0.07)";e.currentTarget.style.transform="translateY(0)";}}>
 
                   {/* Top row: checkbox, ID + status + intent/age pill, customer, subline */}
                   <div style={{display:"flex",alignItems:"flex-start",gap:12}}>
@@ -9372,13 +9383,18 @@ return(
             const wrReturnsExpecting=returns.filter(r=>wrActiveStatuses.includes(r.status)).length;
             const wrRefundsAwaiting=returns.filter(r=>r.status==="RETURN_RECEIVED"&&(r.resolution==="refund"||r.resolution==="exchange_refund")).length;
             const wrExchangesAwaiting=returns.filter(r=>r.status==="RETURN_RECEIVED"&&(r.resolution==="exchange"||r.resolution==="exchange_refund")).length;
+            // Items physically back with us but staff haven't yet recorded
+            // what the customer wants (the "What does the customer want?"
+            // panel is still showing) — the Received tab's own backlog.
+            const wrAwaitingConfirmation=returns.filter(r=>r.status==="RETURN_RECEIVED"&&(!r.resolution||r.resolution==="undecided")).length;
             return (
               <WeeklyRoutinePanel shopId={shopId} shop={shop} user={user} rosieTasks={rosieTasks} isRosieTaskDue={isRosieTaskDue}
                 onMarkTaskDone={async(t)=>{ await dbMarkRosieTaskDone(t); reloadRosieTasks(); }}
                 onDeleteTask={async(id)=>{ await dbDeleteRosieTask(id); reloadRosieTasks(); }}
                 staffAccounts={rosIndiaStaffAccounts}
                 onAddTask={async(task)=>{ await dbSaveRosieTask({...task,shopId}); reloadRosieTasks(); }}
-                returnsExpecting={wrReturnsExpecting} refundsAwaiting={wrRefundsAwaiting} exchangesAwaiting={wrExchangesAwaiting} />
+                returnsExpecting={wrReturnsExpecting} refundsAwaiting={wrRefundsAwaiting} exchangesAwaiting={wrExchangesAwaiting}
+                awaitingConfirmation={wrAwaitingConfirmation} />
             );
           })()}
 
