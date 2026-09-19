@@ -12092,6 +12092,15 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
     return Object.entries(groups).sort((a,b)=>b[0].localeCompare(a[0]));
   }, [movements]);
 
+  // Returns currently "in office" — the same figure the Returned Stock tab
+  // and the Weekly Routine's physical count both use — passed through to
+  // the Stock Sheet purely so its Print/Export can show it as its own box,
+  // separate from Fresh Stock (it's a different ledger entirely; see the
+  // sectionToggle comment above).
+  const returnedStockNow = React.useMemo(() => (returns||[]).filter(r =>
+    ["RETURN_RECEIVED","EXCHANGED","REFUNDED","EXCHANGE_REFUND"].includes(r.status) && (r.stockStatus||"in_office")==="in_office"
+  ), [returns]);
+
   if (loading) return <div style={{padding:60,textAlign:"center",color:"#94a3b8"}}>Loading inventory…</div>;
 
   // Shared Fresh/Returned tab toggle — shown at the top of both list-level
@@ -12321,6 +12330,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           onRestock={isAdmin ? (item)=>setRestockFor({id:item.id,name:item.name}) : null}
           onSelectItem={(id)=>setSelectedItemId(id)}
           fmtDate={fmtDate}
+          returnedStock={returnedStockNow}
         />
       )
       ) : (
@@ -12473,7 +12483,7 @@ function rectOf(el) {
 const STOCK_CATEGORIES = ["Cover-Up Patches", "Receding Hairpieces", "Bangs and Fringes", "Updos", "Hair Accessories"];
 const OTHER_CATEGORY = "Other";
 
-const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSelectItem, fmtDate }) => {
+const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSelectItem, fmtDate, returnedStock = [] }) => {
   const [cellPopover, setCellPopover] = React.useState(null); // {itemId, date, anchor} | null
   const [monthPopover, setMonthPopover] = React.useState(null); // {itemId, type:'sale'|'restock', anchor} | null
   const todayStr = new Date().toISOString().slice(0,10);
@@ -12582,7 +12592,7 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
             style={{ ...pillBtn, opacity: atCurrentMonthOrLater?0.4:1, cursor: atCurrentMonthOrLater?"not-allowed":"pointer" }}>→</button>
           <button onClick={()=>setSheetMonth(todayStr.slice(0,7))} style={pillBtn}>This Month</button>
         </div>
-        <button onClick={()=>printStockSheet(rows, monthLabel, shop, fmtDate)}
+        <button onClick={()=>printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock)}
           style={{ padding:"8px 14px", borderRadius:10, border:"1px solid #e2e8f0", background:"white", color:"#334155", fontWeight:700, fontSize:12.5, cursor:"pointer", fontFamily:"inherit" }}>
           🖨️ Print / Export PDF
         </button>
@@ -12858,9 +12868,33 @@ const MonthMovementsPopover = ({ item, type, anchor, monthLabel, moves, fmtDate,
 // sales ledger (who every unit went to) and a restock ledger, both sorted
 // chronologically. "Save as PDF" from the browser's print dialog is the
 // PDF export — same mechanism the Despatch Log's own print button uses.
-function printStockSheet(rows, monthLabel, shop, fmtDate) {
+//
+// `returnedStock` is the list of returns currently "in office" (see
+// InventoryPage's returnedStockNow) — passed in purely for the printout;
+// it isn't part of the Fresh Stock ledger `rows` computes from, so it has
+// to travel separately.
+function printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock = []) {
   const w = window.open("", "_blank");
   if (!w) return;
+
+  // Total Stock right now — deliberately NOT scoped to whichever month is
+  // on screen (unlike Opening/Closing below, which are that month's own
+  // figures). This reads item.currentStock directly, the same live running
+  // total the in-app dashboard and item detail pages use, so "right now"
+  // on paper always matches "right now" on screen regardless of which
+  // month you happened to be viewing when you hit Print.
+  const freshStockNow = rows.reduce((s,r)=>s+(r.item.currentStock||0), 0);
+
+  // Returned stock currently in office, grouped by item — same idea as the
+  // Fresh Stock summary below, just for the separate ledger the Returns
+  // page keeps (see ReturnedStockList / the Stock page's Returned Stock
+  // tab). Also always "right now", since a return's stock status has no
+  // month of its own.
+  const returnedByItem = {};
+  returnedStock.forEach(r => { const name = r.item || "—"; returnedByItem[name] = (returnedByItem[name]||0) + 1; });
+  const returnedRows = Object.entries(returnedByItem).sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]))
+    .map(([name,count]) => `<tr><td style="text-align:left">${name}</td><td>${count}</td></tr>`).join("")
+    || `<tr><td colspan="2" style="color:#94a3b8">No returned stock currently in office.</td></tr>`;
 
   // Grouped by category, same order and fallback as the on-screen sheet,
   // so the printed record matches what's visible on the page.
@@ -12905,9 +12939,20 @@ function printStockSheet(rows, monthLabel, shop, fmtDate) {
       th{background:#f8fafc;font-size:10px;text-transform:uppercase;letter-spacing:0.03em;}
     </style></head><body>
     <h1>📦 Stock Sheet${shop?.name?" — "+shop.name:""}</h1>
-    <p>${monthLabel}</p>
+    <p>${monthLabel} · printed ${new Date().toLocaleString("en-GB")}</p>
 
-    <h2>Summary</h2>
+    <div style="display:flex;gap:14px;margin:16px 0 20px;">
+      <div style="flex:1;border:1.5px solid #86efac;background:#f0fdf4;border-radius:10px;padding:14px 16px;">
+        <div style="font-size:24px;font-weight:900;color:#166534;">${freshStockNow}</div>
+        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-top:2px;">📦 Fresh Stock — Total In Stock Right Now</div>
+      </div>
+      <div style="flex:1;border:1.5px solid #c4b5fd;background:#f5f3ff;border-radius:10px;padding:14px 16px;">
+        <div style="font-size:24px;font-weight:900;color:#5b21b6;">${returnedStock.length}</div>
+        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-top:2px;">↩️ Returned Stock — In Office Right Now</div>
+      </div>
+    </div>
+
+    <h2>Summary — ${monthLabel}</h2>
     <p style="margin-bottom:6px;">Opening + Added − Sold ± Corrected = Closing — each row below checks out end to end, and this month's Closing carries forward as next month's Opening.</p>
     <table><thead><tr><th style="text-align:left">Item</th><th>Opening</th><th>Added</th><th>Sold</th><th>Corrected</th><th>Closing</th></tr></thead><tbody>${summaryRows}</tbody></table>
 
@@ -12916,6 +12961,10 @@ function printStockSheet(rows, monthLabel, shop, fmtDate) {
 
     <h2>Stock Added</h2>
     <table><thead><tr><th>Date</th><th style="text-align:left">Item</th><th>Qty</th><th style="text-align:left">Note</th></tr></thead><tbody>${restockTable}</tbody></table>
+
+    <h2>↩️ Returned Stock — Currently In Office (${returnedStock.length})</h2>
+    <p style="margin-bottom:6px;">Separate from Fresh Stock above — items customers returned that are still physically here, not yet resold or written off. Always "right now", not scoped to ${monthLabel}.</p>
+    <table><thead><tr><th style="text-align:left">Item</th><th>Qty</th></tr></thead><tbody>${returnedRows}</tbody></table>
     </body></html>`);
   w.document.close();
   setTimeout(() => w.print(), 300);
