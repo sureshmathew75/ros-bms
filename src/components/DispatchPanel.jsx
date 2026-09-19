@@ -358,6 +358,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
   const [expandedAddresses, setExpandedAddresses] = useState({}); // uuid -> true when address is expanded
   const [openRemarksUuid, setOpenRemarksUuid] = useState(null); // uuid of the row whose remarks field is open, if any
   const [openDeliveryUuid, setOpenDeliveryUuid] = useState(null); // uuid of the row whose delivered-date editor is open, if any
+  const [copiedTrackingUuid, setCopiedTrackingUuid] = useState(null); // uuid whose 📋 copy button just fired — flips to ✓ briefly
   const [addressModalUuid, setAddressModalUuid] = useState(null); // uuid of the row whose "edit address" popup is open, if any
   const [savingAddress, setSavingAddress] = useState(false);
   // Keys (see despatchKeyOf) currently in the middle of being written to
@@ -813,6 +814,17 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
     saveEntry(entry.uuid, { delivered: false, deliveredDate: "" });
   };
 
+  // Copies just the tracking number to the clipboard — the 📋 button next
+  // to the tracking input, for pasting into a carrier's site, a WhatsApp
+  // message, wherever, without having to select the input text by hand.
+  // Flips to a ✓ for a moment as feedback, then reverts on its own.
+  const copyTrackingNo = async (uuid, trackingNo) => {
+    if (!trackingNo) return;
+    try { await navigator.clipboard.writeText(trackingNo); } catch { /* clipboard blocked — button just won't flip to ✓ */ }
+    setCopiedTrackingUuid(uuid);
+    setTimeout(() => setCopiedTrackingUuid(prev => (prev === uuid ? null : prev)), 1200);
+  };
+
   // Address is entered/edited on the Sales page — this popup is just a
   // more comfortable way to fill that in from the Despatch Log, so it
   // writes straight back to the linked sale (never to the despatch entry
@@ -1204,10 +1216,24 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
                           </div>
                         </td>
                         <td style={{ padding: "8px 12px", minWidth: 130, verticalAlign: "top" }}>
-                          <input value={e.trackingNo} placeholder="Tracking no."
-                            onChange={ev => updateEntry(e.uuid, { trackingNo: ev.target.value.toUpperCase() })}
-                            onBlur={ev => saveEntry(e.uuid, { trackingNo: ev.target.value.toUpperCase() })}
-                            style={{ ...cellInputStyle, borderColor: isDup ? "#fca5a5" : "#e2e8f0", background: isDup ? "#fef2f2" : "white" }} />
+                          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                            <input value={e.trackingNo} placeholder="Tracking no."
+                              onChange={ev => updateEntry(e.uuid, { trackingNo: ev.target.value.toUpperCase() })}
+                              onBlur={ev => saveEntry(e.uuid, { trackingNo: ev.target.value.toUpperCase() })}
+                              style={{ ...cellInputStyle, flex: 1, minWidth: 0, borderColor: isDup ? "#fca5a5" : "#e2e8f0", background: isDup ? "#fef2f2" : "white" }} />
+                            {e.trackingNo && (
+                              <button onClick={() => copyTrackingNo(e.uuid, e.trackingNo)}
+                                title="Copy tracking number"
+                                style={{
+                                  flexShrink: 0, border: "1px solid #e2e8f0", borderRadius: 7, width: 24, height: 24, fontSize: 11.5,
+                                  cursor: "pointer", lineHeight: 1, fontFamily: "inherit",
+                                  background: copiedTrackingUuid === e.uuid ? "#dcfce7" : "white",
+                                  color: copiedTrackingUuid === e.uuid ? "#15803d" : "#6366f1",
+                                }}>
+                                {copiedTrackingUuid === e.uuid ? "✓" : "📋"}
+                              </button>
+                            )}
+                          </div>
                           {isDup && <div style={{ fontSize: 10, color: "#dc2626", fontWeight: 700, marginTop: 2 }}>⚠ used on another row</div>}
                         </td>
                         <td style={{ padding: "8px 12px", minWidth: 120, verticalAlign: "top" }}>
