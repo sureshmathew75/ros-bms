@@ -88,6 +88,14 @@ export const dbSaveSale = async (shopId, sale) => {
     manual_link_group:   sale.manualLinkGroup || null,
     ready_to_ship:       sale.readyToShip ? true : false,
     payment_method:      String(sale.paymentMethod || ''),
+    // Fulfilment Tracker's per-order staff note ("why is this delayed") —
+    // deliberately a separate column from `rem` (the general sale Remarks
+    // field from the Sales form), since the two are different notes and
+    // saving one shouldn't ever overwrite the other. Requires the
+    // sales_factory_remarks_column.sql migration to have been run — until
+    // then this falls back silently (see the try/fallback below) and
+    // remarks won't persist, same as any other extended column.
+    factory_remarks:     String(sale.factoryRemarks || ''),
   };
 
   const payload = { ...core, ...extended, verified: sale.verified || false };
@@ -196,6 +204,7 @@ export const dbLoadSales = async (shopId) => {
     paymentMethod: r.payment_method || '',
     trackingNo:    r.tracking_no || '',
     dispatchFrom:      r.dispatch_from || '',
+    factoryRemarks:    r.factory_remarks || '',
     carrier:           r.carrier || '',
     trackingNotified:  r.tracking_notified || false,
     expectedTotal: Number(r.expected_total) || 0,

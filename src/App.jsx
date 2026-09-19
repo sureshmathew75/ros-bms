@@ -7682,6 +7682,10 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
         // deal (whichever one the field was shown for at save time) — use
         // whichever row in the group actually has it set.
         unit: (group.find(x => x.dispatchFrom) || {}).dispatchFrom || "",
+        // Read from (and always written back to, see handlePersistFactoryRemarks
+        // below) the same "earliest" row used as this entry's orderId/referenceId,
+        // so reads and writes stay consistent for multi-payment deals.
+        remarks: earliest.factoryRemarks || "",
       });
     });
     return out;
@@ -7703,6 +7707,11 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
         exchangeItemRequested: r.item || "replacement item",
         returnReceivedDate: r.receivedDate || r.date || "",
         balanceAdjustment: 0, // no equivalent field in the real return record
+        // Reuses the return's own existing Staff Notes field (already used
+        // and shown in the Returns panel) rather than a brand-new column —
+        // editing this in the Fulfilment Tracker updates the same note you'd
+        // see there too, and vice versa.
+        remarks: r.staffNotes || "",
       }));
   }, [returns, shopId]);
 
@@ -7719,8 +7728,34 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
         refundAmountDue: Number(r.refundAmount) || 0,
         returnReceivedDate: r.receivedDate || r.date || "",
         refundStatus: "pending",
+        remarks: r.staffNotes || "", // same Staff Notes field as the Returns panel
       }));
   }, [returns, shopId]);
+
+  // Persists a Fulfilment Tracker remarks edit back to Supabase — production
+  // entries get their own dedicated factory_remarks column on the sale (see
+  // sales_factory_remarks_column.sql), exchange/refund entries reuse the
+  // return's existing Staff Notes field. Passed to FactoryQueuePanel as
+  // onPersistRemarks; the component still keeps its own local override too,
+  // so the box updates instantly and this just makes it durable.
+  const handlePersistFactoryRemarks = React.useCallback(async (entry, text) => {
+    if (entry.queueType === "production") {
+      const existingSale = (sales || []).find(s => s.id === entry.referenceId);
+      if (!existingSale) return;
+      const merged = { ...existingSale, factoryRemarks: text };
+      await dbSaveSale(shopId, merged);
+      setSalesData(prev => ({
+        ...prev,
+        [shopId]: (prev[shopId] || []).map(s => s.id === merged.id ? merged : s),
+      }));
+    } else {
+      const existingReturn = (returns || []).find(r => r.id === entry.referenceId);
+      if (!existingReturn) return;
+      const merged = { ...existingReturn, staffNotes: text };
+      await dbSaveReturn(merged);
+      setReturns(prev => (prev || []).map(r => r.id === merged.id ? merged : r));
+    }
+  }, [sales, returns, shopId]);
 
   const filtSales=sales.filter(s=>{
     const q=search.toLowerCase();
@@ -9382,6 +9417,7 @@ return(
               salesData={fqSalesData}
               returnsExchangeData={fqExchangeData}
               refundsData={fqRefundData}
+              onPersistRemarks={handlePersistFactoryRemarks}
             />
           )}
 
@@ -18206,16 +18242,23 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 <div><label style={lbl}>Payment To</label><select ref={el=>{rosieFieldRefs.current.payBy=el;}} value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{PAY_OPTIONS.map(o=><option key={o}>{o}</option>)}</select></div>
                 {(form.payBy==="SHOP"||form.payBy==="SHOPIFY") ? (
                   <div><label style={lbl}>{form.payBy==="SHOPIFY"?"Shopify Order No.":"Shop Invoice No."}</label><input value={form.shopInvoiceNo} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/></div>
-                ) : shopId==="ros-india" ? (
-                  <div><label style={lbl}>Dispatch Unit</label>
-                    <select value={form.dispatchFrom} onChange={e=>set("dispatchFrom",e.target.value)} style={inp}>
-                      <option value="India-Unit1">🇮🇳 Unit 1 (Default)</option>
-                      <option value="India-Unit2">🇮🇳 Unit 2</option>
-                      <option value="UK-Unit">🇬🇧 UK Unit</option>
-                    </select>
-                  </div>
                 ) : <div/>}
               </div>
+              {/* Dispatch Unit — its own row, independent of Payment To, so
+                  it's always available (this used to be hidden entirely for
+                  Shopify-paid orders, e.g. international customers checking
+                  out via the Shopify storefront, silently leaving them on
+                  the India-Unit1 default with no way to change it). */}
+              {shopId==="ros-india"&&(
+                <div style={{marginBottom:7}}>
+                  <label style={lbl}>Dispatch Unit</label>
+                  <select value={form.dispatchFrom} onChange={e=>set("dispatchFrom",e.target.value)} style={inp}>
+                    <option value="India-Unit1">🇮🇳 Unit 1 (Default)</option>
+                    <option value="India-Unit2">🇮🇳 Unit 2</option>
+                    <option value="UK-Unit">🇬🇧 UK Unit</option>
+                  </select>
+                </div>
+              )}
               {shopId==="ros-india"&&(form.payBy==="SIB"||form.payBy==="HDFC")&&(
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
                   <div>
@@ -18242,17 +18285,8 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                   </div>
                 </div>
               )}
-              <div style={{display:"grid",gridTemplateColumns:(shopId==="ros-india"&&form.payBy==="SHOP")?"1fr 1fr":"1fr",gap:7,marginBottom:7}}>
-                <div><label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["PENDING","FULFILLED","RETURN RQSTD","RETURN RCVD","EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select></div>
-                {shopId==="ros-india"&&form.payBy==="SHOP"&&(
-                  <div><label style={lbl}>Dispatch Unit</label>
-                    <select value={form.dispatchFrom} onChange={e=>set("dispatchFrom",e.target.value)} style={inp}>
-                      <option value="India-Unit1">🇮🇳 Unit 1 (Default)</option>
-                      <option value="India-Unit2">🇮🇳 Unit 2</option>
-                      <option value="UK-Unit">🇬🇧 UK Unit</option>
-                    </select>
-                  </div>
-                )}
+              <div style={{marginBottom:7}}>
+                <label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["PENDING","FULFILLED","RETURN RQSTD","RETURN RCVD","EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select>
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
                 <div><label style={lbl}>Dispatch Date</label><input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>

@@ -709,6 +709,11 @@ export default function FactoryQueuePanel({
   salesData = MOCK_SALES_DATA,
   returnsExchangeData = MOCK_RETURNS_EXCHANGE_DATA,
   refundsData = MOCK_REFUNDS_DATA,
+  // Optional: (entry, text) => Promise|void — actually saves a remarks edit
+  // server-side (e.g. to Supabase). Without it, remarks only live in this
+  // component's own local state (overrides below) and reset on refresh —
+  // exactly what App.jsx's wiring now avoids by passing this in.
+  onPersistRemarks,
 }) {
   const narrow = useIsNarrow();
   // True only when the caller didn't pass real data (e.g. the standalone
@@ -836,7 +841,15 @@ export default function FactoryQueuePanel({
   };
   const saveRemarks = (entry, text) => {
     setOverrides((o) => ({ ...o, [entry.id]: { ...o[entry.id], remarks: text } }));
-    setToast("📝 Remarks saved.");
+    if (onPersistRemarks) {
+      Promise.resolve(onPersistRemarks(entry, text))
+        .then(() => setToast("📝 Remarks saved."))
+        .catch(() => setToast("⚠️ Saved here, but couldn't sync — check your connection."));
+    } else {
+      // No persistence hook wired up (e.g. the standalone preview) — stays
+      // local-only, same as before.
+      setToast("📝 Remarks saved.");
+    }
   };
 
   const LEFT_COL = 190, RIGHT_COL = 170;
