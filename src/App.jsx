@@ -12071,26 +12071,41 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   const stockColor = (stock) => stock<=0 ? "#dc2626" : stock<=2 ? "#d97706" : "#166534";
   const stockBg = (stock) => stock<=0 ? "#fef2f2" : stock<=2 ? "#fffbeb" : "#f0fdf4";
 
-  // Shop-wide stock dashboard — totals across every tracked item, not just
-  // one. Shown above both the item grid and the daily log so "how much do
-  // we have right now" is always visible regardless of which view you're in.
+  // Hair Stock and Clothes Stock are two separate windows onto the same
+  // `inventory_items`/`inventory_movements` tables — split by the item's
+  // own item_type field (defaults to "hair" for every item created before
+  // Clothes existed, so nothing already tracked moves or disappears).
+  // Everything below (dashboard, daily log, the sheet itself) is scoped to
+  // whichever of the two is currently selected via stockSection.
+  const hairItems = React.useMemo(() => items.filter(i => (i.itemType||"hair") !== "clothes"), [items]);
+  const clothesItems = React.useMemo(() => items.filter(i => i.itemType === "clothes"), [items]);
+  const activeItems = stockSection === "clothes" ? clothesItems : hairItems;
+  const activeItemIds = React.useMemo(() => new Set(activeItems.map(i=>i.id)), [activeItems]);
+
+  // Shop-wide stock dashboard — totals across every tracked item IN THE
+  // CURRENTLY SELECTED WINDOW (Hair or Clothes), not the two mixed
+  // together. Shown above both the item grid and the daily log so "how
+  // much do we have right now" is always visible regardless of which view
+  // you're in.
   const stockDashboard = {
-    trackedItems: items.length,
-    totalInStock: items.reduce((s,i)=>s+(i.currentStock||0),0),
-    totalSoldAllTime: items.reduce((s,i)=>s+((i.totalStocked||0)-(i.currentStock||0)),0),
-    lowStock: items.filter(i=>i.currentStock>0 && i.currentStock<=2).length,
-    outOfStock: items.filter(i=>i.currentStock<=0).length,
+    trackedItems: activeItems.length,
+    totalInStock: activeItems.reduce((s,i)=>s+(i.currentStock||0),0),
+    totalSoldAllTime: activeItems.reduce((s,i)=>s+((i.totalStocked||0)-(i.currentStock||0)),0),
+    lowStock: activeItems.filter(i=>i.currentStock>0 && i.currentStock<=2).length,
+    outOfStock: activeItems.filter(i=>i.currentStock<=0).length,
   };
 
-  // Every stock change, across every item, grouped by day — newest day
-  // first, newest change within a day first. This is the "how we used the
-  // stock, day by day, with who and when" log, distinct from an item's own
-  // History (which is scoped to just that one item).
+  // Every stock change, across every item IN THE CURRENT WINDOW, grouped by
+  // day — newest day first, newest change within a day first. Scoped to
+  // activeItemIds so a hair sale never shows up in the Clothes daily log
+  // (and vice versa). This is the "how we used the stock, day by day, with
+  // who and when" log, distinct from an item's own History (which is
+  // scoped to just that one item).
   const movementsByDate = React.useMemo(() => {
     const groups = {};
-    movements.forEach(m => { (groups[m.date] ||= []).push(m); });
+    movements.forEach(m => { if (activeItemIds.has(m.itemId)) (groups[m.date] ||= []).push(m); });
     return Object.entries(groups).sort((a,b)=>b[0].localeCompare(a[0]));
-  }, [movements]);
+  }, [movements, activeItemIds]);
 
   // Returns currently "in office" — the same figure the Returned Stock tab
   // and the Weekly Routine's physical count both use — passed through to
@@ -12103,17 +12118,24 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
 
   if (loading) return <div style={{padding:60,textAlign:"center",color:"#94a3b8"}}>Loading inventory…</div>;
 
-  // Shared Fresh/Returned tab toggle — shown at the top of both list-level
-  // views (not inside an item's own detail page, which already has its own
-  // "← Back" breadcrumb).
+  // Shared Hair/Clothes/Returned tab toggle — shown at the top of both
+  // list-level views (not inside an item's own detail page, which already
+  // has its own "← Back" breadcrumb).
   const sectionToggle = (
-    <div style={{display:"flex",gap:6,marginBottom:16}}>
+    <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
       <button onClick={()=>setStockSection("fresh")}
         style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
           border:"1px solid "+(stockSection==="fresh"?shop.accent:"#e2e8f0"),
           background:stockSection==="fresh"?shop.accent:"white",
           color:stockSection==="fresh"?"white":"#64748b"}}>
-        🆕 Fresh Stock
+        🆕 Hair Stock
+      </button>
+      <button onClick={()=>setStockSection("clothes")}
+        style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+          border:"1px solid "+(stockSection==="clothes"?shop.accent:"#e2e8f0"),
+          background:stockSection==="clothes"?shop.accent:"white",
+          color:stockSection==="clothes"?"white":"#64748b"}}>
+        👕 Clothes Stock
       </button>
       <button onClick={()=>setStockSection("returned")}
         style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
@@ -12259,8 +12281,10 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
     <div style={{padding:"0 0 40px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:18}}>
         <div>
-          <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>📦 Stock</h2>
-          <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>Fresh stock — product lines you keep on hand and restock yourself</p>
+          <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>{stockSection==="clothes"?"👕 Stock":"📦 Stock"}</h2>
+          <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>
+            {stockSection==="clothes" ? "Clothes stock — product lines you keep on hand and restock yourself" : "Hair stock — product lines you keep on hand and restock yourself"}
+          </p>
         </div>
         {isAdmin && (
           <button onClick={()=>setShowManageItems(true)}
@@ -12315,13 +12339,13 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
       </div>
 
       {invView==="items" ? (
-      items.length===0 ? (
+      activeItems.length===0 ? (
         <div style={{textAlign:"center",padding:"60px 20px",color:"#94a3b8",fontSize:13}}>
-          No inventory items yet. {isAdmin ? 'Click "⚙️ Manage Items" to start tracking your first stocked product.' : "Check back once your admin has added tracked items."}
+          No {stockSection==="clothes"?"clothes":"hair"} items tracked yet. {isAdmin ? 'Click "⚙️ Manage Items" to start tracking your first '+(stockSection==="clothes"?"clothes":"stocked")+' item.' : "Check back once your admin has added tracked items."}
         </div>
       ) : (
         <StockSheetView
-          items={items}
+          items={activeItems}
           movements={movements}
           shop={shop}
           sheetMonth={sheetMonth}
@@ -12331,6 +12355,10 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           onSelectItem={(id)=>setSelectedItemId(id)}
           fmtDate={fmtDate}
           returnedStock={returnedStockNow}
+          fixedCategories={stockSection==="clothes" ? null : STOCK_CATEGORIES}
+          sectionLabel={stockSection==="clothes" ? "Clothes Stock" : "Hair Stock"}
+          sectionIcon={stockSection==="clothes" ? "👕" : "📦"}
+          includeReturnedStock={stockSection!=="clothes"}
         />
       )
       ) : (
@@ -12396,11 +12424,16 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
       )}
 
       {showAddItem && (
-        <AddInventoryItemModal onClose={()=>setShowAddItem(false)} onSave={async(name,stock,category)=>{
-          const id = await dbAddInventoryItem(shopId, name, stock, category);
-          if (id) { setShowAddItem(false); load(); }
-          else showAlert("Couldn't add this item — please check your connection and try again.");
-        }}/>
+        <AddInventoryItemModal
+          categories={stockSection==="clothes" ? null : STOCK_CATEGORIES}
+          existingCategories={Array.from(new Set(activeItems.map(i=>i.category).filter(Boolean))).sort()}
+          itemTypeLabel={stockSection==="clothes" ? "Clothes" : "Hair"}
+          onClose={()=>setShowAddItem(false)}
+          onSave={async(name,stock,category)=>{
+            const id = await dbAddInventoryItem(shopId, name, stock, category, stockSection==="clothes" ? "clothes" : "hair");
+            if (id) { setShowAddItem(false); load(); }
+            else showAlert("Couldn't add this item — please check your connection and try again.");
+          }}/>
       )}
 
       {soldFor && (
@@ -12421,7 +12454,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
 
       {showManageItems && (
         <ManageItemsModal
-          items={items}
+          items={activeItems}
+          categories={stockSection==="clothes" ? null : STOCK_CATEGORIES}
           onClose={()=>setShowManageItems(false)}
           onAddItem={()=>{ setShowManageItems(false); setShowAddItem(true); }}
           onRequestDelete={(id)=>setConfirmDeleteId(id)}
@@ -12483,7 +12517,8 @@ function rectOf(el) {
 const STOCK_CATEGORIES = ["Cover-Up Patches", "Receding Hairpieces", "Bangs and Fringes", "Updos", "Hair Accessories"];
 const OTHER_CATEGORY = "Other";
 
-const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSelectItem, fmtDate, returnedStock = [] }) => {
+const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSelectItem, fmtDate, returnedStock = [],
+  fixedCategories = STOCK_CATEGORIES, sectionLabel = "Fresh Stock", sectionIcon = "📦", includeReturnedStock = true }) => {
   const [cellPopover, setCellPopover] = React.useState(null); // {itemId, date, anchor} | null
   const [monthPopover, setMonthPopover] = React.useState(null); // {itemId, type:'sale'|'restock', anchor} | null
   const todayStr = new Date().toISOString().slice(0,10);
@@ -12553,19 +12588,33 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
   }, [items, movementsByItem, days.join(","), sheetMonth]);
 
   // Grouped for display only — same rows, arranged under a header per
-  // product category (fixed order, "Other" catches anything uncategorized
-  // so nothing silently disappears). Popover lookups and the print export
-  // both still use the flat `rows` list above, unaffected by grouping.
+  // product category. Popover lookups and the print export both still use
+  // the flat `rows` list above, unaffected by grouping.
+  //
+  // Two modes, per `fixedCategories`: Hair Stock passes its fixed, ordered
+  // list (STOCK_CATEGORIES) — "Other" catches anything uncategorized so
+  // nothing silently disappears. Clothes Stock passes null instead (its
+  // categories aren't a fixed set — see the AskUserQuestion decision when
+  // this was built), so items are grouped by whatever free-text category
+  // was typed when they were added, alphabetically, with "Other" (for a
+  // blank category) sorted last.
   const groupedRows = React.useMemo(() => {
     const byCat = {};
     rows.forEach(r => {
-      const cat = STOCK_CATEGORIES.includes(r.item.category) ? r.item.category : OTHER_CATEGORY;
+      const cat = fixedCategories
+        ? (fixedCategories.includes(r.item.category) ? r.item.category : OTHER_CATEGORY)
+        : ((r.item.category||"").trim() || OTHER_CATEGORY);
       (byCat[cat] ||= []).push(r);
     });
-    return [...STOCK_CATEGORIES, OTHER_CATEGORY]
-      .filter(cat => byCat[cat] && byCat[cat].length > 0)
-      .map(cat => ({ category: cat, rows: byCat[cat] }));
-  }, [rows]);
+    if (fixedCategories) {
+      return [...fixedCategories, OTHER_CATEGORY]
+        .filter(cat => byCat[cat] && byCat[cat].length > 0)
+        .map(cat => ({ category: cat, rows: byCat[cat] }));
+    }
+    const names = Object.keys(byCat).filter(c => c !== OTHER_CATEGORY).sort((a,b)=>a.localeCompare(b));
+    if (byCat[OTHER_CATEGORY]) names.push(OTHER_CATEGORY);
+    return names.map(cat => ({ category: cat, rows: byCat[cat] }));
+  }, [rows, fixedCategories]);
 
   // Six columns stay frozen on the left as the sheet scrolls sideways
   // through the month — Item (full name, never truncated), the full
@@ -12592,7 +12641,7 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
             style={{ ...pillBtn, opacity: atCurrentMonthOrLater?0.4:1, cursor: atCurrentMonthOrLater?"not-allowed":"pointer" }}>→</button>
           <button onClick={()=>setSheetMonth(todayStr.slice(0,7))} style={pillBtn}>This Month</button>
         </div>
-        <button onClick={()=>printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock)}
+        <button onClick={()=>printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock, fixedCategories, sectionLabel, sectionIcon, includeReturnedStock)}
           style={{ padding:"8px 14px", borderRadius:10, border:"1px solid #e2e8f0", background:"white", color:"#334155", fontWeight:700, fontSize:12.5, cursor:"pointer", fontFamily:"inherit" }}>
           🖨️ Print / Export PDF
         </button>
@@ -12871,9 +12920,14 @@ const MonthMovementsPopover = ({ item, type, anchor, monthLabel, moves, fmtDate,
 //
 // `returnedStock` is the list of returns currently "in office" (see
 // InventoryPage's returnedStockNow) — passed in purely for the printout;
-// it isn't part of the Fresh Stock ledger `rows` computes from, so it has
-// to travel separately.
-function printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock = []) {
+// it isn't part of the ledger `rows` computes from, so it has to travel
+// separately. `fixedCategories`/`sectionLabel`/`sectionIcon` mirror the
+// same props StockSheetView takes, so the printout always matches whichever
+// window (Hair Stock or Clothes Stock) it was printed from. Returns aren't
+// split by item type in the data model, so `includeReturnedStock` is only
+// true for Hair Stock's printout — showing the same combined return count
+// on a Clothes printout too would misleadingly imply it's clothes-only.
+function printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock = [], fixedCategories = STOCK_CATEGORIES, sectionLabel = "Fresh Stock", sectionIcon = "📦", includeReturnedStock = true) {
   const w = window.open("", "_blank");
   if (!w) return;
 
@@ -12883,28 +12937,38 @@ function printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock = []) {
   // total the in-app dashboard and item detail pages use, so "right now"
   // on paper always matches "right now" on screen regardless of which
   // month you happened to be viewing when you hit Print.
-  const freshStockNow = rows.reduce((s,r)=>s+(r.item.currentStock||0), 0);
+  const stockNow = rows.reduce((s,r)=>s+(r.item.currentStock||0), 0);
 
   // Returned stock currently in office, grouped by item — same idea as the
-  // Fresh Stock summary below, just for the separate ledger the Returns
-  // page keeps (see ReturnedStockList / the Stock page's Returned Stock
-  // tab). Also always "right now", since a return's stock status has no
-  // month of its own.
+  // stock summary below, just for the separate ledger the Returns page
+  // keeps (see ReturnedStockList / the Stock page's Returned Stock tab).
+  // Also always "right now", since a return's stock status has no month of
+  // its own. Only built/shown when includeReturnedStock is true.
   const returnedByItem = {};
   returnedStock.forEach(r => { const name = r.item || "—"; returnedByItem[name] = (returnedByItem[name]||0) + 1; });
   const returnedRows = Object.entries(returnedByItem).sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]))
     .map(([name,count]) => `<tr><td style="text-align:left">${name}</td><td>${count}</td></tr>`).join("")
     || `<tr><td colspan="2" style="color:#94a3b8">No returned stock currently in office.</td></tr>`;
 
-  // Grouped by category, same order and fallback as the on-screen sheet,
-  // so the printed record matches what's visible on the page.
+  // Grouped by category, same order/fallback (fixed list) or same
+  // alphabetical-free-text grouping (Clothes) as the on-screen sheet, so
+  // the printed record matches what's visible on the page — see the
+  // matching logic in StockSheetView's groupedRows.
   const byCat = {};
   rows.forEach(r => {
-    const cat = STOCK_CATEGORIES.includes(r.item.category) ? r.item.category : OTHER_CATEGORY;
+    const cat = fixedCategories
+      ? (fixedCategories.includes(r.item.category) ? r.item.category : OTHER_CATEGORY)
+      : ((r.item.category||"").trim() || OTHER_CATEGORY);
     (byCat[cat] ||= []).push(r);
   });
-  const summaryRows = [...STOCK_CATEGORIES, OTHER_CATEGORY]
-    .filter(cat => byCat[cat] && byCat[cat].length > 0)
+  const catOrder = fixedCategories
+    ? [...fixedCategories, OTHER_CATEGORY].filter(cat => byCat[cat] && byCat[cat].length > 0)
+    : (() => {
+        const names = Object.keys(byCat).filter(c => c !== OTHER_CATEGORY).sort((a,b)=>a.localeCompare(b));
+        if (byCat[OTHER_CATEGORY]) names.push(OTHER_CATEGORY);
+        return names;
+      })();
+  const summaryRows = catOrder
     .map(cat => `<tr><td colspan="6" style="text-align:left;font-weight:800;background:#f8fafc;text-transform:uppercase;letter-spacing:0.04em;font-size:10px;">${cat}</td></tr>` +
       byCat[cat].map(({ item, openingBalance, addedThisMonth, soldThisMonth, correctedThisMonth, closingBalance }) =>
         `<tr><td style="text-align:left;font-weight:700">${item.name}</td><td>${openingBalance}</td><td>${addedThisMonth||"—"}</td><td>${soldThisMonth||"—"}</td><td>${correctedThisMonth?(correctedThisMonth>0?"+":"")+correctedThisMonth:"—"}</td><td style="font-weight:800">${closingBalance}</td></tr>`
@@ -12929,7 +12993,30 @@ function printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock = []) {
     ? restockRows.map(r => `<tr><td>${fmtDate(r.date)}</td><td style="text-align:left">${r.item}</td><td>${r.qty}</td><td style="text-align:left">${r.note}</td></tr>`).join("")
     : `<tr><td colspan="4" style="color:#94a3b8">No restocks logged this month.</td></tr>`;
 
-  w.document.write(`<!DOCTYPE html><html><head><title>Stock Sheet — ${monthLabel}</title>
+  const topBoxes = includeReturnedStock ? `
+    <div style="display:flex;gap:14px;margin:16px 0 20px;">
+      <div style="flex:1;border:1.5px solid #86efac;background:#f0fdf4;border-radius:10px;padding:14px 16px;">
+        <div style="font-size:24px;font-weight:900;color:#166534;">${stockNow}</div>
+        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-top:2px;">${sectionIcon} ${sectionLabel} — Total In Stock Right Now</div>
+      </div>
+      <div style="flex:1;border:1.5px solid #c4b5fd;background:#f5f3ff;border-radius:10px;padding:14px 16px;">
+        <div style="font-size:24px;font-weight:900;color:#5b21b6;">${returnedStock.length}</div>
+        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-top:2px;">↩️ Returned Stock — In Office Right Now</div>
+      </div>
+    </div>` : `
+    <div style="margin:16px 0 20px;">
+      <div style="border:1.5px solid #86efac;background:#f0fdf4;border-radius:10px;padding:14px 16px;max-width:280px;">
+        <div style="font-size:24px;font-weight:900;color:#166534;">${stockNow}</div>
+        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-top:2px;">${sectionIcon} ${sectionLabel} — Total In Stock Right Now</div>
+      </div>
+    </div>`;
+
+  const returnedSection = includeReturnedStock ? `
+    <h2>↩️ Returned Stock — Currently In Office (${returnedStock.length})</h2>
+    <p style="margin-bottom:6px;">Separate from ${sectionLabel} above — items customers returned that are still physically here, not yet resold or written off. Always "right now", not scoped to ${monthLabel}.</p>
+    <table><thead><tr><th style="text-align:left">Item</th><th>Qty</th></tr></thead><tbody>${returnedRows}</tbody></table>` : "";
+
+  w.document.write(`<!DOCTYPE html><html><head><title>${sectionLabel} Sheet — ${monthLabel}</title>
     <style>
       body{font-family:Arial,sans-serif;padding:24px;color:#0f172a;}
       h1{font-size:18px;margin-bottom:4px;} h2{font-size:13px;margin:22px 0 8px;text-transform:uppercase;letter-spacing:0.04em;color:#475569;}
@@ -12938,27 +13025,15 @@ function printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock = []) {
       th,td{border:1px solid #e2e8f0;padding:6px 8px;text-align:center;}
       th{background:#f8fafc;font-size:10px;text-transform:uppercase;letter-spacing:0.03em;}
     </style></head><body>
-    <h1>📦 Stock Sheet${shop?.name?" — "+shop.name:""}</h1>
+    <h1>${sectionIcon} ${sectionLabel} Sheet${shop?.name?" — "+shop.name:""}</h1>
     <p>${monthLabel} · printed ${new Date().toLocaleString("en-GB")}</p>
 
-    <div style="display:flex;gap:14px;margin:16px 0 20px;">
-      <div style="flex:1;border:1.5px solid #86efac;background:#f0fdf4;border-radius:10px;padding:14px 16px;">
-        <div style="font-size:24px;font-weight:900;color:#166534;">${freshStockNow}</div>
-        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-top:2px;">📦 Fresh Stock — Total In Stock Right Now</div>
-      </div>
-      <div style="flex:1;border:1.5px solid #c4b5fd;background:#f5f3ff;border-radius:10px;padding:14px 16px;">
-        <div style="font-size:24px;font-weight:900;color:#5b21b6;">${returnedStock.length}</div>
-        <div style="font-size:10px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.04em;margin-top:2px;">↩️ Returned Stock — In Office Right Now</div>
-      </div>
-    </div>
+    ${topBoxes}
 
-    <h2>📦 Fresh Stock — ${monthLabel}</h2>
+    <h2>${sectionIcon} ${sectionLabel} — ${monthLabel}</h2>
     <p style="margin-bottom:6px;">Opening + Added − Sold ± Corrected = Closing — each row below checks out end to end, and this month's Closing carries forward as next month's Opening.</p>
     <table><thead><tr><th style="text-align:left">Item</th><th>Opening</th><th>Added</th><th>Sold</th><th>Corrected</th><th>Closing</th></tr></thead><tbody>${summaryRows}</tbody></table>
-
-    <h2>↩️ Returned Stock — Currently In Office (${returnedStock.length})</h2>
-    <p style="margin-bottom:6px;">Separate from Fresh Stock above — items customers returned that are still physically here, not yet resold or written off. Always "right now", not scoped to ${monthLabel}.</p>
-    <table><thead><tr><th style="text-align:left">Item</th><th>Qty</th></tr></thead><tbody>${returnedRows}</tbody></table>
+    ${returnedSection}
 
     <h2>Stock Added This Month</h2>
     <table><thead><tr><th>Date</th><th style="text-align:left">Item</th><th>Qty</th><th style="text-align:left">Note</th></tr></thead><tbody>${restockTable}</tbody></table>
@@ -12970,27 +13045,42 @@ function printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock = []) {
   setTimeout(() => w.print(), 300);
 }
 
-const AddInventoryItemModal = ({ onClose, onSave }) => {
+// `categories`: a fixed, ordered list (Hair Stock's STOCK_CATEGORIES) shown
+// as a dropdown, or null (Clothes Stock) for a free-text field instead —
+// clothes categories aren't a fixed set, so staff type whatever fits (e.g.
+// "Sarees", "Kids Wear") and the Stock Sheet groups by whatever's typed.
+// `existingCategories` feeds the free-text field's autocomplete so the same
+// category doesn't end up typed two slightly different ways.
+const AddInventoryItemModal = ({ onClose, onSave, categories = STOCK_CATEGORIES, existingCategories = [], itemTypeLabel = "Inventory" }) => {
   const [name, setName] = React.useState("");
   const [stock, setStock] = React.useState("");
-  const [category, setCategory] = React.useState(STOCK_CATEGORIES[0]);
+  const [category, setCategory] = React.useState(categories ? categories[0] : "");
   const [saving, setSaving] = React.useState(false);
   const inp = {width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
   const lbl = {display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
   return (
     <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <div style={{background:"white",borderRadius:16,padding:22,maxWidth:340,width:"92%"}}>
-        <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:16}}>+ Add Inventory Item</div>
+        <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:16}}>+ Add {itemTypeLabel} Item</div>
         <div style={{marginBottom:12}}>
           <label style={lbl}>Item Name</label>
           <input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Side Bangs" style={inp} autoFocus/>
         </div>
         <div style={{marginBottom:12}}>
           <label style={lbl}>Category</label>
-          <select value={category} onChange={e=>setCategory(e.target.value)} style={inp}>
-            {STOCK_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-            <option value={OTHER_CATEGORY}>{OTHER_CATEGORY}</option>
-          </select>
+          {categories ? (
+            <select value={category} onChange={e=>setCategory(e.target.value)} style={inp}>
+              {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              <option value={OTHER_CATEGORY}>{OTHER_CATEGORY}</option>
+            </select>
+          ) : (
+            <>
+              <input value={category} onChange={e=>setCategory(e.target.value)} placeholder="e.g. Sarees, Kids Wear…" style={inp} list="clothes-category-suggestions"/>
+              <datalist id="clothes-category-suggestions">
+                {existingCategories.map(c => <option key={c} value={c}/>)}
+              </datalist>
+            </>
+          )}
         </div>
         <div style={{marginBottom:18}}>
           <label style={lbl}>Starting Stock</label>
@@ -13022,27 +13112,38 @@ const AddInventoryItemModal = ({ onClose, onSave }) => {
 // recategorize, or delete an item. Deliberately its own dedicated place,
 // away from the daily Stock Sheet, so an accidental tap during normal
 // logging can never delete an item's stock history.
-const ManageItemsModal = ({ items, onClose, onAddItem, onRequestDelete, onRename }) => {
+// `categories`: same convention as AddInventoryItemModal — a fixed list
+// (Hair Stock) or null (Clothes Stock, free-text with autocomplete).
+const ManageItemsModal = ({ items, onClose, onAddItem, onRequestDelete, onRename, categories = STOCK_CATEGORIES }) => {
   const [editingId, setEditingId] = React.useState(null);
   const [editName, setEditName] = React.useState("");
-  const [editCategory, setEditCategory] = React.useState(STOCK_CATEGORIES[0]);
+  const [editCategory, setEditCategory] = React.useState(categories ? categories[0] : "");
   const [savingEdit, setSavingEdit] = React.useState(false);
+
+  const existingCategories = React.useMemo(() => Array.from(new Set(items.map(i=>i.category).filter(Boolean))).sort(), [items]);
 
   const grouped = React.useMemo(() => {
     const byCat = {};
     items.forEach(item => {
-      const cat = STOCK_CATEGORIES.includes(item.category) ? item.category : OTHER_CATEGORY;
+      const cat = categories
+        ? (categories.includes(item.category) ? item.category : OTHER_CATEGORY)
+        : ((item.category||"").trim() || OTHER_CATEGORY);
       (byCat[cat] ||= []).push(item);
     });
-    return [...STOCK_CATEGORIES, OTHER_CATEGORY]
-      .filter(cat => byCat[cat] && byCat[cat].length > 0)
-      .map(cat => ({ category: cat, items: byCat[cat] }));
-  }, [items]);
+    if (categories) {
+      return [...categories, OTHER_CATEGORY]
+        .filter(cat => byCat[cat] && byCat[cat].length > 0)
+        .map(cat => ({ category: cat, items: byCat[cat] }));
+    }
+    const names = Object.keys(byCat).filter(c => c !== OTHER_CATEGORY).sort((a,b)=>a.localeCompare(b));
+    if (byCat[OTHER_CATEGORY]) names.push(OTHER_CATEGORY);
+    return names.map(cat => ({ category: cat, items: byCat[cat] }));
+  }, [items, categories]);
 
   const startEdit = (item) => {
     setEditingId(item.id);
     setEditName(item.name);
-    setEditCategory(STOCK_CATEGORIES.includes(item.category) ? item.category : OTHER_CATEGORY);
+    setEditCategory(categories ? (categories.includes(item.category) ? item.category : OTHER_CATEGORY) : (item.category || ""));
   };
 
   const inp = {width:"100%",padding:"7px 10px",borderRadius:8,border:"1.5px solid #e2e8f0",fontSize:12.5,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
@@ -13072,10 +13173,19 @@ const ManageItemsModal = ({ items, onClose, onAddItem, onRequestDelete, onRename
                   {editingId === item.id ? (
                     <div style={{display:"flex",flexDirection:"column",gap:6}}>
                       <input value={editName} onChange={e=>setEditName(e.target.value)} style={inp} autoFocus/>
-                      <select value={editCategory} onChange={e=>setEditCategory(e.target.value)} style={inp}>
-                        {STOCK_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
-                        <option value={OTHER_CATEGORY}>{OTHER_CATEGORY}</option>
-                      </select>
+                      {categories ? (
+                        <select value={editCategory} onChange={e=>setEditCategory(e.target.value)} style={inp}>
+                          {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                          <option value={OTHER_CATEGORY}>{OTHER_CATEGORY}</option>
+                        </select>
+                      ) : (
+                        <>
+                          <input value={editCategory} onChange={e=>setEditCategory(e.target.value)} placeholder="Category" style={inp} list="clothes-category-suggestions-edit"/>
+                          <datalist id="clothes-category-suggestions-edit">
+                            {existingCategories.map(c => <option key={c} value={c}/>)}
+                          </datalist>
+                        </>
+                      )}
                       <div style={{display:"flex",gap:8,marginTop:2}}>
                         <button onClick={()=>setEditingId(null)}
                           style={{flex:1,padding:"7px 0",borderRadius:8,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>

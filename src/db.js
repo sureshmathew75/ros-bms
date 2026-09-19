@@ -1628,16 +1628,21 @@ export const dbLoadInventoryItems = async (shopId) => {
   if (error) { console.error('Load inventory items error:', error); return []; }
   return (data || []).map(r => ({
     id: r.id, name: r.name, category: r.category || null, currentStock: Number(r.current_stock) || 0,
-    totalStocked: Number(r.total_stocked) || 0, createdAt: r.created_at,
+    totalStocked: Number(r.total_stocked) || 0, itemType: r.item_type || 'hair', createdAt: r.created_at,
   }));
 };
 
-export const dbAddInventoryItem = async (shopId, name, initialStock, category) => {
+// `itemType`: 'hair' (default — the original Fresh Stock window) or
+// 'clothes' (the separate Clothes Stock window). Everything else about an
+// item — its movement ledger, restock/correction/sale flow — works
+// identically regardless of type; only which window it's grouped into
+// differs.
+export const dbAddInventoryItem = async (shopId, name, initialStock, category, itemType = 'hair') => {
   if (!sb) return null;
   const id = `INV-${Date.now().toString().slice(-8)}`;
   const stock = Number(initialStock) || 0;
   const { error } = await sb.from('inventory_items').insert({
-    id, shop_id: shopId, name, category: category || null, current_stock: 0, total_stocked: 0,
+    id, shop_id: shopId, name, category: category || null, current_stock: 0, total_stocked: 0, item_type: itemType || 'hair',
   });
   if (error) { console.error('Add inventory item error:', error); return null; }
   if (stock > 0) {
