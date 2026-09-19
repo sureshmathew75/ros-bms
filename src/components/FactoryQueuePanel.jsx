@@ -188,6 +188,15 @@ function categorizeProduction(daysWaiting) {
    a queue-type/category tag for each row. This is the requested "helper
    function that merges and normalizes these 3 datasets".
    ──────────────────────────────────────────────────────────────────────── */
+// Any unit value that isn't one of these three falls back to "" (Unassigned)
+// rather than being left as an unrecognised string — an unrecognised value
+// (typo, stray whitespace, a row edited by hand in Supabase, an old/renamed
+// value) would otherwise count toward "All Units" but not toward any of the
+// visible Unit tabs, silently making the tab counts not add up and the
+// order impossible to find under any tab.
+const KNOWN_UNITS = new Set(["India-Unit1", "India-Unit2", "UK-Unit"]);
+const normalizeUnit = (u) => (KNOWN_UNITS.has(String(u || "").trim()) ? String(u).trim() : "");
+
 export function normalizeQueue(salesData = [], returnsExchangeData = [], refundsData = [], today = new Date()) {
   const list = [];
 
@@ -213,7 +222,7 @@ export function normalizeQueue(salesData = [], returnsExchangeData = [], refunds
       factoryStatus: s.factoryStatus || "in_production",
       shop: s.shop || "",
       currency: s.currency || "₹",
-      unit: s.unit || "", // despatch unit — Unit 1 / Unit 2 / UK Unit / unset
+      unit: normalizeUnit(s.unit), // despatch unit — Unit 1 / Unit 2 / UK Unit / unset
       remarks: s.remarks || "", // staff note on why this is delayed, or any custom context
     });
   });
@@ -239,7 +248,7 @@ export function normalizeQueue(salesData = [], returnsExchangeData = [], refunds
       originalOrderId: r.originalOrderId,
       shop: r.shop || "",
       currency: r.currency || "₹",
-      unit: r.unit || "", // returns don't track a despatch unit today — stays unassigned
+      unit: normalizeUnit(r.unit), // returns don't track a despatch unit today — stays unassigned
       remarks: r.remarks || "",
     });
   });
@@ -266,7 +275,7 @@ export function normalizeQueue(salesData = [], returnsExchangeData = [], refunds
       originalOrderId: r.originalOrderId,
       shop: r.shop || "",
       currency: r.currency || "₹",
-      unit: r.unit || "", // returns don't track a despatch unit today — stays unassigned
+      unit: normalizeUnit(r.unit), // returns don't track a despatch unit today — stays unassigned
       remarks: r.remarks || "",
     });
   });
