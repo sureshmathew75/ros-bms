@@ -7643,7 +7643,16 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
      already used elsewhere in this file for the Dashboard's own pending
      counts (isExchangeInProgress, and the RETURN_RECEIVED+resolution
      "refund"+no refundDate check used for the refundsPending KPI). */
-  const fqSalesData = shopId!=="ros-india" ? [] : (() => {
+  // Memoized on [sales, returns, shopId] — WITHOUT this, these three arrays
+  // were rebuilt from scratch (new array + new object literals every time,
+  // even though the underlying data hadn't changed) on every App re-render,
+  // including the unrelated Day Book/Memos 30s background polls a few
+  // screens up. FactoryQueuePanel's own baseQueue is a useMemo keyed on
+  // these prop references, so every poll was handing it "new" entry
+  // objects, which reset the open detail drawer's remarks/WhatsApp drafts
+  // back to the last saved value mid-keystroke — this is what fixes that.
+  const fqSalesData = React.useMemo(() => {
+    if (shopId!=="ros-india") return [];
     const seenGroups = new Set();
     const out = [];
     sales.forEach(s => {
@@ -7672,36 +7681,42 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
       });
     });
     return out;
-  })();
+  }, [sales, shopId]);
 
-  const fqExchangeData = shopId!=="ros-india" ? [] : returns
-    .filter(r => r.status === "RETURN_RECEIVED" && (r.resolution === "exchange" || r.resolution === "exchange_refund"))
-    .map(r => ({
-      returnId: r.id,
-      originalOrderId: r.saleId || "",
-      customerName: r.customer || "",
-      phone: r.phone || "",
-      returnedItem: r.item || "",
-      // Real returns don't track a separate "requested replacement" item —
-      // exchanges are almost always the same item (different size/colour),
-      // so this reuses the returned item text rather than showing blank.
-      exchangeItemRequested: r.item || "replacement item",
-      returnReceivedDate: r.receivedDate || r.date || "",
-      balanceAdjustment: 0, // no equivalent field in the real return record
-    }));
+  const fqExchangeData = React.useMemo(() => {
+    if (shopId!=="ros-india") return [];
+    return returns
+      .filter(r => r.status === "RETURN_RECEIVED" && (r.resolution === "exchange" || r.resolution === "exchange_refund"))
+      .map(r => ({
+        returnId: r.id,
+        originalOrderId: r.saleId || "",
+        customerName: r.customer || "",
+        phone: r.phone || "",
+        returnedItem: r.item || "",
+        // Real returns don't track a separate "requested replacement" item —
+        // exchanges are almost always the same item (different size/colour),
+        // so this reuses the returned item text rather than showing blank.
+        exchangeItemRequested: r.item || "replacement item",
+        returnReceivedDate: r.receivedDate || r.date || "",
+        balanceAdjustment: 0, // no equivalent field in the real return record
+      }));
+  }, [returns, shopId]);
 
-  const fqRefundData = shopId!=="ros-india" ? [] : returns
-    .filter(r => r.status === "RETURN_RECEIVED" && r.resolution === "refund" && !r.refundDate)
-    .map(r => ({
-      refundId: r.id,
-      originalOrderId: r.saleId || "",
-      customerName: r.customer || "",
-      phone: r.phone || "",
-      returnedItem: r.item || "",
-      refundAmountDue: Number(r.refundAmount) || 0,
-      returnReceivedDate: r.receivedDate || r.date || "",
-      refundStatus: "pending",
-    }));
+  const fqRefundData = React.useMemo(() => {
+    if (shopId!=="ros-india") return [];
+    return returns
+      .filter(r => r.status === "RETURN_RECEIVED" && r.resolution === "refund" && !r.refundDate)
+      .map(r => ({
+        refundId: r.id,
+        originalOrderId: r.saleId || "",
+        customerName: r.customer || "",
+        phone: r.phone || "",
+        returnedItem: r.item || "",
+        refundAmountDue: Number(r.refundAmount) || 0,
+        returnReceivedDate: r.receivedDate || r.date || "",
+        refundStatus: "pending",
+      }));
+  }, [returns, shopId]);
 
   const filtSales=sales.filter(s=>{
     const q=search.toLowerCase();

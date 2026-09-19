@@ -473,8 +473,15 @@ function DetailDrawer({ entry, onClose, onMarkPaid, onAdvance, onSaveRemarks, on
   const [msg, setMsg] = useState(() => buildWhatsAppMessage(entry));
   const [remarksDraft, setRemarksDraft] = useState(entry.remarks || "");
   const [remarksSavedFlash, setRemarksSavedFlash] = useState(false);
-  useEffect(() => { setMsg(buildWhatsAppMessage(entry)); }, [entry]);
-  useEffect(() => { setRemarksDraft(entry.remarks || ""); }, [entry]);
+  // Keyed on entry.id, NOT the whole entry object — entry is rebuilt fresh
+  // on every re-render of the queue (a new object even when nothing about
+  // this record actually changed), so keying on the object itself reset
+  // these drafts back to the last saved value on every unrelated re-render
+  // (e.g. a background data refresh), wiping mid-typing edits. Keying on
+  // the id means they only reset when the drawer actually switches to a
+  // different record.
+  useEffect(() => { setMsg(buildWhatsAppMessage(entry)); }, [entry.id]);
+  useEffect(() => { setRemarksDraft(entry.remarks || ""); }, [entry.id]);
 
   // Relying on the textarea's onBlur alone missed cases where the drawer
   // closes without a normal blur first (Escape key, a fast click on the
@@ -495,7 +502,7 @@ function DetailDrawer({ entry, onClose, onMarkPaid, onAdvance, onSaveRemarks, on
     const onKey = (ev) => { if (ev.key === "Escape") handleClose(); };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose, entry, remarksDraft]);
+  }, [onClose, entry.id, entry.remarks, remarksDraft]);
 
   const cat = CATEGORY[entry.category];
   const canMarkPaid = entry.queueType !== "refund" && entry.balanceDue > 0;
