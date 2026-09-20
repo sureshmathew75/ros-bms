@@ -385,14 +385,14 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
 
     const returnedRows = returnedItems.map(ri => `
       <tr>
-        <td>${ri.item || "—"}</td>
-        <td>${ri.customer || "—"}</td>
+        <td>${(ri.item || "—").toUpperCase()}</td>
+        <td>${(ri.customer || "—").toUpperCase()}</td>
         <td>${ri.verified ? "✓ Verified" : "○ Not verified"}</td>
         <td>${ri.verified ? ((ri.verifiedBy || "—") + " · " + fmtDateTime(ri.verifiedAt)) : "—"}</td>
       </tr>`).join("");
 
     const manualRows = manualItems.map(m => `
-      <tr><td>${m.item || "—"}</td><td style="text-align:right">${m.count === "" || m.count === null || m.count === undefined ? "—" : m.count}</td></tr>`).join("");
+      <tr><td>${(m.item || "—").toUpperCase()}</td><td style="text-align:right">${m.count === "" || m.count === null || m.count === undefined ? "—" : m.count}</td></tr>`).join("");
 
     const docRows = docChecks.map(c => {
       let extra = "";
@@ -566,8 +566,8 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
                   {displayReturnedStockItems.map(ri => (
                     <div key={ri.returnId} style={{ display: "flex", alignItems: "center", gap: 10, padding: "7px 10px", borderRadius: 9, background: "#f8fafc" }}>
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ri.item}</div>
-                        <div style={{ fontSize: 10.5, color: "#94a3b8" }}>{ri.customer}</div>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textTransform: "uppercase" }}>{ri.item}</div>
+                        <div style={{ fontSize: 10.5, color: "#94a3b8", textTransform: "uppercase" }}>{ri.customer}</div>
                       </div>
                       {ri.verified ? (
                         <span style={{ fontSize: 9.5, fontWeight: 800, padding: "2px 7px", borderRadius: 999, background: "#f0fdf4", color: "#166534", whiteSpace: "nowrap" }}>✓ verified</span>
@@ -586,7 +586,7 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
                   <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
                     {displayReturnedStockManual.map(m => (
                       <div key={m.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 11 }}>
-                        <span style={{ flex: 1, minWidth: 0, fontWeight: 700, color: "#334155" }}>{m.item || "—"}</span>
+                        <span style={{ flex: 1, minWidth: 0, fontWeight: 700, color: "#334155", textTransform: "uppercase" }}>{m.item || "—"}</span>
                         <span style={{ color: "#64748b" }}>Count: <strong style={{ color: "#0f172a" }}>{m.count === "" || m.count === null || m.count === undefined ? "—" : m.count}</strong></span>
                       </div>
                     ))}
@@ -723,8 +723,8 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
                       <input type="checkbox" checked={!!ri.verified} onChange={() => toggleReturnedStockVerify(ri.returnId)}
                         style={{ width: 15, height: 15, cursor: "pointer", accentColor: shop?.accent || "#059669", flexShrink: 0 }} />
                       <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12.5, fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{ri.item}</div>
-                        <div style={{ fontSize: 10.5, color: "#94a3b8" }}>{ri.customer}</div>
+                        <div style={{ fontSize: 12.5, fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textTransform: "uppercase" }}>{ri.item}</div>
+                        <div style={{ fontSize: 10.5, color: "#94a3b8", textTransform: "uppercase" }}>{ri.customer}</div>
                       </div>
                       {ri.verified && <div style={{ fontSize: 10, color: "#166534", whiteSpace: "nowrap" }}>✓ {ri.verifiedBy} · {timeAgo(ri.verifiedAt)}</div>}
                     </label>

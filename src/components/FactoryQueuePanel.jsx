@@ -432,8 +432,8 @@ function QueueRow({ entry, narrow, onOpen, leftColWidth, rightColWidth }) {
     >
       {/* Customer / item */}
       <div style={{ flex: narrow ? "1 1 auto" : `0 0 ${leftColWidth}px`, minWidth: 0 }}>
-        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.customerName}</div>
-        <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{entry.item} · <span style={{ color: "#94a3b8" }}>{entry.sku}</span></div>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 14, fontWeight: 700, color: "#0f172a", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", textTransform: "uppercase" }}>{entry.customerName}</div>
+        <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}><span style={{ textTransform: "uppercase" }}>{entry.item}</span> · <span style={{ color: "#94a3b8" }}>{entry.sku}</span></div>
         <div style={{ display: "flex", gap: 5, marginTop: 6, flexWrap: "wrap" }}>
           <Badge bg={cat.bg} color={cat.text}>{cat.label}</Badge>
           {isReady && <Badge bg="#dbeafe" color="#1e40af">✅ Ready</Badge>}
@@ -475,7 +475,7 @@ function QueueRow({ entry, narrow, onOpen, leftColWidth, rightColWidth }) {
           </>
         ) : entry.queueType === "exchange" ? (
           <>
-            <div style={{ color: "#64748b" }}>→ {entry.exchangeItemRequested}</div>
+            <div style={{ color: "#64748b", textTransform: "uppercase" }}>→ {entry.exchangeItemRequested}</div>
             <div style={{ marginTop: 3 }}>
               {entry.balanceDue > 0
                 ? <Badge bg="#fef3c7" color="#92400e">Owes {fmtMoney(entry.balanceDue, entry.currency)}</Badge>
@@ -564,7 +564,7 @@ function DetailDrawer({ entry, onClose, onMarkPaid, onAdvance, onSaveRemarks, on
         <div style={{ height: 5, background: cat.barGrad || cat.bar, flexShrink: 0 }} />
         <div style={{ padding: "18px 20px", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
           <div>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, fontWeight: 700, color: "#0f172a" }}>{entry.customerName}</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, fontWeight: 700, color: "#0f172a", textTransform: "uppercase" }}>{entry.customerName}</div>
             <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{entry.phone}</div>
             <div style={{ display: "flex", gap: 5, marginTop: 8, flexWrap: "wrap" }}>
               <Badge bg={cat.bg} color={cat.text}>{cat.label}</Badge>
@@ -581,9 +581,9 @@ function DetailDrawer({ entry, onClose, onMarkPaid, onAdvance, onSaveRemarks, on
         <div style={{ flex: 1, overflowY: "auto", padding: 20 }}>
           <div style={{ marginBottom: 18 }}>
             <div style={{ fontSize: 10.5, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: 6 }}>Item</div>
-            <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a" }}>{entry.item}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#0f172a", textTransform: "uppercase" }}>{entry.item}</div>
             <div style={{ fontSize: 11.5, color: "#94a3b8", marginTop: 2 }}>{entry.sku} · {entry.referenceLabel} {entry.referenceId}</div>
-            {entry.exchangeItemRequested && <div style={{ fontSize: 12, color: "#4338ca", marginTop: 6 }}>→ Requested: {entry.exchangeItemRequested}</div>}
+            {entry.exchangeItemRequested && <div style={{ fontSize: 12, color: "#4338ca", marginTop: 6, textTransform: "uppercase" }}>→ Requested: {entry.exchangeItemRequested}</div>}
           </div>
 
           <div style={{ marginBottom: 18, display: "flex", gap: 10 }}>

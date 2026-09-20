@@ -691,7 +691,7 @@ const AuditPanel = ({ salesData, onClose, onGoToShop }) => {
         <td>${SHOP_LABELS[f.shopId]||f.shopId}</td>
         <td>${AUDIT_CATEGORIES.find(c=>c.key===f.category)?.label||f.category}</td>
         <td>${f.saleId}</td>
-        <td>${f.customer||"—"}</td>
+        <td>${(f.customer||"—").toUpperCase()}</td>
         <td>${f.detail}</td>
       </tr>`).join("");
     w.document.write(`<!DOCTYPE html><html><head><title>Audit Findings — ${new Date().toLocaleDateString("en-GB")}</title>
@@ -759,7 +759,7 @@ const AuditPanel = ({ salesData, onClose, onGoToShop }) => {
                         <div style={{ display:"flex", justifyContent:"space-between", gap:8, alignItems:"flex-start" }}>
                           <div onClick={()=>onGoToShop&&onGoToShop(f.shopId)} style={{ cursor:onGoToShop?"pointer":"default", flex:1, minWidth:0 }}>
                             <div style={{ display:"flex", justifyContent:"space-between", gap:8 }}>
-                              <span style={{ fontSize:12.5, fontWeight:700, color:"#0f172a" }}>{f.customer||"—"} <span style={{color:"#94a3b8",fontWeight:600}}>· {SHOP_LABELS[f.shopId]||f.shopId}</span></span>
+                              <span style={{ fontSize:12.5, fontWeight:700, color:"#0f172a", textTransform:"uppercase" }}>{f.customer||"—"} <span style={{color:"#94a3b8",fontWeight:600,textTransform:"none"}}>· {SHOP_LABELS[f.shopId]||f.shopId}</span></span>
                               <span style={{ fontSize:11, color:"#94a3b8", flexShrink:0 }}>{f.saleId}</span>
                             </div>
                             <div style={{ fontSize:11.5, color:"#64748b", marginTop:3 }}>{f.detail}</div>
@@ -1562,7 +1562,7 @@ const MessagesPanel=({shopId,shop,messages,setMessages,user,sales})=>{
                           {MESSAGE_TYPE_LABEL[msg.messageType]||msg.messageType}
                         </span>
                       </td>
-                      <td style={{...td,fontWeight:700,color:"#0f172a"}}>{msg.customer}</td>
+                      <td style={{...td,fontWeight:700,color:"#0f172a",textTransform:"uppercase"}}>{msg.customer}</td>
                       <td style={{...td,fontFamily:"DM Mono,monospace",color:shop.accent,fontWeight:700}}>{msg.saleId}</td>
                       <td style={{...td,fontFamily:"DM Mono,monospace",color:"#64748b"}}>{msg.phone}</td>
                       <td style={{...td,color:"#64748b",whiteSpace:"nowrap"}}>{fmtDate(msg.createdAt)}</td>
@@ -2232,7 +2232,7 @@ const ReturnTrackingPortal=()=>{
           {/* Return info banner */}
           <div style={{background:"#f0fdf4",borderRadius:10,padding:"10px 14px",border:"1px solid #86efac",marginBottom:18}}>
             <p style={{margin:0,fontSize:13,color:"#166534"}}>
-              <strong>{returnRecord?.customer}</strong> · {returnRecord?.resolution==="exchange"?"🔄 Exchange":"💰 Refund"} · {returnRecord?.reason}
+              <strong style={{textTransform:"uppercase"}}>{returnRecord?.customer}</strong> · {returnRecord?.resolution==="exchange"?"🔄 Exchange":"💰 Refund"} · {returnRecord?.reason}
             </p>
           </div>
 
@@ -2607,7 +2607,7 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user,sales=
             <div>
               <p style={{margin:"0 0 2px",fontSize:11,fontWeight:700,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.06em"}}>Return Case</p>
               <h3 style={{margin:"0 0 2px",fontSize:17,fontWeight:900,color:"#0f172a",fontFamily:"DM Mono,monospace"}}>{ret.id}</h3>
-              <p style={{margin:0,fontSize:12,color:"#64748b"}}>{ret.customer} · {ret.phone}{ret.item?` · ${ret.item}`:""} · {form.saleId?`Sale: ${form.saleId}`:"📥 No linked sale"}</p>
+              <p style={{margin:0,fontSize:12,color:"#64748b"}}><span style={{textTransform:"uppercase"}}>{ret.customer}</span> · {ret.phone}{ret.item?<> · <span style={{textTransform:"uppercase"}}>{ret.item}</span></>:""} · {form.saleId?`Sale: ${form.saleId}`:"📥 No linked sale"}</p>
             </div>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
               <span style={{fontSize:11,fontWeight:700,padding:"3px 10px",borderRadius:999,
@@ -2629,7 +2629,7 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user,sales=
             <p style={{margin:"0 0 4px",fontSize:11,fontWeight:700,color:"#374151",textTransform:"uppercase",letterSpacing:"0.05em"}}>Linked Sale</p>
             {form.saleId?(
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"9px 12px",borderRadius:9,border:"1px solid #bbf7d0",background:"#f0fdf4"}}>
-                <div style={{fontSize:12.5,fontWeight:700,color:"#166534"}}>{form.saleId}{linkedSaleObj?` · ${linkedSaleObj.customer}`:""}</div>
+                <div style={{fontSize:12.5,fontWeight:700,color:"#166534"}}>{form.saleId}{linkedSaleObj?<> · <span style={{textTransform:"uppercase"}}>{linkedSaleObj.customer}</span></>:""}</div>
                 <button onClick={()=>set("saleId",null)}
                   style={{border:"none",background:"transparent",color:"#166534",cursor:"pointer",fontSize:12,fontWeight:700}}>
                   Unlink
@@ -2645,7 +2645,7 @@ const ReturnDetailModal=({ret,shop,onClose,onUpdate,onSyncSaleStatus,user,sales=
                     {linkMatches.map(s=>(
                       <div key={s.id} onClick={()=>{set("saleId",s.id);setLinkQuery("");}}
                         style={{padding:"8px 12px",fontSize:12.5,cursor:"pointer",borderBottom:"1px solid #f1f5f9"}}>
-                        <strong>{s.customer}</strong> — {s.id}
+                        <strong style={{textTransform:"uppercase"}}>{s.customer}</strong> — {s.id}
                       </div>
                     ))}
                   </div>
@@ -3091,7 +3091,7 @@ const ManualReturnModal = ({ shopId, shop, sales, onClose, onSave }) => {
           <label style={lbl}>Link to a sale (optional)</label>
           {linkedSale ? (
             <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"9px 12px", borderRadius:9, border:"1px solid #bbf7d0", background:"#f0fdf4" }}>
-              <div style={{ fontSize:12.5, fontWeight:700, color:"#166534" }}>{linkedSale.id} · {linkedSale.customer}</div>
+              <div style={{ fontSize:12.5, fontWeight:700, color:"#166534" }}>{linkedSale.id} · <span style={{textTransform:"uppercase"}}>{linkedSale.customer}</span></div>
               <button onClick={()=>{ setLinkedSale(null); setCustomer(""); setPhone(""); setItem(""); }}
                 style={{ border:"none", background:"transparent", color:"#166534", cursor:"pointer", fontSize:12, fontWeight:700 }}>
                 Unlink
@@ -3105,7 +3105,7 @@ const ManualReturnModal = ({ shopId, shop, sales, onClose, onSave }) => {
                   {matches.map(s => (
                     <div key={s.id} onClick={()=>selectSale(s)}
                       style={{ padding:"8px 12px", fontSize:12.5, cursor:"pointer", borderBottom:"1px solid #f1f5f9" }}>
-                      <strong>{s.customer}</strong> — {s.id} · {cleanItemText(s)||"—"}
+                      <strong style={{textTransform:"uppercase"}}>{s.customer}</strong> — {s.id} · <span style={{textTransform:"uppercase"}}>{cleanItemText(s)||"—"}</span>
                     </div>
                   ))}
                 </div>
@@ -3301,7 +3301,7 @@ const UpfrontRefundsView = ({ shopId, shop, allSales, upfrontRefunds, setUpfront
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
                 <div>
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                    <span style={{fontSize:13,fontWeight:700,color:"#0f172a"}}>{r.customer}</span>
+                    <span style={{fontSize:13,fontWeight:700,color:"#0f172a",textTransform:"uppercase"}}>{r.customer}</span>
                     <span style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:999,
                       background:r.isFull?"#fef2f2":"#fffbeb",color:r.isFull?"#991b1b":"#92400e",
                       border:"1px solid "+(r.isFull?"#fecaca":"#fde68a")}}>
@@ -3350,7 +3350,7 @@ const UpfrontRefundsView = ({ shopId, shop, allSales, upfrontRefunds, setUpfront
         <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:"white",borderRadius:16,padding:22,maxWidth:320,width:"92%"}}>
             <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:8}}>Delete this refund record?</div>
-            <p style={{fontSize:12,color:"#64748b",marginBottom:18}}>This removes the record for {confirmDeleteRefund.customer}. This won't undo any changes already made to a linked sale.</p>
+            <p style={{fontSize:12,color:"#64748b",marginBottom:18}}>This removes the record for <span style={{textTransform:"uppercase"}}>{confirmDeleteRefund.customer}</span>. This won't undo any changes already made to a linked sale.</p>
             <div style={{display:"flex",gap:10}}>
               <button onClick={()=>setConfirmDeleteRefund(null)}
                 style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
@@ -3425,7 +3425,7 @@ const LogRefundModal = ({ shopId, shop, allSales, onClose, onSave }) => {
           {linkedSale ? (
             <>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",borderRadius:9,background:"#f0fdf4",border:"1px solid #bbf7d0"}}>
-              <span style={{fontSize:12,fontWeight:700,color:"#166534"}}>{linkedSale.id} — {linkedSale.customer}</span>
+              <span style={{fontSize:12,fontWeight:700,color:"#166534"}}>{linkedSale.id} — <span style={{textTransform:"uppercase"}}>{linkedSale.customer}</span></span>
               <button onClick={()=>setLinkedSale(null)} style={{border:"none",background:"transparent",color:"#166534",cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
             </div>
             {(() => {
@@ -3453,7 +3453,7 @@ const LogRefundModal = ({ shopId, shop, allSales, onClose, onSave }) => {
                       style={{padding:"8px 12px",fontSize:12,cursor:"pointer",borderBottom:"1px solid #f1f5f9"}}
                       onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
                       onMouseLeave={e=>e.currentTarget.style.background="white"}>
-                      <strong>{s.id}</strong> — {s.customer} · {shop.symbol}{Number(s.amount||0).toLocaleString()}
+                      <strong>{s.id}</strong> — <span style={{textTransform:"uppercase"}}>{s.customer}</span> · {shop.symbol}{Number(s.amount||0).toLocaleString()}
                     </div>
                   ))}
                 </div>
@@ -3644,7 +3644,7 @@ const GiftVouchersView = ({ shopId, shop, allSales, allReturns, giftVouchers, se
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:10,flexWrap:"wrap"}}>
                 <div>
                   <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-                    <span style={{fontSize:13,fontWeight:700,color:"#0f172a"}}>{v.customer}</span>
+                    <span style={{fontSize:13,fontWeight:700,color:"#0f172a",textTransform:"uppercase"}}>{v.customer}</span>
                     <span style={{fontSize:10,fontWeight:800,padding:"2px 8px",borderRadius:999,
                       background:"white",color:st.text,border:"1px solid "+st.border}}>
                       {st.label}
@@ -3708,7 +3708,7 @@ const GiftVouchersView = ({ shopId, shop, allSales, allReturns, giftVouchers, se
         <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
           <div style={{background:"white",borderRadius:16,padding:22,maxWidth:320,width:"92%"}}>
             <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:8}}>Delete this voucher record?</div>
-            <p style={{fontSize:12,color:"#64748b",marginBottom:18}}>This removes the record for {confirmDeleteVoucher.customer}. If the voucher is still Active, make sure it's genuinely void before deleting — this doesn't notify the customer.</p>
+            <p style={{fontSize:12,color:"#64748b",marginBottom:18}}>This removes the record for <span style={{textTransform:"uppercase"}}>{confirmDeleteVoucher.customer}</span>. If the voucher is still Active, make sure it's genuinely void before deleting — this doesn't notify the customer.</p>
             <div style={{display:"flex",gap:10}}>
               <button onClick={()=>setConfirmDeleteVoucher(null)}
                 style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
@@ -3785,7 +3785,7 @@ const IssueVoucherModal = ({ shopId, shop, allSales, allReturns, presetLink, onC
           <label style={lbl}>Link to a Sale or Return (optional)</label>
           {linked ? (
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 12px",borderRadius:9,background:"#f5f3ff",border:"1px solid #ddd6fe"}}>
-              <span style={{fontSize:12,fontWeight:700,color:"#5b21b6"}}>{linked.type==="return"?"↩️":"🛒"} {linked.id} — {linked.customer}</span>
+              <span style={{fontSize:12,fontWeight:700,color:"#5b21b6"}}>{linked.type==="return"?"↩️":"🛒"} {linked.id} — <span style={{textTransform:"uppercase"}}>{linked.customer}</span></span>
               <button onClick={()=>setLinked(null)} style={{border:"none",background:"transparent",color:"#5b21b6",cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
             </div>
           ) : (
@@ -3798,7 +3798,7 @@ const IssueVoucherModal = ({ shopId, shop, allSales, allReturns, presetLink, onC
                       style={{padding:"8px 12px",fontSize:12,cursor:"pointer",borderBottom:"1px solid #f1f5f9"}}
                       onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
                       onMouseLeave={e=>e.currentTarget.style.background="white"}>
-                      ↩️ <strong>{r.id}</strong> — {r.customer}
+                      ↩️ <strong>{r.id}</strong> — <span style={{textTransform:"uppercase"}}>{r.customer}</span>
                     </div>
                   ))}
                   {saleMatches.map(s=>(
@@ -3806,7 +3806,7 @@ const IssueVoucherModal = ({ shopId, shop, allSales, allReturns, presetLink, onC
                       style={{padding:"8px 12px",fontSize:12,cursor:"pointer",borderBottom:"1px solid #f1f5f9"}}
                       onMouseEnter={e=>e.currentTarget.style.background="#f8fafc"}
                       onMouseLeave={e=>e.currentTarget.style.background="white"}>
-                      🛒 <strong>{s.id}</strong> — {s.customer} · {shop.symbol}{Number(s.amount||0).toLocaleString()}
+                      🛒 <strong>{s.id}</strong> — <span style={{textTransform:"uppercase"}}>{s.customer}</span> · {shop.symbol}{Number(s.amount||0).toLocaleString()}
                     </div>
                   ))}
                 </div>
@@ -4387,7 +4387,7 @@ Thank you for your cooperation.`,
                             border:"1px solid #fca5a5"}}>🔔 Reminder Due</span>;
                         })()}
                       </div>
-                      <div style={{marginTop:6,fontSize:13,fontWeight:700,color:"#0f172a",cursor:"pointer"}}
+                      <div style={{marginTop:6,fontSize:13,fontWeight:700,color:"#0f172a",cursor:"pointer",textTransform:"uppercase"}}
                         onClick={()=>setSelectedReturn(ret)}>{ret.customer}</div>
                       <div style={{marginTop:1,fontSize:11,color:"#64748b"}}>
                         {["Sale "+(ret.saleId||"—"),
@@ -4790,7 +4790,7 @@ Thank you for your cooperation.`,
               display:"flex",alignItems:"center",justifyContent:"center",fontSize:26,margin:"0 auto 16px"}}>🗑️</div>
             <h3 style={{margin:"0 0 8px",fontSize:17,fontWeight:800,color:"#0f172a"}}>Delete Return</h3>
             <p style={{margin:"0 0 6px",fontSize:13,color:"#374151"}}>
-              You are about to permanently delete return <strong>{confirmDelete.id}</strong> for <strong>{confirmDelete.customer}</strong>.
+              You are about to permanently delete return <strong>{confirmDelete.id}</strong> for <strong style={{textTransform:"uppercase"}}>{confirmDelete.customer}</strong>.
             </p>
             <p style={{margin:"0 0 24px",fontSize:12,color:"#ef4444",fontWeight:600}}>
               ⚠️ This cannot be undone.
@@ -4990,7 +4990,7 @@ const MarkDeliveredModal=({sale,shopId,shop,onConfirm,onClose})=>{
       <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.5)",backdropFilter:"blur(4px)"}} onClick={onClose}/>
       <div style={{position:"relative",background:"white",borderRadius:16,boxShadow:"0 24px 48px rgba(0,0,0,0.2)",width:"100%",maxWidth:380,padding:24}}>
         <h3 style={{margin:"0 0 4px",fontSize:16,fontWeight:800,color:"#0f172a"}}>✅ Confirm Delivery</h3>
-        <p style={{margin:"0 0 16px",fontSize:12,color:"#64748b"}}>Order <strong>{sale.id}</strong> — {sale.customer}</p>
+        <p style={{margin:"0 0 16px",fontSize:12,color:"#64748b"}}>Order <strong>{sale.id}</strong> — <span style={{textTransform:"uppercase"}}>{sale.customer}</span></p>
         {sale.trackingNo&&(
           <div style={{background:"#f0f9ff",borderRadius:8,padding:"8px 12px",marginBottom:14,border:"1px solid #bae6fd"}}>
             <span style={{fontSize:11,color:"#0369a1",fontWeight:600}}>📦 Tracking: </span>
@@ -5701,7 +5701,7 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
                     {p.supplier||"—"}
                   </td>
                   {/* Item */}
-                  <td style={{padding:"12px 16px",color:"#374151",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                  <td style={{padding:"12px 16px",color:"#374151",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textTransform:"uppercase"}}>
                     {p.item||"—"}
                   </td>
                   {/* Qty */}
@@ -6348,7 +6348,7 @@ const FulfilmentPanel=({salesData,shopId,shop,messages,setMessages,returns,setRe
                           {MESSAGE_TYPE_LABEL[msg.messageType]||msg.messageType}
                         </span>
                       </td>
-                      <td style={{padding:"10px 16px",fontWeight:700,color:"#0f172a"}}>{msg.customer}</td>
+                      <td style={{padding:"10px 16px",fontWeight:700,color:"#0f172a",textTransform:"uppercase"}}>{msg.customer}</td>
                       <td style={{padding:"10px 16px",fontFamily:"DM Mono,monospace",fontSize:11,color:shop.accent}}>{msg.saleId}</td>
                       <td style={{padding:"10px 16px",fontFamily:"DM Mono,monospace",fontSize:11,color:"#64748b"}}>{msg.phone}</td>
                       <td style={{padding:"10px 16px"}}>
@@ -6424,14 +6424,14 @@ const FulfilmentPanel=({salesData,shopId,shop,messages,setMessages,returns,setRe
                       onMouseEnter={e=>e.currentTarget.style.background=shopAcc.accent+"0d"}
                       onMouseLeave={e=>e.currentTarget.style.background=i%2===0?"white":"#fafafa"}>
                       <td style={{padding:"11px 16px",fontFamily:"DM Mono,monospace",fontWeight:800,fontSize:12,color:shopAcc.accent}}>{s.id}</td>
-                      <td style={{padding:"11px 16px",fontWeight:700,color:"#0f172a",maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.customer}</td>
+                      <td style={{padding:"11px 16px",fontWeight:700,color:"#0f172a",maxWidth:150,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textTransform:"uppercase"}}>{s.customer}</td>
                       <td style={{padding:"11px 16px"}}>
                         <span style={{fontSize:11,fontWeight:700,padding:"2px 8px",borderRadius:999,
                           background:shopAcc.accent+"18",color:shopAcc.accent,border:"1px solid "+shopAcc.accent+"33"}}>
                           {shopAcc.name}
                         </span>
                       </td>
-                      <td style={{padding:"11px 16px",color:"#374151",fontSize:12,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.item||"—"}</td>
+                      <td style={{padding:"11px 16px",color:"#374151",fontSize:12,maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textTransform:"uppercase"}}>{s.item||"—"}</td>
                       <td style={{padding:"11px 16px"}}>
                         {s.trackingNo?(
                           <a href={"https://www.royalmail.com/track-your-item#/tracking-results/"+s.trackingNo}
@@ -9950,7 +9950,7 @@ return(
             <div style={{fontSize:34,textAlign:"center",marginBottom:8}}>⚠️</div>
             <div style={{fontSize:15,fontWeight:800,color:"#0f172a",textAlign:"center",marginBottom:10}}>Balance still due</div>
             <div style={{fontSize:13,color:"#475569",lineHeight:1.6,textAlign:"center",marginBottom:16}}>
-              We still need to receive <strong style={{color:"#dc2626"}}>{fmt(shopId,editBalanceBlockInfo.balance)}</strong> from <strong>{editBalanceBlockInfo.sale.customer||"this customer"}</strong> before this can be marked Fulfilled.
+              We still need to receive <strong style={{color:"#dc2626"}}>{fmt(shopId,editBalanceBlockInfo.balance)}</strong> from <strong style={{textTransform:"uppercase"}}>{editBalanceBlockInfo.sale.customer||"this customer"}</strong> before this can be marked Fulfilled.
             </div>
             <div style={{background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10,padding:"10px 12px",marginBottom:18,display:"flex",justifyContent:"space-between",fontSize:12}}>
               <span style={{color:"#64748b"}}>Expected {fmt(shopId,editBalanceBlockInfo.expectedTotal)} · Received {fmt(shopId,editBalanceBlockInfo.received)}</span>
@@ -9983,8 +9983,8 @@ return(
                   <div key={id} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"8px 12px",fontSize:12,
                     borderTop:i===0?"none":"1px solid #f1f5f9",background:id===editCascadeConfirm.merged.id?"#f8fafc":"white"}}>
                     <div style={{minWidth:0}}>
-                      <div style={{fontWeight:700,color:"#0f172a"}}>{gs.customer||"Customer"}</div>
-                      <div style={{color:"#64748b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:220}}>
+                      <div style={{fontWeight:700,color:"#0f172a",textTransform:"uppercase"}}>{gs.customer||"Customer"}</div>
+                      <div style={{color:"#64748b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",maxWidth:220,textTransform:"uppercase"}}>
                         {gs.date||""} · {gs.item||""}
                       </div>
                     </div>
@@ -10169,7 +10169,7 @@ return(
                 ].map(({l,v,full})=>(
                   <div key={l} style={full?{gridColumn:"1/-1"}:{}}>
                     <p style={{margin:"0 0 2px",fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>{l}</p>
-                    <p style={{margin:0,fontSize:13,color:"#0f172a",fontWeight:600}}>{v}</p>
+                    <p style={{margin:0,fontSize:13,color:"#0f172a",fontWeight:600,textTransform:l==="Item"?"uppercase":"none"}}>{v}</p>
                   </div>
                 ))}
               </div>
@@ -10293,7 +10293,7 @@ return(
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24,marginBottom:20}}>
                 <div>
                   <div style={{fontSize:9,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Bill To</div>
-                  <div style={{fontWeight:800,fontSize:15,marginBottom:3}}>{inv.customer}</div>
+                  <div style={{fontWeight:800,fontSize:15,marginBottom:3,textTransform:"uppercase"}}>{inv.customer}</div>
                   <div style={{fontSize:12,color:"#64748b",marginBottom:2}}>{inv.address||"—"}</div>
                   <div style={{fontSize:12,color:"#64748b"}}>Phone: <strong>{inv.phone||inv.contact||"—"}</strong></div>
                 </div>
@@ -10340,7 +10340,7 @@ return(
                         return(
                           <tr key={idx} style={{borderBottom:"1px solid #e2e8f0",background:idx%2===0?"white":"#fafafa"}}>
                             <td style={{padding:"12px",color:"#64748b",fontSize:12}}>{idx+1}</td>
-                            <td style={{padding:"12px",fontWeight:700}}>{line.name||"Item "+(idx+1)}</td>
+                            <td style={{padding:"12px",fontWeight:700,textTransform:"uppercase"}}>{line.name||"Item "+(idx+1)}</td>
                             <td style={{padding:"12px",textAlign:"right",fontWeight:700}}>{q}</td>
                             <td style={{padding:"12px",textAlign:"right",fontWeight:700}}>{sym}{p.toLocaleString()}</td>
                             <td style={{padding:"12px",textAlign:"right",fontWeight:800,color:shop.accent}}>{sym}{lineTotal.toLocaleString()}</td>
@@ -10502,7 +10502,7 @@ return(
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:20,marginBottom:24}}>
                 <div style={{background:"#f8fafc",borderRadius:10,padding:14}}>
                   <div style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.07em",marginBottom:6}}>Bill To</div>
-                  <div style={{fontWeight:700,fontSize:14}}>{inv.customer||"—"}</div>
+                  <div style={{fontWeight:700,fontSize:14,textTransform:"uppercase"}}>{inv.customer||"—"}</div>
                   <div style={{fontSize:12,color:"#64748b",marginTop:4}}>{inv.address||""}</div>
                   <div style={{fontSize:12,color:"#64748b"}}>{inv.phone||inv.contact||""}</div>
                 </div>
@@ -10528,7 +10528,7 @@ return(
                 <tbody>
                   <tr style={{borderBottom:"1px solid #e2e8f0"}}>
                     <td style={{padding:"12px 14px",fontSize:13,color:"#64748b"}}>1</td>
-                    <td style={{padding:"12px 14px",fontWeight:700}}>{inv.item||"Product / Service"}</td>
+                    <td style={{padding:"12px 14px",fontWeight:700,textTransform:"uppercase"}}>{inv.item||"Product / Service"}</td>
                     <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700}}>{inv.qty||1}</td>
                     <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700}}>{sym}{sub.toLocaleString()}</td>
                     <td style={{padding:"12px 14px",textAlign:"right",fontWeight:800,color:shop.accent}}>{sym}{grd.toLocaleString()}</td>
@@ -10672,7 +10672,7 @@ return(
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:24,marginBottom:24}}>
                 <div>
                   <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.07em"}}>Bill To</p>
-                  <p style={{margin:"0 0 3px",fontWeight:800,fontSize:15,color:"#0f172a"}}>{invoiceRow.customer}</p>
+                  <p style={{margin:"0 0 3px",fontWeight:800,fontSize:15,color:"#0f172a",textTransform:"uppercase"}}>{invoiceRow.customer}</p>
                   {invoiceRow.address&&<p style={{margin:"0 0 3px",fontSize:12,color:"#64748b"}}>{invoiceRow.address}</p>}
                   <p style={{margin:0,fontSize:12,color:"#64748b"}}>Phone: <strong>{invoiceRow.phone||invoiceRow.contact||"—"}</strong></p>
                 </div>
@@ -10725,7 +10725,7 @@ return(
                           <tr key={idx} style={{borderBottom:"1px solid #e2e8f0",background:idx%2===0?"white":"#fafafa"}}>
                             <td style={{padding:"12px 14px",fontSize:13,color:"#64748b"}}>{idx+1}</td>
                             <td style={{padding:"12px 14px"}}>
-                              <p style={{margin:0,fontWeight:700,fontSize:13,color:"#0f172a"}}>{line.name||"Item "+(idx+1)}</p>
+                              <p style={{margin:0,fontWeight:700,fontSize:13,color:"#0f172a",textTransform:"uppercase"}}>{line.name||"Item "+(idx+1)}</p>
                             </td>
                             <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700}}>{q}</td>
                             <td style={{padding:"12px 14px",textAlign:"right",fontWeight:700}}>{fmt(shopId,p)}</td>
@@ -10904,7 +10904,7 @@ return(
                   <p style={{margin:"0 0 10px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em",display:"flex",alignItems:"center",gap:5}}>
                     👤 Customer
                   </p>
-                  <p style={{margin:"0 0 4px",fontWeight:800,fontSize:14,color:"#0f172a"}}>{selRow.customer}</p>
+                  <p style={{margin:"0 0 4px",fontWeight:800,fontSize:14,color:"#0f172a",textTransform:"uppercase"}}>{selRow.customer}</p>
                   <p style={{margin:"0 0 4px",fontSize:12,color:"#64748b"}}>{selRow.phone||selRow.contact||"—"}</p>
                   <span style={{display:"inline-flex",alignItems:"center",gap:4,
                     background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:999,
@@ -11059,7 +11059,7 @@ return(
                           return(
                             <tr key={idx} style={{borderTop:"1px solid #f1f5f9",background:idx%2===0?"white":"#fafafa"}}>
                               <td style={{padding:"11px 14px"}}>
-                                <p style={{margin:0,fontWeight:700,fontSize:13,color:"#1e293b"}}>{line.name||"Item "+(idx+1)}</p>
+                                <p style={{margin:0,fontWeight:700,fontSize:13,color:"#1e293b",textTransform:"uppercase"}}>{line.name||"Item "+(idx+1)}</p>
                               </td>
                               <td style={{padding:"11px 14px",textAlign:"right",fontWeight:600,color:"#374151"}}>{q}</td>
                               <td style={{padding:"11px 14px",textAlign:"right",fontWeight:600,color:"#374151"}}>{fmt(shopId,p)}</td>
@@ -11202,7 +11202,7 @@ return(
                         Delete Sale {selRow.id}?
                       </p>
                       <p style={{margin:0,fontSize:13,color:"#dc2626"}}>
-                        This will permanently remove the sale for <strong>{selRow.customer}</strong> ({fmt(shopId,selRow.amount)}) from the database. This cannot be undone.
+                        This will permanently remove the sale for <strong style={{textTransform:"uppercase"}}>{selRow.customer}</strong> ({fmt(shopId,selRow.amount)}) from the database. This cannot be undone.
                       </p>
                     </div>
                   </div>
@@ -11500,7 +11500,7 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
                 <input type="checkbox" checked={selected.has(o.shopifyOrderId)} onChange={()=>toggle(o.shopifyOrderId)} style={{ marginTop:3 }}/>
                 <div style={{ flex:1, minWidth:0 }}>
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", gap:8 }}>
-                    <span style={{ fontWeight:700, fontSize:13, color:"#0f172a" }}>{o.customer}</span>
+                    <span style={{ fontWeight:700, fontSize:13, color:"#0f172a", textTransform:"uppercase" }}>{o.customer}</span>
                     <div style={{ display:"flex", alignItems:"center", gap:8, flexShrink:0 }}>
                       <span style={{ fontWeight:800, fontSize:13, color:"#0f172a" }}>£{o.amount.toFixed(2)}</span>
                       <button onClick={(e)=>{ e.preventDefault(); e.stopPropagation(); dismissOrder(o.shopifyOrderId); }}
@@ -11511,7 +11511,7 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
                     </div>
                   </div>
                   <div style={{ fontSize:11, color:"#64748b" }}>{o.orderNumber} · {o.date} · {o.phone||"no phone"}</div>
-                  <div style={{ fontSize:11, color:"#94a3b8", marginTop:2 }}>{o.items.map(it=>`${it.name} ×${it.qty}`).join(", ")}</div>
+                  <div style={{ fontSize:11, color:"#94a3b8", marginTop:2, textTransform:"uppercase" }}>{o.items.map(it=>`${it.name} ×${it.qty}`).join(", ")}</div>
                   {o.address && <div style={{ fontSize:10, color:"#94a3b8", marginTop:2 }}>📍 {o.address}</div>}
                 </div>
               </label>
@@ -12409,7 +12409,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
               <div>
                 <div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}>
                   {m.type==="restock" ? "🟢 Restocked" : isCorrection ? "⚖️ Stock Corrected" : "🔴 Sold"}
-                  {m.type==="sale" && m.customer && <span style={{color:"#64748b",fontWeight:600}}> to {m.customer}</span>}
+                  {m.type==="sale" && m.customer && <span style={{color:"#64748b",fontWeight:600,textTransform:"uppercase"}}> to {m.customer}</span>}
                 </div>
                 <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>
                   {fmtDate(m.date)}{m.saleId?` · Invoice ${m.saleId}`:""}{m.note?` · ${m.note}`:""}
@@ -12577,8 +12577,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
                           <div key={m.id} style={{padding:"10px 14px",borderTop:"1px solid #f1f5f9",display:"flex",justifyContent:"space-between",alignItems:"center",gap:10,background:"white"}}>
                             <div style={{minWidth:0}}>
                               <div style={{fontSize:12.5,fontWeight:700,color:"#0f172a"}}>
-                                {m.type==="restock"?"🟢 Restocked":isCorrection?"⚖️ Corrected":"🔴 Sold"} · {it?.name||"(deleted item)"}
-                                {m.type==="sale" && m.customer && <span style={{color:"#64748b",fontWeight:600}}> — {m.customer}</span>}
+                                {m.type==="restock"?"🟢 Restocked":isCorrection?"⚖️ Corrected":"🔴 Sold"} · <span style={{textTransform:"uppercase"}}>{it?.name||"(deleted item)"}</span>
+                                {m.type==="sale" && m.customer && <span style={{color:"#64748b",fontWeight:600,textTransform:"uppercase"}}> — {m.customer}</span>}
                               </div>
                               {m.note && <div style={{fontSize:10.5,color:"#94a3b8",marginTop:1}}>{m.note}</div>}
                             </div>
@@ -12871,7 +12871,7 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                   <td onClick={()=>onSelectItem(item.id)}
                     style={{ ...stickyCell, left:0, zIndex:2, background:rowBg, cursor:"pointer" }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8 }}>
-                      <span style={{ fontWeight:700, fontSize:13, color:"#0f172a", lineHeight:1.3 }}>{item.name}</span>
+                      <span style={{ fontWeight:700, fontSize:13, color:"#0f172a", lineHeight:1.3, textTransform:"uppercase" }}>{item.name}</span>
                     </div>
                   </td>
                   <td title="What this item's stock stood at when the month began"
@@ -13027,7 +13027,7 @@ const CellMovementPopover = ({ item, date, anchor, movements, fmtDate, onClose }
       ...style, zIndex:300, background:"white", border:"1px solid #e2e8f0", borderRadius:10,
       boxShadow:"0 10px 30px rgba(15,23,42,0.18)", padding:"10px 12px", textAlign:"left",
     }}>
-      <div style={{ fontSize:11, fontWeight:800, color:"#0f172a", marginBottom:6 }}>{item.name} · {fmtDate(date)}</div>
+      <div style={{ fontSize:11, fontWeight:800, color:"#0f172a", marginBottom:6 }}><span style={{textTransform:"uppercase"}}>{item.name}</span> · {fmtDate(date)}</div>
       {dayMoves.length === 0 ? (
         <div style={{ fontSize:11, color:"#94a3b8" }}>No movement logged this day.</div>
       ) : dayMoves.map(m => {
@@ -13037,7 +13037,7 @@ const CellMovementPopover = ({ item, date, anchor, movements, fmtDate, onClose }
           <div key={m.id} style={{ display:"flex", justifyContent:"space-between", gap:8, fontSize:11, padding:"4px 0", borderTop:"1px solid #f1f5f9" }}>
             <span style={{ color:"#475569" }}>
               {m.type==="restock"?"🟢 Restocked":isCorrection?"⚖️ Corrected":"🔴 Sold"}
-              {m.customer ? " — "+m.customer : ""}
+              {m.customer ? <span style={{textTransform:"uppercase"}}> — {m.customer}</span> : ""}
             </span>
             <span style={{ fontWeight:800, color: signedQty>0?"#166534":"#991b1b", whiteSpace:"nowrap" }}>{signedQty>0?"+":""}{signedQty}</span>
           </div>
@@ -13067,14 +13067,14 @@ const MonthMovementsPopover = ({ item, type, anchor, monthLabel, moves, fmtDate,
       ...style, zIndex:300, background:"white", border:"1px solid #e2e8f0", borderRadius:10,
       boxShadow:"0 10px 30px rgba(15,23,42,0.18)", padding:"10px 12px", textAlign:"left",
     }}>
-      <div style={{ fontSize:11, fontWeight:800, color:"#0f172a" }}>{item.name}</div>
+      <div style={{ fontSize:11, fontWeight:800, color:"#0f172a", textTransform:"uppercase" }}>{item.name}</div>
       <div style={{ fontSize:10.5, color:"#94a3b8", marginBottom:6 }}>{typeLabel} in {monthLabel} · {type==="correction" && total>=0 ? "+" : ""}{total} total</div>
       {sorted.length === 0 ? (
         <div style={{ fontSize:11, color:"#94a3b8" }}>Nothing logged.</div>
       ) : sorted.map(m => (
         <div key={m.id} style={{ display:"flex", justifyContent:"space-between", gap:8, fontSize:11, padding:"4px 0", borderTop:"1px solid #f1f5f9" }}>
           <span style={{ color:"#475569" }}>
-            {fmtDate(m.date)}{type==="sale" && m.customer ? " — "+m.customer : ""}{(type==="restock"||type==="correction") && m.note ? " — "+m.note : ""}
+            {fmtDate(m.date)}{type==="sale" && m.customer ? <span style={{textTransform:"uppercase"}}> — {m.customer}</span> : ""}{(type==="restock"||type==="correction") && m.note ? " — "+m.note : ""}
           </span>
           <span style={{ fontWeight:800, color: type==="sale"?"#991b1b":type==="restock"?"#166534":(Number(m.qty)>=0?"#166534":"#991b1b"), whiteSpace:"nowrap" }}>
             {type==="sale" ? "−" : type==="restock" ? "+" : (Number(m.qty)>=0?"+":"")}{Number(m.qty)||0}
@@ -13121,7 +13121,7 @@ function printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock = [], fi
   const returnedByItem = {};
   returnedStock.forEach(r => { const name = r.item || "—"; returnedByItem[name] = (returnedByItem[name]||0) + 1; });
   const returnedRows = Object.entries(returnedByItem).sort((a,b)=> b[1]-a[1] || a[0].localeCompare(b[0]))
-    .map(([name,count]) => `<tr><td style="text-align:left">${name}</td><td>${count}</td></tr>`).join("")
+    .map(([name,count]) => `<tr><td style="text-align:left">${(name||"").toUpperCase()}</td><td>${count}</td></tr>`).join("")
     || `<tr><td colspan="2" style="color:#94a3b8">No returned stock currently in office.</td></tr>`;
 
   // Grouped by category, same order/fallback (fixed list) or same
@@ -13145,7 +13145,7 @@ function printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock = [], fi
   const summaryRows = catOrder
     .map(cat => `<tr><td colspan="6" style="text-align:left;font-weight:800;background:#f8fafc;text-transform:uppercase;letter-spacing:0.04em;font-size:10px;">${cat}</td></tr>` +
       byCat[cat].map(({ item, openingBalance, addedThisMonth, soldThisMonth, correctedThisMonth, closingBalance }) =>
-        `<tr><td style="text-align:left;font-weight:700">${item.name}</td><td>${openingBalance}</td><td>${addedThisMonth||"—"}</td><td>${soldThisMonth||"—"}</td><td>${correctedThisMonth?(correctedThisMonth>0?"+":"")+correctedThisMonth:"—"}</td><td style="font-weight:800">${closingBalance}</td></tr>`
+        `<tr><td style="text-align:left;font-weight:700">${(item.name||"").toUpperCase()}</td><td>${openingBalance}</td><td>${addedThisMonth||"—"}</td><td>${soldThisMonth||"—"}</td><td>${correctedThisMonth?(correctedThisMonth>0?"+":"")+correctedThisMonth:"—"}</td><td style="font-weight:800">${closingBalance}</td></tr>`
       ).join("")
     ).join("");
 
@@ -13155,7 +13155,7 @@ function printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock = [], fi
   });
   saleRows.sort((a,b)=> a.date.localeCompare(b.date) || a.item.localeCompare(b.item));
   const saleTable = saleRows.length
-    ? saleRows.map(r => `<tr><td>${fmtDate(r.date)}</td><td style="text-align:left">${r.item}</td><td>${r.qty}</td><td style="text-align:left">${r.customer}</td><td style="text-align:left">${r.note}</td></tr>`).join("")
+    ? saleRows.map(r => `<tr><td>${fmtDate(r.date)}</td><td style="text-align:left">${(r.item||"").toUpperCase()}</td><td>${r.qty}</td><td style="text-align:left">${(r.customer||"").toUpperCase()}</td><td style="text-align:left">${r.note}</td></tr>`).join("")
     : `<tr><td colspan="5" style="color:#94a3b8">No sales logged this month.</td></tr>`;
 
   const restockRows = [];
@@ -13164,7 +13164,7 @@ function printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock = [], fi
   });
   restockRows.sort((a,b)=> a.date.localeCompare(b.date) || a.item.localeCompare(b.item));
   const restockTable = restockRows.length
-    ? restockRows.map(r => `<tr><td>${fmtDate(r.date)}</td><td style="text-align:left">${r.item}</td><td>${r.qty}</td><td style="text-align:left">${r.note}</td></tr>`).join("")
+    ? restockRows.map(r => `<tr><td>${fmtDate(r.date)}</td><td style="text-align:left">${(r.item||"").toUpperCase()}</td><td>${r.qty}</td><td style="text-align:left">${r.note}</td></tr>`).join("")
     : `<tr><td colspan="4" style="color:#94a3b8">No restocks logged this month.</td></tr>`;
 
   const topBoxes = includeReturnedStock ? `
@@ -16197,7 +16197,7 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
                 const days = Math.floor((Date.now()-new Date(s.date).getTime())/(24*60*60*1000));
                 return (
                   <div key={s.id} style={{fontSize:12,padding:"6px 8px",background:"#f8fafc",borderRadius:8,display:"flex",justifyContent:"space-between",gap:8}}>
-                    <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.customer||"Customer"}</span>
+                    <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",textTransform:"uppercase"}}>{s.customer||"Customer"}</span>
                     <span style={{color:"#dc2626",fontWeight:700,flexShrink:0}}>{days}d</span>
                   </div>
                 );
@@ -16418,7 +16418,7 @@ const WaModal=({data,onClose})=>{
           <button onClick={onClose} style={{border:"none",background:"transparent",fontSize:18,cursor:"pointer",color:"#94a3b8",lineHeight:1}}>✕</button>
         </div>
         <div style={{marginBottom:12,padding:"10px 12px",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10}}>
-          <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{customerName||"Customer"}</div>
+          <div style={{fontWeight:700,fontSize:13,color:"#0f172a",textTransform:"uppercase"}}>{customerName||"Customer"}</div>
           <div style={{fontSize:12,color:"#15803d",fontWeight:600}}>📱 {phone||"No phone on file"}</div>
         </div>
         <div style={{fontSize:11,color:"#64748b",marginBottom:6,fontWeight:700,textTransform:"uppercase",letterSpacing:"0.05em"}}>Message</div>
@@ -18541,11 +18541,11 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
               <div style={{display:"flex",alignItems:"center",gap:12}}>
                 <div style={{width:44,height:44,borderRadius:13,background:shop.sb,
                   display:"flex",alignItems:"center",justifyContent:"center",
-                  color:"white",fontWeight:900,fontSize:18,boxShadow:"0 4px 12px rgba(0,0,0,0.15)"}}>
+                  color:"white",fontWeight:900,fontSize:18,boxShadow:"0 4px 12px rgba(0,0,0,0.15)",textTransform:"uppercase"}}>
                   {viewCust.name.charAt(0)}
                 </div>
                 <div>
-                  <p style={{margin:0,fontWeight:900,fontSize:16,color:"#0f172a"}}>{viewCust.name}</p>
+                  <p style={{margin:0,fontWeight:900,fontSize:16,color:"#0f172a",textTransform:"uppercase"}}>{viewCust.name}</p>
                   {viewCust.tag&&(()=>{const t=tc(viewCust.tag);return(
                     <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:999,
                       background:t.bg,color:t.color,border:"1px solid "+t.border}}>{viewCust.tag}</span>
@@ -18633,7 +18633,7 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                 Delete Customer?
               </p>
               <p style={{margin:"0 0 20px",fontSize:13,color:"#64748b",lineHeight:1.6}}>
-                You are about to permanently delete <strong style={{color:"#0f172a"}}>{delCust.name}</strong> from the customer database.<br/>This action cannot be undone.
+                You are about to permanently delete <strong style={{color:"#0f172a",textTransform:"uppercase"}}>{delCust.name}</strong> from the customer database.<br/>This action cannot be undone.
               </p>
               <div style={{display:"flex",gap:10}}>
                 <button onClick={()=>setDelCust(null)}
@@ -18765,13 +18765,13 @@ const CustomersPanel=({customers,search,shop,Badge,setCustomers,user,dbDeleteCus
                       <div style={{width:34,height:34,borderRadius:10,flexShrink:0,
                         background:shop.sb,display:"flex",alignItems:"center",justifyContent:"center",
                         color:"white",fontWeight:800,fontSize:13,
-                        boxShadow:"0 2px 6px rgba(0,0,0,0.12)"}}>
+                        boxShadow:"0 2px 6px rgba(0,0,0,0.12)",textTransform:"uppercase"}}>
                         {c.name.charAt(0)}
                       </div>
                       <div>
                         <p style={{margin:0,fontWeight:700,fontSize:13,color:shop.accent,
                           textDecoration:"underline",textDecorationStyle:"dotted",
-                          textUnderlineOffset:3}}>{c.name}</p>
+                          textUnderlineOffset:3,textTransform:"uppercase"}}>{c.name}</p>
                         {c.notes&&<p style={{margin:0,fontSize:10,color:"#94a3b8"}}>{c.notes}</p>}
                       </div>
                     </div>

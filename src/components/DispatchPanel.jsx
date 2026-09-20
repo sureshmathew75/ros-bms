@@ -280,7 +280,7 @@ const WaModal = ({ data, onClose }) => {
         </div>
         {(customerName || phone) && (
           <div style={{ marginBottom: 12, padding: "10px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, color: "#0f172a" }}>{customerName || "Customer"}</div>
+            <div style={{ fontWeight: 700, fontSize: 13, color: "#0f172a", textTransform: "uppercase" }}>{customerName || "Customer"}</div>
             <div style={{ fontSize: 12, color: "#15803d", fontWeight: 600 }}>📱 {phone || "No phone on file"}</div>
           </div>
         )}
@@ -960,7 +960,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
       const rows = dayList.map((e, i) => `
         <tr>
           <td>${i + 1}</td>
-          <td>${e.customer || "—"}</td>
+          <td>${(e.customer || "—").toUpperCase()}</td>
           <td style="white-space:pre-line">${liveAddressFor(e) || "—"}</td>
           <td>${livePhoneFor(e) || "—"}</td>
           <td>${e.trackingNo || "—"}</td>
@@ -1098,8 +1098,8 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
                   onMouseEnter={e => e.currentTarget.style.background = "#f8fafc"}
                   onMouseLeave={e => e.currentTarget.style.background = "white"}>
                   <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a" }}>{s.customer || "—"}</div>
-                    <div style={{ fontSize: 11.5, color: "#64748b" }}>{s.phone || s.contact || "No phone"} · {s.item || "—"}</div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", textTransform: "uppercase" }}>{s.customer || "—"}</div>
+                    <div style={{ fontSize: 11.5, color: "#64748b" }}>{s.phone || s.contact || "No phone"} · <span style={{ textTransform: "uppercase" }}>{s.item || "—"}</span></div>
                   </div>
                   <div style={{ flexShrink: 0, display: "flex", gap: 6 }}>
                     {s.readyToShip && (
@@ -1173,7 +1173,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
                         <td style={{ padding: "8px 12px", minWidth: 130, maxWidth: 170, verticalAlign: "top" }}>
                           {/* Phone lives on the Sales page only — shown here read-only,
                               stacked under the name instead of its own column. */}
-                          <div style={{ fontWeight: 700, color: "#0f172a", fontSize: 12.5, lineHeight: 1.3 }}>{e.customer || "—"}</div>
+                          <div style={{ fontWeight: 700, color: "#0f172a", fontSize: 12.5, lineHeight: 1.3, textTransform: "uppercase" }}>{e.customer || "—"}</div>
                           <div style={{ fontSize: 11, color: "#64748b", marginTop: 1 }}>{phone || "—"}</div>
                           {rowGroupCount > 1 && (
                             <span title="This row covers several linked sale transactions (e.g. Advance + Final) for one parcel — entering tracking here fulfils all of them."
