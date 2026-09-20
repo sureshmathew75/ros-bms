@@ -7666,9 +7666,20 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
       const earliest = byDate[0];
       const latestStatus = (latest.ful || latest.status || "PENDING").toUpperCase();
       if (latestStatus !== "PENDING") return; // already fulfilled or further along (returned/refunded/etc.)
+      // FOUND & FIXED: this used to filter group rows by `x.pay === "Paid"`
+      // to decide what counted as "received" when there's no tracked Advance
+      // balance. But `pay` isn't a paid/pending flag — it's WHERE the money
+      // went (one of SHOP/SHOPIFY/SIB/HDFC/BANK/...), so that check could
+      // never actually match anything, and every fully-paid, single-payment
+      // order (no Advance/Part/Final split) showed as "nothing paid" here,
+      // even though the sale's `amount` already IS the money received for
+      // that row (that's what recording a sale means in this app — there's
+      // no "invoiced but unpaid" sale row outside the Advance/expectedTotal
+      // mechanism below). So: with no tracked Advance balance, the group's
+      // full amount counts as received.
       const bal = getGroupBalanceInfo(groupIds, sales);
       const totalAmount = bal ? bal.expectedTotal : group.reduce((a, x) => a + (Number(x.amount) || 0), 0);
-      const paidAmount = bal ? bal.received : group.filter(x => x.pay === "Paid").reduce((a, x) => a + (Number(x.amount) || 0), 0);
+      const paidAmount = bal ? bal.received : totalAmount;
       out.push({
         orderId: earliest.id,
         customerName: earliest.customer || "",
