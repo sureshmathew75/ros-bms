@@ -13556,6 +13556,114 @@ const CorrectStockModal = ({ item, onClose, onSave }) => {
   );
 };
 
+// ── BigClockButton visuals: a tactile 3D "badge" button — pale tinted
+// sphere + a bold single-color outline ring/eyes/mouth per state — used
+// only for the clock-in/out button's appearance. None of this touches the
+// clock-in/out business logic below (isWithinClockInWindow, handleClockIn,
+// handleClockOut, requestClockOut all stay exactly as they were).
+const CLOCK_BTN_CSS = `
+  .cir-wrap{position:relative;width:220px;height:220px;margin:0 auto;}
+  .cir-svg{position:absolute;inset:0;transform:rotate(-90deg);}
+  .cir-track{fill:none;stroke:#e2e8f0;stroke-width:8;}
+  .cir-progress{fill:none;stroke-width:8;stroke-linecap:round;transition:stroke 0.4s ease, stroke-dashoffset 0.4s ease;}
+  .cir-socket{position:absolute;inset:20px;border-radius:50%;background:radial-gradient(circle at 50% 42%, #eef1f6, #dde2ea 78%);box-shadow:inset 0 3px 8px rgba(15,23,42,0.18), inset 0 -1px 2px rgba(255,255,255,0.5);}
+  .cir-btn{
+    --sphere-light:#ffffff; --sphere-base:#eef1f6; --sphere-dark:#cfd6e2; --face-accent:#64748b;
+    position:absolute;inset:24px;border-radius:50%;border:none;
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;
+    overflow:hidden;color:#1e293b;font-family:inherit;user-select:none;-webkit-user-select:none;
+    background:radial-gradient(circle at 36% 28%, var(--sphere-light) 0%, var(--sphere-base) 55%, var(--sphere-dark) 100%);
+    box-shadow:
+      inset 0 9px 14px rgba(255,255,255,0.9),
+      inset 0 -16px 22px rgba(15,23,42,0.12),
+      inset 0 0 0 1px rgba(15,23,42,0.05),
+      0 7px 0 var(--sphere-dark),
+      0 9px 2px rgba(15,23,42,0.08),
+      0 18px 30px -6px rgba(15,23,42,0.4);
+    transition: transform 0.1s ease, box-shadow 0.1s ease, background 0.4s ease;
+    transform:translateY(0);
+  }
+  .cir-btn:disabled{cursor:default;}
+  .cir-btn:not(:disabled){cursor:pointer;}
+  .cir-btn::before{
+    content:"";position:absolute;top:9%;left:14%;width:62%;height:40%;border-radius:50%;pointer-events:none;
+    background:radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.9), rgba(255,255,255,0) 72%);
+  }
+  .cir-btn::after{
+    content:"";position:absolute;inset:0;border-radius:50%;pointer-events:none;
+    box-shadow: inset 0 0 0 2px rgba(15,23,42,0.08);
+  }
+  .cir-btn.cir-pressed{
+    transform:translateY(6px);
+    box-shadow:
+      inset 0 6px 10px rgba(255,255,255,0.7),
+      inset 0 -10px 16px rgba(15,23,42,0.16),
+      inset 0 0 0 1px rgba(15,23,42,0.05),
+      0 1px 0 var(--sphere-dark),
+      0 2px 6px rgba(15,23,42,0.2);
+  }
+  .cir-face{width:60px;height:60px;overflow:visible;filter:drop-shadow(0 2px 3px rgba(0,0,0,0.16));}
+  .cir-ring-outline{fill:none;stroke:var(--face-accent);stroke-width:6;transition:stroke 0.4s ease;}
+  .cir-feature{fill:none;stroke:var(--face-accent);stroke-width:7;stroke-linecap:round;stroke-linejoin:round;transition:stroke 0.4s ease;}
+  .cir-eye{fill:var(--face-accent);transition:fill 0.4s ease;}
+  .cir-pupil{fill:var(--face-accent);transition:fill 0.4s ease;}
+  .cir-glint{fill:#ffffff;}
+  @keyframes cirBlinkOpen{0%,88%,100%{opacity:1;}92%,96%{opacity:0;}}
+  @keyframes cirBlinkShut{0%,88%,100%{opacity:0;}92%,96%{opacity:1;}}
+  .cir-eyes-open{animation:cirBlinkOpen 4.5s ease-in-out infinite;}
+  .cir-eyes-shut{animation:cirBlinkShut 4.5s ease-in-out infinite;}
+  .cir-label{font-size:16px;font-weight:900;letter-spacing:0.03em;color:#1e293b;}
+  .cir-sub{font-size:10.5px;font-weight:700;opacity:0.65;letter-spacing:0.02em;color:#1e293b;}
+  @keyframes cirBreathe{
+    0%,100%{box-shadow:inset 0 9px 14px rgba(255,255,255,0.9),inset 0 -16px 22px rgba(15,23,42,0.12),inset 0 0 0 1px rgba(15,23,42,0.05),0 7px 0 var(--sphere-dark),0 9px 2px rgba(15,23,42,0.08),0 18px 30px -6px rgba(15,23,42,0.4),0 0 0 0 rgba(22,163,74,0.35);}
+    50%{box-shadow:inset 0 9px 14px rgba(255,255,255,0.9),inset 0 -16px 22px rgba(15,23,42,0.12),inset 0 0 0 1px rgba(15,23,42,0.05),0 7px 0 var(--sphere-dark),0 9px 2px rgba(15,23,42,0.08),0 18px 30px -6px rgba(15,23,42,0.4),0 0 0 18px rgba(22,163,74,0);}
+  }
+  .cir-breathing{animation:cirBreathe 2.6s ease-in-out infinite;}
+`;
+
+// One accent + a pale tint of it per state — the sphere stays a soft tinted
+// color (not a plain white disc) while the bold ring/eyes/mouth carry the
+// accent. "in" (clocked in) is pink rather than red, since ROS India's
+// floor staff are all women and red read as an alarm color here.
+const CLOCK_BTN_COLORS = {
+  locked: { accent: "#64748b", light: "#eef1f5", base: "#dde2ea", dark: "#c3cad6" },
+  ready:  { accent: "#16a34a", light: "#eafcf1", base: "#d3f5e0", dark: "#a9e8c3" },
+  in:     { accent: "#db2777", light: "#fff0f7", base: "#ffdcec", dark: "#f3aed0" },
+  done:   { accent: "#2563eb", light: "#eaf2ff", base: "#d7e6ff", dark: "#aecdfa" },
+};
+const clockProgressColor = (p) => (p < 0.5 ? "#3b82f6" : p < 0.85 ? "#f59e0b" : "#22c55e");
+
+// Tiny synthesized clock-in/out chimes (Web Audio, no audio files needed).
+// Kept at module scope, not inside AttendancePage, so the AudioContext
+// survives across re-renders. ensureAudio() must be called synchronously
+// from a real user gesture (the button's mousedown/touchstart) to satisfy
+// browser autoplay rules; the actual beep can then fire later, e.g. once
+// an async clock-in/out call resolves.
+let _clockAudioCtx = null;
+function ensureClockAudio(){
+  if (!_clockAudioCtx){
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    _clockAudioCtx = new Ctx();
+  }
+  if (_clockAudioCtx.state === "suspended") _clockAudioCtx.resume();
+}
+function _clockBeep(freq, startOffset, dur, peakGain){
+  if (!_clockAudioCtx) return;
+  const t0 = _clockAudioCtx.currentTime + startOffset;
+  const osc = _clockAudioCtx.createOscillator();
+  const gain = _clockAudioCtx.createGain();
+  osc.type = "sine";
+  osc.frequency.setValueAtTime(freq, t0);
+  gain.gain.setValueAtTime(0.0001, t0);
+  gain.gain.exponentialRampToValueAtTime(peakGain, t0 + 0.018);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+  osc.connect(gain); gain.connect(_clockAudioCtx.destination);
+  osc.start(t0); osc.stop(t0 + dur + 0.03);
+}
+function playClockInSound(){ _clockBeep(587.33, 0, 0.13, 0.18); _clockBeep(880.00, 0.08, 0.20, 0.20); }
+function playClockOutSound(){ _clockBeep(523.25, 0, 0.16, 0.14); _clockBeep(349.23, 0.11, 0.32, 0.14); }
+
 const AttendancePage = ({ shopId, shop, user, users=[] }) => {
   const isAdminView = user?.role !== "staff";
   const [records, setRecords] = React.useState([]);
@@ -13625,6 +13733,7 @@ const AttendancePage = ({ shopId, shop, user, users=[] }) => {
       showAlert("Clock in is only allowed between 8:00 AM and 6:00 PM.");
       return;
     }
+    playClockInSound();
     const rec = await dbClockIn(shopId, staffName);
     if (rec) load();
     else showAlert("Couldn't clock in — please check your connection and try again.");
@@ -13633,7 +13742,7 @@ const AttendancePage = ({ shopId, shop, user, users=[] }) => {
     const rec = getTodayRecord(staffName);
     if (!rec) return;
     const ok = await dbClockOut(shopId, staffName, rec.id);
-    if (ok) load();
+    if (ok) { playClockOutSound(); load(); }
     else showAlert("Couldn't clock out — please check your connection and try again.");
   };
 
@@ -13701,47 +13810,98 @@ const AttendancePage = ({ shopId, shop, user, users=[] }) => {
     const canClockIn = notClockedIn && windowOpen;
     const isDisabled = done || (notClockedIn && !windowOpen);
 
-    let elapsedLabel = null, expectedOutLabel = null;
+    // Visual-only state key — drives which face/ring/colors render below.
+    // None of the actual clock-in/out decisions live here; canClockIn/
+    // clockedIn/isDisabled above (unchanged) still gate the real behavior.
+    const stateKey = notClockedIn ? (windowOpen ? "ready" : "locked") : clockedIn ? "in" : "done";
+    const colors = CLOCK_BTN_COLORS[stateKey];
+
+    let elapsedLabel = null, expectedOutLabel = null, fullDay = false;
+    let progressPct = 0, progressColor = "transparent";
+    const RING_TRACK = 616; // circumference for r=98
     if (clockedIn) {
       void nowTick; // re-render on tick
       const elapsedMs = Date.now() - new Date(rec.clockIn).getTime();
       const eh = Math.floor(elapsedMs/3600000), em = Math.floor((elapsedMs%3600000)/60000);
       elapsedLabel = `${eh}h ${em}m`;
+      fullDay = elapsedMs >= 8*3600000;
       const expectedOut = new Date(new Date(rec.clockIn).getTime() + 8*3600000);
       expectedOutLabel = expectedOut.toLocaleTimeString("en-IN",{hour:"numeric",minute:"2-digit",hour12:true});
+      progressPct = Math.min(1, elapsedMs/(8*3600000));
+      progressColor = clockProgressColor(progressPct);
+    } else if (done) {
+      progressPct = 1; progressColor = "#22c55e";
     }
+    const ringDashOffset = RING_TRACK - RING_TRACK*progressPct;
+
+    const label = stateKey==="in" ? "CLOCK OUT" : stateKey==="done" ? "DONE" : "CLOCK IN";
+    const sub = stateKey==="ready" ? "tap to start" : stateKey==="in" ? "tap to clock out" : stateKey==="done" ? "see you tomorrow" : "";
 
     return (
       <div style={{display:"flex",flexDirection:"column",alignItems:"center",padding:"20px 0"}}>
-        <button
-          onClick={()=> canClockIn ? handleClockIn(staffName) : clockedIn ? requestClockOut(staffName) : null}
-          disabled={isDisabled}
-          style={{
-            width:220,height:220,borderRadius:"50%",border:"none",cursor:isDisabled?"default":"pointer",
-            background: isDisabled && notClockedIn
-              ? "radial-gradient(circle at 35% 30%, #e2e8f0, #94a3b8)"
-              : notClockedIn
-                ? "radial-gradient(circle at 35% 30%, #4ade80, #16a34a)"
-                : clockedIn
-                  ? "radial-gradient(circle at 35% 30%, #f87171, #dc2626)"
-                  : "radial-gradient(circle at 35% 30%, #cbd5e1, #94a3b8)",
-            color:"white", fontFamily:"inherit",
-            boxShadow: isDisabled ? "0 8px 20px rgba(0,0,0,0.12)" : notClockedIn ? "0 16px 40px rgba(22,163,74,0.4)" : "0 16px 40px rgba(220,38,38,0.4)",
-            display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,
-            transition:"transform 0.15s", opacity:isDisabled&&notClockedIn?0.7:1,
-          }}
-          onMouseDown={e=>{if(!isDisabled)e.currentTarget.style.transform="scale(0.96)";}}
-          onMouseUp={e=>{e.currentTarget.style.transform="scale(1)";}}
-          onMouseLeave={e=>{e.currentTarget.style.transform="scale(1)";}}>
-          <span style={{fontSize:44}}>{notClockedIn?(windowOpen?"🟢":"🔒"):clockedIn?"🔴":"✅"}</span>
-          <span style={{fontSize:20,fontWeight:900,letterSpacing:"0.02em"}}>{notClockedIn?"CLOCK IN":clockedIn?"CLOCK OUT":"DONE"}</span>
-        </button>
+        <style>{CLOCK_BTN_CSS}</style>
+        <div className="cir-wrap">
+          <div className="cir-socket"></div>
+          <svg className="cir-svg" viewBox="0 0 220 220">
+            <circle className="cir-track" cx="110" cy="110" r="98"></circle>
+            <circle className="cir-progress" cx="110" cy="110" r="98"
+              style={{stroke:progressColor}}
+              strokeDasharray={RING_TRACK} strokeDashoffset={ringDashOffset}></circle>
+          </svg>
+          <button
+            className={`cir-btn${stateKey==="ready" ? " cir-breathing" : ""}`}
+            onClick={()=> canClockIn ? handleClockIn(staffName) : clockedIn ? requestClockOut(staffName) : null}
+            disabled={isDisabled}
+            style={{
+              "--sphere-light": colors.light, "--sphere-base": colors.base,
+              "--sphere-dark": colors.dark, "--face-accent": colors.accent,
+            }}
+            onMouseDown={e=>{ if(!isDisabled){ ensureClockAudio(); e.currentTarget.classList.add("cir-pressed"); } }}
+            onMouseUp={e=>{ e.currentTarget.classList.remove("cir-pressed"); }}
+            onMouseLeave={e=>{ e.currentTarget.classList.remove("cir-pressed"); }}
+            onTouchStart={e=>{ if(!isDisabled){ ensureClockAudio(); e.currentTarget.classList.add("cir-pressed"); } }}
+            onTouchEnd={e=>{ e.currentTarget.classList.remove("cir-pressed"); }}>
+            <svg className="cir-face" viewBox="0 0 100 100">
+              <circle className="cir-ring-outline" cx="50" cy="50" r="42"></circle>
+              {stateKey==="locked" && (
+                <>
+                  <path className="cir-feature" d="M37,42 a13,13 0 0 1 26,0 v6"></path>
+                  <rect className="cir-pupil" x="31" y="46" width="38" height="30" rx="7"></rect>
+                </>
+              )}
+              {stateKey==="done" && (
+                <path className="cir-feature" d="M30,52 L45,67 L72,36"></path>
+              )}
+              {(stateKey==="ready" || stateKey==="in") && (
+                <>
+                  <g className="cir-eyes-open">
+                    <circle className="cir-eye" cx="34" cy="40" r="7.5"></circle>
+                    <circle className="cir-glint" cx="36.5" cy="37.5" r="2"></circle>
+                    <circle className="cir-eye" cx="66" cy="40" r="7.5"></circle>
+                    <circle className="cir-glint" cx="68.5" cy="37.5" r="2"></circle>
+                  </g>
+                  <path className="cir-feature cir-eyes-shut" d="M27,40 Q34,44 41,40 M59,40 Q66,44 73,40"></path>
+                  <path className="cir-feature" d="M30,58 Q50,76 70,58"></path>
+                </>
+              )}
+            </svg>
+            <span className="cir-label">{label}</span>
+            <span className="cir-sub">{sub}</span>
+          </button>
+        </div>
 
         {clockedIn && (
-          <div style={{marginTop:16,padding:"10px 18px",borderRadius:12,background:"#eff6ff",border:"1px solid #bfdbfe",textAlign:"center"}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#1d4ed8",textTransform:"uppercase",letterSpacing:"0.05em"}}>⏱ Timer Running</div>
+          <div style={{marginTop:16,padding:"10px 18px",borderRadius:12,
+              background: fullDay ? "#f0fdf4" : "#fdf2f8",
+              border: "1px solid " + (fullDay ? "#bbf7d0" : "#fbcfe8"),
+              textAlign:"center"}}>
+            <div style={{fontSize:11,fontWeight:700,color: fullDay ? "#15803d" : "#be185d",textTransform:"uppercase",letterSpacing:"0.05em"}}>
+              {fullDay ? "✅ Full Day Complete" : "⏱ Timer Running"}
+            </div>
             <div style={{fontSize:18,fontWeight:900,color:"#0f172a",marginTop:2}}>{elapsedLabel}</div>
-            <div style={{fontSize:11,color:"#64748b",marginTop:2}}>8 hours completes around {expectedOutLabel}</div>
+            <div style={{fontSize:11,color:"#64748b",marginTop:2}}>
+              {fullDay ? "Nice work today! 👏" : `8 hours completes around ${expectedOutLabel}`}
+            </div>
           </div>
         )}
 
