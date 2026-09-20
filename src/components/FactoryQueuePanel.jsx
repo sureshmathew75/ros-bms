@@ -665,11 +665,11 @@ function actionBtnStyle(bg, color) {
 
 // Search input with a soft focus glow — a small but very "does someone
 // care about this UI" detail on an otherwise plain text field.
-function SearchBox({ value, onChange }) {
+function SearchBox({ value, onChange, compact = false }) {
   const [focused, setFocused] = useState(false);
   return (
-    <div style={{ marginBottom: 18 }}>
-      <div style={{ position: "relative", maxWidth: 440 }}>
+    <div style={compact ? { flex: "1 1 200px", minWidth: 160 } : { marginBottom: 18 }}>
+      <div style={{ position: "relative", maxWidth: compact ? "none" : 440 }}>
         <span style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", fontSize: 14, opacity: 0.6, pointerEvents: "none" }}>🔍</span>
         <input
           value={value}
@@ -678,8 +678,8 @@ function SearchBox({ value, onChange }) {
           onBlur={() => setFocused(false)}
           placeholder="Search by customer name, phone, or item…"
           style={{
-            width: "100%", boxSizing: "border-box", padding: "11px 14px 11px 38px", borderRadius: 12,
-            border: focused ? "1px solid #818cf8" : "1px solid #e2e8f0", fontSize: 13.5, fontFamily: FONT_BODY, color: "#0f172a",
+            width: "100%", boxSizing: "border-box", padding: compact ? "9px 14px 9px 38px" : "11px 14px 11px 38px", borderRadius: 10,
+            border: focused ? "1px solid #818cf8" : "1px solid #e2e8f0", fontSize: compact ? 12.5 : 13.5, fontFamily: FONT_BODY, color: "#0f172a",
             boxShadow: focused ? "0 0 0 4px rgba(99,102,241,0.15)" : "none", outline: "none", transition: "box-shadow 0.15s ease, border-color 0.15s ease",
             background: "white",
           }} />
@@ -909,45 +909,24 @@ export default function FactoryQueuePanel({
           accent={{ bg: "#fdf2f8", text: "#9d174d", iconColor: "white", grad: "linear-gradient(135deg,#818cf8,#f43f5e)", shadow: "rgba(219,39,119,0.4)", wash: "#fce7f3" }} />
       </div>
 
-      {/* Filter tabs + sort */}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
-        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
-          {FILTERS.map((f) => (
-            <button key={f.key} onClick={() => setFilter(f.key)}
-              style={{
-                border: filter === f.key ? "1px solid transparent" : "1px solid #e2e8f0",
-                background: filter === f.key ? "linear-gradient(135deg,#0f172a,#1e293b)" : "white",
-                color: filter === f.key ? "white" : "#334155", borderRadius: 999, padding: "8px 15px", fontSize: 12, fontWeight: 700, cursor: "pointer", fontFamily: FONT_BODY, whiteSpace: "nowrap",
-                boxShadow: filter === f.key ? "0 6px 16px -6px rgba(15,23,42,0.5)" : "none", transition: "all 0.15s ease",
-              }}>
-              {f.label} <span style={{ opacity: 0.7 }}>({filterCounts[f.key]})</span>
-            </button>
-          ))}
-        </div>
+      {/* Filter, unit, sort & search — one compact row of dropdowns instead
+          of three rows of pill tabs, so this header takes noticeably less
+          vertical space before the list starts. */}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
+        <select value={filter} onChange={(e) => setFilter(e.target.value)}
+          style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "9px 11px", fontSize: 12.5, fontFamily: FONT_BODY, fontWeight: 700, color: "#334155", background: "white" }}>
+          {FILTERS.map((f) => <option key={f.key} value={f.key}>{f.label} ({filterCounts[f.key]})</option>)}
+        </select>
+        <select value={unitFilter} onChange={(e) => setUnitFilter(e.target.value)}
+          style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "9px 11px", fontSize: 12.5, fontFamily: FONT_BODY, fontWeight: 700, color: "#334155", background: "white" }}>
+          {UNIT_TABS.map((t) => <option key={t.key || "unassigned"} value={t.key}>Unit: {t.label} ({unitCounts[t.key] || 0})</option>)}
+        </select>
         <select value={sortBy} onChange={(e) => setSortBy(e.target.value)}
-          style={{ marginLeft: "auto", border: "1px solid #e2e8f0", borderRadius: 10, padding: "9px 11px", fontSize: 12.5, fontFamily: FONT_BODY, fontWeight: 600, color: "#334155", background: "white" }}>
+          style={{ border: "1px solid #e2e8f0", borderRadius: 10, padding: "9px 11px", fontSize: 12.5, fontFamily: FONT_BODY, fontWeight: 600, color: "#334155", background: "white" }}>
           {SORTS.map((s) => <option key={s.key} value={s.key}>Sort: {s.label}</option>)}
         </select>
+        <SearchBox value={search} onChange={setSearch} compact />
       </div>
-
-      {/* Unit tabs — see each despatch unit's pending queue separately */}
-      <div style={{ display: "flex", gap: 7, flexWrap: "wrap", alignItems: "center", marginBottom: 16 }}>
-        <span style={{ fontSize: 10.5, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.05em", marginRight: 2 }}>Unit:</span>
-        {UNIT_TABS.map((t) => (
-          <button key={t.key || "unassigned"} onClick={() => setUnitFilter(t.key)}
-            style={{
-              border: unitFilter === t.key ? "1px solid transparent" : "1px solid #e2e8f0",
-              background: unitFilter === t.key ? "linear-gradient(135deg,#4f46e5,#7c3aed)" : "white",
-              color: unitFilter === t.key ? "white" : "#334155", borderRadius: 999, padding: "6px 13px", fontSize: 11.5, fontWeight: 700, cursor: "pointer", fontFamily: FONT_BODY, whiteSpace: "nowrap",
-              boxShadow: unitFilter === t.key ? "0 6px 14px -6px rgba(79,70,229,0.5)" : "none", transition: "all 0.15s ease",
-            }}>
-            {t.label} <span style={{ opacity: 0.7 }}>({unitCounts[t.key] || 0})</span>
-          </button>
-        ))}
-      </div>
-
-      {/* Search */}
-      <SearchBox value={search} onChange={setSearch} />
 
       {/* Bar chart / queue list */}
       {!narrow && <AxisHeader leftColWidth={LEFT_COL} rightColWidth={RIGHT_COL} />}
