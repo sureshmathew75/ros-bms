@@ -334,6 +334,10 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
   };
 
   const handleComplete = async () => {
+    if (!allStockChecked) {
+      showAlert("Every stock item needs to be counted and every returned-stock item verified before this week can be marked complete.");
+      return;
+    }
     if (!(await showConfirm("Mark this week's Saturday Routine as complete?"))) return;
     await persist({ ...routine, status: "completed", completedBy: myName, completedAt: new Date().toISOString() });
   };
@@ -933,10 +937,21 @@ export default function WeeklyRoutinePanel({ shopId, shop, user, rosieTasks = []
           </div>
 
           {!isCompleted && (
-            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, marginBottom: 30 }}>
+            <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 10, marginBottom: 30, flexWrap: "wrap" }}>
               {saving && <span style={{ fontSize: 11, color: "#94a3b8" }}>Saving…</span>}
+              {!allStockChecked && (
+                <span style={{ fontSize: 11, color: "#b45309", fontWeight: 600 }}>
+                  {displayStockItems.length - countedCount > 0 ? `${displayStockItems.length - countedCount} stock item${displayStockItems.length - countedCount !== 1 ? "s" : ""} left to count` : ""}
+                  {displayStockItems.length - countedCount > 0 && displayReturnedStockItems.length - verifiedReturnedCount > 0 ? " · " : ""}
+                  {displayReturnedStockItems.length - verifiedReturnedCount > 0 ? `${displayReturnedStockItems.length - verifiedReturnedCount} returned item${displayReturnedStockItems.length - verifiedReturnedCount !== 1 ? "s" : ""} left to verify` : ""}
+                </span>
+              )}
               <button onClick={handleComplete}
-                style={{ padding: "10px 20px", borderRadius: 10, border: "none", background: shop?.accent || "#059669", color: "white", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>
+                title={allStockChecked ? "" : "Every stock item and returned-stock item needs to be counted/verified first"}
+                style={{ padding: "10px 20px", borderRadius: 10, border: "none",
+                  background: allStockChecked ? (shop?.accent || "#059669") : "#cbd5e1",
+                  color: allStockChecked ? "white" : "#64748b", fontWeight: 800, fontSize: 13,
+                  cursor: allStockChecked ? "pointer" : "not-allowed", fontFamily: "inherit" }}>
                 ✓ Mark This Week's Routine Complete
               </button>
             </div>
