@@ -1852,6 +1852,7 @@ export const dbSaveDispatchEntry = async (shopId, e) => {
     remarks:       e.remarks || '',
     delivered:      !!e.delivered,
     delivered_date: e.deliveredDate || '',
+    link_warning:   e.linkWarning || '',
   };
 
   if (e._uuid) {
@@ -1886,6 +1887,7 @@ export const dbLoadDispatchLog = async (shopId) => {
     remarks:      r.remarks || '',
     delivered:    !!r.delivered,
     deliveredDate: r.delivered_date || '',
+    linkWarning:  r.link_warning || '',
     createdAt:    r.created_at || '',
   }));
 };

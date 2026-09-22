@@ -11,6 +11,25 @@ import { showAlert, showConfirm } from "./PopupHost";
      lifetime → all records
    ───────────────────────────────────────────────────────────────────────── */
 
+/* Normalizes a customer name for GROUPING purposes only (never for display
+   — the sale's own `customer` field is always shown as typed). Collapses
+   repeated internal whitespace and drops stray periods/commas on top of
+   the old lowercase+trim, since a typo that small (an initial typed as
+   "K." vs "K", a double space) was otherwise enough to split one
+   customer's linked Advance/Part/Final sales into two separate instalment
+   groups — leaving one of them stuck on its old status even after tracking
+   was entered against the other. Kept identical in DispatchPanel.jsx,
+   which builds the same grouping key independently; if this ever changes,
+   it has to change in both places or the two tabs will disagree about
+   which sales are linked. */
+function normCustomerName(name) {
+  return (name || "")
+    .toLowerCase()
+    .replace(/[.,]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /* ── localISO: Date → "YYYY-MM-DD" using LOCAL date parts (no UTC shift) ── */
 function localISO(dt) {
   const y = dt.getFullYear();
@@ -984,7 +1003,7 @@ We hope you enjoy your purchase! 💜
     sales.forEach(s => {
       if (inferPaymentType(s) === "FULL") return; // never grouped
       const phone = (s.phone || s.contact || "").replace(/\D/g, "").slice(-10);
-      const name = (s.customer || "").toLowerCase().trim();
+      const name = normCustomerName(s.customer);
       if (!phone && !name) return;
       const key = `${name}__${phone}`;
       if (!rawGroups[key]) rawGroups[key] = [];
@@ -1053,7 +1072,7 @@ We hope you enjoy your purchase! 💜
     }
     if (inferPaymentType(s) === "FULL") return null;
     const phone = (s.phone || s.contact || "").replace(/\D/g, "").slice(-10);
-    const name = (s.customer || "").toLowerCase().trim();
+    const name = normCustomerName(s.customer);
     if (!phone && !name) return null;
     const custKey = `${name}__${phone}`;
     const groupKeys = Object.keys(instalmentGroups).filter(k => k.startsWith(custKey+"__grp"));

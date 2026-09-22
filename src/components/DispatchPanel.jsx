@@ -95,6 +95,23 @@ const staffTrackingURL = (shipper, trackNo) => {
 // other carrier's link already lands directly on that shipment's result.
 const MANUAL_ENTRY_SHIPPERS = new Set(["SPEEDPOST"]);
 
+// Normalizes a customer name for GROUPING purposes only (never for display —
+// the sale's own `customer` field is always shown as typed). Case and
+// leading/trailing space differences were already handled by the old
+// `.toLowerCase().trim()`; this also collapses repeated internal whitespace
+// and drops stray periods/commas (e.g. an initial typed as "K." vs "K"),
+// since either of those was enough to split one customer's linked orders
+// into two different despatch groups — silently leaving one of them
+// un-updated when tracking was entered against the other. Kept identical
+// in SalesPanel.jsx, which builds the same grouping key independently; if
+// this ever changes, it has to change in both places or the two tabs will
+// disagree about which sales are linked.
+const normCustomerName = (name) => (name || "")
+  .toLowerCase()
+  .replace(/[.,]/g, "")
+  .replace(/\s+/g, " ")
+  .trim();
+
 // "One click track" for a despatch row: opens the carrier's tracking page,
 // and for the carrier above also copies the tracking number to the
 // clipboard first so staff just paste it in rather than retyping it — the
@@ -348,7 +365,7 @@ function saveDismissed(shopId, map) {
 /* ═══════════════════════════════════════════════════════════════════════
    DISPATCH PANEL
    ═══════════════════════════════════════════════════════════════════════ */
-export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate }) {
+export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate, onSaleFieldEdit }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   // Which date chip is selected in the Log view — "all" shows every
@@ -435,7 +452,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
     allSales.forEach(s => {
       if (inferPaymentType(s) === "FULL") return; // never grouped
       const phone = (s.phone || s.contact || "").replace(/\D/g, "").slice(-10);
-      const name = (s.customer || "").toLowerCase().trim();
+      const name = normCustomerName(s.customer);
       if (!phone && !name) return;
       const key = `${name}__${phone}`;
       (rawGroups[key] ||= []).push(s);
@@ -486,6 +503,46 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
   }, [allSales]);
   // A sale with no linked payments is its own solo "group" of one.
   const despatchKeyOf = (sale) => saleGroupKey[sale.id] || sale.id;
+
+  // Safety net for the cases even normCustomerName() above can't fix — a
+  // genuinely different spelling, or the same person typed under two
+  // clearly different names. Groups sales by PHONE ONLY (ignoring name) so
+  // it can spot when a phone number appears under more than one name and
+  // those sales haven't already been tied together (auto grouping or a
+  // manual link) — that's exactly the shape of a missed link, and it's
+  // otherwise invisible until someone happens to notice Sales didn't
+  // update. Surfaced on the despatch row as a dismissible hint with a
+  // one-click "Link orders" action (handleManualLink below), not a hard
+  // block — plenty of real customers share a household phone number, so
+  // this has to stay a suggestion, never an assumption.
+  const phoneCollisionByPhone = useMemo(() => {
+    const byPhone = {};
+    allSales.forEach(s => {
+      const phone = (s.phone || s.contact || "").replace(/\D/g, "").slice(-10);
+      if (!phone) return;
+      (byPhone[phone] ||= []).push(s);
+    });
+    const collisions = {}; // phone -> true if >1 distinct name AND not fully linked
+    Object.entries(byPhone).forEach(([phone, group]) => {
+      const names = new Set(group.map(s => normCustomerName(s.customer)));
+      if (names.size < 2) return;
+      const keys = new Set(group.map(s => despatchKeyOf(s)));
+      if (keys.size < 2) return; // different names, but already unified into one group
+      collisions[phone] = group;
+    });
+    return collisions;
+  }, [allSales, saleGroupKey]);
+  // For a given sale, the other differently-named sale(s) sharing its
+  // phone number and not yet linked to it — null if there's no collision.
+  const phoneCollisionFor = (sale) => {
+    const phone = (sale?.phone || sale?.contact || "").replace(/\D/g, "").slice(-10);
+    if (!phone) return null;
+    const group = phoneCollisionByPhone[phone];
+    if (!group) return null;
+    const myKey = despatchKeyOf(sale);
+    const others = group.filter(s => despatchKeyOf(s) !== myKey);
+    return others.length ? others : null;
+  };
 
   // Address is now entered/edited ONLY on the Sales page — the Despatch
   // Log always pulls the live value from the linked sale rather than
@@ -643,7 +700,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
     const byCustomer = {}; // "name__phone" -> Set of despatch group keys seen
     entries.forEach(e => {
       const linked = allSales.find(x => x.id === e.saleId);
-      const name = ((linked ? linked.customer : e.customer) || "").toLowerCase().trim();
+      const name = normCustomerName(linked ? linked.customer : e.customer);
       const phone = ((linked ? (linked.phone || linked.contact) : e.phone) || "").replace(/\D/g, "").slice(-10);
       if (!name && !phone) return;
       const custKey = `${name}__${phone}`;
@@ -752,6 +809,42 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
     setEntries(prev => prev.map(e => e.uuid === uuid ? { ...e, ...patch } : e));
   };
 
+  // Persists just linkWarning, bypassing saveEntry's own push-to-Sales
+  // logic below (calling saveEntry from inside itself would re-trigger
+  // that fan-out). Used to leave a durable trace on the row when a push
+  // fails, and to clear it once a retry succeeds — so unlike the one-time
+  // popup this replaces, the warning is still there whenever anyone next
+  // opens the Despatch tab, not just for whoever was at the row when it
+  // happened.
+  const setLinkWarning = async (uuid, text) => {
+    const current = entries.find(e => e.uuid === uuid);
+    if (!current || current.linkWarning === text) return;
+    updateEntry(uuid, { linkWarning: text });
+    await persist(uuid, { ...current, linkWarning: text });
+  };
+
+  // Pushes one field-set to every sale in merged's linked group, via
+  // onSaleUpdate (which also auto-fulfils). Returns the ids that failed,
+  // with their error messages, so callers can both alert immediately (as
+  // before) and leave a persistent warning on the row.
+  const pushToLinkedSales = async (merged, changes, verb) => {
+    const linkedSale = allSales.find(s => s.id === merged.saleId);
+    const groupKey = linkedSale ? despatchKeyOf(linkedSale) : merged.saleId;
+    const members = groupMembers[groupKey];
+    const saleIds = members && members.length ? members.map(m => m.id) : [merged.saleId];
+    const failures = [];
+    for (const id of saleIds) {
+      try {
+        const result = await onSaleUpdate(id, changes);
+        if (result && result.error) failures.push({ id, message: result.error });
+      } catch (err) {
+        console.error(`onSaleUpdate (${verb}) failed for`, id, err);
+        failures.push({ id, message: err?.message || String(err) });
+      }
+    }
+    return failures;
+  };
+
   const saveEntry = async (uuid, patch) => {
     const current = entries.find(e => e.uuid === uuid);
     if (!current) return;
@@ -771,25 +864,18 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
     // Sales tab even though the parcel has actually shipped.
     const touchedTrackingOrShipper = ("trackingNo" in patch) || ("shipper" in patch);
     if (touchedTrackingOrShipper && merged.saleId && merged.trackingNo && merged.shipper && onSaleUpdate) {
-      const linkedSale = allSales.find(s => s.id === merged.saleId);
-      const groupKey = linkedSale ? despatchKeyOf(linkedSale) : merged.saleId;
-      const members = groupMembers[groupKey];
-      const saleIds = members && members.length ? members.map(m => m.id) : [merged.saleId];
       // Awaited (was previously fire-and-forget) so a failure here is
       // never silent — if the linked sale can't be marked Fulfilled, the
       // despatch row still shows tracking saved, but the Sales tab would
       // otherwise be left stuck on the old status with no sign anything
       // went wrong.
-      for (const id of saleIds) {
-        try {
-          const result = await onSaleUpdate(id, { trackingNo: merged.trackingNo, carrier: merged.shipper });
-          if (result && result.error) {
-            showAlert(`Tracking saved here, but couldn't update the linked sale (${id}) to Fulfilled:\n\n${result.error}\n\nPlease flip its status manually on the Sales tab.`);
-          }
-        } catch (err) {
-          console.error("onSaleUpdate failed for", id, err);
-          showAlert(`Tracking saved here, but couldn't update the linked sale (${id}) to Fulfilled — ${err?.message || err}\n\nPlease flip its status manually on the Sales tab.`);
-        }
+      const failures = await pushToLinkedSales(merged, { trackingNo: merged.trackingNo, carrier: merged.shipper }, "tracking");
+      if (failures.length) {
+        const msg = `Couldn't update the linked sale (${failures.map(f=>f.id).join(", ")}) to Fulfilled: ${failures[0].message}`;
+        showAlert(`Tracking saved here, but ${msg}\n\nPlease flip its status manually on the Sales tab.`);
+        await setLinkWarning(uuid, msg);
+      } else {
+        await setLinkWarning(uuid, "");
       }
     }
     // Delivery confirmation — once a row is marked (or unmarked) delivered,
@@ -799,22 +885,49 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
     // Fulfilled push above since this can happen well after tracking was
     // first saved.
     if ("delivered" in patch && merged.saleId && onSaleUpdate) {
-      const linkedSale = allSales.find(s => s.id === merged.saleId);
-      const groupKey = linkedSale ? despatchKeyOf(linkedSale) : merged.saleId;
-      const members = groupMembers[groupKey];
-      const saleIds = members && members.length ? members.map(m => m.id) : [merged.saleId];
-      for (const id of saleIds) {
-        try {
-          const result = await onSaleUpdate(id, { deliveryDate: merged.delivered ? (merged.deliveredDate || todayISO()) : "" });
-          if (result && result.error) {
-            showAlert(`Delivery status saved here, but couldn't update the linked sale (${id}):\n\n${result.error}`);
-          }
-        } catch (err) {
-          console.error("onSaleUpdate (delivery) failed for", id, err);
-          showAlert(`Delivery status saved here, but couldn't update the linked sale (${id}) — ${err?.message || err}`);
-        }
+      const failures = await pushToLinkedSales(merged, { deliveryDate: merged.delivered ? (merged.deliveredDate || todayISO()) : "" }, "delivery");
+      if (failures.length) {
+        const msg = `Couldn't update the linked sale (${failures.map(f=>f.id).join(", ")}) with delivery status: ${failures[0].message}`;
+        showAlert(`Delivery status saved here, but ${msg}`);
+        await setLinkWarning(uuid, msg);
+      } else {
+        await setLinkWarning(uuid, "");
       }
     }
+  };
+
+  // Retries whatever the row's current tracking/shipper (or delivered)
+  // state implies, so a warning can be cleared without re-typing anything.
+  const retryLinkPush = (entry) => {
+    if (entry.trackingNo && entry.shipper) saveEntry(entry.uuid, { trackingNo: entry.trackingNo, shipper: entry.shipper });
+    else if (entry.delivered) saveEntry(entry.uuid, { delivered: entry.delivered });
+  };
+
+  // Manually links two transactions together (mirrors SalesPanel's own
+  // handleManualLink exactly, so a link made from either tab behaves the
+  // same way), merging their existing manual-link groups if either already
+  // has one. Goes through onSaleFieldEdit — a plain field save — rather
+  // than onSaleUpdate, which would also force the sale to FULFILLED as a
+  // side effect; linking two sales together should never itself change
+  // either one's status.
+  const handleManualLink = async (saleA, saleB) => {
+    if (!onSaleFieldEdit || !saleA || !saleB || saleA.id === saleB.id) return;
+    const groupA = saleA.manualLinkGroup;
+    const groupB = saleB.manualLinkGroup;
+    if (groupA && groupB && groupA === groupB) return; // already linked together
+    const targetGroup = groupA || groupB || `link_${Date.now()}_${Math.random().toString(36).slice(2,7)}`;
+    const updates = [];
+    if (saleA.manualLinkGroup !== targetGroup) updates.push(onSaleFieldEdit(saleA.id, { manualLinkGroup: targetGroup }));
+    if (saleB.manualLinkGroup !== targetGroup) updates.push(onSaleFieldEdit(saleB.id, { manualLinkGroup: targetGroup }));
+    if (groupB && groupB !== targetGroup) {
+      allSales.filter(s => s.manualLinkGroup === groupB && s.id !== saleB.id)
+        .forEach(s => updates.push(onSaleFieldEdit(s.id, { manualLinkGroup: targetGroup })));
+    }
+    if (groupA && groupA !== targetGroup) {
+      allSales.filter(s => s.manualLinkGroup === groupA && s.id !== saleA.id)
+        .forEach(s => updates.push(onSaleFieldEdit(s.id, { manualLinkGroup: targetGroup })));
+    }
+    await Promise.all(updates);
   };
 
   // "Mark Delivered" — defaults to today, editable afterwards by clicking
@@ -1149,6 +1262,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
                     const rowGroupKey = linkedSaleForRow ? despatchKeyOf(linkedSaleForRow) : (e.saleId || e.uuid);
                     const rowGroupCount = (groupMembers[rowGroupKey] || []).length;
                     const isSameCustomerDup = dupCustomerGroupKeys.has(rowGroupKey);
+                    const collisionOthers = linkedSaleForRow ? phoneCollisionFor(linkedSaleForRow) : null;
                     const fullAddress = liveAddressFor(e);
                     // India addresses tend to be typed as several lines (street,
                     // city, pincode...), so a newline was enough to detect "more
@@ -1185,6 +1299,39 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate 
                             <div title="Another despatch row exists for this same customer/phone but isn't linked to this one — check whether this is really a separate order."
                               style={{ marginTop: 3, fontSize: 9.5, fontWeight: 800, color: "#b45309", background: "#fef3c7", borderRadius: 999, padding: "1px 6px", whiteSpace: "nowrap", display: "inline-block" }}>
                               ⚠ check duplicate
+                            </div>
+                          )}
+                          {collisionOthers && (
+                            <div title={`Same phone number also appears under "${collisionOthers[0].customer}" in Sales — if that's the same person, link them so tracking reaches both.`}
+                              style={{ marginTop: 3, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 9.5, fontWeight: 800, color: "#9a3412", background: "#ffedd5", borderRadius: 999, padding: "1px 6px", whiteSpace: "nowrap" }}>
+                                ⚠ same phone as "{collisionOthers[0].customer}"
+                              </span>
+                              <button
+                                onClick={async () => {
+                                  if (!(await showConfirm(`Link "${linkedSaleForRow.customer}" and "${collisionOthers[0].customer}" as the same customer?\n\nTracking entered on either one will then update both.`))) return;
+                                  for (const other of collisionOthers) await handleManualLink(linkedSaleForRow, other);
+                                }}
+                                style={{ fontSize: 9.5, fontWeight: 800, color: "#4338ca", background: "#e0e7ff", border: "none", borderRadius: 999, padding: "1px 6px", cursor: "pointer" }}>
+                                🔗 Link orders
+                              </button>
+                            </div>
+                          )}
+                          {e.linkWarning && (
+                            <div title={e.linkWarning}
+                              style={{ marginTop: 3, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+                              <span style={{ fontSize: 9.5, fontWeight: 800, color: "#991b1b", background: "#fee2e2", borderRadius: 999, padding: "1px 6px", whiteSpace: "nowrap" }}>
+                                ⚠ Sales not updated
+                              </span>
+                              <button onClick={() => retryLinkPush(e)}
+                                style={{ fontSize: 9.5, fontWeight: 800, color: "#4338ca", background: "#e0e7ff", border: "none", borderRadius: 999, padding: "1px 6px", cursor: "pointer" }}>
+                                ↻ Retry
+                              </button>
+                              <button onClick={() => setLinkWarning(e.uuid, "")}
+                                title="Dismiss without retrying"
+                                style={{ fontSize: 9.5, fontWeight: 800, color: "#64748b", background: "#f1f5f9", border: "none", borderRadius: 999, padding: "1px 6px", cursor: "pointer" }}>
+                                ✕
+                              </button>
                             </div>
                           )}
                         </td>

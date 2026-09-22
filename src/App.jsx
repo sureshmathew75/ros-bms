@@ -9496,6 +9496,23 @@ return(
               shop={shop}
               user={user}
               sales={sales}
+              // Plain field save — no status/fulfilment side effects — used
+              // only for manually linking two sale records together
+              // (manualLinkGroup) from the Despatch tab's "🔗 Link orders"
+              // hint. Deliberately separate from onSaleUpdate below, which
+              // always forces the sale to FULFILLED; linking two sales
+              // together must never itself change either one's status.
+              // Mirrors SalesPanel's own onInlineEdit for the same reason.
+              onSaleFieldEdit={async (saleId, changes) => {
+                const sale = sales.find(s => s.id === saleId);
+                if (!sale) return;
+                const updated = { ...sale, ...changes };
+                await dbSaveSale(shopId, updated);
+                setSalesData(prev => ({
+                  ...prev,
+                  [shopId]: (prev[shopId] || []).map(s => s.id === saleId ? { ...s, ...changes } : s),
+                }));
+              }}
               onSaleUpdate={async (saleId, changes) => {
                 const sale = sales.find(s => s.id === saleId);
                 if (!sale) return { error: `No sale with ID ${saleId} found in ${shop?.name||shopId}.` };
