@@ -4017,17 +4017,28 @@ Thank you for your cooperation.`,
   // a card is grouped under.
   const isExpiredCard=r=>{
     if(r.status==="RETURN_EXPIRED")return true;
-    if(r.status==="RETURN_APPROVED"){
-      const windowCloses=computeReturnDeadline(getDeliveryDate(r.saleId),r.returnDeadline);
-      const days=daysRemaining(windowCloses);
-      return days!==null&&days<0;
-    }
-    if(r.status==="MSG_SENT"||r.status==="RETURN_IN_TRANSIT"){
-      if(!r.instructionsSentAt)return false;
+    if(!ACTIVE_STATUSES.includes(r.status))return false;
+    // The delivery-based window (14 days from delivery) is the one shown
+    // as the card's own "Window closes" / red "Expired" chip, and it's
+    // computed the same way for all three active stages, not just
+    // RETURN_APPROVED — checking only RETURN_APPROVED here (an earlier
+    // version of this function) missed MSG_SENT/RETURN_IN_TRANSIT cards
+    // whose delivery-based window had closed even though the *separate*
+    // instructions-sent deadline below hadn't yet, which is exactly how
+    // one slipped through and stayed listed under Expecting.
+    const windowCloses=computeReturnDeadline(getDeliveryDate(r.saleId),r.returnDeadline);
+    const days=daysRemaining(windowCloses);
+    if(days!==null&&days<0)return true;
+    // MSG_SENT/RETURN_IN_TRANSIT also get their own harder deadline once
+    // instructions have actually been sent (instructionsSentAt + 14 days
+    // — the "⛔ Window closed" note in the card's action column) — checked
+    // as a second, independent signal since it can pass even in the rare
+    // case the delivery-based one above hasn't.
+    if((r.status==="MSG_SENT"||r.status==="RETURN_IN_TRANSIT")&&r.instructionsSentAt){
       const instrDate=new Date(r.instructionsSentAt);
       const today0=new Date();today0.setHours(0,0,0,0);
       const hardDeadlineDate=new Date(instrDate.getTime()+14*86400000);
-      return today0>hardDeadlineDate;
+      if(today0>hardDeadlineDate)return true;
     }
     return false;
   };
