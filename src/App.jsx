@@ -4006,8 +4006,34 @@ Thank you for your cooperation.`,
   // — same status (RETURN_RECEIVED) under the hood, just split by intent so
   // the two queues (needs a decision vs. waiting on the courier) don't mix.
   const isExchangeInProgress=r=>r.status==="RETURN_RECEIVED"&&(r.resolution==="exchange"||r.resolution==="exchange_refund");
+  // A case counts as "expired" for this tab if either: (a) it was literally
+  // saved with the old RETURN_EXPIRED status (from before returns stopped
+  // auto-expiring — see the scan effect above), or (b) it's still sitting
+  // in an active, unresolved stage but its return window has already
+  // passed — exactly what the "Expired" chip / "⛔ Window closed" note on
+  // the card were already flagging, just previously left mixed in with
+  // genuinely active cases on the Expecting tab instead of split out.
+  // Doesn't touch ret.status or any sync/business logic — purely which tab
+  // a card is grouped under.
+  const isExpiredCard=r=>{
+    if(r.status==="RETURN_EXPIRED")return true;
+    if(r.status==="RETURN_APPROVED"){
+      const windowCloses=computeReturnDeadline(getDeliveryDate(r.saleId),r.returnDeadline);
+      const days=daysRemaining(windowCloses);
+      return days!==null&&days<0;
+    }
+    if(r.status==="MSG_SENT"||r.status==="RETURN_IN_TRANSIT"){
+      if(!r.instructionsSentAt)return false;
+      const instrDate=new Date(r.instructionsSentAt);
+      const today0=new Date();today0.setHours(0,0,0,0);
+      const hardDeadlineDate=new Date(instrDate.getTime()+14*86400000);
+      return today0>hardDeadlineDate;
+    }
+    return false;
+  };
   const filtered=returns.filter(r=>{
-    const matchStatus=filter==="ACTIVE"?ACTIVE_STATUSES.includes(r.status)
+    const matchStatus=filter==="ACTIVE"?ACTIVE_STATUSES.includes(r.status)&&!isExpiredCard(r)
+      :filter==="EXPIRED"?isExpiredCard(r)
       :filter==="EXCHANGE_PROGRESS"?isExchangeInProgress(r)
       :filter==="RETURN_RECEIVED"?(r.status==="RETURN_RECEIVED"&&!isExchangeInProgress(r))
       :r.status===filter;
@@ -4026,7 +4052,8 @@ Thank you for your cooperation.`,
   const showRefundCols = filter==="REFUNDED" || filter==="EXCHANGE_REFUND";
 
   const counts={
-    ACTIVE:returns.filter(r=>ACTIVE_STATUSES.includes(r.status)).length,
+    ACTIVE:returns.filter(r=>ACTIVE_STATUSES.includes(r.status)&&!isExpiredCard(r)).length,
+    EXPIRED:returns.filter(isExpiredCard).length,
     RETURN_RECEIVED:returns.filter(r=>r.status==="RETURN_RECEIVED"&&!isExchangeInProgress(r)).length,
     EXCHANGE_PROGRESS:returns.filter(isExchangeInProgress).length,
     EXCHANGED:returns.filter(r=>r.status==="EXCHANGED").length,
@@ -4119,6 +4146,7 @@ Thank you for your cooperation.`,
         <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
           {[
             {key:"ACTIVE",    label:"Expecting"},
+            {key:"EXPIRED",   label:"⏰ Expired"},
             {key:"RETURN_RECEIVED", label:"Received"},
             {key:"EXCHANGE_PROGRESS", label:"🔄 Exchange in Progress"},
             {key:"EXCHANGED", label:"Exchanged"},
