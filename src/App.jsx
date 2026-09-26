@@ -12778,11 +12778,16 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
   // off that day's own movements can't drift, and a day with nothing
   // logged is simply blank — future days included, automatically, since
   // nothing is ever dated in the future.
-  // Signed value of one movement — restock/correction add, sale subtracts.
-  // Corrections are already stored signed (can be + or −), same convention
-  // used everywhere else this ledger is replayed (the day-cell popover,
-  // the item History list).
-  const signedQty = (m) => m.type === "correction" ? (Number(m.qty)||0) : (m.type === "restock" ? (Number(m.qty)||0) : -(Number(m.qty)||0));
+  // Signed value of one restock/sale movement — restock adds, sale
+  // subtracts. Deliberately excludes "correction" movements: Opening and
+  // Closing on this sheet are pure Opening + Added − Sold arithmetic, full
+  // stop, so anyone reading the sheet can check it by hand. An admin stock
+  // correction still exists and is still fully logged (see dbAddInventoryMovement
+  // in db.js), but it only ever shows up on the item's own History list —
+  // never folded into this sheet's numbers, and never carried forward into
+  // next month's Opening — by explicit choice, so a past correction can't
+  // make this month's arithmetic look "wrong" the way it used to.
+  const signedQty = (m) => m.type === "restock" ? (Number(m.qty)||0) : -(Number(m.qty)||0);
 
   const rows = React.useMemo(() => {
     const firstOfMonth = `${sheetMonth}-01`;
@@ -12790,20 +12795,20 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
       const itemMoves = movementsByItem[item.id] || [];
       // Opening Balance — not stored anywhere on its own; it's replayed
       // from the same movement ledger everything else on this sheet reads
-      // (every restock/sale/correction, including an item's very first
-      // "Initial stock" restock, is logged there — see dbAddInventoryMovement
-      // in db.js, the only place current_stock is ever written). Summing
-      // every movement dated BEFORE this month started gives exactly what
-      // the month opened with, so it can never drift out of sync with the
-      // Current Stock figure or with any other month's own numbers — and
-      // this month's Closing Balance becomes next month's Opening Balance
-      // automatically, with no separate bookkeeping required.
-      const openingBalance = itemMoves.filter(m => m.date < firstOfMonth).reduce((s,m)=>s+signedQty(m), 0);
+      // (every restock/sale, including an item's very first "Initial
+      // stock" restock, is logged there). Summing every restock/sale dated
+      // BEFORE this month started gives exactly what the month opened
+      // with — corrections are excluded on purpose (see signedQty above),
+      // so this can diverge from the item's live Current Stock figure
+      // after an admin correction; that's the intended tradeoff, not a bug.
+      const openingBalance = itemMoves.filter(m => m.date < firstOfMonth && m.type !== "correction").reduce((s,m)=>s+signedQty(m), 0);
       const monthMoves = itemMoves.filter(m => m.date.slice(0,7) === sheetMonth);
       const soldThisMonth = monthMoves.filter(m=>m.type==="sale").reduce((s,m)=>s+(Number(m.qty)||0),0);
       const addedThisMonth = monthMoves.filter(m=>m.type==="restock").reduce((s,m)=>s+(Number(m.qty)||0),0);
+      // Still tallied (used only by the item's own History list elsewhere,
+      // not shown on this sheet) — never added into closingBalance below.
       const correctedThisMonth = monthMoves.filter(m=>m.type==="correction").reduce((s,m)=>s+(Number(m.qty)||0),0);
-      const closingBalance = openingBalance + addedThisMonth - soldThisMonth + correctedThisMonth;
+      const closingBalance = openingBalance + addedThisMonth - soldThisMonth;
       const byDate = {};
       monthMoves.forEach(m => { (byDate[m.date] ||= []).push(m); });
       const cells = days.map(d => {
@@ -12811,7 +12816,7 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
         const sold = dayMoves.filter(m=>m.type==="sale").reduce((s,m)=>s+(Number(m.qty)||0),0);
         const added = dayMoves.filter(m=>m.type==="restock").reduce((s,m)=>s+(Number(m.qty)||0),0);
         const corrected = dayMoves.filter(m=>m.type==="correction").reduce((s,m)=>s+(Number(m.qty)||0),0);
-        return { date:d, sold, added, corrected, hasMoves: dayMoves.length>0 };
+        return { date:d, sold, added, corrected, hasMoves: sold>0 || added>0 };
       });
       return { item, cells, openingBalance, soldThisMonth, addedThisMonth, correctedThisMonth, closingBalance, monthMoves };
     });
@@ -12880,7 +12885,7 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
       <div style={{ fontSize:11, color:"#94a3b8", marginBottom:10 }}>
         <span style={{color:"#b91c1c",fontWeight:700}}>S</span> = sold that day · <span style={{color:"#166534",fontWeight:700}}>I</span> = stock added that day · click a tagged day, or the Sold/Added totals, to see who/what · future days are intentionally blank
         <br/>
-        <b>Opening</b> = what the month started with · <b>Closing</b> = Opening + Added − Sold (± any <span style={{color:"#7c3aed",fontWeight:700}}>⚖ corrections</span>) · this month's Closing becomes next month's Opening automatically
+        <b>Opening</b> = what the month started with · <b>Closing</b> = Opening + Added − Sold, always a plain calculation · this month's Closing becomes next month's Opening automatically · an admin <span style={{color:"#7c3aed",fontWeight:700}}>⚖ correction</span> never changes these numbers — see the item's own History for any correction logged against it
       </div>
 
       <div style={{ overflowX:"auto", overflowY:"hidden", border:"1px solid #e2e8f0", borderRadius:12 }}>
@@ -12944,18 +12949,11 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                   </td>
                   <td style={{ ...stickyCell, left:LEFT_CLOSE, zIndex:2, background:rowBg, textAlign:"center" }}>
                     <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
-                      <span title="Opening + Added − Sold, plus any corrections this month" style={{
+                      <span title="Opening + Added − Sold — a plain calculation, never adjusted by a stock correction. See this item's own History for any correction logged against it." style={{
                         display:"inline-block", minWidth:34, padding:"3px 0", borderRadius:999, fontWeight:900, fontSize:14,
                         color: closingBalance<=0?"#dc2626":closingBalance<=2?"#d97706":"#166534",
                         background: closingBalance<=0?"#fef2f2":closingBalance<=2?"#fffbeb":"#f0fdf4",
                       }}>{closingBalance}</span>
-                      {correctedThisMonth!==0 && (
-                        <span onClick={(e)=>{ e.stopPropagation(); setMonthPopover({ itemId:item.id, type:"correction", anchor:rectOf(e.currentTarget) }); }}
-                          title="Stock correction(s) folded into this month's Closing Balance — click for detail"
-                          style={{ fontSize:9, fontWeight:800, color:"#7c3aed", background:"#f5f3ff", borderRadius:5, padding:"1px 5px", cursor:"pointer", whiteSpace:"nowrap" }}>
-                          ⚖ {correctedThisMonth>0?"+":""}{correctedThisMonth}
-                        </span>
-                      )}
                     </div>
                   </td>
                   <td style={{ ...stickyCell, left:LEFT_ACTIONS, zIndex:2, background:rowBg, textAlign:"center", boxShadow:FROZEN_EDGE }}>
@@ -12990,9 +12988,6 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                             )}
                             {c.added>0 && (
                               <span style={{ fontSize:9.5, fontWeight:800, color:"#166534", background:"#f0fdf4", borderRadius:5, padding:"1px 5px" }}>I {c.added}</span>
-                            )}
-                            {c.corrected!==0 && (
-                              <span style={{ fontSize:9.5, fontWeight:800, color:"#7c3aed", background:"#f5f3ff", borderRadius:5, padding:"1px 5px" }}>C {c.corrected>0?"+":""}{c.corrected}</span>
                             )}
                           </div>
                         )}
@@ -13199,9 +13194,9 @@ function printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock = [], fi
         return names;
       })();
   const summaryRows = catOrder
-    .map(cat => `<tr><td colspan="6" style="text-align:left;font-weight:800;background:#f8fafc;text-transform:uppercase;letter-spacing:0.04em;font-size:10px;">${cat}</td></tr>` +
-      byCat[cat].map(({ item, openingBalance, addedThisMonth, soldThisMonth, correctedThisMonth, closingBalance }) =>
-        `<tr><td style="text-align:left;font-weight:700">${(item.name||"").toUpperCase()}</td><td>${openingBalance}</td><td>${addedThisMonth||"—"}</td><td>${soldThisMonth||"—"}</td><td>${correctedThisMonth?(correctedThisMonth>0?"+":"")+correctedThisMonth:"—"}</td><td style="font-weight:800">${closingBalance}</td></tr>`
+    .map(cat => `<tr><td colspan="5" style="text-align:left;font-weight:800;background:#f8fafc;text-transform:uppercase;letter-spacing:0.04em;font-size:10px;">${cat}</td></tr>` +
+      byCat[cat].map(({ item, openingBalance, addedThisMonth, soldThisMonth, closingBalance }) =>
+        `<tr><td style="text-align:left;font-weight:700">${(item.name||"").toUpperCase()}</td><td>${openingBalance}</td><td>${addedThisMonth||"—"}</td><td>${soldThisMonth||"—"}</td><td style="font-weight:800">${closingBalance}</td></tr>`
       ).join("")
     ).join("");
 
@@ -13261,8 +13256,8 @@ function printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock = [], fi
     ${topBoxes}
 
     <h2>${sectionIcon} ${sectionLabel} — ${monthLabel}</h2>
-    <p style="margin-bottom:6px;">Opening + Added − Sold ± Corrected = Closing — each row below checks out end to end, and this month's Closing carries forward as next month's Opening.</p>
-    <table><thead><tr><th style="text-align:left">Item</th><th>Opening</th><th>Added</th><th>Sold</th><th>Corrected</th><th>Closing</th></tr></thead><tbody>${summaryRows}</tbody></table>
+    <p style="margin-bottom:6px;">Opening + Added − Sold = Closing — each row below checks out end to end, and this month's Closing carries forward as next month's Opening. Any admin stock correction is logged separately on the item's own History and never changes these figures.</p>
+    <table><thead><tr><th style="text-align:left">Item</th><th>Opening</th><th>Added</th><th>Sold</th><th>Closing</th></tr></thead><tbody>${summaryRows}</tbody></table>
     ${returnedSection}
 
     <h2>Stock Added This Month</h2>
