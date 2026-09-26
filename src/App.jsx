@@ -12552,6 +12552,12 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           <div style={{fontSize:20,fontWeight:900,color:"#0f172a"}}>{stockDashboard.soldThisMonth} <span style={{fontSize:13,fontWeight:700,color:"#94a3b8"}}>/ {stockDashboard.totalSoldAllTime}</span></div>
           <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Sold This Month / Total</div>
         </div>
+        {stockSection !== "clothes" && (
+          <div style={{padding:"12px 14px",borderRadius:12,background:"#f5f3ff",border:"1px solid #c4b5fd"}}>
+            <div style={{fontSize:20,fontWeight:900,color:"#5b21b6"}}>{returnedStockNow.length}</div>
+            <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Returned Stock In Office</div>
+          </div>
+        )}
       </div>
 
       {/* ── View toggle: Excel-style stock sheet vs. day-by-day movement log ── */}
