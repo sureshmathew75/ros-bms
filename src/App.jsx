@@ -12317,12 +12317,24 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   // together. Shown above both the item grid and the daily log so "how
   // much do we have right now" is always visible regardless of which view
   // you're in.
+  // "Units In Stock" and "Sold" below are read straight off the movement
+  // ledger (restock/sale only) rather than the item's own currentStock/
+  // totalStocked fields, so they always agree with the Stock Sheet's own
+  // pure-math Closing figures — an admin stock correction can still make
+  // currentStock diverge from this (by design, see StockSheetView), and
+  // these dashboard totals intentionally track the plain calculation, not
+  // the corrected live count.
+  const nowMonthKey = new Date().toISOString().slice(0,7);
   const stockDashboard = {
     trackedItems: activeItems.length,
-    totalInStock: activeItems.reduce((s,i)=>s+(i.currentStock||0),0),
-    totalSoldAllTime: activeItems.reduce((s,i)=>s+((i.totalStocked||0)-(i.currentStock||0)),0),
-    lowStock: activeItems.filter(i=>i.currentStock>0 && i.currentStock<=2).length,
-    outOfStock: activeItems.filter(i=>i.currentStock<=0).length,
+    totalInStock: movements.reduce((s,m) => {
+      if (!activeItemIds.has(m.itemId)) return s;
+      if (m.type === "restock") return s + (Number(m.qty)||0);
+      if (m.type === "sale") return s - (Number(m.qty)||0);
+      return s;
+    }, 0),
+    soldThisMonth: movements.reduce((s,m) => (activeItemIds.has(m.itemId) && m.type==="sale" && m.date.slice(0,7)===nowMonthKey) ? s+(Number(m.qty)||0) : s, 0),
+    totalSoldAllTime: movements.reduce((s,m) => (activeItemIds.has(m.itemId) && m.type==="sale") ? s+(Number(m.qty)||0) : s, 0),
   };
 
   // Every stock change, across every item IN THE CURRENT WINDOW, grouped by
@@ -12537,16 +12549,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Units In Stock</div>
         </div>
         <div style={{padding:"12px 14px",borderRadius:12,background:"#f8fafc",border:"1px solid #e2e8f0"}}>
-          <div style={{fontSize:20,fontWeight:900,color:"#0f172a"}}>{stockDashboard.totalSoldAllTime}</div>
-          <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Sold All-Time</div>
-        </div>
-        <div style={{padding:"12px 14px",borderRadius:12,background:"#fffbeb",border:"1px solid #fcd34d"}}>
-          <div style={{fontSize:20,fontWeight:900,color:"#b45309"}}>{stockDashboard.lowStock}</div>
-          <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Low Stock</div>
-        </div>
-        <div style={{padding:"12px 14px",borderRadius:12,background:"#fef2f2",border:"1px solid #fca5a5"}}>
-          <div style={{fontSize:20,fontWeight:900,color:"#dc2626"}}>{stockDashboard.outOfStock}</div>
-          <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Out Of Stock</div>
+          <div style={{fontSize:20,fontWeight:900,color:"#0f172a"}}>{stockDashboard.soldThisMonth} <span style={{fontSize:13,fontWeight:700,color:"#94a3b8"}}>/ {stockDashboard.totalSoldAllTime}</span></div>
+          <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Sold This Month / Total</div>
         </div>
       </div>
 
