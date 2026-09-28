@@ -376,6 +376,13 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   // flat, scrollable list instead of a collapsible day-by-day bar, with
   // per-day totals still visible via the chip counts.
   const [dateFilter, setDateFilter] = useState("all");
+  // ROS India only — the log there keeps its full history (unlike the UK
+  // shops' rolling 2-day window), so instead of one day-chip per day
+  // forever, the Log view defaults to just the last 30 days and offers
+  // month tag buttons ("September 2026", "August 2026", …) to jump to any
+  // older month's despatches on demand. "recent30" = the 30-day default;
+  // any other value is a "YYYY-MM" month key.
+  const [monthFilter, setMonthFilter] = useState("recent30");
   const [addDate, setAddDate] = useState(todayISO());       // which day new adds land on
   const [search, setSearch] = useState("");
   const [waModal, setWaModal] = useState(null);
@@ -677,13 +684,44 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   // Distinct dispatch dates across the ENTIRE log, most recent first —
   // feeds the date-filter chip strip ("All dates N" + one chip per day
   // with its own count), replacing the old week-navigation controls.
+  // (ROS India uses the month-tag strip below instead — see monthTagsIndia.)
   const chipDates = useMemo(() => {
     return Object.keys(entriesByDateAll).filter(Boolean).sort((a, b) => b.localeCompare(a));
   }, [entriesByDateAll]);
 
-  // The entries the flat Log-view table actually shows: everything, or
-  // just the one date currently selected via the chip strip.
+  // ROS India month browsing — every entry grouped by "YYYY-MM", most
+  // recent first, each with its own count. Feeds the month-tag button
+  // strip that replaces the day-chip strip for this shop only (its log
+  // keeps full history, so one chip per day forever isn't practical).
+  const entriesByMonthIndia = useMemo(() => {
+    const m = {};
+    visibleEntries.forEach(e => { if (!e.dispatchDate) return; const mk = e.dispatchDate.slice(0, 7); (m[mk] ||= []).push(e); });
+    Object.values(m).forEach(list => list.sort((a, b) => {
+      const d = (b.dispatchDate || "").localeCompare(a.dispatchDate || "");
+      if (d !== 0) return d;
+      return (a.createdAt || "").localeCompare(b.createdAt || "");
+    }));
+    return m;
+  }, [visibleEntries]);
+  const monthTagsIndia = useMemo(() => Object.keys(entriesByMonthIndia).sort((a, b) => b.localeCompare(a)), [entriesByMonthIndia]);
+  // Inclusive of today — "last 30 days" means today and the 29 before it.
+  const last30Cutoff = useMemo(() => { const d = new Date(); d.setDate(d.getDate() - 29); return localISO(d); }, []);
+  const last30EntriesIndia = useMemo(() => {
+    return visibleEntries.filter(e => e.dispatchDate && e.dispatchDate >= last30Cutoff).slice().sort((a, b) => {
+      const d = (b.dispatchDate || "").localeCompare(a.dispatchDate || "");
+      if (d !== 0) return d;
+      return (a.createdAt || "").localeCompare(b.createdAt || "");
+    });
+  }, [visibleEntries, last30Cutoff]);
+
+  // The entries the flat Log-view table actually shows.
+  // ROS India: the last 30 days by default, or one full month once a
+  // month tag is picked (see monthFilter). Every other shop: everything,
+  // or just the one date currently selected via the day-chip strip.
   const filteredEntries = useMemo(() => {
+    if (isIndiaShop) {
+      return monthFilter === "recent30" ? last30EntriesIndia : (entriesByMonthIndia[monthFilter] || []);
+    }
     const list = dateFilter === "all"
       ? visibleEntries.slice().sort((a, b) => {
           const d = (b.dispatchDate || "").localeCompare(a.dispatchDate || "");
@@ -692,7 +730,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
         })
       : (entriesByDateAll[dateFilter] || []);
     return list;
-  }, [visibleEntries, entriesByDateAll, dateFilter]);
+  }, [isIndiaShop, monthFilter, last30EntriesIndia, entriesByMonthIndia, visibleEntries, entriesByDateAll, dateFilter]);
 
   // Per-day counts across the ENTIRE log (not just the visible week) —
   // feeds the Calendar view's day badges.
@@ -1068,17 +1106,17 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     });
   };
 
-  // Dates covered by the exports below: every date that actually has
-  // entries (chronological) when "All dates" is selected, or just the one
-  // selected chip's date otherwise. Exports stay grouped by day internally
-  // for a readable paper/WhatsApp record even though the on-screen table
-  // no longer is.
-  const exportDates = dateFilter === "all"
-    ? chipDates.slice().sort((a, b) => a.localeCompare(b))
-    : [dateFilter];
-  const exportRangeLabel = dateFilter === "all"
-    ? (chipDates.length ? `${ddmmyyyy(exportDates[0])} – ${ddmmyyyy(exportDates[exportDates.length - 1])}` : "No despatches yet")
-    : ddmmyyyy(dateFilter);
+  // Dates covered by the exports below: every date that actually appears
+  // in whatever's currently on screen (the last 30 days, one picked month,
+  // "All dates", or one picked day chip), chronological. Exports stay
+  // grouped by day internally for a readable paper/WhatsApp record even
+  // though the on-screen table no longer is.
+  const exportDates = Array.from(new Set(filteredEntries.map(e => e.dispatchDate).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const exportRangeLabel = isIndiaShop
+    ? (monthFilter === "recent30" ? "Last 30 Days" : monthLabel(monthFilter))
+    : (dateFilter === "all"
+        ? (exportDates.length ? `${ddmmyyyy(exportDates[0])} – ${ddmmyyyy(exportDates[exportDates.length - 1])}` : "No despatches yet")
+        : ddmmyyyy(dateFilter));
 
   const copyWeekList = async () => {
     const lines = [`Despatch — ${exportRangeLabel}`, ""];
@@ -1189,7 +1227,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
           <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a" }}>🚚 Despatch Log</div>
           <div style={{ fontSize: 12.5, color: "#64748b", marginTop: 2 }}>
             {viewMode === "log"
-              ? `${visibleEntries.length} despatch${visibleEntries.length !== 1 ? "es" : ""} logged · one row per parcel${isTwoDayShop ? " · today & yesterday only" : ""}`
+              ? `${visibleEntries.length} despatch${visibleEntries.length !== 1 ? "es" : ""} logged · one row per parcel${isTwoDayShop ? " · today & yesterday only" : isIndiaShop ? ` · showing ${monthFilter === "recent30" ? "last 30 days" : monthLabel(monthFilter)}` : ""}`
               : "Calendar & monthly trend"}
           </div>
         </div>
@@ -1209,22 +1247,42 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
 
       {viewMode === "log" && (
       <>
-      {/* Date-filter chip strip — "All dates N" plus one chip per day that
-          has despatches, each showing its own count. Replaces the old
-          week-by-week navigation: everything is one flat, scrollable list,
-          and this is how "how many we sent each day" stays visible. */}
-      <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", overflowX: "auto", paddingBottom: 4, marginBottom: 14 }}>
-        <button onClick={() => setDateFilter("all")}
-          style={{ flex: "0 0 auto", padding: "8px 14px", borderRadius: 999, border: dateFilter === "all" ? "1px solid #0f172a" : "1px solid #e2e8f0", background: dateFilter === "all" ? "#0f172a" : "white", color: dateFilter === "all" ? "white" : "#334155", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
-          All dates {visibleEntries.length}
-        </button>
-        {chipDates.map(d => (
-          <button key={d} onClick={() => setDateFilter(d)}
-            style={{ flex: "0 0 auto", padding: "8px 14px", borderRadius: 999, border: dateFilter === d ? "1px solid #0f172a" : "1px solid #e2e8f0", background: dateFilter === d ? "#0f172a" : "white", color: dateFilter === d ? "white" : "#334155", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
-            {ddmmyyyy(d)} {(entriesByDateAll[d] || []).length}
+      {isIndiaShop ? (
+        /* ROS India — month-tag strip: "Last 30 Days" (the default) plus
+           one button per month that has despatches, most recent first.
+           Clicking a month shows that whole month regardless of the
+           30-day window; the log keeps full history here, so this is how
+           older despatches stay reachable without one chip per day. */
+        <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", overflowX: "auto", paddingBottom: 4, marginBottom: 14 }}>
+          <button onClick={() => setMonthFilter("recent30")}
+            style={{ flex: "0 0 auto", padding: "8px 14px", borderRadius: 999, border: monthFilter === "recent30" ? "1px solid #0f172a" : "1px solid #e2e8f0", background: monthFilter === "recent30" ? "#0f172a" : "white", color: monthFilter === "recent30" ? "white" : "#334155", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+            🗓️ Last 30 Days {last30EntriesIndia.length}
           </button>
-        ))}
-      </div>
+          {monthTagsIndia.map(mk => (
+            <button key={mk} onClick={() => setMonthFilter(mk)}
+              style={{ flex: "0 0 auto", padding: "8px 14px", borderRadius: 999, border: monthFilter === mk ? "1px solid #0f172a" : "1px solid #e2e8f0", background: monthFilter === mk ? "#0f172a" : "white", color: monthFilter === mk ? "white" : "#334155", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+              {monthLabel(mk)} {entriesByMonthIndia[mk].length}
+            </button>
+          ))}
+        </div>
+      ) : (
+        /* Date-filter chip strip — "All dates N" plus one chip per day that
+            has despatches, each showing its own count. Replaces the old
+            week-by-week navigation: everything is one flat, scrollable list,
+            and this is how "how many we sent each day" stays visible. */
+        <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", overflowX: "auto", paddingBottom: 4, marginBottom: 14 }}>
+          <button onClick={() => setDateFilter("all")}
+            style={{ flex: "0 0 auto", padding: "8px 14px", borderRadius: 999, border: dateFilter === "all" ? "1px solid #0f172a" : "1px solid #e2e8f0", background: dateFilter === "all" ? "#0f172a" : "white", color: dateFilter === "all" ? "white" : "#334155", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+            All dates {visibleEntries.length}
+          </button>
+          {chipDates.map(d => (
+            <button key={d} onClick={() => setDateFilter(d)}
+              style={{ flex: "0 0 auto", padding: "8px 14px", borderRadius: 999, border: dateFilter === d ? "1px solid #0f172a" : "1px solid #e2e8f0", background: dateFilter === d ? "#0f172a" : "white", color: dateFilter === d ? "white" : "#334155", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
+              {ddmmyyyy(d)} {(entriesByDateAll[d] || []).length}
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* Summary strip */}
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
@@ -1296,7 +1354,9 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
         <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", border: "1px solid #e2e8f0", borderRadius: 12 }}>Loading…</div>
       ) : filteredEntries.length === 0 ? (
         <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", border: "1px dashed #e2e8f0", borderRadius: 12 }}>
-          {dateFilter === "all" ? "No despatches recorded yet." : `Nothing despatched on ${ddmmyyyy(dateFilter)}.`}
+          {isIndiaShop
+            ? (monthFilter === "recent30" ? "Nothing despatched in the last 30 days." : `Nothing despatched in ${monthLabel(monthFilter)}.`)
+            : (dateFilter === "all" ? "No despatches recorded yet." : `Nothing despatched on ${ddmmyyyy(dateFilter)}.`)}
         </div>
       ) : (
             <div style={{ overflowX: "auto", border: "1px solid #e2e8f0", borderRadius: 12 }}>
