@@ -28,6 +28,7 @@ function localISO(dt) {
   return `${y}-${mo}-${d}`;
 }
 const todayISO = () => localISO(new Date());
+const yesterdayISO = () => { const d = new Date(); d.setDate(d.getDate() - 1); return localISO(d); };
 
 /* ── Shipper config — India and UK shops use different carrier lists,
    mirroring the same IN_CARRIERS/UK_CARRIERS split already used for the
@@ -423,6 +424,12 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   const SHIPPERS = isIndiaShop ? IN_SHIPPERS : UK_SHIPPERS;
   // Default shipper pre-filled on new despatch rows — DTDC for India, Royal Mail for the UK shops.
   const DEFAULT_SHIPPER = isIndiaShop ? "DTDC" : "Royal Mail";
+  // ROS Selections and ROS Hairlines keep their own full despatch history
+  // in a separate app, so the log here is intentionally a rolling 2-day
+  // window (today + yesterday) rather than a permanent record — see the
+  // pruning effect below (after despatchKeyOf) for what actually enforces
+  // this against the dispatch_log table itself.
+  const isTwoDayShop = shopId === "ros-selections" || shopId === "ros-hairlines";
 
   /* ── Linked-transaction grouping ──────────────────────────────────────
      A single customer parcel can be split across several sale rows
@@ -503,6 +510,55 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   }, [allSales]);
   // A sale with no linked payments is its own solo "group" of one.
   const despatchKeyOf = (sale) => saleGroupKey[sale.id] || sale.id;
+
+  // ── Rolling 2-day window (ROS Selections / ROS Hairlines only) ──────────
+  // Two parts: (1) what's actually SHOWN never includes anything older
+  // than yesterday, computed synchronously so there's no flash of older
+  // rows while the prune effect below is still working; (2) the rows
+  // themselves get deleted from dispatch_log so the table doesn't quietly
+  // keep growing forever. `entries` (the full, unfiltered state) stays the
+  // source of truth for the auto-add dedupe logic above/below, so nothing
+  // here can cause a duplicate row to be created while a purge is in flight.
+  const pruneCutoff = yesterdayISO();
+  const visibleEntries = useMemo(() => {
+    if (!isTwoDayShop) return entries;
+    return entries.filter(e => e.dispatchDate && e.dispatchDate >= pruneCutoff);
+  }, [entries, isTwoDayShop, pruneCutoff]);
+
+  // Deletes any row older than yesterday and, for each one, clears "Ready
+  // to Ship" on its linked sale (and every other sale in the same despatch
+  // group, e.g. Advance/Part/Final) BEFORE removing it from state. This
+  // matters: readyToShip never gets cleared on its own once a sale is
+  // fulfilled, so the deleted row was the only thing stopping the auto-add
+  // effect above from treating that old sale as "never dispatched" and
+  // silently recreating a fresh entry for it today. Clearing the flag here
+  // closes that loop for good, on the server, regardless of which device
+  // or browser opens the tab next.
+  const pruningRef = useRef(false);
+  useEffect(() => {
+    if (loading || !isTwoDayShop || pruningRef.current) return;
+    const stale = entries.filter(e => e.dispatchDate && e.dispatchDate < pruneCutoff);
+    if (!stale.length) return;
+    pruningRef.current = true;
+    (async () => {
+      for (const e of stale) {
+        await dbDeleteDispatchEntry(e.uuid, shopId);
+        if (e.saleId) {
+          const linkedSale = allSales.find(x => x.id === e.saleId);
+          if (linkedSale) {
+            const key = despatchKeyOf(linkedSale);
+            const members = groupMembers[key] || [linkedSale];
+            for (const m of members) {
+              if (m.readyToShip && onSaleFieldEdit) await onSaleFieldEdit(m.id, { readyToShip: false });
+            }
+          }
+        }
+      }
+      const staleUuids = new Set(stale.map(e => e.uuid));
+      setEntries(prev => prev.filter(e => !staleUuids.has(e.uuid)));
+      pruningRef.current = false;
+    })();
+  }, [loading, isTwoDayShop, entries, pruneCutoff, shopId, allSales, groupMembers, onSaleFieldEdit]);
 
   // Safety net for the cases even normCustomerName() above can't fix — a
   // genuinely different spelling, or the same person typed under two
@@ -613,10 +669,10 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   // the on-screen Log view is now one flat, continuous list.
   const entriesByDateAll = useMemo(() => {
     const m = {};
-    entries.forEach(e => { (m[e.dispatchDate] ||= []).push(e); });
+    visibleEntries.forEach(e => { (m[e.dispatchDate] ||= []).push(e); });
     Object.values(m).forEach(list => list.sort((a, b) => (a.createdAt || "").localeCompare(b.createdAt || "")));
     return m;
-  }, [entries]);
+  }, [visibleEntries]);
 
   // Distinct dispatch dates across the ENTIRE log, most recent first —
   // feeds the date-filter chip strip ("All dates N" + one chip per day
@@ -629,22 +685,22 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   // just the one date currently selected via the chip strip.
   const filteredEntries = useMemo(() => {
     const list = dateFilter === "all"
-      ? entries.slice().sort((a, b) => {
+      ? visibleEntries.slice().sort((a, b) => {
           const d = (b.dispatchDate || "").localeCompare(a.dispatchDate || "");
           if (d !== 0) return d;
           return (a.createdAt || "").localeCompare(b.createdAt || "");
         })
       : (entriesByDateAll[dateFilter] || []);
     return list;
-  }, [entries, entriesByDateAll, dateFilter]);
+  }, [visibleEntries, entriesByDateAll, dateFilter]);
 
   // Per-day counts across the ENTIRE log (not just the visible week) —
   // feeds the Calendar view's day badges.
   const calendarCounts = useMemo(() => {
     const m = {};
-    entries.forEach(e => { if (e.dispatchDate) m[e.dispatchDate] = (m[e.dispatchDate] || 0) + 1; });
+    visibleEntries.forEach(e => { if (e.dispatchDate) m[e.dispatchDate] = (m[e.dispatchDate] || 0) + 1; });
     return m;
-  }, [entries]);
+  }, [visibleEntries]);
 
   // Month-by-month totals across the entire log, most recent first, with
   // a month-over-month % change — the "business growth" trend view.
@@ -1133,7 +1189,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
           <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a" }}>🚚 Despatch Log</div>
           <div style={{ fontSize: 12.5, color: "#64748b", marginTop: 2 }}>
             {viewMode === "log"
-              ? `${entries.length} despatch${entries.length !== 1 ? "es" : ""} logged · one row per parcel`
+              ? `${visibleEntries.length} despatch${visibleEntries.length !== 1 ? "es" : ""} logged · one row per parcel${isTwoDayShop ? " · today & yesterday only" : ""}`
               : "Calendar & monthly trend"}
           </div>
         </div>
@@ -1160,7 +1216,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
       <div style={{ display: "flex", gap: 8, flexWrap: "nowrap", overflowX: "auto", paddingBottom: 4, marginBottom: 14 }}>
         <button onClick={() => setDateFilter("all")}
           style={{ flex: "0 0 auto", padding: "8px 14px", borderRadius: 999, border: dateFilter === "all" ? "1px solid #0f172a" : "1px solid #e2e8f0", background: dateFilter === "all" ? "#0f172a" : "white", color: dateFilter === "all" ? "white" : "#334155", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
-          All dates {entries.length}
+          All dates {visibleEntries.length}
         </button>
         {chipDates.map(d => (
           <button key={d} onClick={() => setDateFilter(d)}
