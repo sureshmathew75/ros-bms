@@ -324,12 +324,21 @@ const getAllowedStatuses = (currentStatus, shopId) => {
   const FEEDBACK = isIndia ? ["GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"] : ["GOOD FEEDBACK"];
   switch (cur) {
     case "PENDING":
-      // FULFILLED is deliberately left out here — now that tracking +
-      // shipper entered in the Despatch Log marks a sale Fulfilled
-      // automatically, a manual Pending → Fulfilled jump is locked behind
-      // the admin-only override in the Status cell below (see isAdminRole /
-      // unlockedFulfil), rather than being a normal dropdown option.
-      return ["PENDING"];
+      // ROS India still runs its Despatch Log, which marks a sale Fulfilled
+      // automatically once tracking + shipper are entered there — so for
+      // that shop, FULFILLED stays deliberately out of this list, and a
+      // manual Pending → Fulfilled jump is locked behind the admin-only
+      // override in the Status cell below (see isAdminRole / unlockedFulfil)
+      // instead of being a normal dropdown option.
+      // ROS Selections/Hairlines no longer have a Despatch Log (tracking is
+      // now entered right in Sales — see the Tracking cell), so nothing else
+      // would ever move those sales out of Pending; FULFILLED is a normal
+      // dropdown option there, open to any staff — matching what anyone
+      // could already do indirectly before by entering tracking.
+      // Checked explicitly by shop id (not the isIndia flag above, which
+      // doesn't recognise the "-staff" shopId variant) so this can never
+      // accidentally widen ROS India's own locked behaviour.
+      return (shopId === "ros-selections" || shopId === "ros-hairlines") ? ["PENDING", "FULFILLED"] : ["PENDING"];
     case "FULFILLED":
       return ["FULFILLED",RETURN_RQSTD,RETURN_RCVD,...FEEDBACK];
     case RETURN_RQSTD:
@@ -964,7 +973,10 @@ We hope you enjoy your purchase! 💜
     const phone = (sale.phone || sale.contact || "").replace(/[^0-9]/g,"");
     if (!phone) { showAlert("No phone number for this customer."); return; }
     const msg = buildTrackingMsg(sale, carrier, trackNo);
-    setWaModal({ phone, customerName: sale.customer, message: msg });
+    setWaModal({
+      phone, customerName: sale.customer, message: msg,
+      onSent: () => onInlineEdit && onInlineEdit(sale.id, { trackingNotified: true }),
+    });
   };
 
   /* ── Instalment / linked-deal groups ─────────────────────────────────
@@ -2484,7 +2496,13 @@ We hope you enjoy your purchase! 💜
                             <option key={t.key} value={t.key}>{t.label}</option>
                           ))}
                         </select>
-                      ) : ful === "PENDING" && !(user?.id === "suresh" && statusOverride) ? (
+                      ) : ful === "PENDING" && isIndiaShop && !(user?.id === "suresh" && statusOverride) ? (
+                        // ROS India only — ROS Selections/Hairlines no longer have a
+                        // Despatch Log to "surface" this to (tracking is entered right
+                        // in Sales now), so a Pending sale there falls straight through
+                        // to the plain status dropdown below instead of this pill, and
+                        // FULFILLED is a normal option in that dropdown for them (see
+                        // getAllowedStatuses above).
                         // Merged progressive control: while a sale is Pending, this single
                         // pill IS the status — "Mark ready to despatch" → confirm → "Ready
                         // to Ship" → the Despatch Log takes it from here (entering tracking +
@@ -2639,36 +2657,122 @@ We hope you enjoy your purchase! 💜
                         })()}
                       </td>
                     )}
-                    {/* Tracking — read-only here now; entered + notified from the Despatch Log page */}
+                    {/* Tracking — ROS India: read-only, still entered + notified from
+                        the Despatch Log page (unchanged). ROS Selections/Hairlines:
+                        editable right here now that those two shops no longer have a
+                        Despatch Log — tracking is expected to keep arriving
+                        automatically from the ROS Dispatch Agent, but staff can type
+                        it in or fix it by hand any time it doesn't, and send the same
+                        despatch WhatsApp message straight from this row. */}
                     <td style={{ padding: "8px 10px", minWidth: 180 }} onClick={e => e.stopPropagation()}>
-                      {s.trackingNo ? (
-                        <div style={{ display: "flex", flexDirection:"column", gap: 4 }}>
-                          <div style={{display:"flex",alignItems:"center",gap:4}}>
-                            {(()=>{
-                              const url = trackingURL(s.carrier, s.trackingNo);
-                              return url ? (
-                                <a href={url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
-                                  style={{ fontSize: 11, fontFamily: "DM Mono,monospace", fontWeight: 700, color: "#0369a1",
-                                    textDecoration: "none", background: "#f0f9ff", border: "1px solid #bae6fd",
-                                    borderRadius: 6, padding: "3px 8px", whiteSpace: "nowrap",
-                                    maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", display: "inline-block" }}
-                                  title={s.trackingNo}>{s.trackingNo}</a>
-                              ) : (
-                                <span style={{ fontSize: 11, fontFamily: "DM Mono,monospace", fontWeight: 700, color: "#0369a1",
-                                  background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 6, padding: "3px 8px",
-                                  whiteSpace: "nowrap", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", display: "inline-block" }}
-                                  title={s.trackingNo}>{s.trackingNo}</span>
-                              );
-                            })()}
+                      {isIndiaShop ? (
+                        s.trackingNo ? (
+                          <div style={{ display: "flex", flexDirection:"column", gap: 4 }}>
+                            <div style={{display:"flex",alignItems:"center",gap:4}}>
+                              {(()=>{
+                                const url = trackingURL(s.carrier, s.trackingNo);
+                                return url ? (
+                                  <a href={url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
+                                    style={{ fontSize: 11, fontFamily: "DM Mono,monospace", fontWeight: 700, color: "#0369a1",
+                                      textDecoration: "none", background: "#f0f9ff", border: "1px solid #bae6fd",
+                                      borderRadius: 6, padding: "3px 8px", whiteSpace: "nowrap",
+                                      maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", display: "inline-block" }}
+                                    title={s.trackingNo}>{s.trackingNo}</a>
+                                ) : (
+                                  <span style={{ fontSize: 11, fontFamily: "DM Mono,monospace", fontWeight: 700, color: "#0369a1",
+                                    background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 6, padding: "3px 8px",
+                                    whiteSpace: "nowrap", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", display: "inline-block" }}
+                                    title={s.trackingNo}>{s.trackingNo}</span>
+                                );
+                              })()}
+                            </div>
+                            {s.carrier && (
+                              <span style={{ fontSize: 10, fontWeight: 600, color: "#64748b" }}>{s.carrier}</span>
+                            )}
                           </div>
-                          {s.carrier && (
-                            <span style={{ fontSize: 10, fontWeight: 600, color: "#64748b" }}>{s.carrier}</span>
+                        ) : (
+                          <span style={{ fontSize: 11, color: "#94a3b8", fontStyle: "italic" }}>
+                            Entered from Despatch Log
+                          </span>
+                        )
+                      ) : (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
+                          {editTrackingId === s.id ? (
+                            <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
+                              <input
+                                autoFocus
+                                value={trackingInput}
+                                onChange={e => setTrackingInput(e.target.value)}
+                                onKeyDown={e => {
+                                  if (e.key === "Enter") {
+                                    if (onInlineEdit) onInlineEdit(s.id, { trackingNo: trackingInput });
+                                    setEditTrackingId(null);
+                                  }
+                                  if (e.key === "Escape") setEditTrackingId(null);
+                                }}
+                                placeholder="Tracking no."
+                                style={{ width: 110, padding: "5px 8px", borderRadius: 7, border: "1.5px solid #7dd3fc",
+                                  fontSize: 11, fontFamily: "DM Mono,monospace", outline: "none" }}
+                              />
+                              <button onClick={() => { if (onInlineEdit) onInlineEdit(s.id, { trackingNo: trackingInput }); setEditTrackingId(null); }}
+                                style={{ padding: "5px 7px", borderRadius: 7, border: "none", background: "#0369a1", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>✓</button>
+                              <button onClick={() => setEditTrackingId(null)}
+                                style={{ padding: "5px 6px", borderRadius: 7, border: "1px solid #e2e8f0", background: "white", color: "#94a3b8", fontSize: 11, cursor: "pointer" }}>✕</button>
+                            </div>
+                          ) : (
+                            <div
+                              onClick={() => { if (onInlineEdit) { setTrackingInput(s.trackingNo || ""); setEditTrackingId(s.id); } }}
+                              title={onInlineEdit ? "Click to edit tracking number" : undefined}
+                              style={{ cursor: onInlineEdit ? "pointer" : "default" }}>
+                              {s.trackingNo ? (() => {
+                                const url = trackingURL(s.carrier, s.trackingNo);
+                                const badgeStyle = { fontSize: 11, fontFamily: "DM Mono,monospace", fontWeight: 700, color: "#0369a1",
+                                  textDecoration: "none", background: "#f0f9ff", border: "1px solid #bae6fd",
+                                  borderRadius: 6, padding: "3px 8px", whiteSpace: "nowrap",
+                                  maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", display: "inline-block" };
+                                return url
+                                  ? <a href={url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={badgeStyle} title={s.trackingNo}>{s.trackingNo}</a>
+                                  : <span style={badgeStyle} title={s.trackingNo}>{s.trackingNo}</span>;
+                              })() : (
+                                <span style={{ fontSize: 11, color: "#94a3b8", fontStyle: "italic" }}>+ Add tracking</span>
+                              )}
+                            </div>
+                          )}
+
+                          {editCarrierId === s.id ? (
+                            <select
+                              autoFocus
+                              value={s.carrier || ""}
+                              onChange={e => { if (onInlineEdit) onInlineEdit(s.id, { carrier: e.target.value }); setEditCarrierId(null); }}
+                              onBlur={() => setEditCarrierId(null)}
+                              style={{ padding: "4px 6px", borderRadius: 7, border: "1.5px solid #7dd3fc",
+                                fontSize: 10.5, fontFamily: "inherit", outline: "none", cursor: "pointer", background: "white" }}>
+                              <option value="">No carrier</option>
+                              {CARRIERS.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                          ) : (
+                            <span
+                              onClick={() => onInlineEdit && setEditCarrierId(s.id)}
+                              title={onInlineEdit ? "Click to set carrier" : undefined}
+                              style={{ fontSize: 10, fontWeight: 600, color: s.carrier ? "#64748b" : "#cbd5e1", cursor: onInlineEdit ? "pointer" : "default" }}>
+                              {s.carrier || "+ carrier"}
+                            </span>
+                          )}
+
+                          {s.trackingNo && s.carrier && (
+                            <button
+                              onClick={() => openTrackingWA(s, s.carrier, s.trackingNo)}
+                              title={s.trackingNotified ? "Notified — click to resend" : "Send tracking to customer"}
+                              style={{
+                                marginTop: 2, padding: "3px 9px", borderRadius: 999, border: "none", cursor: "pointer",
+                                fontSize: 10.5, fontWeight: 700, fontFamily: "inherit",
+                                background: s.trackingNotified ? "#dcfce7" : "#dbeafe",
+                                color: s.trackingNotified ? "#15803d" : "#1d4ed8",
+                              }}>
+                              {s.trackingNotified ? "✓ Notified" : "💬 Notify"}
+                            </button>
                           )}
                         </div>
-                      ) : (
-                        <span style={{ fontSize: 11, color: "#94a3b8", fontStyle: "italic" }}>
-                          Entered from Despatch Log
-                        </span>
                       )}
                     </td>
 
@@ -3534,7 +3638,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
           </div>
         </div>
       )}
-      <WaModal data={waModal} onClose={() => setWaModal(null)}/>
+      <WaModal data={waModal} onClose={() => { waModal?.onSent && waModal.onSent(); setWaModal(null); }}/>
       {balanceBlockInfo && (
         <div style={{
           position: "fixed", inset: 0, zIndex: 320,

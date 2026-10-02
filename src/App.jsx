@@ -7661,7 +7661,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"analytics",l:"Analytics",ic:"📊"},
     {id:"reports",  l:"Reports",  ic:"📋"},
     {id:"factoryqueue",l:"Fulfilment Tracker",ic:"🏭"},
-  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india").filter(n=>n.id!=="payroll"||shopId==="ros-india").filter(n=>n.id!=="daybook"||shopId==="ros-india").filter(n=>n.id!=="memos"||shopId==="ros-india").filter(n=>n.id!=="weeklyroutine"||shopId==="ros-india").filter(n=>n.id!=="factoryqueue"||shopId==="ros-india");
+  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india").filter(n=>n.id!=="payroll"||shopId==="ros-india").filter(n=>n.id!=="daybook"||shopId==="ros-india").filter(n=>n.id!=="memos"||shopId==="ros-india").filter(n=>n.id!=="weeklyroutine"||shopId==="ros-india").filter(n=>n.id!=="factoryqueue"||shopId==="ros-india").filter(n=>n.id!=="dispatch"||shopId==="ros-india");
 
   /* ── Factory Queue real-data mapping (ROS India only) ──────────────────
      Read-only. Maps real `sales`/`returns` into the shapes FactoryQueuePanel
@@ -9528,8 +9528,11 @@ return(
             <InventoryPage shopId={shopId} shop={shop} user={user} sales={sales} returns={returns} setReturns={setReturns} />
           )}
 
-          {/* ── DESPATCH LOG (all shops) ── */}
-          {tab==="dispatch"&&(
+          {/* ── DESPATCH LOG (ROS India only — ROS Selections/Hairlines are
+              now managed by the separate ROS Dispatch Agent app; tracking
+              entry + the despatch WhatsApp message for those two shops
+              moved into the Sales panel's Tracking cell instead) ── */}
+          {tab==="dispatch"&&shopId==="ros-india"&&(
             <DispatchPanel
               shopId={shopId}
               shop={shop}
