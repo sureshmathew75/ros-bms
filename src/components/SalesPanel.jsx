@@ -1882,12 +1882,16 @@ We hope you enjoy your purchase! 💜
           <style>{`
             .ros-sales-row td {
               background: var(--row-bg, ${CREAM_ROW_BG});
-              box-shadow: var(--row-shadow, 0 2px 6px rgba(15,23,42,0.08), 0 1px 2px rgba(15,23,42,0.06));
+              /* A crisp 1px hairline (0-blur shadow, not a real border — so it
+                 doesn't fight the status/flag accent on border-left below)
+                 defines the card's edge precisely, then a soft two-layer
+                 shadow underneath gives it real lift off the page. */
+              box-shadow: 0 0 0 1px rgba(15,23,42,0.07), var(--row-shadow, 0 3px 8px rgba(15,23,42,0.10), 0 1px 2px rgba(15,23,42,0.07));
               transition: box-shadow .15s ease, transform .15s ease;
             }
             .ros-sales-row:hover td {
-              box-shadow: 0 6px 16px rgba(15,23,42,0.14), 0 2px 4px rgba(15,23,42,0.08);
-              transform: translateY(-1px);
+              box-shadow: 0 0 0 1px rgba(15,23,42,0.12), 0 10px 22px rgba(15,23,42,0.16), 0 3px 6px rgba(15,23,42,0.09);
+              transform: translateY(-2px);
             }
             .ros-sales-row td:first-child {
               border-top-left-radius: 10px;
