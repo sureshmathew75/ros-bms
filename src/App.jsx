@@ -12286,7 +12286,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   const [soldFor, setSoldFor] = React.useState(null); // {id, name} | null — Log Sale modal
   const [correctFor, setCorrectFor] = React.useState(null); // {id, name, currentStock} | null — admin-only stock correction
   const [confirmDeleteId, setConfirmDeleteId] = React.useState(null);
-  const [invView, setInvView] = React.useState("items"); // "items" | "log" — list view only
+  const [invView, setInvView] = React.useState("items"); // "items" | "log" | "monthly" — list view only
   const [collapsedLogDates, setCollapsedLogDates] = React.useState({}); // date -> bool, daily-log view
   const [sheetMonth, setSheetMonth] = React.useState(new Date().toISOString().slice(0,7)); // "YYYY-MM" shown in the Stock Sheet
 
@@ -12336,9 +12336,54 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
       if (m.type === "sale") return s - (Number(m.qty)||0);
       return s;
     }, 0),
+    // What the current calendar month opened with — the same plain
+    // restock-minus-sale replay the Stock Sheet's Opening column uses
+    // (corrections excluded), summed across every tracked item. So
+    // Opening + Added − Sold this month always equals Current Stock.
+    openingThisMonth: movements.reduce((s,m) => {
+      if (!activeItemIds.has(m.itemId) || !m.date || m.date >= nowMonthKey + "-01") return s;
+      if (m.type === "restock") return s + (Number(m.qty)||0);
+      if (m.type === "sale") return s - (Number(m.qty)||0);
+      return s;
+    }, 0),
+    addedThisMonth: movements.reduce((s,m) => (activeItemIds.has(m.itemId) && m.type==="restock" && m.date && m.date.slice(0,7)===nowMonthKey) ? s+(Number(m.qty)||0) : s, 0),
     soldThisMonth: movements.reduce((s,m) => (activeItemIds.has(m.itemId) && m.type==="sale" && m.date.slice(0,7)===nowMonthKey) ? s+(Number(m.qty)||0) : s, 0),
     totalSoldAllTime: movements.reduce((s,m) => (activeItemIds.has(m.itemId) && m.type==="sale") ? s+(Number(m.qty)||0) : s, 0),
   };
+
+  // Month-by-month stock position for the Monthly Summary tab — Opening,
+  // units Added, units Sold and Closing for every month from the first
+  // recorded movement through the current month (months with no activity
+  // are kept, so the Opening → Closing chain never has a gap). Plain
+  // restock/sale arithmetic only, same as the Stock Sheet: an admin
+  // correction never changes these figures. Most recent month first.
+  const monthlySummary = React.useMemo(() => {
+    const byMonth = {};
+    movements.forEach(m => {
+      if (!activeItemIds.has(m.itemId) || !m.date) return;
+      const q = Number(m.qty) || 0;
+      const r = (byMonth[m.date.slice(0,7)] ||= { added:0, sold:0 });
+      if (m.type === "restock") r.added += q;
+      else if (m.type === "sale") r.sold += q;
+    });
+    const keys = Object.keys(byMonth).sort();
+    if (!keys.length) return [];
+    const lastKey = keys[keys.length-1] > nowMonthKey ? keys[keys.length-1] : nowMonthKey;
+    const rows = [];
+    let [y, mo] = keys[0].split("-").map(Number);
+    let running = 0;
+    for (let guard = 0; guard < 600; guard++) {
+      const k = `${y}-${String(mo).padStart(2,"0")}`;
+      const { added = 0, sold = 0 } = byMonth[k] || {};
+      const opening = running;
+      const closing = opening + added - sold;
+      rows.push({ key:k, opening, added, sold, closing });
+      running = closing;
+      if (k >= lastKey) break;
+      mo++; if (mo > 12) { mo = 1; y++; }
+    }
+    return rows.reverse();
+  }, [movements, activeItemIds, nowMonthKey]);
 
   // Every stock change, across every item IN THE CURRENT WINDOW, grouped by
   // day — newest day first, newest change within a day first. Scoped to
@@ -12544,16 +12589,17 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
       {/* ── Stock dashboard — current totals across every tracked item ── */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:18}}>
         <div style={{padding:"12px 14px",borderRadius:12,background:shop.accentBg,border:"1px solid "+shop.accent+"33"}}>
-          <div style={{fontSize:20,fontWeight:900,color:shop.accentText||shop.accent}}>{stockDashboard.trackedItems}</div>
-          <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Items Tracked</div>
-        </div>
-        <div style={{padding:"12px 14px",borderRadius:12,background:"#f0fdf4",border:"1px solid #86efac"}}>
-          <div style={{fontSize:20,fontWeight:900,color:"#166534"}}>{stockDashboard.totalInStock}</div>
-          <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Units In Stock</div>
+          <div style={{fontSize:20,fontWeight:900,color:shop.accentText||shop.accent}}>{stockDashboard.openingThisMonth}</div>
+          <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Opening Stock · This Month</div>
         </div>
         <div style={{padding:"12px 14px",borderRadius:12,background:"#f8fafc",border:"1px solid #e2e8f0"}}>
           <div style={{fontSize:20,fontWeight:900,color:"#0f172a"}}>{stockDashboard.soldThisMonth} <span style={{fontSize:13,fontWeight:700,color:"#94a3b8"}}>/ {stockDashboard.totalSoldAllTime}</span></div>
           <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Sold This Month / Total</div>
+        </div>
+        <div style={{padding:"12px 14px",borderRadius:12,background:"#f0fdf4",border:"1px solid #86efac"}}>
+          <div style={{fontSize:20,fontWeight:900,color:"#166534"}}>{stockDashboard.totalInStock}</div>
+          <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Current Stock</div>
+          <div style={{fontSize:10,color:"#94a3b8",marginTop:3}}>{stockDashboard.openingThisMonth} opening + {stockDashboard.addedThisMonth} added − {stockDashboard.soldThisMonth} sold</div>
         </div>
         {stockSection !== "clothes" && (
           <div style={{padding:"12px 14px",borderRadius:12,background:"#f5f3ff",border:"1px solid #c4b5fd"}}>
@@ -12578,6 +12624,13 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
             background:invView==="log"?shop.accent:"white",
             color:invView==="log"?"white":"#64748b"}}>
           🗓️ Daily Log
+        </button>
+        <button onClick={()=>setInvView("monthly")}
+          style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
+            border:"1px solid "+(invView==="monthly"?shop.accent:"#e2e8f0"),
+            background:invView==="monthly"?shop.accent:"white",
+            color:invView==="monthly"?"white":"#64748b"}}>
+          📅 Monthly Summary
         </button>
       </div>
 
@@ -12604,6 +12657,62 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           includeReturnedStock={stockSection!=="clothes"}
         />
       )
+      ) : invView==="monthly" ? (
+        /* ── Monthly Summary — one row per month: Opening, units Added,
+           units Sold, Closing. Each month's Closing is the next month's
+           Opening. Click a month to open it in the Stock Sheet. ── */
+        monthlySummary.length===0 ? (
+          <div style={{textAlign:"center",padding:"60px 20px",color:"#94a3b8",fontSize:13}}>
+            No stock movements recorded yet.
+          </div>
+        ) : (
+          <div>
+            <div style={{fontSize:11,color:"#94a3b8",marginBottom:10}}>
+              <b>Opening</b> + <b>Added</b> − <b>Sold</b> = <b>Closing</b> · each month's Closing becomes the next month's Opening · a plain calculation, never changed by a stock correction · click a month to see it item by item
+            </div>
+            <div style={{overflowX:"auto",border:"1px solid #e2e8f0",borderRadius:12}}>
+              <table style={{borderCollapse:"collapse",width:"100%",minWidth:460,fontSize:13}}>
+                <thead>
+                  <tr style={{background:"#f8fafc"}}>
+                    {["Month","Opening","Added","Sold","Closing"].map((h,i)=>(
+                      <th key={h} style={{padding:"10px 14px",textAlign:i===0?"left":"right",fontSize:10.5,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",borderBottom:"1px solid #e2e8f0"}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {monthlySummary.map(r => {
+                    const isNow = r.key === nowMonthKey;
+                    const [yy,mm] = r.key.split("-").map(Number);
+                    const label = new Date(yy, mm-1, 1).toLocaleDateString("en-GB",{month:"long",year:"numeric"});
+                    return (
+                      <tr key={r.key}
+                        onClick={()=>{ setSheetMonth(r.key); setInvView("items"); }}
+                        title="Open this month in the Stock Sheet"
+                        style={{cursor:"pointer",background:isNow?(shop.accentBg||"#eef2ff"):"white"}}>
+                        <td style={{padding:"11px 14px",borderBottom:"1px solid #f1f5f9",fontWeight:700,color:"#0f172a"}}>
+                          {label}{isNow && <span style={{marginLeft:8,fontSize:9.5,fontWeight:800,color:shop.accentText||shop.accent,textTransform:"uppercase",letterSpacing:"0.05em"}}>This month</span>}
+                        </td>
+                        <td style={{padding:"11px 14px",borderBottom:"1px solid #f1f5f9",textAlign:"right",fontVariantNumeric:"tabular-nums",color:"#475569"}}>{r.opening}</td>
+                        <td style={{padding:"11px 14px",borderBottom:"1px solid #f1f5f9",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700,color:r.added?"#166534":"#cbd5e1"}}>{r.added?"+"+r.added:"—"}</td>
+                        <td style={{padding:"11px 14px",borderBottom:"1px solid #f1f5f9",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700,color:r.sold?"#b91c1c":"#cbd5e1"}}>{r.sold?"−"+r.sold:"—"}</td>
+                        <td style={{padding:"11px 14px",borderBottom:"1px solid #f1f5f9",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:900,color:"#0f172a"}}>{r.closing}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot>
+                  <tr style={{background:"#f8fafc"}}>
+                    <td style={{padding:"11px 14px",fontWeight:800,color:"#475569",fontSize:11,textTransform:"uppercase",letterSpacing:"0.04em"}}>All months</td>
+                    <td style={{padding:"11px 14px",textAlign:"right",color:"#94a3b8"}}>—</td>
+                    <td style={{padding:"11px 14px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:800,color:"#166534"}}>+{monthlySummary.reduce((s,r)=>s+r.added,0)}</td>
+                    <td style={{padding:"11px 14px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:800,color:"#b91c1c"}}>−{monthlySummary.reduce((s,r)=>s+r.sold,0)}</td>
+                    <td style={{padding:"11px 14px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:900,color:"#0f172a"}}>{monthlySummary[0].closing}</td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        )
       ) : (
         /* ── Daily Log — every stock change across every item, grouped by
            day, newest first. Same collapse pattern as the Despatch Log:
