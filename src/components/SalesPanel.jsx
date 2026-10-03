@@ -1134,6 +1134,54 @@ We hope you enjoy your purchase! 💜
     setTimeout(() => setFlashIds(new Set()), 1500);
   };
 
+  /* ROS Selections / ROS Hairlines: saving a tracking number straight from
+     the Tracking cell also marks the sale Fulfilled (and stamps its sent
+     date), since those two shops no longer have a Despatch Log doing that
+     for them. Same rules the Despatch Log's own push used:
+       • shipper falls back to Royal Mail if none has been picked yet;
+       • applies to every transaction in the same instalment group (one
+         parcel, several payments) — same grouping the Status cell uses;
+       • never drags a sale BACKWARDS — anything already Fulfilled or
+         further along (returns, refunds, feedback…) keeps its status;
+       • respects the same "Balance still due" guard as picking Fulfilled
+         from the Status dropdown — tracking + shipper are still saved,
+         the status just isn't changed until the balance is collected;
+       • clearing the tracking number only clears it, never touches status. */
+  const UK_DEFAULT_CARRIER = "Royal Mail";
+  const saveTrackingAndFulfil = async (s, rawTracking) => {
+    if (!onInlineEdit) return;
+    const trackingNo = (rawTracking || "").trim();
+    if (!trackingNo) { await onInlineEdit(s.id, { trackingNo: "" }); return; }
+    const carrier = s.carrier || UK_DEFAULT_CARRIER;
+    const gKey = getInstalmentKey(s);
+    const group = gKey ? (instalmentGroups[gKey] || []) : [];
+    const members = group.length > 1 ? group : [s];
+    const PAST_FULFILLED = ["FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD",
+      "EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD",
+      "RETURN RQSTD","RETURN RCVD"];
+    let allowFulfil = true;
+    if (group.length > 0) {
+      const balInfo = getGroupBalanceInfo(group);
+      if (balInfo && balInfo.balance > 0) {
+        allowFulfil = false;
+        setBalanceBlockInfo({ sale: s, ...balInfo });
+      }
+    }
+    const today = localISO(new Date());
+    await Promise.all(members.map(m => {
+      const cur = m.ful || m.status || "";
+      const changes = { trackingNo, carrier };
+      if (allowFulfil && !PAST_FULFILLED.includes(cur)) {
+        changes.ful = "FULFILLED";
+        changes.status = "FULFILLED";
+        changes.sentDate = m.sentDate || today;
+      }
+      return onInlineEdit(m.id, changes);
+    }));
+    setFlashIds(new Set(members.map(m => m.id)));
+    setTimeout(() => setFlashIds(new Set()), 1500);
+  };
+
   /* Manually links two transactions together, merging their existing
      manual-link groups if either already has one (so linking into an
      existing multi-way link works correctly, not just pairs). */
@@ -2709,7 +2757,7 @@ We hope you enjoy your purchase! 💜
                                 onChange={e => setTrackingInput(e.target.value)}
                                 onKeyDown={e => {
                                   if (e.key === "Enter") {
-                                    if (onInlineEdit) onInlineEdit(s.id, { trackingNo: trackingInput });
+                                    saveTrackingAndFulfil(s, trackingInput);
                                     setEditTrackingId(null);
                                   }
                                   if (e.key === "Escape") setEditTrackingId(null);
@@ -2718,7 +2766,7 @@ We hope you enjoy your purchase! 💜
                                 style={{ width: 110, padding: "5px 8px", borderRadius: 7, border: "1.5px solid #7dd3fc",
                                   fontSize: 11, fontFamily: "DM Mono,monospace", outline: "none" }}
                               />
-                              <button onClick={() => { if (onInlineEdit) onInlineEdit(s.id, { trackingNo: trackingInput }); setEditTrackingId(null); }}
+                              <button onClick={() => { saveTrackingAndFulfil(s, trackingInput); setEditTrackingId(null); }}
                                 style={{ padding: "5px 7px", borderRadius: 7, border: "none", background: "#0369a1", color: "white", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>✓</button>
                               <button onClick={() => setEditTrackingId(null)}
                                 style={{ padding: "5px 6px", borderRadius: 7, border: "1px solid #e2e8f0", background: "white", color: "#94a3b8", fontSize: 11, cursor: "pointer" }}>✕</button>
@@ -2729,7 +2777,7 @@ We hope you enjoy your purchase! 💜
                               title={onInlineEdit ? "Click to edit tracking number" : undefined}
                               style={{ cursor: onInlineEdit ? "pointer" : "default" }}>
                               {s.trackingNo ? (() => {
-                                const url = trackingURL(s.carrier, s.trackingNo);
+                                const url = trackingURL(s.carrier || UK_DEFAULT_CARRIER, s.trackingNo);
                                 const badgeStyle = { fontSize: 11, fontFamily: "DM Mono,monospace", fontWeight: 700, color: "#0369a1",
                                   textDecoration: "none", background: "#f0f9ff", border: "1px solid #bae6fd",
                                   borderRadius: 6, padding: "3px 8px", whiteSpace: "nowrap",
@@ -2746,26 +2794,25 @@ We hope you enjoy your purchase! 💜
                           {editCarrierId === s.id ? (
                             <select
                               autoFocus
-                              value={s.carrier || ""}
+                              value={s.carrier || UK_DEFAULT_CARRIER}
                               onChange={e => { if (onInlineEdit) onInlineEdit(s.id, { carrier: e.target.value }); setEditCarrierId(null); }}
                               onBlur={() => setEditCarrierId(null)}
                               style={{ padding: "4px 6px", borderRadius: 7, border: "1.5px solid #7dd3fc",
                                 fontSize: 10.5, fontFamily: "inherit", outline: "none", cursor: "pointer", background: "white" }}>
-                              <option value="">No carrier</option>
                               {CARRIERS.map(c => <option key={c} value={c}>{c}</option>)}
                             </select>
                           ) : (
                             <span
                               onClick={() => onInlineEdit && setEditCarrierId(s.id)}
-                              title={onInlineEdit ? "Click to set carrier" : undefined}
-                              style={{ fontSize: 10, fontWeight: 600, color: s.carrier ? "#64748b" : "#cbd5e1", cursor: onInlineEdit ? "pointer" : "default" }}>
-                              {s.carrier || "+ carrier"}
+                              title={onInlineEdit ? (s.carrier ? "Click to change carrier" : "Default shipper — click to change") : undefined}
+                              style={{ fontSize: 10, fontWeight: 600, color: s.carrier ? "#64748b" : "#94a3b8", cursor: onInlineEdit ? "pointer" : "default" }}>
+                              {s.carrier || UK_DEFAULT_CARRIER}
                             </span>
                           )}
 
-                          {s.trackingNo && s.carrier && (
+                          {s.trackingNo && (
                             <button
-                              onClick={() => openTrackingWA(s, s.carrier, s.trackingNo)}
+                              onClick={() => openTrackingWA(s, s.carrier || UK_DEFAULT_CARRIER, s.trackingNo)}
                               title={s.trackingNotified ? "Notified — click to resend" : "Send tracking to customer"}
                               style={{
                                 marginTop: 2, padding: "3px 9px", borderRadius: 999, border: "none", cursor: "pointer",
