@@ -1148,7 +1148,7 @@ We hope you enjoy your purchase! 💜
          the status just isn't changed until the balance is collected;
        • clearing the tracking number only clears it, never touches status. */
   const UK_DEFAULT_CARRIER = "Royal Mail";
-  const saveTrackingAndFulfil = async (s, rawTracking) => {
+  const saveTrackingAndFulfil = async (s, rawTracking, opts = {}) => {
     if (!onInlineEdit) return;
     const trackingNo = (rawTracking || "").trim();
     if (!trackingNo) { await onInlineEdit(s.id, { trackingNo: "" }); return; }
@@ -1164,7 +1164,9 @@ We hope you enjoy your purchase! 💜
       const balInfo = getGroupBalanceInfo(group);
       if (balInfo && balInfo.balance > 0) {
         allowFulfil = false;
-        setBalanceBlockInfo({ sale: s, ...balInfo });
+        // Silent when this is the automatic safety-net run (see the effect
+        // below) — nobody just clicked anything, so no popup out of the blue.
+        if (!opts.silent) setBalanceBlockInfo({ sale: s, ...balInfo });
       }
     }
     const today = localISO(new Date());
@@ -1181,6 +1183,38 @@ We hope you enjoy your purchase! 💜
     setFlashIds(new Set(members.map(m => m.id)));
     setTimeout(() => setFlashIds(new Set()), 1500);
   };
+
+  /* Safety net — ROS Selections / Hairlines only. Tracking numbers don't
+     only arrive through the Tracking cell above: the ROS Dispatch Agent
+     writes them straight into the sales table, which never passes through
+     saveTrackingAndFulfil. So whenever this panel has a sale that already
+     carries a tracking number but is still Pending, it's fulfilled here
+     with exactly the same rules (shipper default, instalment group,
+     never backwards, balance-due guard — silently, no popup). Each sale is
+     only attempted once per page load so a balance-blocked one can't loop. */
+  const reconciledRef = useRef(new Set());
+  const reconcilingRef = useRef(false);
+  useEff(() => {
+    if (isIndiaShop || !onInlineEdit || reconcilingRef.current) return;
+    const stuck = (sales || []).filter(s =>
+      (s.trackingNo || "").trim() &&
+      ["", "PENDING"].includes((s.ful || s.status || "").toUpperCase()) &&
+      !reconciledRef.current.has(s.id));
+    if (!stuck.length) return;
+    reconcilingRef.current = true;
+    (async () => {
+      try {
+        for (const s of stuck) {
+          if (reconciledRef.current.has(s.id)) continue;
+          const gKey = getInstalmentKey(s);
+          const group = gKey ? (instalmentGroups[gKey] || []) : [];
+          [s, ...(group.length > 1 ? group : [])].forEach(m => reconciledRef.current.add(m.id));
+          try { await saveTrackingAndFulfil(s, s.trackingNo, { silent: true }); }
+          catch (err) { console.error("Auto-fulfil failed for", s.id, err); }
+        }
+      } finally { reconcilingRef.current = false; }
+    })();
+  }, [sales, isIndiaShop]);
 
   /* Manually links two transactions together, merging their existing
      manual-link groups if either already has one (so linking into an
