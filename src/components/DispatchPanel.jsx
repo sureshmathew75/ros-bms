@@ -380,6 +380,8 @@ const IcoSearch = () => <Svg size={14}><circle cx="11" cy="11" r="7" /><path d="
 const IcoEdit = () => <Svg size={12}><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></Svg>;
 const IcoNote = () => <Svg size={14}><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M8 13h8M8 17h5" /></Svg>;
 const IcoTruck = () => <Svg size={20}><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7z" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></Svg>;
+const IcoPin = () => <Svg size={13}><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z" /><circle cx="12" cy="10" r="2.5" /></Svg>;
+const IcoWarn = () => <Svg size={13}><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01" /></Svg>;
 const IcoPlus = () => <Svg size={14}><path d="M12 5v14M5 12h14" /></Svg>;
 const IcoWA = () => (
   <Svg size={14} fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.2L2 22l4.9-1.5A10 10 0 1 0 12 2zm5.4 14c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.2-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.8s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 1.9c.1.2.1.4 0 .5l-.4.6c-.1.2-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.3 2.4 1.5.3.1.5.1.6-.1l.9-1.1c.2-.3.4-.2.6-.1l1.8.9c.3.1.5.2.5.3.1.2.1.8-.1 1.4z" /></Svg>
@@ -457,7 +459,7 @@ const INDIA_CSS = `
 .dx-tablewrap::-webkit-scrollbar-thumb,.dx-topscroll::-webkit-scrollbar-thumb{background:#b6c0cf;border-radius:8px;border:2px solid #eef2f7}
 .dx-tablewrap::-webkit-scrollbar-thumb:hover,.dx-topscroll::-webkit-scrollbar-thumb:hover{background:#94a3b8}
 .dx-topscroll{overflow-x:scroll;overflow-y:hidden;position:sticky;top:0;z-index:6;background:#eef2f7;border-radius:16px 16px 0 0;border-bottom:1px solid var(--line);height:14px;scrollbar-width:auto}
-.dx-table{width:100%;border-collapse:collapse;min-width:960px;font-size:12.5px}
+.dx-table{width:100%;border-collapse:collapse;min-width:880px;font-size:12.5px}
 .dx-table thead th{background:#f8fafc;text-align:left;font-size:10.5px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.08em;padding:10px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
 .dx-day td{background:var(--acbg2);padding:8px 14px;border-top:1px solid var(--acline);border-bottom:1px solid var(--acline)}
 .dx-day-in{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -483,6 +485,25 @@ const INDIA_CSS = `
 .dx-more{font-size:10px;font-weight:800;color:var(--ac);cursor:pointer;margin-top:2px}
 .dx-remark{margin-top:4px;font-size:11.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:7px;padding:2px 8px;display:inline-block;max-width:100%}
 .dx-remark-in{margin-top:5px;width:100%;padding:5px 8px;border:1px solid var(--ac);border-radius:7px;font-size:12px;font-family:inherit;outline:none}
+.dx-addrbtn{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:9px;border:1px solid #bbf7d0;background:#f0fdf4;color:#15803d;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap}
+.dx-addrbtn .mono{font-weight:500;font-size:10.5px;color:#4d9a6a}
+.dx-addrbtn:hover{background:#dcfce7}
+.dx-addrmiss{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:9px;border:1px dashed #f87171;background:#fef2f2;color:#b91c1c;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap}
+.dx-addrmiss:hover{background:#fee2e2}
+.dx-table tbody tr.dx-r.noaddr td:first-child{box-shadow:inset 3px 0 0 #ef4444}
+.dx-warnchip{border:1px solid #fecaca;background:#fef2f2;color:#b91c1c;font-weight:800;font-size:12px;border-radius:999px;padding:4px 11px;cursor:pointer}
+.dx-warnchip.on{background:#dc2626;color:#fff;border-color:#dc2626}
+.dx-modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.45);backdrop-filter:blur(3px);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px}
+.dx-modal{background:#fff;border-radius:16px;box-shadow:0 24px 60px rgba(15,23,42,.28);width:100%;max-width:420px;padding:18px 20px}
+.dx-modal-h{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
+.dx-modal-h .t{font-size:16px;font-weight:800}
+.dx-modal-h .s{font-size:12px;color:#64748b;margin-top:2px}
+.dx-x{border:none;background:#f1f5f9;color:#64748b;width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:13px}
+.dx-modal-l{font-size:10.5px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+.dx-modal-addr{white-space:pre-wrap;font-size:14px;line-height:1.55;color:#0f172a;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:12px 14px;user-select:text}
+.dx-modal-ta{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:13.5px;font-family:inherit;resize:vertical;outline:none}
+.dx-modal-ta:focus{border-color:var(--ac)}
+.dx-modal-f{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
 .dx-iconbtn{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:8px;border:1px solid var(--line);background:#fff;color:#64748b;cursor:pointer;transition:all .12s}
 .dx-iconbtn:hover{color:var(--ac);border-color:var(--ac)}
 .dx-iconbtn.ok{background:#dcfce7;color:#15803d;border-color:#bbf7d0}
@@ -583,6 +604,10 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   const [dayFilter, setDayFilter] = useState("all");           // "all" | "YYYY-MM-DD"
   const [listSearch, setListSearch] = useState("");            // filters rows already on the log (not the add-from-sale search)
   const [showAdd, setShowAdd] = useState(false);               // reveals the add-from-sale search box
+  const [addrFilter, setAddrFilter] = useState("ALL");        // "ALL" | "missing" — rows with no address on file
+  const [dxPopup, setDxPopup] = useState(null);                // { type: "addr" | "remark", uuid } — small detail pop-ups from the table
+  const [remarkDraft, setRemarkDraft] = useState("");
+  const [dxCopied, setDxCopied] = useState(false);
   const datePickRefs = useRef({});                         // uuid -> hidden <input type="date"> behind the Mark Delivered / Delivered button
   const tableTopRef = useRef(null);                        // always-visible horizontal scrollbar above the table (synced with the table itself)
   const tableBodyRef = useRef(null);
@@ -618,6 +643,13 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     window.addEventListener("resize", measure);
     return () => window.removeEventListener("resize", measure);
   });
+
+  useEffect(() => {
+    if (!dxPopup) return undefined;
+    const onKey = (ev) => { if (ev.key === "Escape") { setDxPopup(null); setDxCopied(false); } };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [dxPopup]);
 
   const allSales = sales || [];
   // Only admins/superadmins can delete a row — despatch staff can add,
@@ -1031,16 +1063,17 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   }));
   const ixMatchCourier = (e) => courierFilter === "ALL" || courierKey(e) === courierFilter;
   const ixMatchStatus = (e) => statusFilter === "ALL" || rowTrackState(e) === statusFilter;
-  const ixScope = ixBase.filter(e => ixMatchCourier(e) && ixMatchStatus(e));          // before the day filter
+  const ixMatchAddr = (e) => addrFilter === "ALL" || !(liveAddressFor(e) || "").trim();
+  const ixScope = ixBase.filter(e => ixMatchCourier(e) && ixMatchStatus(e) && ixMatchAddr(e));   // before the day filter
   const shownEntries = !isIndiaShop ? filteredEntries : (dayFilter === "all" ? ixScope : ixScope.filter(e => e.dispatchDate === dayFilter));
   const exportEntries = isIndiaShop ? shownEntries : filteredEntries;
 
   const ixCourierCounts = {};
-  ixBase.filter(ixMatchStatus).forEach(e => { const k = courierKey(e); ixCourierCounts[k] = (ixCourierCounts[k] || 0) + 1; });
+  ixBase.filter(e => ixMatchStatus(e) && ixMatchAddr(e)).forEach(e => { const k = courierKey(e); ixCourierCounts[k] = (ixCourierCounts[k] || 0) + 1; });
   const ixCourierKeys = Array.from(new Set([...Object.keys(ixCourierCounts), ...(courierFilter !== "ALL" ? [courierFilter] : [])]))
     .sort((a, b) => (ixCourierCounts[b] || 0) - (ixCourierCounts[a] || 0));
   const ixStatusCounts = { transit: 0, delivered: 0, notrack: 0 };
-  ixBase.filter(ixMatchCourier).forEach(e => { ixStatusCounts[rowTrackState(e)]++; });
+  ixBase.filter(e => ixMatchCourier(e) && ixMatchAddr(e)).forEach(e => { ixStatusCounts[rowTrackState(e)]++; });
   const ixStatusTotal = ixStatusCounts.transit + ixStatusCounts.delivered + ixStatusCounts.notrack;
 
   // One cell per calendar day of the window (newest first) so quiet days
@@ -1091,8 +1124,9 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
       notNotified: scope.filter(e => !e.notified).length,
     };
   })();
-  const ixFiltersActive = courierFilter !== "ALL" || statusFilter !== "ALL" || dayFilter !== "all" || !!ixQ;
-  const ixClearFilters = () => { setCourierFilter("ALL"); setStatusFilter("ALL"); setDayFilter("all"); setListSearch(""); };
+  const ixMissingAddr = isIndiaShop ? filteredEntries.filter(e => !(liveAddressFor(e) || "").trim()).length : 0;
+  const ixFiltersActive = courierFilter !== "ALL" || statusFilter !== "ALL" || addrFilter !== "ALL" || dayFilter !== "all" || !!ixQ;
+  const ixClearFilters = () => { setCourierFilter("ALL"); setStatusFilter("ALL"); setAddrFilter("ALL"); setDayFilter("all"); setListSearch(""); };
   const ixMonthTitle = monthFilter === "recent30" ? "Last 30 days" : monthLabel(monthFilter);
 
   const persist = async (uuidOrNull, payload) => {
@@ -1487,7 +1521,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     if (isIndiaShop) {
       // ROS India's Log is month-scoped: open that day's month, then narrow to the day.
       setMonthFilter(iso.slice(0, 7));
-      setCourierFilter("ALL"); setStatusFilter("ALL"); setListSearch("");
+      setCourierFilter("ALL"); setStatusFilter("ALL"); setAddrFilter("ALL"); setListSearch("");
       setDayFilter(iso);
     } else {
       setDateFilter(iso);
@@ -1517,13 +1551,12 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     const collisionOthers = linkedSaleForRow ? phoneCollisionFor(linkedSaleForRow) : null;
     const fullAddress = liveAddressFor(e);
     const addrOneLine = fullAddress.replace(/\s*\n\s*/g, ", ");
-    const addressHasMore = addrOneLine.length > 85;
-    const isAddressExpanded = !!expandedAddresses[e.uuid];
+    const addrPin = (fullAddress.match(/\b\d{6}\b/) || [""])[0];
     const phone = livePhoneFor(e);
     const isRowToday = e.dispatchDate === todayISO();
     const trackUrl = canNotify ? staffTrackingURL(e.shipper, e.trackingNo) : null;
     return (
-      <tr key={e.uuid} className={"dx-r" + (e.delivered ? " deliv" : "")}>
+      <tr key={e.uuid} className={"dx-r" + (e.delivered ? " deliv" : "") + (!fullAddress.trim() ? " noaddr" : "")}>
         {/* Date */}
         <td style={{ width: 58 }}>
           <div className={"dx-date" + (isRowToday ? " today" : "")}>{shortDate(e.dispatchDate)}
@@ -1564,37 +1597,21 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
             </div>
           )}
         </td>
-        {/* Address (always the live Sales address; ✏️ edits it there) + remarks */}
-        <td style={{ minWidth: 150 }}>
-          <div className="dx-addr">
-            <div style={{ flex: 1, minWidth: 0 }}>
-              {fullAddress ? (
-                <>
-                  <div className={"dx-addr-t" + (addressHasMore ? " more" : "") + (isAddressExpanded ? " open" : "")}
-                    onClick={() => addressHasMore && setExpandedAddresses(p => ({ ...p, [e.uuid]: !p[e.uuid] }))}
-                    title={addressHasMore ? (isAddressExpanded ? "Click to collapse" : "Click to see full address") : undefined}>
-                    {isAddressExpanded ? fullAddress : addrOneLine}
-                  </div>
-                  {addressHasMore && (
-                    <div className="dx-more" onClick={() => setExpandedAddresses(p => ({ ...p, [e.uuid]: !p[e.uuid] }))}>{isAddressExpanded ? "▲ less" : "▼ more"}</div>
-                  )}
-                </>
-              ) : (
-                <div className="dx-addr-t empty" onClick={() => e.saleId && setAddressModalUuid(e.uuid)}>No address yet — tap to add one</div>
-              )}
-              {openRemarksUuid === e.uuid ? (
-                <input autoFocus className="dx-remark-in" value={e.remarks} placeholder="Remarks"
-                  onChange={ev => updateEntry(e.uuid, { remarks: ev.target.value })}
-                  onBlur={ev => { saveEntry(e.uuid, { remarks: ev.target.value }); setOpenRemarksUuid(null); }}
-                  onKeyDown={ev => { if (ev.key === "Enter") ev.target.blur(); }} />
-              ) : e.remarks ? (
-                <div className="dx-remark" title="Click to edit remarks" style={{ cursor: "pointer" }} onClick={() => setOpenRemarksUuid(e.uuid)}>📝 {e.remarks}</div>
-              ) : null}
-            </div>
-            {e.saleId && (
-              <button className="dx-iconbtn" onClick={() => setAddressModalUuid(e.uuid)} title="Edit address"><IcoEdit /></button>
-            )}
-          </div>
+        {/* Address — kept to one small button so every row stays the same height.
+            Green "View" opens the full address in a pop-up; a red "Add address"
+            flags a missing one and opens the address editor directly. */}
+        <td style={{ width: 112 }}>
+          {fullAddress.trim() ? (
+            <button className="dx-addrbtn" onClick={() => setDxPopup({ type: "addr", uuid: e.uuid })} title={addrOneLine}>
+              <IcoPin /> View{addrPin ? <span className="mono">{addrPin}</span> : null}
+            </button>
+          ) : (
+            <button className="dx-addrmiss"
+              onClick={() => e.saleId ? setAddressModalUuid(e.uuid) : showAlert("This row isn't linked to a sale, so there's nowhere to save the address.")}
+              title="No address on file — click to add one">
+              <IcoWarn /> Add address
+            </button>
+          )}
         </td>
         {/* Shipper */}
         <td style={{ width: 96 }}>
@@ -1664,7 +1681,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
         {/* Remarks + admin remove */}
         <td style={{ width: 54 }}>
           <div className="dx-actions">
-            <button className={"dx-iconbtn note" + (e.remarks ? " on" : "")} onClick={() => setOpenRemarksUuid(e.uuid)}
+            <button className={"dx-iconbtn note" + (e.remarks ? " on" : "")} onClick={() => { setRemarkDraft(e.remarks || ""); setDxPopup({ type: "remark", uuid: e.uuid }); }}
               title={e.remarks ? `Remarks: ${e.remarks}` : "Add remarks"}><IcoNote /></button>
             {isAdmin && <button className="dx-del" onClick={() => removeEntry(e.uuid)} title="Remove row">✕</button>}
           </div>
@@ -1743,6 +1760,48 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
       {isIndiaShop && (
         <>
           <style>{INDIA_CSS}</style>
+          {dxPopup && (() => {
+            const pe = entries.find(x => x.uuid === dxPopup.uuid);
+            if (!pe) return null;
+            const close = () => { setDxPopup(null); setDxCopied(false); };
+            const head = (
+              <div className="dx-modal-h">
+                <div><div className="t">{titleCase(pe.customer) || "—"}</div><div className="s mono">{livePhoneFor(pe) || "—"}</div></div>
+                <button className="dx-x" onClick={close} title="Close (Esc)">✕</button>
+              </div>
+            );
+            if (dxPopup.type === "addr") {
+              const addr = liveAddressFor(pe);
+              return (
+                <div className="dx-modal-bg" onClick={close}>
+                  <div className="dx-modal" onClick={ev => ev.stopPropagation()}>
+                    {head}
+                    <div className="dx-modal-l">Delivery address</div>
+                    <div className="dx-modal-addr">{addr || "No address on file."}</div>
+                    <div className="dx-modal-f">
+                      <button className="dx-btn" onClick={async () => { try { await navigator.clipboard.writeText(addr); setDxCopied(true); setTimeout(() => setDxCopied(false), 1400); } catch { /* clipboard blocked */ } }}>
+                        {dxCopied ? <><IcoCheck /> Copied</> : <><IcoCopy /> Copy</>}
+                      </button>
+                      {pe.saleId && <button className="dx-btn pri" onClick={() => { close(); setAddressModalUuid(pe.uuid); }}><IcoEdit /> Edit address</button>}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div className="dx-modal-bg" onClick={close}>
+                <div className="dx-modal" onClick={ev => ev.stopPropagation()}>
+                  {head}
+                  <div className="dx-modal-l">Remarks</div>
+                  <textarea autoFocus className="dx-modal-ta" rows={3} value={remarkDraft} onChange={ev => setRemarkDraft(ev.target.value)} placeholder="Add a note for this despatch…" />
+                  <div className="dx-modal-f">
+                    <button className="dx-btn" onClick={close}>Cancel</button>
+                    <button className="dx-btn pri" onClick={() => { saveEntry(pe.uuid, { remarks: remarkDraft.trim() }); close(); }}>Save</button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           {/* ── Header ── */}
           <div className="dx-top">
             <div>
@@ -1857,6 +1916,10 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                     <button className={statusFilter === "notrack" ? "on n" : ""} onClick={() => setStatusFilter(statusFilter === "notrack" ? "ALL" : "notrack")}>Awaiting tracking · {ixStatusCounts.notrack}</button>
                   </div>
                   <div className="dx-count">
+                    {ixMissingAddr > 0 && (
+                      <button className={"dx-warnchip" + (addrFilter === "missing" ? " on" : "")} onClick={() => setAddrFilter(addrFilter === "missing" ? "ALL" : "missing")}
+                        title="Show only despatches that have no address on file">⚠ {ixMissingAddr} missing address</button>
+                    )}
                     {ixKpi.notNotified > 0 && <span>💬 {ixKpi.notNotified} not yet informed</span>}
                     <span>Showing <b>{shownEntries.length}</b> of {filteredEntries.length}</span>
                     {ixFiltersActive && <button className="dx-clear" onClick={ixClearFilters}>Clear filters</button>}
@@ -1923,7 +1986,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                   </>
                 )}
                 {!loading && shownEntries.length > 0 && (
-                  <div className="dx-foot"><span>{shownEntries.length} despatch{shownEntries.length !== 1 ? "es" : ""} · {ixMonthTitle}</span><span>Click an address to expand · tracking numbers are editable in place</span></div>
+                  <div className="dx-foot"><span>{shownEntries.length} despatch{shownEntries.length !== 1 ? "es" : ""} · {ixMonthTitle}</span><span>Click View to see the full address · tracking numbers are editable in place</span></div>
                 )}
               </div>
             </>
