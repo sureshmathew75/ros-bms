@@ -353,6 +353,7 @@ const currentMonthKey = () => todayISO().slice(0, 7);
 const MON_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const shortDate = (iso) => { if (!iso) return "—"; const [, m, d] = iso.split("-"); return `${d} ${MON_ABBR[Number(m) - 1]}`; };
 const shortDateY = (iso) => { if (!iso) return "—"; const [y, m, d] = iso.split("-"); return `${d} ${MON_ABBR[Number(m) - 1]} ${y}`; };
+const shortDateMaybeY = (iso) => (iso && iso.slice(0, 4) !== String(new Date().getFullYear())) ? shortDateY(iso) : shortDate(iso);
 const weekdayShort = (iso) => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString("en-GB", { weekday: "short" }); };
 const titleCase = (s) => (s || "").toLowerCase().replace(/(^|[\s.\-'(])([a-z])/g, (_, a, b) => a + b.toUpperCase());
 const shipperLabel = (s) => { const u = (s || "").toUpperCase(); return u === "SPEEDPOST" ? "Speed Post" : u === "FEDEX" ? "FedEx" : (s || ""); };
@@ -450,65 +451,72 @@ const INDIA_CSS = `
 .dx-addbox{padding:14px 16px;margin-bottom:14px}
 .dx-addbox .ttl{font-size:12.5px;font-weight:800;margin-bottom:10px;color:#334155}
 /* table */
-.dx-tablewrap{overflow-x:auto;border-radius:16px}
-.dx-table{width:100%;border-collapse:collapse;min-width:1240px;font-size:13px}
-.dx-table thead th{background:#f8fafc;text-align:left;font-size:10.5px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.08em;padding:11px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+.dx-tablewrap{overflow-x:scroll;overflow-y:hidden;border-radius:0 0 16px 16px;scrollbar-width:auto}
+.dx-tablewrap::-webkit-scrollbar,.dx-topscroll::-webkit-scrollbar{height:12px}
+.dx-tablewrap::-webkit-scrollbar-track,.dx-topscroll::-webkit-scrollbar-track{background:#eef2f7}
+.dx-tablewrap::-webkit-scrollbar-thumb,.dx-topscroll::-webkit-scrollbar-thumb{background:#b6c0cf;border-radius:8px;border:2px solid #eef2f7}
+.dx-tablewrap::-webkit-scrollbar-thumb:hover,.dx-topscroll::-webkit-scrollbar-thumb:hover{background:#94a3b8}
+.dx-topscroll{overflow-x:scroll;overflow-y:hidden;position:sticky;top:0;z-index:6;background:#eef2f7;border-radius:16px 16px 0 0;border-bottom:1px solid var(--line);height:14px;scrollbar-width:auto}
+.dx-table{width:100%;border-collapse:collapse;min-width:960px;font-size:12.5px}
+.dx-table thead th{background:#f8fafc;text-align:left;font-size:10.5px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.08em;padding:10px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
 .dx-day td{background:var(--acbg2);padding:8px 14px;border-top:1px solid var(--acline);border-bottom:1px solid var(--acline)}
 .dx-day-in{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .dx-day-title{font-weight:800;color:var(--actext);font-size:12.5px}
 .dx-day-c{font-weight:600;color:var(--mut);font-size:11.5px}
 .dx-pill{font-size:10.5px;font-weight:800;padding:2px 9px;border-radius:999px}
 .dx-pill.amber{background:#fef3c7;color:#b45309}.dx-pill.green{background:#dcfce7;color:#15803d}.dx-pill.grey{background:#f1f5f9;color:#64748b}
-.dx-table tbody tr.dx-r td{padding:10px 12px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+.dx-table tbody tr.dx-r td{padding:8px 8px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
 .dx-table tbody tr.dx-r:hover td{background:#fbfcfe}
 .dx-table tbody tr.dx-r.deliv td{background:#fafefb}
 .dx-table tbody tr.dx-r.deliv:hover td{background:#f4fcf6}
 .dx-date{font-weight:700;font-size:12.5px;white-space:nowrap}
 .dx-date small{display:block;color:#94a3b8;font-weight:600;font-size:11px;margin-top:1px}
 .dx-date.today{color:var(--actext)}
-.dx-cust{font-weight:700;font-size:13.5px;line-height:1.25}
-.dx-phone{display:flex;align-items:center;gap:5px;color:#475569;margin-top:3px;font-size:12px}
+.dx-cust{font-weight:700;font-size:13px;line-height:1.25}
+.dx-phone{display:flex;align-items:center;gap:4px;color:#475569;margin-top:2px;font-size:11.5px;white-space:nowrap}
 .dx-badge{display:inline-block;margin-top:4px;font-size:9.5px;font-weight:800;border-radius:999px;padding:1px 7px;white-space:nowrap}
 .dx-addr{display:flex;align-items:flex-start;gap:6px}
-.dx-addr-t{flex:1;min-width:0;color:#475569;line-height:1.45;font-size:12.5px;cursor:default;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.dx-addr-t{flex:1;min-width:0;color:#475569;line-height:1.4;font-size:12px;cursor:default;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 .dx-addr-t.more{cursor:pointer}
 .dx-addr-t.open{display:block;white-space:pre-wrap;-webkit-line-clamp:unset}
 .dx-addr-t.empty{color:#94a3b8;font-style:italic;cursor:pointer}
 .dx-more{font-size:10px;font-weight:800;color:var(--ac);cursor:pointer;margin-top:2px}
 .dx-remark{margin-top:4px;font-size:11.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:7px;padding:2px 8px;display:inline-block;max-width:100%}
 .dx-remark-in{margin-top:5px;width:100%;padding:5px 8px;border:1px solid var(--ac);border-radius:7px;font-size:12px;font-family:inherit;outline:none}
-.dx-iconbtn{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;border:1px solid var(--line);background:#fff;color:#64748b;cursor:pointer;transition:all .12s}
+.dx-iconbtn{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:8px;border:1px solid var(--line);background:#fff;color:#64748b;cursor:pointer;transition:all .12s}
 .dx-iconbtn:hover{color:var(--ac);border-color:var(--ac)}
 .dx-iconbtn.ok{background:#dcfce7;color:#15803d;border-color:#bbf7d0}
 .dx-iconbtn.note.on{background:#fef3c7;color:#92400e;border-color:#fde68a}
-.dx-ship{appearance:none;-webkit-appearance:none;border:1px solid transparent;border-radius:8px;padding:5px 24px 5px 10px;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;outline:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2394a3b8' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center}
+.dx-ship{appearance:none;-webkit-appearance:none;border:1px solid transparent;border-radius:8px;padding:4px 22px 4px 8px;font-weight:700;font-size:11.5px;cursor:pointer;font-family:inherit;outline:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2394a3b8' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 7px center}
 .dx-ship:focus{border-color:var(--ac)}
-.dx-trk-wrap{display:flex;align-items:center;gap:6px}
-.dx-trk{flex:1;min-width:0;width:100%;border:1px solid transparent;background:transparent;border-radius:8px;padding:5px 8px;font-size:12px;font-weight:500;letter-spacing:.1px;outline:none;color:#0f172a;transition:all .12s}
+.dx-trk-wrap{display:flex;align-items:center;gap:4px}
+.dx-trk{flex:1;min-width:0;width:100%;border:1px solid transparent;background:transparent;border-radius:8px;padding:4px 6px;font-size:11.5px;font-weight:500;letter-spacing:0;outline:none;color:#0f172a;transition:all .12s}
 .dx-trk:hover{border-color:var(--line);background:#fff}
 .dx-trk:focus{border-color:var(--ac);background:#fff}
 .dx-trk.dup{border-color:#fca5a5;background:#fef2f2}
 .dx-trk::placeholder{color:#cbd5e1;font-family:'DM Sans',sans-serif}
 .dx-warn{font-size:10.5px;color:#dc2626;font-weight:700;margin-top:2px;padding-left:8px}
-.dx-track{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:9px;border:1px solid #c7d2fe;background:#eef2ff;color:#4338ca;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap;transition:all .12s}
+.dx-track{display:inline-flex;align-items:center;gap:4px;padding:5px 9px;border-radius:9px;border:1px solid #c7d2fe;background:#eef2ff;color:#4338ca;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap;transition:all .12s}
 .dx-track:hover{background:#e0e7ff}
 .dx-muted{color:#cbd5e1;font-size:12px;white-space:nowrap}
 .dx-hint{color:#94a3b8;font-size:11px;font-style:italic;white-space:nowrap}
 .dx-dl{display:flex;align-items:center;gap:8px;white-space:nowrap}
-.dx-mark{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:9px;border:1px dashed #fcd34d;background:#fffbeb;color:#92400e;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap}
+.dx-mark{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:9px;border:1px dashed #fcd34d;background:#fffbeb;color:#92400e;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap}
 .dx-mark:hover{background:#fef3c7}
+.dx-pickwrap{position:relative;display:inline-block}
+.dx-pickhid{position:absolute;left:0;bottom:0;width:100%;height:1px;opacity:0;pointer-events:none;border:0;padding:0}
 .dx-dinput{padding:5px 7px;border:1px solid #e2e8f0;border-radius:8px;font-size:11.5px;font-family:'DM Mono',monospace;color:#334155;background:#fff;outline:none;width:118px}
 .dx-dinput:focus{border-color:var(--ac)}
-.dx-deliv{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:9px;background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap}
+.dx-deliv{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:9px;background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap}
 .dx-deliv span{font-weight:600;font-size:11.5px;color:#3f8f5d}
 .dx-link{border:none;background:none;color:#94a3b8;font-size:11.5px;text-decoration:underline;cursor:pointer;padding:0}
 .dx-link:hover{color:#475569}
-.dx-inform{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:10px;border:none;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap;transition:all .12s}
+.dx-inform{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:10px;border:none;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap;transition:all .12s}
 .dx-inform.send{background:#25d366;color:#fff;box-shadow:0 3px 8px rgba(37,211,102,.3)}
 .dx-inform.send:hover{background:#1fbd5a}
-.dx-inform.done{background:#ecfdf5;color:#15803d;border:1px solid #a7f3d0;padding:6px 12px}
+.dx-inform.done{background:#ecfdf5;color:#15803d;border:1px solid #a7f3d0;padding:5px 10px}
 .dx-inform.off{background:#f1f5f9;color:#94a3b8;cursor:not-allowed}
-.dx-actions{display:flex;align-items:center;gap:6px}
+.dx-actions{display:flex;align-items:center;gap:2px}
 .dx-del{border:none;background:none;color:#cbd5e1;cursor:pointer;font-size:15px;padding:2px 4px}
 .dx-del:hover{color:#dc2626}
 .dx-empty{padding:46px 20px;text-align:center;color:#94a3b8;font-size:13.5px}
@@ -575,7 +583,10 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   const [dayFilter, setDayFilter] = useState("all");           // "all" | "YYYY-MM-DD"
   const [listSearch, setListSearch] = useState("");            // filters rows already on the log (not the add-from-sale search)
   const [showAdd, setShowAdd] = useState(false);               // reveals the add-from-sale search box
-  const [pendingDelDate, setPendingDelDate] = useState({});    // uuid -> date picked next to "Mark Delivered" before clicking it
+  const datePickRefs = useRef({});                         // uuid -> hidden <input type="date"> behind the Mark Delivered / Delivered button
+  const tableTopRef = useRef(null);                        // always-visible horizontal scrollbar above the table (synced with the table itself)
+  const tableBodyRef = useRef(null);
+  const [tableScrollW, setTableScrollW] = useState(0);
   // Keys (see despatchKeyOf) currently in the middle of being written to
   // the despatch log by the auto-add effect below. React state only
   // reflects a new row once its insert has actually returned, so if the
@@ -597,6 +608,16 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     setDismissedSaleIds(loadDismissed(shopId));
     return () => { cancelled = true; };
   }, [shopId]);
+
+  // Keep the top slider as wide as the table so both scroll together.
+  useEffect(() => {
+    const el = tableBodyRef.current;
+    if (!el) return undefined;
+    const measure = () => setTableScrollW(prev => (prev === el.scrollWidth ? prev : el.scrollWidth));
+    measure();
+    window.addEventListener("resize", measure);
+    return () => window.removeEventListener("resize", measure);
+  });
 
   const allSales = sales || [];
   // Only admins/superadmins can delete a row — despatch staff can add,
@@ -1476,6 +1497,14 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
 
   // One ROS India table row. All behaviour (saveEntry, notify, markDelivered,
   // address popup, remarks, remove…) is the same handlers the old table used.
+  // Opens the native calendar pop-up for a row; the hidden date input's
+  // onChange then records the delivery date the user picked.
+  const openDatePicker = (uuid) => {
+    const el = datePickRefs.current[uuid];
+    if (!el) return;
+    try { el.showPicker(); } catch { el.focus(); try { el.click(); } catch { /* picker unsupported — nothing else to do */ } }
+  };
+
   const renderIndiaRow = (e) => {
     const dupKey = (e.trackingNo || "").replace(/\s+/g, "").toUpperCase();
     const isDup = dupKey && (trackingIndex[dupKey] || []).length > 1;
@@ -1496,13 +1525,13 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     return (
       <tr key={e.uuid} className={"dx-r" + (e.delivered ? " deliv" : "")}>
         {/* Date */}
-        <td style={{ width: 78 }}>
+        <td style={{ width: 58 }}>
           <div className={"dx-date" + (isRowToday ? " today" : "")}>{shortDate(e.dispatchDate)}
             <small>{weekdayShort(e.dispatchDate)}{isRowToday ? " · Today" : ""}</small>
           </div>
         </td>
         {/* Customer + phone (+ link / duplicate warnings, unchanged logic) */}
-        <td style={{ width: 175, minWidth: 150 }}>
+        <td style={{ width: 136, minWidth: 120 }}>
           <div className="dx-cust">{titleCase(e.customer) || "—"}</div>
           <div className="dx-phone mono"><IcoPhone />{phone || "—"}</div>
           {rowGroupCount > 1 && (
@@ -1536,7 +1565,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
           )}
         </td>
         {/* Address (always the live Sales address; ✏️ edits it there) + remarks */}
-        <td style={{ minWidth: 200 }}>
+        <td style={{ minWidth: 150 }}>
           <div className="dx-addr">
             <div style={{ flex: 1, minWidth: 0 }}>
               {fullAddress ? (
@@ -1568,7 +1597,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
           </div>
         </td>
         {/* Shipper */}
-        <td style={{ width: 128 }}>
+        <td style={{ width: 96 }}>
           <select className="dx-ship" value={e.shipper}
             onChange={ev => saveEntry(e.uuid, { shipper: ev.target.value })}
             style={{ color: e.shipper ? shipperColor.color : "#94a3b8", backgroundColor: e.shipper ? shipperColor.bg : "#f8fafc", borderColor: e.shipper ? "transparent" : "#e2e8f0" }}>
@@ -1577,7 +1606,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
           </select>
         </td>
         {/* Tracking number (editable) + copy */}
-        <td style={{ width: 212, minWidth: 190 }}>
+        <td style={{ width: 172, minWidth: 158 }}>
           <div className="dx-trk-wrap">
             <input className={"dx-trk mono" + (isDup ? " dup" : "")} value={e.trackingNo} placeholder="Tracking no."
               onChange={ev => updateEntry(e.uuid, { trackingNo: ev.target.value.toUpperCase() })}
@@ -1591,7 +1620,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
           {isDup && <div className="dx-warn">⚠ used on another row</div>}
         </td>
         {/* Track */}
-        <td style={{ width: 96 }}>
+        <td style={{ width: 72 }}>
           {!canNotify ? <span className="dx-muted">—</span> : trackUrl ? (
             <button className="dx-track" onClick={() => trackClick(e, trackUrl)}
               title={MANUAL_ENTRY_SHIPPERS.has((e.shipper || "").toUpperCase()) ? "Opens the tracking page and copies the tracking number so you can paste it in" : "Opens this parcel's tracking page directly"}>
@@ -1599,33 +1628,33 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
             </button>
           ) : <span className="dx-hint">Check {shipperLabel(e.shipper)} directly</span>}
         </td>
-        {/* Delivery */}
-        <td style={{ width: 252 }}>
-          {!canNotify ? <span className="dx-muted">—</span> : e.delivered ? (
-            openDeliveryUuid === e.uuid ? (
-              <input autoFocus type="date" className="dx-dinput" defaultValue={e.deliveredDate || todayISO()} max={todayISO()}
-                onBlur={ev => markDelivered(e, ev.target.value)} />
-            ) : (
-              <div className="dx-dl">
-                <button className="dx-deliv" onClick={() => setOpenDeliveryUuid(e.uuid)} title="Click to correct the delivery date">
-                  <IcoCheck /> Delivered <span className="mono">{shortDateY(e.deliveredDate || todayISO())}</span>
+        {/* Delivery — "Mark Delivered" opens the browser's calendar pop-up;
+            picking a date marks the parcel delivered on that date. The
+            delivered badge re-opens the same pop-up to correct the date. */}
+        <td style={{ width: 168 }}>
+          {!canNotify ? <span className="dx-muted">—</span> : (
+            <span className="dx-pickwrap">
+              {e.delivered ? (
+                <span className="dx-dl">
+                  <button className="dx-deliv" onClick={() => openDatePicker(e.uuid)} title="Click to correct the delivery date">
+                    <IcoCheck /> Delivered <span className="mono">{shortDateMaybeY(e.deliveredDate || todayISO())}</span>
+                  </button>
+                  <button className="dx-link" onClick={() => undoDelivered(e)} title="Undo — not actually delivered">Undo</button>
+                </span>
+              ) : (
+                <button className="dx-mark" onClick={() => openDatePicker(e.uuid)} title="Pick the date this parcel was delivered">
+                  <IcoCheck /> Mark Delivered
                 </button>
-                <button className="dx-link" onClick={() => undoDelivered(e)} title="Undo — not actually delivered">Undo</button>
-              </div>
-            )
-          ) : (
-            <div className="dx-dl">
-              <button className="dx-mark" onClick={() => markDelivered(e, pendingDelDate[e.uuid] || todayISO())}
-                title="Mark this parcel delivered on the date shown — you can correct the date afterwards">
-                <IcoCheck /> Mark Delivered
-              </button>
-              <input type="date" className="dx-dinput" value={pendingDelDate[e.uuid] || todayISO()} max={todayISO()}
-                onChange={ev => setPendingDelDate(p => ({ ...p, [e.uuid]: ev.target.value }))} title="Delivery date" />
-            </div>
+              )}
+              <input type="date" className="dx-pickhid" tabIndex={-1} aria-hidden="true"
+                ref={el => { datePickRefs.current[e.uuid] = el; }}
+                value={e.deliveredDate || ""} max={todayISO()}
+                onChange={ev => { if (ev.target.value) markDelivered(e, ev.target.value); }} />
+            </span>
           )}
         </td>
         {/* Inform customer (WhatsApp) */}
-        <td style={{ width: 132 }}>
+        <td style={{ width: 112 }}>
           <button className={"dx-inform " + (!canNotify ? "off" : e.notified ? "done" : "send")}
             onClick={() => canNotify && notify(e)} disabled={!canNotify}
             title={canNotify ? (e.notified ? "Notified — click to resend" : "Send tracking to customer") : "Add tracking number + shipper first"}>
@@ -1633,7 +1662,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
           </button>
         </td>
         {/* Remarks + admin remove */}
-        <td style={{ width: 66 }}>
+        <td style={{ width: 54 }}>
           <div className="dx-actions">
             <button className={"dx-iconbtn note" + (e.remarks ? " on" : "")} onClick={() => setOpenRemarksUuid(e.uuid)}
               title={e.remarks ? `Remarks: ${e.remarks}` : "Add remarks"}><IcoNote /></button>
@@ -1843,7 +1872,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
               )}
 
               {/* ── Table ── */}
-              <div className="dx-card" style={{ overflow: "hidden" }}>
+              <div className="dx-card">
                 {loading ? (
                   <div className="dx-empty">Loading…</div>
                 ) : shownEntries.length === 0 ? (
@@ -1854,7 +1883,14 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                     {ixFiltersActive && filteredEntries.length > 0 && (<div style={{ marginTop: 8 }}><button className="dx-clear" onClick={ixClearFilters}>Clear filters</button></div>)}
                   </div>
                 ) : (
-                  <div className="dx-tablewrap">
+                  <>
+                  {/* Always-visible left/right slider (sticks to the top while the page scrolls); mirrors the table's own horizontal scroll. */}
+                  <div className="dx-topscroll" ref={tableTopRef}
+                    onScroll={ev => { if (tableBodyRef.current && tableBodyRef.current.scrollLeft !== ev.target.scrollLeft) tableBodyRef.current.scrollLeft = ev.target.scrollLeft; }}>
+                    <div style={{ width: tableScrollW, height: 1 }} />
+                  </div>
+                  <div className="dx-tablewrap" ref={tableBodyRef}
+                    onScroll={ev => { if (tableTopRef.current && tableTopRef.current.scrollLeft !== ev.target.scrollLeft) tableTopRef.current.scrollLeft = ev.target.scrollLeft; }}>
                     <table className="dx-table">
                       <thead>
                         <tr>
@@ -1884,6 +1920,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                       </tbody>
                     </table>
                   </div>
+                  </>
                 )}
                 {!loading && shownEntries.length > 0 && (
                   <div className="dx-foot"><span>{shownEntries.length} despatch{shownEntries.length !== 1 ? "es" : ""} · {ixMonthTitle}</span><span>Click an address to expand · tracking numbers are editable in place</span></div>
