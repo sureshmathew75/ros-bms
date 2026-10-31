@@ -640,8 +640,8 @@ export default function SalesPanel({
   const [flaggedOnly, setFlaggedOnly] = useState(false);
   /* Payment channel quick filter — Bank vs Shop/Shopify. "ALL" = no filter.
      Independent of status tabs, same pattern as flaggedOnly above. */
-  const [payFilter, setPayFilter] = useState("ALL"); // "ALL" | "SHOP" | "BANK" (non-India) | "SIB" | "HDFC" (India)
-  const isBankPay = (s) => { const p = (s.pay || "SHOP").toUpperCase(); return p === "BANK" || p === "SIB" || p === "HDFC"; };
+  const [payFilter, setPayFilter] = useState("ALL"); // "ALL" | "SHOP" | "BANK" (non-India) | "SIB" | "HDFC" | "FEDERAL BANK" | "PAYPAL INDIA" (India)
+  const isBankPay = (s) => { const p = (s.pay || "SHOP").toUpperCase(); return p === "BANK" || p === "SIB" || p === "HDFC" || p === "FEDERAL BANK" || p === "PAYPAL INDIA"; };
   // Which payment-channel pill a sale falls under. India splits its bank
   // payments into SIB vs HDFC specifically; other shops keep the simpler
   // Shop vs Bank split. The legacy "BANK" value (from before HDFC existed
@@ -650,6 +650,8 @@ export default function SalesPanel({
   const payBucket = (s) => {
     const p = (s.pay || "SHOP").toUpperCase();
     if (p === "HDFC") return "HDFC";
+    if (p === "FEDERAL BANK") return "FEDERAL BANK";
+    if (p === "PAYPAL INDIA") return "PAYPAL INDIA";
     if (p === "SIB") return "SIB";
     if (p === "BANK") return isIndiaShop ? "SIB" : "BANK";
     return "SHOP";
@@ -770,7 +772,7 @@ export default function SalesPanel({
 
   /* ── Payment channel counts (from period+search filtered, pre-payFilter) ── */
   const payCounts = useMemo(() => {
-    const c = { SHOP: 0, BANK: 0, SIB: 0, HDFC: 0 };
+    const c = { SHOP: 0, BANK: 0, SIB: 0, HDFC: 0, "FEDERAL BANK": 0, "PAYPAL INDIA": 0 };
     periodFiltSales.forEach(s => { c[payBucket(s)]++; });
     return c;
   }, [periodFiltSales, isIndiaShop]);
@@ -1825,7 +1827,7 @@ We hope you enjoy your purchase! 💜
         )}
 
         {/* Payment channel quick filter. India splits its bank payments into
-            SIB vs HDFC specifically (matching each row's own badge colors);
+            SIB / HDFC / Federal Bank / PayPal India specifically (matching each row's own badge colors);
             other shops keep the simpler Shop vs Bank split.
             Click a pill to filter to that channel; click again to clear. */}
         <div style={{ display: "flex", alignItems: "stretch", flexShrink: 0 }}>
@@ -1833,6 +1835,8 @@ We hope you enjoy your purchase! 💜
             { key: "SHOP", icon: "🛍️", label: "Shop", color: "#059669", bg: "#d1fae5" },
             { key: "SIB",  icon: "🏦", label: "SIB",  color: "#b91c1c", bg: "#fef2f2" },
             { key: "HDFC", icon: "🏦", label: "HDFC", color: "#1d4ed8", bg: "#eff6ff" },
+            { key: "FEDERAL BANK", icon: "🏦", label: "Federal", color: "#c2410c", bg: "#fff7ed" },
+            { key: "PAYPAL INDIA", icon: "💳", label: "PayPal", color: "#4338ca", bg: "#eef2ff" },
           ] : [
             { key: "SHOP", icon: "🛍️", label: "Shopify", color: "#059669", bg: "#d1fae5" },
             { key: "BANK", icon: "🏦",  label: "Bank", color: "#2563eb", bg: "#dbeafe" },
@@ -2488,10 +2492,10 @@ We hope you enjoy your purchase! 💜
                       {editPayId === s.id ? (
                         <select
                           autoFocus
-                          value={isIndiaShop && s.pay === "HDFC" ? "HDFC" : (isBankPay(s) ? "BANK" : "SHOP")}
+                          value={isIndiaShop ? payBucket(s) : (isBankPay(s) ? "BANK" : "SHOP")}
                           onChange={e => {
                             const newPay = e.target.value;
-                            const currentVal = isIndiaShop && s.pay === "HDFC" ? "HDFC" : (isBankPay(s) ? "BANK" : "SHOP");
+                            const currentVal = isIndiaShop ? payBucket(s) : (isBankPay(s) ? "BANK" : "SHOP");
                             setEditPayId(null);
                             if (newPay !== currentVal && onInlineEdit) {
                               onInlineEdit(s.id, { pay: newPay });
@@ -2502,8 +2506,10 @@ We hope you enjoy your purchase! 💜
                             fontSize: 12, fontFamily: "inherit", outline: "none", cursor: "pointer",
                             background: "white", minWidth: 110 }}>
                           <option value="SHOP">🛍️ {isIndiaShop ? "Shop" : "Shopify"}</option>
-                          <option value="BANK">🏦 {isIndiaShop ? "SIB" : "Bank"}</option>
+                          <option value={isIndiaShop ? "SIB" : "BANK"}>🏦 {isIndiaShop ? "SIB" : "Bank"}</option>
                           {isIndiaShop && <option value="HDFC">🏦 HDFC</option>}
+                          {isIndiaShop && <option value="FEDERAL BANK">🏦 Federal Bank</option>}
+                          {isIndiaShop && <option value="PAYPAL INDIA">💳 PayPal India</option>}
                         </select>
                       ) : (
                         <div
@@ -3150,7 +3156,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
             // Build amount cell — instalment breakdown or single amount
             let amountCell = "";
             const payLabelP = (isIndiaShop&&(s.pay==="BANK"||s.pay==="SIB"))?"SIB":(s.pay||"SHOP");
-            const payColorP = (s.pay==="BANK"||s.pay==="SIB"||s.pay==="HDFC")?"#2563eb":"#059669";
+            const payColorP = (s.pay==="BANK"||s.pay==="SIB"||s.pay==="HDFC"||s.pay==="FEDERAL BANK"||s.pay==="PAYPAL INDIA")?"#2563eb":"#059669";
             const paymentCell = colOn("Payment")
               ? `<td style="vertical-align:top"><span style="font-size:10px;font-weight:700;padding:2px 8px;border-radius:999px;background:${payColorP}18;color:${payColorP}">${payLabelP}</span></td>`
               : "";

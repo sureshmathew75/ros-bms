@@ -194,6 +194,8 @@ const BSTYLE={
   BANK:             {bg:"#dbeafe",c:"#1d4ed8",b:"#bfdbfe"},
   SIB:              {bg:"#fef2f2",c:"#b91c1c",b:"#fca5a5"},
   HDFC:             {bg:"#eff6ff",c:"#1d4ed8",b:"#93c5fd"},
+  "FEDERAL BANK":   {bg:"#fff7ed",c:"#c2410c",b:"#fdba74"},
+  "PAYPAL INDIA":   {bg:"#eef2ff",c:"#4338ca",b:"#a5b4fc"},
   // ── Customer tags ──
   VIP:              {bg:"#fef9c3",c:"#854d0e",b:"#fde047"},
   Wholesale:        {bg:"#f3e8ff",c:"#7e22ce",b:"#e9d5ff"},
@@ -217,6 +219,9 @@ const STATUS_ROW_BG={
   "GOOD FEEDBACK RCVD":              "#e7f6f2",
   "NEGATIVE FEEDBACK RCVD":"#f9e4e3",
 };
+// ROS India accounts that receive money other than the shop till. Staff must
+// record Payment Method + Paid By for every one of these.
+const INDIA_ACCT_PAYS=["SIB","HDFC","FEDERAL BANK","PAYPAL INDIA"];
 const Badge=({l})=>{
   const b=BSTYLE[l]||{bg:"#f1f5f9",c:"#475569",b:"#e2e8f0"};
   return <span style={{display:"inline-flex",alignItems:"center",padding:"2px 10px",borderRadius:999,fontSize:11,fontWeight:700,background:b.bg,color:b.c,border:"1px solid "+b.b}}>{l}</span>;
@@ -16948,7 +16953,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
   const isExchanged=form.status==="EXCHANGED";
   const isRefunded=form.status==="REFUNDED";
   const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN RQSTD":"#c2410c","RETURN RCVD":"#991b1b","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","GOOD FEEDBACK RCVD":"#065f46","NEGATIVE FEEDBACK RCVD":"#9f1239"};
-  const PAY_OPTS = shopId==="ros-india" ? ["SIB","HDFC","SHOP"] : ["SHOP","BANK","EXCHANGE","GIFT","PROMOTION","SHOPIFY"];
+  const PAY_OPTS = shopId==="ros-india" ? ["SIB","HDFC","FEDERAL BANK","PAYPAL INDIA","SHOP"] : ["SHOP","BANK","EXCHANGE","GIFT","PROMOTION","SHOPIFY"];
 
   const [editCustOpen,setEditCustOpen]=useState(false);
   const [invoiceEditing,setInvoiceEditing]=useState(false);
@@ -17072,13 +17077,13 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
           <div><label style={lbl}>Saved On</label><select value={form.phoneSavedOn} onChange={e=>set("phoneSavedOn",e.target.value)} style={inp}>{["UK 888","INDIA 889","INDIA 888"].map(o=><option key={o}>{o}</option>)}</select></div>
         </div>
         {shopId==="ros-india"&&(
-          <div style={{display:"grid",gridTemplateColumns:(form.payBy==="SIB"||form.payBy==="HDFC"||form.payBy==="BANK")?"1fr 1fr":"1fr",gap:12,marginBottom:12}}>
+          <div style={{display:"grid",gridTemplateColumns:(INDIA_ACCT_PAYS.includes(form.payBy)||form.payBy==="BANK")?"1fr 1fr":"1fr",gap:12,marginBottom:12}}>
             <div>
               <label style={lbl}>Paid By</label>
               <input value={form.paidBy||""} onChange={e=>set("paidBy",e.target.value)}
                 placeholder="Who sent the money…" style={inp} onFocus={fo} onBlur={bl}/>
             </div>
-            {(form.payBy==="SIB"||form.payBy==="HDFC"||form.payBy==="BANK")&&(
+            {(INDIA_ACCT_PAYS.includes(form.payBy)||form.payBy==="BANK")&&(
               <div>
                 <label style={lbl}>Payment Method</label>
                 <select
@@ -18285,7 +18290,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const [paymentTypeAcked,setPaymentTypeAcked]=useState(false);
   const [showAddressModal,setShowAddressModal]=useState(false);
   const defaultPay = shopId === "ros-india" ? "SIB" : "SHOP";
-  const PAY_OPTIONS = shopId === "ros-india" ? ["SIB","HDFC","SHOP"] : ["BANK","SHOP","EXCHANGE","GIFT","PROMOTION","SHOPIFY"];
+  const PAY_OPTIONS = shopId === "ros-india" ? ["SIB","HDFC","FEDERAL BANK","PAYPAL INDIA","SHOP"] : ["BANK","SHOP","EXCHANGE","GIFT","PROMOTION","SHOPIFY"];
   const PAYMENT_METHOD_PRESETS = ["UPI","Bank Transfer","International"];
   const _now=new Date();
   const _yr=_now.getMonth()>=3?_now.getFullYear():_now.getFullYear()-1;
@@ -18393,7 +18398,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     // ROS India, paid via SIB/HDFC: staff must record how the money moved
     // and who actually sent it — this used to only get filled in later by
     // an admin editing the sale, which is what this validation fixes.
-    if(shopId==="ros-india"&&(form.payBy==="SIB"||form.payBy==="HDFC")){
+    if(shopId==="ros-india"&&INDIA_ACCT_PAYS.includes(form.payBy)){
       if(!form.paymentMethod||!form.paymentMethod.trim()){
         showAlert("Please select how the payment was made — UPI, Bank Transfer, International, or Other.");
         return;
@@ -18418,8 +18423,8 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     { done: rosieFilledLines.length>0, label: "What are they buying? Add an item below." },
     { done: rosieHasPrice, label: "This item needs a price 💰" },
     { done: !!form.payBy, label: "Which account received the payment?" },
-    { done: shopId!=="ros-india"||!(form.payBy==="SIB"||form.payBy==="HDFC")||(!!form.paymentMethod&&form.paymentMethod.trim()!==""), label: "How was the payment made — UPI, Bank Transfer, International?" },
-    { done: shopId!=="ros-india"||!(form.payBy==="SIB"||form.payBy==="HDFC")||(!!form.paidBy&&form.paidBy.trim()!==""), label: "Who made the payment?" },
+    { done: shopId!=="ros-india"||!INDIA_ACCT_PAYS.includes(form.payBy)||(!!form.paymentMethod&&form.paymentMethod.trim()!==""), label: "How was the payment made — UPI, Bank Transfer, International?" },
+    { done: shopId!=="ros-india"||!INDIA_ACCT_PAYS.includes(form.payBy)||(!!form.paidBy&&form.paidBy.trim()!==""), label: "Who made the payment?" },
     { done: paymentTypeAcked, label: NEW_SALE_STEP_EXPLAIN[form.paymentType] || NEW_SALE_STEP_EXPLAIN.FULL },
   ];
   const rosieActiveIdx = rosieSteps.findIndex(s=>!s.done);
@@ -18603,7 +18608,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                   </select>
                 </div>
               )}
-              {shopId==="ros-india"&&(form.payBy==="SIB"||form.payBy==="HDFC")&&(
+              {shopId==="ros-india"&&INDIA_ACCT_PAYS.includes(form.payBy)&&(
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
                   <div>
                     <label style={lbl}>Payment Method <span style={{color:"#dc2626"}}>*</span></label>
