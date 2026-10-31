@@ -337,6 +337,11 @@ export const dbSaveExpense = async (shopId, e) => {
     invoice_no:  e.invoiceNo || '',
     invoice_date: e.invoiceDate || null,
   };
+  // Bank-payout fields (expenses_bank_payouts.sql). Only sent when the caller
+  // supplies them, so other callers (e.g. Petty Cash) are unaffected.
+  if (e.bankAccount !== undefined) payload.bank_account = e.bankAccount || '';
+  if (e.bankRef     !== undefined) payload.bank_ref     = e.bankRef || '';
+  if (e.needsReview !== undefined) payload.needs_review = !!e.needsReview;
 
   // Update existing row by UUID
   if (e._uuid) {
@@ -370,6 +375,9 @@ export const dbLoadExpenses = async (shopId) => {
     payTo:      r.pay_to || '',
     invoiceNo:   r.invoice_no || '',
     invoiceDate: r.invoice_date || '',
+    bankAccount: r.bank_account || '',
+    bankRef:     r.bank_ref || '',
+    needsReview: !!r.needs_review,
   }));
 };
 

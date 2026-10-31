@@ -4,6 +4,7 @@ import CommandPalette from "./components/CommandPalette";
 import AnalyticsPanel from "./components/AnalyticsPanel";
 import DocumentsPanel from "./components/DocumentsPanel";
 import ExpensesPanel from "./components/ExpensesPanel";
+import BankPayoutsPanel from "./components/BankPayoutsPanel";
 import InvoicesPanel from "./components/InvoicesPanel";
 import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
@@ -9414,7 +9415,7 @@ return(
 
           {/* ─── EXPENSES ─── */}
           {tab==="expenses"&&(
-            <ExpensesTabPanel
+            <BankPayoutsPanel
               exps={exps}
               fmt={fmt}
               shop={shop}
