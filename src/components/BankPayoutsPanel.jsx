@@ -28,6 +28,13 @@ const BANKS = {
   default: ["BANK", "CASH", "OTHER"],
 };
 const BUILTIN_CATEGORIES = ["Rent", "Utilities", "Salaries", "Packaging", "Shipping", "Marketing", "Software", "Equipment", "Travel", "Professional Expenses", "Agents Expenses", "Other"];
+// Payouts that are NOT business expenses: still entered (so the bank statement matches line for line)
+// but kept out of the expense totals.
+const DRAWINGS = "Owner's Drawings / Personal";
+const TRANSFER = "Transfer";
+const NON_EXPENSE_CATS = [DRAWINGS, TRANSFER];
+const isNonExpense = (e) => NON_EXPENSE_CATS.includes((e.cat || "").trim());
+const typeLabel = (e) => { const c = (e.cat || "").trim(); return c === DRAWINGS ? "Personal / drawings" : c === TRANSFER ? "Transfer between accounts" : "Business expense"; };
 const METHODS = ["Bank Transfer", "UPI", "PayPal", "Card", "Cash", "Cheque", "Other"];
 const ACC_COLORS = { "SIB": "#2563eb", "HDFC": "#1d4ed8", "FEDERAL BANK": "#c2410c", "PAYPAL INDIA": "#4338ca", "CASH": "#15803d", "STARLING BANK": "#7c3aed", "LLOYDS BANK": "#15803d", "BANK": "#0369a1", "PAYPAL": "#4338ca", "OTHER": "#64748b" };
 
@@ -45,11 +52,11 @@ const lsGet = (k) => { try { return localStorage.getItem(k) || ""; } catch { ret
 const lsSet = (k, v) => { try { localStorage.setItem(k, v); } catch { /* storage blocked */ } };
 
 // A payout "needs review" when it was flagged by hand, or it has no category, or no purpose.
-const isReview = (e) => !!e.needsReview || !(e.cat || "").trim() || !(e.desc || "").trim();
+const isReview = (e) => !!e.needsReview || !(e.cat || "").trim() || (!(e.desc || "").trim() && !isNonExpense(e));
 const reviewReason = (e) => {
   const r = [];
   if (!(e.cat || "").trim()) r.push("no category");
-  if (!(e.desc || "").trim()) r.push("no purpose");
+  if (!(e.desc || "").trim() && !isNonExpense(e)) r.push("no purpose");
   if (e.needsReview) r.push("flagged: not sure what this was");
   return r.join(" · ");
 };
@@ -96,7 +103,7 @@ export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId
   // on the Petty Cash page and in the shop's overall expense totals).
   const isPettyCash = (e) => (e.cat || "").trim().toLowerCase() === "petty cash";
   const exps = useMemo(() => allExps.filter(e => !isPettyCash(e)), [allExps]);
-  const CATEGORIES = [...BUILTIN_CATEGORIES, ...expCats.filter(c => !BUILTIN_CATEGORIES.includes(c) && c.trim().toLowerCase() !== "petty cash")];
+  const CATEGORIES = [...BUILTIN_CATEGORIES, ...expCats.filter(c => !BUILTIN_CATEGORIES.includes(c) && !NON_EXPENSE_CATS.includes(c) && c.trim().toLowerCase() !== "petty cash")];
   const ac = shop?.accent || "#6366f1";
   const acText = shop?.accentText || ac;
   const acBg = shop?.accentBg || ac + "14";
@@ -138,7 +145,11 @@ export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId
   const acctKey = (e) => (e.bankAccount || "").trim() || "NONE";
   const acctLabel = (k) => k === "NONE" ? "Not specified" : k;
   const inMonth = useMemo(() => exps.filter(e => month === "ALL" || (e.date || "").slice(0, 7) === month), [exps, month]);
-  const monthTotal = inMonth.reduce((a, e) => a + (Number(e.amount) || 0), 0);
+  const monthTotal = inMonth.reduce((a, e) => a + (Number(e.amount) || 0), 0);                          // every debit (matches the bank statements)
+  const expenseTotal = inMonth.filter(e => !isNonExpense(e)).reduce((a, e) => a + (Number(e.amount) || 0), 0);   // business expenses only
+  const drawTotal = inMonth.filter(e => (e.cat || "").trim() === DRAWINGS).reduce((a, e) => a + (Number(e.amount) || 0), 0);
+  const transferTotal = inMonth.filter(e => (e.cat || "").trim() === TRANSFER).reduce((a, e) => a + (Number(e.amount) || 0), 0);
+  const nonExpTotal = drawTotal + transferTotal;
   const reviewList = inMonth.filter(isReview);
   const reviewTotal = reviewList.reduce((a, e) => a + (Number(e.amount) || 0), 0);
 
@@ -302,20 +313,32 @@ export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId
     rows.forEach(r => r.rows.sort((x, y) => (x.date || "").localeCompare(y.date || "")));
     const colTotals = {};
     inMonth.forEach(e => { const a = acctKey(e); colTotals[a] = (colTotals[a] || 0) + (Number(e.amount) || 0); });
-    return { rows, colTotals };
+    const colTotalsExp = {};
+    inMonth.filter(e => !isNonExpense(e)).forEach(e => { const a = acctKey(e); colTotalsExp[a] = (colTotalsExp[a] || 0) + (Number(e.amount) || 0); });
+    return {
+      rows, colTotals,                       // colTotals = every debit per account
+      expRows: rows.filter(r => !NON_EXPENSE_CATS.includes(r.cat)),
+      otherRows: rows.filter(r => NON_EXPENSE_CATS.includes(r.cat)),
+      colTotalsExp,                          // business expenses per account
+    };
   }, [inMonth]);
 
   const sortedForExport = () => inMonth.slice().sort((a, b) => (a.date || "").localeCompare(b.date || "") || (a.bankAccount || "").localeCompare(b.bankAccount || ""));
 
   const exportCSV = () => {
     const rows = [[`${shop?.name || shopId} — Bank payouts — ${monthLabel(month)}`], [],
-      ["Date", "Bank Account", "Paid To", "Purpose", "Category", "Method", "Bank Ref / UTR", "Invoice No.", "Invoice Date", "Amount", "Notes", "Needs Review"]];
-    sortedForExport().forEach(e => rows.push([fmtDY(e.date), acctLabel(acctKey(e)), e.payTo || "", e.desc || "", e.cat || "(uncategorised)", e.method || "", e.bankRef || "", e.invoiceNo || "", fmtDY(e.invoiceDate), Number(e.amount) || 0, e.notes || "", isReview(e) ? "YES — " + reviewReason(e) : ""]));
-    rows.push([], ["TOTAL", "", "", "", "", "", "", "", "", monthTotal], [], ["SUMMARY BY CATEGORY"]);
+      ["Date", "Bank Account", "Paid To", "Purpose", "Category", "Type", "Method", "Bank Ref / UTR", "Invoice No.", "Invoice Date", "Amount", "Notes", "Needs Review"]];
+    sortedForExport().forEach(e => rows.push([fmtDY(e.date), acctLabel(acctKey(e)), e.payTo || "", e.desc || "", e.cat || "(uncategorised)", typeLabel(e), e.method || "", e.bankRef || "", e.invoiceNo || "", fmtDY(e.invoiceDate), Number(e.amount) || 0, e.notes || "", isReview(e) ? "YES — " + reviewReason(e) : ""]));
+    rows.push([], ["TOTAL DEBITS (all payouts — matches the bank statements)", "", "", "", "", "", "", "", "", "", monthTotal], [], ["SUMMARY BY CATEGORY"]);
     const cols = acctKeys;
     rows.push(["Category", ...cols.map(acctLabel), "Total", "No. of payouts"]);
-    report.rows.forEach(r => rows.push([r.cat || "(uncategorised)", ...cols.map(k => r.byAcct[k] || 0), r.total, r.n]));
-    rows.push(["TOTAL", ...cols.map(k => report.colTotals[k] || 0), monthTotal, inMonth.length]);
+    report.expRows.forEach(r => rows.push([r.cat || "(uncategorised)", ...cols.map(k => r.byAcct[k] || 0), r.total, r.n]));
+    rows.push(["BUSINESS EXPENSES TOTAL", ...cols.map(k => report.colTotalsExp[k] || 0), expenseTotal, inMonth.filter(e => !isNonExpense(e)).length]);
+    if (report.otherRows.length) {
+      rows.push([], ["NOT BUSINESS EXPENSES"]);
+      report.otherRows.forEach(r => rows.push([r.cat, ...cols.map(k => r.byAcct[k] || 0), r.total, r.n]));
+      rows.push(["TOTAL DEBITS", ...cols.map(k => report.colTotals[k] || 0), monthTotal, inMonth.length]);
+    }
     const csv = rows.map(r => r.map(csvCell).join(",")).join("\r\n");
     const blob = new Blob(["﻿" + csv], { type: "text/csv;charset=utf-8" });
     const a = document.createElement("a");
@@ -331,19 +354,26 @@ export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId
     const cols = acctKeys;
     const w = window.open("", "_blank");
     if (!w) { showAlert("Pop-up blocked — please allow pop-ups for this site to print / save as PDF."); return; }
-    const summary = report.rows.map(r => `<tr><td>${esc(r.cat || "⚠ Uncategorised")}</td>${cols.map(k => `<td class="n">${r.byAcct[k] ? money(r.byAcct[k]) : "—"}</td>`).join("")}<td class="n b">${money(r.total)}</td><td class="n">${r.n}</td></tr>`).join("");
-    const detail = sortedForExport().map(e => `<tr class="${isReview(e) ? "rv" : ""}"><td>${fmtDY(e.date)}</td><td>${esc(acctLabel(acctKey(e)))}</td><td>${esc(e.payTo || "—")}</td><td>${esc(e.desc || "—")}</td><td>${esc(e.cat || "⚠ Uncategorised")}</td><td>${esc(e.bankRef || "")}</td><td class="n b">${money(e.amount)}</td></tr>`).join("");
+    const sumRow = (r) => `<tr><td>${esc(r.cat || "⚠ Uncategorised")}</td>${cols.map(k => `<td class="n">${r.byAcct[k] ? money(r.byAcct[k]) : "—"}</td>`).join("")}<td class="n b">${money(r.total)}</td><td class="n">${r.n}</td></tr>`;
+    const totRow = (label, tot, n, byA, cls) => `<tr class="${cls}"><td>${label}</td>${cols.map(k => `<td class="n">${money(byA[k] || 0)}</td>`).join("")}<td class="n">${money(tot)}</td><td class="n">${n}</td></tr>`;
+    const nExp = inMonth.filter(e => !isNonExpense(e)).length;
+    const summary = report.expRows.map(sumRow).join("")
+      + totRow("BUSINESS EXPENSES", expenseTotal, nExp, report.colTotalsExp, "tot")
+      + (report.otherRows.length
+        ? `<tr><td colspan="${cols.length + 3}" class="sub">Not business expenses (personal withdrawals and transfers between own accounts)</td></tr>` + report.otherRows.map(sumRow).join("")
+          + totRow("TOTAL DEBITS (matches bank statements)", monthTotal, inMonth.length, report.colTotals, "tot")
+        : "");
+    const detail = sortedForExport().map(e => `<tr class="${isReview(e) ? "rv" : ""}"><td>${fmtDY(e.date)}</td><td>${esc(acctLabel(acctKey(e)))}</td><td>${esc(e.payTo || "—")}</td><td>${esc(e.desc || "—")}</td><td>${esc(e.cat || "⚠ Uncategorised")}</td><td>${esc(typeLabel(e))}</td><td>${esc(e.bankRef || "")}</td><td class="n b">${money(e.amount)}</td></tr>`).join("");
     w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Bank payouts — ${esc(monthLabel(month))}</title>
 <style>body{font-family:Arial,Helvetica,sans-serif;color:#0f172a;margin:24px;font-size:12px}h1{font-size:18px;margin:0}h2{font-size:14px;margin:22px 0 8px}p{margin:3px 0 0;color:#64748b}
 table{width:100%;border-collapse:collapse}th{background:#f1f5f9;text-align:left;padding:6px 8px;font-size:10.5px;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #cbd5e1}
-td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-align:right;white-space:nowrap}.b{font-weight:700}tr.rv td{background:#fff7ed}tfoot td{font-weight:800;border-top:2px solid #0f172a}
+td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-align:right;white-space:nowrap}.b{font-weight:700}tr.rv td{background:#fff7ed}tr.tot td{font-weight:800;border-top:2px solid #0f172a;background:#f8fafc}td.sub{background:#f1f5f9;font-weight:700;color:#475569;font-size:11px}
 @media print{body{margin:10mm}h2{page-break-after:avoid}tr{page-break-inside:avoid}}</style></head><body>
-<h1>${esc(shop?.name || shopId)} — Bank payouts</h1><p>${esc(monthLabel(month))} · ${inMonth.length} payout${inMonth.length !== 1 ? "s" : ""} · Total ${money(monthTotal)}${reviewList.length ? ` · ⚠ ${reviewList.length} still need review (${money(reviewTotal)})` : ""}</p>
+<h1>${esc(shop?.name || shopId)} — Bank payouts</h1><p>${esc(monthLabel(month))} · ${inMonth.length} payout${inMonth.length !== 1 ? "s" : ""} · Business expenses ${money(expenseTotal)}${nonExpTotal ? ` · Personal / transfers ${money(nonExpTotal)}` : ""} · Total debits ${money(monthTotal)}${reviewList.length ? ` · ⚠ ${reviewList.length} still need review (${money(reviewTotal)})` : ""}</p>
 <h2>Summary by category</h2>
-<table><thead><tr><th>Category</th>${cols.map(k => `<th class="n">${esc(acctLabel(k))}</th>`).join("")}<th class="n">Total</th><th class="n">Payouts</th></tr></thead><tbody>${summary}</tbody>
-<tfoot><tr><td>TOTAL</td>${cols.map(k => `<td class="n">${money(report.colTotals[k] || 0)}</td>`).join("")}<td class="n">${money(monthTotal)}</td><td class="n">${inMonth.length}</td></tr></tfoot></table>
+<table><thead><tr><th>Category</th>${cols.map(k => `<th class="n">${esc(acctLabel(k))}</th>`).join("")}<th class="n">Total</th><th class="n">Payouts</th></tr></thead><tbody>${summary}</tbody></table>
 <h2>All payouts (date order)</h2>
-<table><thead><tr><th>Date</th><th>Bank</th><th>Paid to</th><th>Purpose</th><th>Category</th><th>Bank ref</th><th class="n">Amount</th></tr></thead><tbody>${detail}</tbody></table>
+<table><thead><tr><th>Date</th><th>Bank</th><th>Paid to</th><th>Purpose</th><th>Category</th><th>Type</th><th>Bank ref</th><th class="n">Amount</th></tr></thead><tbody>${detail}</tbody></table>
 <p style="margin-top:14px">Shaded rows need review.</p></body></html>`);
     w.document.close();
     setTimeout(() => w.print(), 300);
@@ -360,7 +390,8 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
   const categorySelect = (value, onChange, style) => (
     <select className="exq-in" style={style} value={value} onChange={ev => { if (ev.target.value === "__add_new__") addCategory(onChange); else onChange(ev.target.value); }}>
       <option value="">— Select —</option>
-      {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+      <optgroup label="Business expenses">{CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</optgroup>
+      <optgroup label="Not a business expense (kept out of totals)">{NON_EXPENSE_CATS.map(c => <option key={c} value={c}>{c}</option>)}</optgroup>
       <option disabled>──────────</option>
       <option value="__add_new__">➕ Add new category…</option>
     </select>
@@ -443,6 +474,32 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
     );
   };
 
+  const renderCatRow = (r, showShare) => {
+    const open = !!openCat[r.cat];
+    return (
+      <Fragment key={"c" + r.cat}>
+        <tr className="exq-row" style={{ cursor: "pointer" }} onClick={() => setOpenCat(p => ({ ...p, [r.cat]: !p[r.cat] }))}>
+          <td className="exq-td" style={{ fontWeight: 800 }}>{open ? "▾" : "▸"} {r.cat || <span style={{ color: "#dc2626" }}>⚠ Uncategorised</span>}</td>
+          {acctKeys.map(k => <td key={k} className="exq-td" style={{ textAlign: "right", color: r.byAcct[k] ? "#0f172a" : "#cbd5e1" }}>{r.byAcct[k] ? fmt(shopId, r.byAcct[k]) : "—"}</td>)}
+          <td className="exq-td" style={{ textAlign: "right", fontWeight: 800, color: showShare ? "#dc2626" : "#475569" }}>{fmt(shopId, r.total)}</td>
+          <td className="exq-td" style={{ textAlign: "right", color: "#64748b" }}>{r.n}</td>
+          <td className="exq-td" style={{ textAlign: "right", color: "#64748b" }}>{showShare ? (expenseTotal ? Math.round((r.total / expenseTotal) * 100) : 0) + "%" : ""}</td>
+        </tr>
+        {open && r.rows.map(e => (
+          <tr key={"d" + (e.uuid || e.id)} style={{ background: "#f8fafc" }}>
+            <td className="exq-td" colSpan={acctKeys.length + 4} style={{ padding: "7px 14px 7px 34px", fontSize: 12.5 }}>
+              <span style={{ display: "inline-block", width: 70, color: "#64748b", fontWeight: 700 }}>{fmtD(e.date)}</span>
+              <span style={{ display: "inline-block", width: 110 }}>{acctPill(acctKey(e))}</span>
+              <span style={{ fontWeight: 700 }}>{e.payTo || "—"}</span>
+              <span style={{ color: "#64748b" }}> · {e.desc || "no purpose"}</span>
+              <span style={{ float: "right", fontWeight: 800, color: showShare ? "#dc2626" : "#475569" }}>{fmt(shopId, Number(e.amount) || 0)}</span>
+            </td>
+          </tr>
+        ))}
+      </Fragment>
+    );
+  };
+
   /* ═════════════════════════ RENDER ═════════════════════════ */
   const sym = shop?.symbol || "";
   return (
@@ -467,7 +524,8 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
 
       {/* KPIs */}
       <div style={{ padding: "0 20px 14px", display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(170px,1fr))", gap: 12 }}>
-        <div className="exq-kpi"><div className="exq-lb" style={{ margin: 0 }}>💳 Paid out · {monthLabel(month)}</div><div style={{ fontSize: 20, fontWeight: 900, color: "#dc2626" }}>{fmt(shopId, monthTotal)}</div></div>
+        <div className="exq-kpi"><div className="exq-lb" style={{ margin: 0 }}>💳 Business expenses · {monthLabel(month)}</div><div style={{ fontSize: 20, fontWeight: 900, color: "#dc2626" }}>{fmt(shopId, expenseTotal)}</div>
+          {nonExpTotal > 0 && <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>+ {fmt(shopId, nonExpTotal)} personal / transfers (not an expense) · total debits {fmt(shopId, monthTotal)}</div>}</div>
         <div className="exq-kpi"><div className="exq-lb" style={{ margin: 0 }}>🧾 Entries</div><div style={{ fontSize: 20, fontWeight: 900, color: ac }}>{inMonth.length}</div></div>
         <div className={"exq-kpi" + (reviewList.length ? " click" : "")} style={reviewList.length ? { borderColor: "#fca5a5", background: "#fef2f2" } : undefined}
           onClick={() => { if (reviewList.length) { setView("entries"); setReviewOnly(true); setAcctFilter("ALL"); setCatFilter("ALL"); } }}>
@@ -554,7 +612,7 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
                   <input className="exq-in" type="number" step="0.01" style={{ width: 140 }} value={stmtTotal}
                     onChange={e => { setStmtTotal(e.target.value); lsSet(stmtKey, e.target.value); }} placeholder="from the bank" />
                 </label>
-                <div style={{ fontSize: 12.5 }}>Entered here: <b>{fmt(shopId, entered)}</b> ({acctStats[acctFilter]?.n || 0} lines)</div>
+                <div style={{ fontSize: 12.5 }}>Entered here: <b>{fmt(shopId, entered)}</b> ({acctStats[acctFilter]?.n || 0} lines, incl. personal &amp; transfers)</div>
                 {stmtDiff !== null && (stmtDiff === 0
                   ? <span style={{ fontSize: 12.5, fontWeight: 800, color: "#15803d" }}>✅ Matches the statement</span>
                   : <span style={{ fontSize: 12.5, fontWeight: 800, color: "#b91c1c" }}>⚠ {stmtDiff > 0 ? "Statement is higher by " : "Entered is higher by "}{fmt(shopId, Math.abs(stmtDiff))} — {stmtDiff > 0 ? "a payout is missing" : "something is entered twice or wrongly"}</span>)}
@@ -595,7 +653,9 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
                           </td>
                           <td className="exq-td" style={{ minWidth: 150 }}>
                             {e.cat
-                              ? <span style={{ background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", borderRadius: 999, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{e.cat}</span>
+                              ? (isNonExpense(e)
+                                ? <span title="Not a business expense — kept out of the expense totals" style={{ background: "#f1f5f9", color: "#475569", border: "1px dashed #94a3b8", borderRadius: 999, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{e.cat}</span>
+                                : <span style={{ background: "#fff7ed", color: "#c2410c", border: "1px solid #fed7aa", borderRadius: 999, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{e.cat}</span>)
                               : <select className="exq-in" style={{ padding: "5px 8px", fontSize: 12, borderColor: "#fca5a5" }} value="" onChange={ev => { if (ev.target.value) quickSetCategory(e, ev.target.value); }}>
                                 <option value="">Pick category…</option>{CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                               </select>}
@@ -604,7 +664,7 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
                             {e.method || "—"}{e.bankRef ? <div className="mono" style={{ fontFamily: "ui-monospace,Consolas,monospace", fontSize: 11, color: "#94a3b8" }}>{e.bankRef}</div> : null}
                             {e.invoiceNo ? <div style={{ fontSize: 11, color: "#94a3b8" }}>Inv {e.invoiceNo}</div> : null}
                           </td>
-                          <td className="exq-td" style={{ textAlign: "right", fontWeight: 800, color: "#dc2626", whiteSpace: "nowrap" }}>{fmt(shopId, Number(e.amount) || 0)}</td>
+                          <td className="exq-td" style={{ textAlign: "right", fontWeight: 800, color: isNonExpense(e) ? "#64748b" : "#dc2626", whiteSpace: "nowrap" }}>{fmt(shopId, Number(e.amount) || 0)}</td>
                           <td className="exq-td" style={{ whiteSpace: "nowrap" }}>
                             <button onClick={() => openEdit(e)} title="Edit" style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid " + ac, background: ac + "12", color: ac, fontSize: 11, fontWeight: 700, cursor: "pointer", marginRight: 6 }}>✏️</button>
                             <button onClick={() => setConfirmDelete(e)} title="Delete" style={{ padding: "5px 9px", borderRadius: 7, border: "1px solid #fca5a5", background: "#fff5f5", color: "#dc2626", fontSize: 11, cursor: "pointer" }}>🗑️</button>
@@ -655,43 +715,30 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
                 </thead>
                 <tbody>
                   {report.rows.length === 0 && <tr><td colSpan={acctKeys.length + 4} style={{ padding: 40, textAlign: "center", color: "#94a3b8" }}>No payouts entered for {monthLabel(month)}.</td></tr>}
-                  {report.rows.map(r => {
-                    const open = !!openCat[r.cat];
-                    return (
-                      <Fragment key={"c" + r.cat}>
-                        <tr className="exq-row" style={{ cursor: "pointer" }} onClick={() => setOpenCat(p => ({ ...p, [r.cat]: !p[r.cat] }))}>
-                          <td className="exq-td" style={{ fontWeight: 800 }}>{open ? "▾" : "▸"} {r.cat || <span style={{ color: "#dc2626" }}>⚠ Uncategorised</span>}</td>
-                          {acctKeys.map(k => <td key={k} className="exq-td" style={{ textAlign: "right", color: r.byAcct[k] ? "#0f172a" : "#cbd5e1" }}>{r.byAcct[k] ? fmt(shopId, r.byAcct[k]) : "—"}</td>)}
-                          <td className="exq-td" style={{ textAlign: "right", fontWeight: 800, color: "#dc2626" }}>{fmt(shopId, r.total)}</td>
-                          <td className="exq-td" style={{ textAlign: "right", color: "#64748b" }}>{r.n}</td>
-                          <td className="exq-td" style={{ textAlign: "right", color: "#64748b" }}>{monthTotal ? Math.round((r.total / monthTotal) * 100) : 0}%</td>
-                        </tr>
-                        {open && r.rows.map(e => (
-                          <tr key={"d" + (e.uuid || e.id)} style={{ background: "#f8fafc" }}>
-                            <td className="exq-td" colSpan={acctKeys.length + 4} style={{ padding: "7px 14px 7px 34px", fontSize: 12.5 }}>
-                              <span style={{ display: "inline-block", width: 70, color: "#64748b", fontWeight: 700 }}>{fmtD(e.date)}</span>
-                              <span style={{ display: "inline-block", width: 110 }}>{acctPill(acctKey(e))}</span>
-                              <span style={{ fontWeight: 700 }}>{e.payTo || "—"}</span>
-                              <span style={{ color: "#64748b" }}> · {e.desc || "no purpose"}</span>
-                              <span style={{ float: "right", fontWeight: 800, color: "#dc2626" }}>{fmt(shopId, Number(e.amount) || 0)}</span>
-                            </td>
-                          </tr>
-                        ))}
-                      </Fragment>
-                    );
-                  })}
-                </tbody>
-                {report.rows.length > 0 && (
-                  <tfoot>
+                  {report.expRows.map(r => renderCatRow(r, true))}
+                  {report.rows.length > 0 && (
                     <tr>
-                      <td className="exq-td" style={{ fontWeight: 900, background: "#f8fafc", borderTop: "2px solid #0f172a" }}>TOTAL</td>
-                      {acctKeys.map(k => <td key={k} className="exq-td" style={{ textAlign: "right", fontWeight: 900, background: "#f8fafc", borderTop: "2px solid #0f172a" }}>{fmt(shopId, report.colTotals[k] || 0)}</td>)}
-                      <td className="exq-td" style={{ textAlign: "right", fontWeight: 900, color: "#dc2626", background: "#f8fafc", borderTop: "2px solid #0f172a" }}>{fmt(shopId, monthTotal)}</td>
-                      <td className="exq-td" style={{ textAlign: "right", fontWeight: 900, background: "#f8fafc", borderTop: "2px solid #0f172a" }}>{inMonth.length}</td>
+                      <td className="exq-td" style={{ fontWeight: 900, background: "#f8fafc", borderTop: "2px solid #0f172a" }}>BUSINESS EXPENSES</td>
+                      {acctKeys.map(k => <td key={k} className="exq-td" style={{ textAlign: "right", fontWeight: 900, background: "#f8fafc", borderTop: "2px solid #0f172a" }}>{fmt(shopId, report.colTotalsExp[k] || 0)}</td>)}
+                      <td className="exq-td" style={{ textAlign: "right", fontWeight: 900, color: "#dc2626", background: "#f8fafc", borderTop: "2px solid #0f172a" }}>{fmt(shopId, expenseTotal)}</td>
+                      <td className="exq-td" style={{ textAlign: "right", fontWeight: 900, background: "#f8fafc", borderTop: "2px solid #0f172a" }}>{inMonth.filter(e => !isNonExpense(e)).length}</td>
                       <td className="exq-td" style={{ background: "#f8fafc", borderTop: "2px solid #0f172a" }}></td>
                     </tr>
-                  </tfoot>
-                )}
+                  )}
+                  {report.otherRows.length > 0 && (
+                    <>
+                      <tr><td colSpan={acctKeys.length + 4} className="exq-td" style={{ background: "#f1f5f9", fontSize: 11, fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: ".05em", paddingTop: 14 }}>Not business expenses — personal withdrawals and transfers between your own accounts</td></tr>
+                      {report.otherRows.map(r => renderCatRow(r, false))}
+                      <tr>
+                        <td className="exq-td" style={{ fontWeight: 900, background: "#f8fafc", borderTop: "2px solid #0f172a" }}>TOTAL DEBITS <span style={{ fontWeight: 600, color: "#64748b", fontSize: 11 }}>(matches the bank statements)</span></td>
+                        {acctKeys.map(k => <td key={k} className="exq-td" style={{ textAlign: "right", fontWeight: 900, background: "#f8fafc", borderTop: "2px solid #0f172a" }}>{fmt(shopId, report.colTotals[k] || 0)}</td>)}
+                        <td className="exq-td" style={{ textAlign: "right", fontWeight: 900, background: "#f8fafc", borderTop: "2px solid #0f172a" }}>{fmt(shopId, monthTotal)}</td>
+                        <td className="exq-td" style={{ textAlign: "right", fontWeight: 900, background: "#f8fafc", borderTop: "2px solid #0f172a" }}>{inMonth.length}</td>
+                        <td className="exq-td" style={{ background: "#f8fafc", borderTop: "2px solid #0f172a" }}></td>
+                      </tr>
+                    </>
+                  )}
+                </tbody>
               </table>
             </div>
           </div>
