@@ -12104,6 +12104,23 @@ const NEW_SALE_STEP_EXPLAIN = {
    are working days. >7h = Full Day, 3.5-7h = Half Day, under that but
    still clocked in/out = Short, nothing logged on a past working day =
    Absent. ────────────────────────────────────────────────────────────── */
+/* Missed clock-out grace period: a day with a clock-in but no clock-out can be
+   corrected (admin day-edit) for 2 WORKING days after that day — Sundays and
+   admin holidays are not counted. After that it becomes an automatic Half Day.
+   Inside the grace period it shows as "Clock-out missing" and payroll counts it
+   as a provisional Half Day. attendanceGraceEnd() = the LAST day the correction
+   is allowed (e.g. missed Monday -> Wednesday; auto Half Day from Thursday). */
+const ATT_GRACE_WORKING_DAYS = 2;
+const attendanceGraceEnd = (dateStr, holidaySet) => {
+  let d = dateStr, n = 0;
+  for (let guard = 0; guard < 40; guard++) {
+    const x = new Date(d + "T12:00:00Z"); x.setUTCDate(x.getUTCDate() + 1);
+    d = x.toISOString().slice(0, 10);
+    if (x.getUTCDay() === 0 || (holidaySet && holidaySet.has(d))) continue;
+    if (++n >= ATT_GRACE_WORKING_DAYS) return d;
+  }
+  return d;
+};
 const classifyAttendanceDay = (dateStr, clockIn, clockOut, holidaySet) => {
   const d = new Date(dateStr+"T00:00:00");
   const dow = d.getDay(); // 0=Sunday
@@ -12111,7 +12128,10 @@ const classifyAttendanceDay = (dateStr, clockIn, clockOut, holidaySet) => {
   if (dow === 0 || (holidaySet && holidaySet.has(dateStr))) return "holiday";
   if (dateStr > todayStr) return "future";
   if (!clockIn) return dateStr===todayStr ? "pending" : "absent";
-  if (!clockOut) return "inprogress";
+  if (!clockOut) {
+    if (dateStr >= todayStr) return "inprogress";                                   // today: still working
+    return todayStr > attendanceGraceEnd(dateStr, holidaySet) ? "half" : "missing"; // past: grace over -> auto Half Day
+  }
   const hours = (new Date(clockOut) - new Date(clockIn)) / 3600000;
   if (hours > 7) return "full";
   if (hours >= 3.5) return "half";
@@ -12127,6 +12147,7 @@ const DAY_STATUS_STYLE = {
   holiday:    {bg:"#f1f5f9", text:"#94a3b8", label:"Sunday"},
   future:     {bg:"#ffffff", text:"#cbd5e1", label:""},
   inprogress: {bg:"#dbeafe", text:"#1d4ed8", label:"In Progress"},
+  missing:    {bg:"#ffedd5", text:"#c2410c", label:"Clock-out missing"},
   pending:    {bg:"#fef9c3", text:"#92400e", label:"Not Clocked In"},
 };
 
@@ -12153,7 +12174,7 @@ const MonthSummaryBar = ({ year, month, records, holidaySet }) => {
     const rec = recByDate[dateStr];
     const status = classifyAttendanceDay(dateStr, rec?.clockIn, rec?.clockOut, holidaySet);
     if (status==="full") { present++; full++; }
-    else if (status==="half") { present++; half++; }
+    else if (status==="half" || status==="missing") { present++; half++; }   // "missing" = provisional Half Day during grace
     else if (status==="short" || status==="inprogress") { present++; }
     else if (status==="absent") { absent++; }
   }
@@ -12197,14 +12218,17 @@ const AttendanceCalendar = ({ year, month, records, accent, onDayClick, holidayS
   }
 
   let fullCount=0, halfCount=0, absentCount=0;
+  const missingDays = []; // days still inside the grace period: [dateStr, lastDayToFix]
   for (let day=1; day<=daysInMonth; day++) {
     const dateStr = `${year}-${String(month+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
     const rec = recByDate[dateStr];
     const status = classifyAttendanceDay(dateStr, rec?.clockIn, rec?.clockOut, holidaySet);
     if (status==="full") fullCount++;
     else if (status==="half") halfCount++;
+    else if (status==="missing") { halfCount++; missingDays.push([dateStr, attendanceGraceEnd(dateStr, holidaySet)]); }
     else if (status==="absent") absentCount++;
   }
+  const fmtDM = (iso) => `${iso.slice(8)}/${iso.slice(5,7)}`;
 
   return (
     <div>
@@ -12229,8 +12253,11 @@ const AttendanceCalendar = ({ year, month, records, accent, onDayClick, holidayS
           const isSunday = new Date(dateStr+"T00:00:00").getDay()===0;
           const customHolidayLabel = holidayLabelMap[dateStr];
           const isCustomHoliday = status==="holiday" && !isSunday;
+          const noOut = !!rec?.clockIn && !rec?.clockOut && dateStr < new Date().toISOString().slice(0,10); // missed clock-out on a past day
           const cellTitle = isCustomHoliday
             ? (customHolidayLabel ? `Holiday: ${customHolidayLabel}` : "Holiday")
+            : status==="missing" ? `Clock-out missing — can be corrected until ${attendanceGraceEnd(dateStr, holidaySet)}, then it counts as a Half Day`
+            : (noOut && status==="half") ? "Half Day (automatic) — clock-out was never recorded"
             : (onDayClick&&!isFuture?"Click to view/edit":st.label);
           return (
             <div key={i} title={cellTitle}
@@ -12238,7 +12265,7 @@ const AttendanceCalendar = ({ year, month, records, accent, onDayClick, holidayS
               style={{
                 aspectRatio:"1",borderRadius:9,background:isCustomHoliday?"#f5f3ff":st.bg,color:isCustomHoliday?"#6d28d9":st.text,
                 display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",
-                fontSize:15,fontWeight:800,border:isToday?`2px solid ${accent}`:isCustomHoliday?"1px solid #c4b5fd":"1px solid transparent",
+                fontSize:15,fontWeight:800,border:isToday?`2px solid ${accent}`:isCustomHoliday?"1px solid #c4b5fd":status==="missing"?"1.5px dashed #f97316":"1px solid transparent",
                 boxSizing:"border-box", cursor:(onDayClick&&!isFuture)?"pointer":"default", position:"relative",
               }}>
               {isCustomHoliday && <span style={{position:"absolute",top:2,right:3,fontSize:9}}>🎉</span>}
@@ -12248,6 +12275,7 @@ const AttendanceCalendar = ({ year, month, records, accent, onDayClick, holidayS
                     <span style={{fontSize:7,fontWeight:800,opacity:0.85,marginTop:1,letterSpacing:"0.03em"}}>HOLIDAY</span>
                     {customHolidayLabel && <span style={{fontSize:8,fontWeight:700,opacity:0.9,textAlign:"center",lineHeight:1.1,padding:"0 2px"}}>{customHolidayLabel}</span>}
                   </>)
+                : noOut ? <span style={{fontSize:8,fontWeight:800,opacity:0.95,marginTop:2,letterSpacing:"0.03em"}}>NO OUT</span>
                 : hoursLabel && <span style={{fontSize:10,fontWeight:700,opacity:0.95,marginTop:2}}>{hoursLabel}</span>}
             </div>
           );
@@ -12259,6 +12287,11 @@ const AttendanceCalendar = ({ year, month, records, accent, onDayClick, holidayS
         <span><span style={{display:"inline-block",width:9,height:9,borderRadius:3,background:DAY_STATUS_STYLE.absent.bg,marginRight:4}}/>Absent ({absentCount})</span>
         <span><span style={{display:"inline-block",width:9,height:9,borderRadius:3,background:DAY_STATUS_STYLE.holiday.bg,marginRight:4}}/>Sunday</span>
       </div>
+      {missingDays.length>0 && (
+        <div style={{marginTop:10,padding:"9px 12px",borderRadius:10,background:"#fff7ed",border:"1px solid #fed7aa",fontSize:11.5,color:"#9a3412",lineHeight:1.5}}>
+          ⚠ <b>Clock-out missing:</b> {missingDays.map(([d,fix])=>`${fmtDM(d)} (fix by ${fmtDM(fix)})`).join(", ")}. Until corrected it counts as a Half Day; after the "fix by" date it stays a Half Day automatically.
+        </div>
+      )}
     </div>
   );
 };
@@ -13956,7 +13989,7 @@ const AttendancePage = ({ shopId, shop, user, users=[] }) => {
     const w = window.open("", "_blank");
     const rows = recs.map(r => {
       const status = classifyAttendanceDay(r.date, r.clockIn, r.clockOut, holidaySet);
-      return `<tr><td>${r.date}</td><td>${fmtTime(r.clockIn)||"—"}</td><td>${fmtTime(r.clockOut)||"—"}</td><td>${computeHours(r.clockIn,r.clockOut)||"—"}</td><td>${DAY_STATUS_STYLE[status]?.label||""}</td></tr>`;
+      return `<tr><td>${r.date}</td><td>${fmtTime(r.clockIn)||"—"}</td><td>${fmtTime(r.clockOut)||"—"}</td><td>${computeHours(r.clockIn,r.clockOut)||"—"}</td><td>${status==="half"&&r.clockIn&&!r.clockOut ? "Half Day (auto — no clock-out)" : (DAY_STATUS_STYLE[status]?.label||"")}</td></tr>`;
     }).join("");
     w.document.write(`<!DOCTYPE html><html><head><title>Attendance — ${displayName} — ${monthLabel}</title>
       <style>
@@ -14466,7 +14499,7 @@ const computeMonthPayroll = (year, month /* 1-indexed */, records=[], holidaySet
     // into Absent for payroll purposes — the business asked for "under
     // 3.5 hours treated as off".
     if (status === "full") fullDays++;
-    else if (status === "half") halfDays++;
+    else if (status === "half" || status === "missing") halfDays++;   // "missing" = provisional Half Day while inside the grace period
     else absentDays++;
   }
 
