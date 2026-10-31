@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect as useEff } from "react";
 import { formatDate } from "../utils";
 import { showAlert, showConfirm } from "./PopupHost";
+import { dbLoadDispatchLog, dbSaveDispatchEntry } from "../db";
 /* ─────────────────────────────────────────────────────────────────────────
    SALES PANEL
    Period definitions:
@@ -638,6 +639,9 @@ export default function SalesPanel({
   const setStatusTab = setStatusFilter ?? setStatusTabLocal;
   /* Recheck flag filter — independent of fulfilment status tabs */
   const [flaggedOnly, setFlaggedOnly] = useState(false);
+  // ROS India: show only sales that are on the Despatch Log and still waiting for a tracking number.
+  const [awaitingOnly, setAwaitingOnly] = useState(false);
+  const isAwaitingTracking = (s) => !!s.readyToShip && ["", "PENDING"].includes((s.ful || s.status || "").toUpperCase()) && !(s.trackingNo || "").trim();
   /* Payment channel quick filter — Bank vs Shop/Shopify. "ALL" = no filter.
      Independent of status tabs, same pattern as flaggedOnly above. */
   const [payFilter, setPayFilter] = useState("ALL"); // "ALL" | "SHOP" | "BANK" (non-India) | "SIB" | "HDFC" | "FEDERAL BANK" | "PAYPAL INDIA" (India)
@@ -765,10 +769,11 @@ export default function SalesPanel({
   const statusFiltered = useMemo(() => {
     const base = statusTab === "ALL" ? periodFiltSales
       : periodFiltSales.filter(s => (s.ful || s.status || "PENDING").toUpperCase() === statusTab.toUpperCase());
-    const flagFiltered = flaggedOnly ? base.filter(s => s.flagged) : base;
+    const flagFiltered0 = flaggedOnly ? base.filter(s => s.flagged) : base;
+    const flagFiltered = awaitingOnly ? flagFiltered0.filter(isAwaitingTracking) : flagFiltered0;
     if (payFilter === "ALL") return flagFiltered;
     return flagFiltered.filter(s => payBucket(s) === payFilter);
-  }, [periodFiltSales, statusTab, flaggedOnly, payFilter]);
+  }, [periodFiltSales, statusTab, flaggedOnly, awaitingOnly, payFilter]);
 
   /* ── Payment channel counts (from period+search filtered, pre-payFilter) ── */
   const payCounts = useMemo(() => {
@@ -776,6 +781,11 @@ export default function SalesPanel({
     periodFiltSales.forEach(s => { c[payBucket(s)]++; });
     return c;
   }, [periodFiltSales, isIndiaShop]);
+
+  const awaitingCount = useMemo(
+    () => periodFiltSales.filter(isAwaitingTracking).length,
+    [periodFiltSales]
+  );
 
   const flaggedCount = useMemo(
     () => periodFiltSales.filter(s => s.flagged).length,
@@ -820,8 +830,17 @@ export default function SalesPanel({
 
   /* ── Carrier config ─────────────────────────────────────────────────── */
   const UK_CARRIERS = ["Royal Mail","Evri","DPD","UPS","Parcelforce","FedEx","Other"];
-  const IN_CARRIERS = ["Speed Post","DTDC","Other"];
+  // ROS India uses the exact same courier names as the Despatch Log's Shipper
+  // dropdown, so a carrier picked on either page reads the same on the other.
+  const IN_CARRIERS = ["DTDC","SPEEDPOST","FEDEX","DHL","UPS","Others"];
   const CARRIERS = isIndiaShop ? IN_CARRIERS : UK_CARRIERS;
+  const carrierValue = (c) => {
+    if (!isIndiaShop) return c;
+    const u = (c || "").toUpperCase().replace(/\s+/g, "");          // "Speed Post" (older sales) → "SPEEDPOST"
+    if (u === "OTHER" || u === "OTHERS") return "Others";
+    return IN_CARRIERS.find(x => x.toUpperCase() === u) || c;
+  };
+  const carrierLabel = (c) => { if (!isIndiaShop) return c; const v = carrierValue(c); return v === "SPEEDPOST" ? "Speed Post" : v === "FEDEX" ? "FedEx" : v; };
 
   const trackingURL = (carrier, trackNo) => {
     const cleanNo = (trackNo||"").replace(/\s+/g,"");
@@ -832,8 +851,10 @@ export default function SalesPanel({
       case "ups":          return `https://www.ups.com/track?tracknum=${cleanNo}`;
       case "parcelforce":  return `https://www.parcelforce.com/track-trace?trackNumber=${cleanNo}`;
       case "fedex":        return `https://www.fedex.com/wtrk/track/?trknbr=${cleanNo}`;
+      case "speedpost":
       case "speed post":   return `https://www.indiapost.gov.in/_layouts/15/dop.portal.tracking/trackconsignment.aspx`;
       case "dtdc":         return `https://www.dtdc.com/track-your-shipment/`;
+      case "dhl":          return `https://www.dhl.com/in-en/home/tracking.html?tracking-id=${cleanNo}`;
       default: return null;
     }
   };
@@ -1150,11 +1171,59 @@ We hope you enjoy your purchase! 💜
          the status just isn't changed until the balance is collected;
        • clearing the tracking number only clears it, never touches status. */
   const UK_DEFAULT_CARRIER = "Royal Mail";
+  const DEFAULT_CARRIER = isIndiaShop ? "DTDC" : UK_DEFAULT_CARRIER;   // India's Despatch Log also defaults to DTDC
+
+  /* ROS India — keep the Despatch Log in step with a tracking number typed
+     here on the Sales page (the Despatch Log already pushes ITS tracking to
+     Sales, so both directions now agree). Finds the log row for this sale's
+     instalment group and updates it; if the sale somehow isn't on the log
+     yet, adds it already carrying the tracking so the log is never missing
+     a shipped parcel. Clearing tracking only clears an existing row. Never
+     throws — a failure is reported but the Sales save has already happened. */
+  // (Staff see this page as "ros-india-staff", but the log itself always belongs to "ros-india".)
+  const syncTrackingToDespatch = async (s, trackingNo, carrier) => {
+    if (!isIndiaShop) return;
+    try {
+      const gKey = getInstalmentKey(s);
+      const group = gKey ? (instalmentGroups[gKey] || []) : [];
+      const members = group.length > 1 ? group : [s];
+      const ids = new Set(members.map(m => m.id));
+      const rows = await dbLoadDispatchLog("ros-india");
+      if (!rows) return;
+      const row = rows.find(r => ids.has(r.saleId));
+      if (row) {
+        if (row.trackingNo === trackingNo && row.shipper === carrier) return;
+        const res = await dbSaveDispatchEntry("ros-india", { ...row, _uuid: row.uuid, trackingNo, shipper: carrier, linkWarning: "" });
+        if (res?.error) throw new Error(res.error);
+      } else if (trackingNo) {
+        const anchor = [...members].sort((a, b) => (a.date || "").localeCompare(b.date || ""))[0] || s;
+        const res = await dbSaveDispatchEntry("ros-india", {
+          saleId: anchor.id, dispatchDate: localISO(new Date()), customer: s.customer || "",
+          phone: s.phone || s.contact || "", address: s.address || "",
+          trackingNo, shipper: carrier, notified: false, remarks: "",
+        });
+        if (res?.error) throw new Error(res.error);
+      }
+    } catch (err) {
+      console.error("Despatch Log sync failed:", err);
+      showAlert("Tracking saved on the sale, but the Despatch Log couldn't be updated: " + (err?.message || err) + "\n\nOpen the Despatch Log and enter it there too.");
+    }
+  };
+  const changeCarrier = async (s, newCarrier) => {
+    if (!onInlineEdit) return;
+    await onInlineEdit(s.id, { carrier: newCarrier });
+    if (isIndiaShop && (s.trackingNo || "").trim()) await syncTrackingToDespatch(s, s.trackingNo.trim(), newCarrier);
+  };
+
   const saveTrackingAndFulfil = async (s, rawTracking, opts = {}) => {
     if (!onInlineEdit) return;
     const trackingNo = (rawTracking || "").trim();
-    if (!trackingNo) { await onInlineEdit(s.id, { trackingNo: "" }); return; }
-    const carrier = s.carrier || UK_DEFAULT_CARRIER;
+    if (!trackingNo) {
+      await onInlineEdit(s.id, { trackingNo: "" });
+      if (isIndiaShop) await syncTrackingToDespatch(s, "", carrierValue(s.carrier || DEFAULT_CARRIER));
+      return;
+    }
+    const carrier = carrierValue(s.carrier || DEFAULT_CARRIER);
     const gKey = getInstalmentKey(s);
     const group = gKey ? (instalmentGroups[gKey] || []) : [];
     const members = group.length > 1 ? group : [s];
@@ -1179,9 +1248,11 @@ We hope you enjoy your purchase! 💜
         changes.ful = "FULFILLED";
         changes.status = "FULFILLED";
         changes.sentDate = m.sentDate || today;
+        if (isIndiaShop) changes.readyToShip = false;   // no longer "awaiting" once fulfilled
       }
       return onInlineEdit(m.id, changes);
     }));
+    if (isIndiaShop) await syncTrackingToDespatch(s, trackingNo, carrier);
     setFlashIds(new Set(members.map(m => m.id)));
     setTimeout(() => setFlashIds(new Set()), 1500);
   };
@@ -1800,6 +1871,29 @@ We hope you enjoy your purchase! 💜
               fontWeight: statusOverride ? 800 : 600, fontSize: 12,
             }}>
             {statusOverride ? "🔓" : "🔒"} <span>Status Override</span>
+          </button>
+        )}
+
+        {/* ROS India: sales on the Despatch Log that are waiting for a tracking number */}
+        {isIndiaShop && (awaitingCount > 0 || awaitingOnly) && (
+          <button onClick={() => setAwaitingOnly(v => !v)}
+            title="Show only sales that are on the Despatch Log and waiting for a tracking number"
+            style={{
+              display: "flex", alignItems: "center", gap: 5, flexShrink: 0,
+              padding: "0 14px", border: "none", borderLeft: "1px solid #f1f5f9",
+              borderRight: "1px solid #f1f5f9",
+              background: awaitingOnly ? "#d1fae5" : "#f8fafc",
+              color: "#065f46",
+              cursor: "pointer", fontFamily: "inherit",
+              fontWeight: awaitingOnly ? 800 : 600, fontSize: 12,
+            }}>
+            📦 <span>Awaiting tracking</span>
+            <span style={{
+              background: awaitingOnly ? "#059669" : "#a7f3d0",
+              color: awaitingOnly ? "white" : "#065f46",
+              borderRadius: 999, padding: "1px 7px",
+              fontSize: 10, fontWeight: 800, lineHeight: "16px",
+            }}>{awaitingCount}</span>
           </button>
         )}
 
@@ -2604,58 +2698,26 @@ We hope you enjoy your purchase! 💜
                         // change would. Manual Pending → Fulfilled stays admin-only, two-step
                         // confirm, tucked under the pill instead of replacing it.
                         <div style={{ display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
-                          <div
-                            onClick={async (e) => {
-                              e.stopPropagation();
-                              if (!onInlineEdit) return;
-                              // ROS India only: a sale can't be marked ready to despatch
-                              // until admin has verified it against the bank statement —
-                              // applies to everyone, admins included, no override. Only
-                              // gates the "start" action; removing an already-Ready sale
-                              // is always allowed.
-                              if (!s.readyToShip && isIndiaShop && !s.verified) {
-                                setNotVerifiedNotice({ customer: s.customer || "" });
-                                return;
-                              }
-                              const gKey = getInstalmentKey(s);
-                              const group = gKey ? (instalmentGroups[gKey] || []) : [];
-                              const groupIds = group.length > 1 ? group.map(x => x.id) : [s.id];
-                              if (s.readyToShip) {
-                                if (!(await showConfirm("Remove " + (s.customer || "this sale") + " from Ready to Ship?"))) return;
-                                groupIds.forEach(id => onInlineEdit(id, { readyToShip: false }));
-                              } else {
-                                if (!(await showConfirm(
-                                  "Mark " + (s.customer || "this sale") + " ready to despatch?\n\n" +
-                                  "This will surface it on the Despatch Log page."
-                                ))) return;
-                                groupIds.forEach(id => onInlineEdit(id, { readyToShip: true }));
-                              }
-                            }}
-                            title={s.readyToShip ? "Awaiting Tracking — click to undo"
-                              : (isIndiaShop && !s.verified) ? "Not verified yet — contact admin to verify against the bank statement first"
-                              : "Click here when the item is ready to despatch — surfaces it on the Despatch Log page"}
-                            style={{
-                              display: "inline-flex", flexDirection: "column", alignItems: "center",
-                              justifyContent: "center", width: 120, textAlign: "center",
-                              fontSize: 10.5, fontWeight: 800, lineHeight: 1.25, padding: "6px 8px",
-                              borderRadius: 10,
-                              color: s.readyToShip ? "#065f46" : "#64748b",
-                              background: s.readyToShip ? "#d1fae5" : "#f1f5f9",
-                              border: "1.5px " + (s.readyToShip ? "solid #6ee7b7" : "dashed #cbd5e1"),
-                              cursor: "pointer",
-                            }}>
-                            {s.readyToShip ? (
-                              <>
-                                <span>✅ Awaiting</span>
-                                <span>Tracking</span>
-                              </>
-                            ) : (
-                              <>
-                                <span>📦 Mark here, when</span>
-                                <span>it's ready to despatch</span>
-                              </>
-                            )}
-                          </div>
+                          {/* The "ready to despatch" button is gone: a sale is added to the Despatch
+                              Log from the Despatch Log page itself ("+ Add Despatch"), which also
+                              marks it here. So this is now a read-only status: plain PENDING until
+                              it's on the log, then "Awaiting Tracking Number" until tracking arrives
+                              (typed on either page), when it becomes Fulfilled. */}
+                          {s.readyToShip ? (
+                            <div
+                              title="On the Despatch Log — waiting for the tracking number"
+                              style={{
+                                display: "inline-flex", flexDirection: "column", alignItems: "center",
+                                justifyContent: "center", width: 124, textAlign: "center",
+                                fontSize: 10.5, fontWeight: 800, lineHeight: 1.25, padding: "6px 8px",
+                                borderRadius: 10, color: "#065f46", background: "#d1fae5", border: "1.5px solid #6ee7b7",
+                              }}>
+                              <span>✅ Awaiting</span>
+                              <span>Tracking Number</span>
+                            </div>
+                          ) : (
+                            <span title="Not on the Despatch Log yet — add it from the Despatch Log page when it's ready to despatch"><Badge l="PENDING" /></span>
+                          )}
                           {isAdminRole && (
                             <div
                               onClick={async (e) => {
@@ -2749,45 +2811,18 @@ We hope you enjoy your purchase! 💜
                         })()}
                       </td>
                     )}
-                    {/* Tracking — ROS India: read-only, still entered + notified from
-                        the Despatch Log page (unchanged). ROS Selections/Hairlines:
-                        editable right here now that those two shops no longer have a
-                        Despatch Log — tracking is expected to keep arriving
-                        automatically from the ROS Dispatch Agent, but staff can type
-                        it in or fix it by hand any time it doesn't, and send the same
-                        despatch WhatsApp message straight from this row. */}
+                    {/* Tracking — editable right here for every shop.
+                        ROS India: typing a tracking number here also marks the sale
+                        Fulfilled AND updates (or adds) the matching Despatch Log row, and
+                        a number entered on the Despatch Log shows up here — so the two
+                        pages always agree; the customer WhatsApp message is still sent
+                        from the Despatch Log. ROS Selections/Hairlines: tracking is
+                        expected to keep arriving automatically from the ROS Dispatch
+                        Agent, but staff can type it in or fix it by hand any time it
+                        doesn't, and send the same despatch WhatsApp message straight
+                        from this row. */}
                     <td style={{ padding: "8px 10px", minWidth: 180 }} onClick={e => e.stopPropagation()}>
-                      {isIndiaShop ? (
-                        s.trackingNo ? (
-                          <div style={{ display: "flex", flexDirection:"column", gap: 4 }}>
-                            <div style={{display:"flex",alignItems:"center",gap:4}}>
-                              {(()=>{
-                                const url = trackingURL(s.carrier, s.trackingNo);
-                                return url ? (
-                                  <a href={url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}
-                                    style={{ fontSize: 11, fontFamily: "DM Mono,monospace", fontWeight: 700, color: "#0369a1",
-                                      textDecoration: "none", background: "#f0f9ff", border: "1px solid #bae6fd",
-                                      borderRadius: 6, padding: "3px 8px", whiteSpace: "nowrap",
-                                      maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", display: "inline-block" }}
-                                    title={s.trackingNo}>{s.trackingNo}</a>
-                                ) : (
-                                  <span style={{ fontSize: 11, fontFamily: "DM Mono,monospace", fontWeight: 700, color: "#0369a1",
-                                    background: "#f0f9ff", border: "1px solid #bae6fd", borderRadius: 6, padding: "3px 8px",
-                                    whiteSpace: "nowrap", maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", display: "inline-block" }}
-                                    title={s.trackingNo}>{s.trackingNo}</span>
-                                );
-                              })()}
-                            </div>
-                            {s.carrier && (
-                              <span style={{ fontSize: 10, fontWeight: 600, color: "#64748b" }}>{s.carrier}</span>
-                            )}
-                          </div>
-                        ) : (
-                          <span style={{ fontSize: 11, color: "#94a3b8", fontStyle: "italic" }}>
-                            Entered from Despatch Log
-                          </span>
-                        )
-                      ) : (
+                      {(
                         <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-start" }}>
                           {editTrackingId === s.id ? (
                             <div style={{ display: "flex", gap: 4, alignItems: "center" }}>
@@ -2817,14 +2852,14 @@ We hope you enjoy your purchase! 💜
                               title={onInlineEdit ? "Click to edit tracking number" : undefined}
                               style={{ cursor: onInlineEdit ? "pointer" : "default" }}>
                               {s.trackingNo ? (() => {
-                                const url = trackingURL(s.carrier || UK_DEFAULT_CARRIER, s.trackingNo);
+                                const url = trackingURL(carrierValue(s.carrier || DEFAULT_CARRIER), s.trackingNo);
                                 const badgeStyle = { fontSize: 11, fontFamily: "DM Mono,monospace", fontWeight: 700, color: "#0369a1",
                                   textDecoration: "none", background: "#f0f9ff", border: "1px solid #bae6fd",
                                   borderRadius: 6, padding: "3px 8px", whiteSpace: "nowrap",
                                   maxWidth: 120, overflow: "hidden", textOverflow: "ellipsis", display: "inline-block" };
                                 return url
-                                  ? <a href={url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={badgeStyle} title={s.trackingNo}>{s.trackingNo}</a>
-                                  : <span style={badgeStyle} title={s.trackingNo}>{s.trackingNo}</span>;
+                                  ? <><a href={url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={badgeStyle} title={s.trackingNo}>{s.trackingNo}</a>{isIndiaShop && <span style={{ marginLeft: 5, fontSize: 10, color: "#94a3b8" }} title="Click to edit">✏️</span>}</>
+                                  : <><span style={badgeStyle} title={s.trackingNo}>{s.trackingNo}</span>{isIndiaShop && <span style={{ marginLeft: 5, fontSize: 10, color: "#94a3b8" }} title="Click to edit">✏️</span>}</>;
                               })() : (
                                 <span style={{ fontSize: 11, color: "#94a3b8", fontStyle: "italic" }}>+ Add tracking</span>
                               )}
@@ -2834,23 +2869,23 @@ We hope you enjoy your purchase! 💜
                           {editCarrierId === s.id ? (
                             <select
                               autoFocus
-                              value={s.carrier || UK_DEFAULT_CARRIER}
-                              onChange={e => { if (onInlineEdit) onInlineEdit(s.id, { carrier: e.target.value }); setEditCarrierId(null); }}
+                              value={carrierValue(s.carrier || DEFAULT_CARRIER)}
+                              onChange={e => { changeCarrier(s, e.target.value); setEditCarrierId(null); }}
                               onBlur={() => setEditCarrierId(null)}
                               style={{ padding: "4px 6px", borderRadius: 7, border: "1.5px solid #7dd3fc",
                                 fontSize: 10.5, fontFamily: "inherit", outline: "none", cursor: "pointer", background: "white" }}>
-                              {CARRIERS.map(c => <option key={c} value={c}>{c}</option>)}
+                              {CARRIERS.map(c => <option key={c} value={c}>{carrierLabel(c)}</option>)}
                             </select>
                           ) : (
                             <span
                               onClick={() => onInlineEdit && setEditCarrierId(s.id)}
                               title={onInlineEdit ? (s.carrier ? "Click to change carrier" : "Default shipper — click to change") : undefined}
                               style={{ fontSize: 10, fontWeight: 600, color: s.carrier ? "#64748b" : "#94a3b8", cursor: onInlineEdit ? "pointer" : "default" }}>
-                              {s.carrier || UK_DEFAULT_CARRIER}
+                              {carrierLabel(s.carrier || DEFAULT_CARRIER)}
                             </span>
                           )}
 
-                          {s.trackingNo && (
+                          {s.trackingNo && !isIndiaShop && (
                             <button
                               onClick={() => openTrackingWA(s, s.carrier || UK_DEFAULT_CARRIER, s.trackingNo)}
                               title={s.trackingNotified ? "Notified — click to resend" : "Send tracking to customer"}
