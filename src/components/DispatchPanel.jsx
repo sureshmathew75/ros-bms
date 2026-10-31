@@ -493,6 +493,43 @@ const INDIA_CSS = `
 .dx-table tbody tr.dx-r.noaddr td:first-child{box-shadow:inset 3px 0 0 #ef4444}
 .dx-warnchip{border:1px solid #fecaca;background:#fef2f2;color:#b91c1c;font-weight:800;font-size:12px;border-radius:999px;padding:4px 11px;cursor:pointer}
 .dx-warnchip.on{background:#dc2626;color:#fff;border-color:#dc2626}
+.dx-orphan{display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;background:#fffbeb;border:1px solid #fde68a;border-radius:14px;padding:12px 16px;margin-bottom:14px;font-size:12.5px;color:#92400e}
+.dx-orphan b{color:#78350f}
+.dx-addmodal{max-width:640px}
+.dx-hero{display:inline-flex;align-items:center;gap:11px;padding:13px 26px 13px 16px;border-radius:14px;border:none;background:linear-gradient(135deg,var(--ac),var(--ac2));color:#fff;font-weight:800;font-size:16px;letter-spacing:.2px;cursor:pointer;box-shadow:0 8px 22px var(--acsh),0 0 0 4px var(--acbg);transition:transform .12s,filter .12s;white-space:nowrap}
+.dx-hero:hover{transform:translateY(-1px);filter:brightness(1.06)}
+.dx-hero:active{transform:translateY(0)}
+.dx-hero .pl{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.25)}
+.dx-hero .pl svg{width:16px;height:16px}
+@media (max-width:640px){.dx-acts-top{width:100%}.dx-hero{width:100%;justify-content:center;order:-1}}
+.dx-calmodal{max-width:400px}
+.dx-cal{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.dx-cal-w{text-align:center;font-size:10px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.05em;padding-bottom:2px}
+.dx-cal-d{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:46px;border:1px solid var(--line);border-radius:10px;background:#fff;padding:3px 0;cursor:default;font-family:inherit}
+.dx-cal-d .d{font-size:10.5px;font-weight:700;color:#94a3b8;line-height:1}
+.dx-cal-d .n{font-size:15px;font-weight:800;line-height:1.25;color:#0f172a;min-height:19px}
+.dx-cal-d.has{background:var(--acbg);border-color:var(--ac);cursor:pointer}
+.dx-cal-d.has .d{color:var(--actext)}
+.dx-cal-d.has .n{color:var(--actext)}
+.dx-cal-d.has:hover{filter:brightness(.97);box-shadow:0 2px 8px var(--acsh)}
+.dx-cal-d.today{box-shadow:inset 0 0 0 2px #0f172a}
+.dx-cal-d.on{background:var(--ac)}.dx-cal-d.on .d,.dx-cal-d.on .n{color:#fff}
+.dx-addbar{display:flex;align-items:center;gap:10px;border:1.5px solid var(--ac);border-radius:12px;padding:10px 14px;color:#94a3b8;background:#fff}
+.dx-addbar input{flex:1;border:none;outline:none;font-size:15px;font-family:inherit;color:#0f172a;min-width:0}
+.dx-adddate{display:flex;align-items:center;justify-content:space-between;gap:10px;margin:10px 2px 8px;font-size:12px;color:#64748b;font-weight:700}
+.dx-adddate input{margin-left:6px;padding:4px 8px;border:1px solid var(--line);border-radius:8px;font-family:'DM Mono',monospace;font-size:12px}
+.dx-added{color:#15803d;font-weight:800}
+.dx-results{max-height:52vh;overflow-y:auto;border:1px solid var(--line);border-radius:12px}
+.dx-res{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid #f1f5f9}
+.dx-res:last-child{border-bottom:none}
+.dx-res .n{font-weight:800;font-size:13.5px}
+.dx-res .n .mono{font-weight:500;font-size:11.5px;color:#64748b;margin-left:6px}
+.dx-res .m{font-size:11.5px;color:#64748b;margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dx-res.off{background:#fafbfc}
+.dx-res.off .n{color:#94a3b8}
+.dx-restag{font-size:11px;font-weight:800;color:#92400e;background:#fef3c7;border-radius:999px;padding:3px 10px;white-space:nowrap}
+.dx-restag.log{color:#15803d;background:#dcfce7}
+.dx-res-empty{padding:26px;text-align:center;color:#94a3b8;font-size:13px}
 .dx-modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.45);backdrop-filter:blur(3px);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px}
 .dx-modal{background:#fff;border-radius:16px;box-shadow:0 24px 60px rgba(15,23,42,.28);width:100%;max-width:420px;padding:18px 20px}
 .dx-modal-h{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
@@ -577,9 +614,10 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   // shops' rolling 2-day window), so instead of one day-chip per day
   // forever, the Log view defaults to just the last 30 days and offers
   // month tag buttons ("September 2026", "August 2026", …) to jump to any
-  // older month's despatches on demand. "recent30" = the 30-day default;
+  // older month's despatches on demand. "all" = the default (no month window);
   // any other value is a "YYYY-MM" month key.
-  const [monthFilter, setMonthFilter] = useState("recent30");
+  const [monthFilter, setMonthFilter] = useState("all");      // ROS India: "all" (default) | "YYYY-MM"
+  const [monthPop, setMonthPop] = useState(null);              // ROS India: "YYYY-MM" whose calendar pop-up is open, if any
   const [addDate, setAddDate] = useState(todayISO());       // which day new adds land on
   const [search, setSearch] = useState("");
   const [waModal, setWaModal] = useState(null);
@@ -600,7 +638,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   const [savingAddress, setSavingAddress] = useState(false);
   // ROS India redesigned Log view — extra display filters (none of these are stored anywhere).
   const [courierFilter, setCourierFilter] = useState("ALL");   // "ALL" | uppercase shipper key | "NONE"
-  const [statusFilter, setStatusFilter] = useState("ALL");     // "ALL" | "transit" | "delivered" | "notrack"
+  const [statusFilter, setStatusFilter] = useState("open");    // "open" (default: not yet delivered) | "ALL" | "transit" | "delivered" | "notrack"
   const [dayFilter, setDayFilter] = useState("all");           // "all" | "YYYY-MM-DD"
   const [listSearch, setListSearch] = useState("");            // filters rows already on the log (not the add-from-sale search)
   const [showAdd, setShowAdd] = useState(false);               // reveals the add-from-sale search box
@@ -608,6 +646,8 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   const [dxPopup, setDxPopup] = useState(null);                // { type: "addr" | "remark", uuid } — small detail pop-ups from the table
   const [remarkDraft, setRemarkDraft] = useState("");
   const [dxCopied, setDxCopied] = useState(false);
+  const [orphanBusy, setOrphanBusy] = useState(false);          // "Add all to the log" in progress
+  const [addedNote, setAddedNote] = useState("");               // "✓ Added …" line in the Add Despatch pop-up
   const datePickRefs = useRef({});                         // uuid -> hidden <input type="date"> behind the Mark Delivered / Delivered button
   const tableTopRef = useRef(null);                        // always-visible horizontal scrollbar above the table (synced with the table itself)
   const tableBodyRef = useRef(null);
@@ -645,11 +685,11 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   });
 
   useEffect(() => {
-    if (!dxPopup) return undefined;
-    const onKey = (ev) => { if (ev.key === "Escape") { setDxPopup(null); setDxCopied(false); } };
+    if (!dxPopup && !showAdd) return undefined;
+    const onKey = (ev) => { if (ev.key === "Escape") { setDxPopup(null); setDxCopied(false); setShowAdd(false); setMonthPop(null); } };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [dxPopup]);
+  }, [dxPopup, showAdd]);
 
   const allSales = sales || [];
   // Only admins/superadmins can delete a row — despatch staff can add,
@@ -886,18 +926,23 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     return s;
   }, [entries, allSales, saleGroupKey]);
 
+  const isPendingSale = (x) => ["", "PENDING"].includes((x.ful || x.status || "").toUpperCase());
   const searchResults = useMemo(() => {
     const q = search.trim().toLowerCase();
     if (!q) return [];
     const digits = q.replace(/\D/g, "");
-    return allSales.filter(s => {
-      const name = (s.customer || "").toLowerCase();
-      const phone = (s.phone || s.contact || "").replace(/\D/g, "");
-      return name.includes(q) || (digits && phone.includes(digits));
+    // Best matches first: sales that CAN be added right now (pending, verified
+    // for ROS India, not already on the log), then the rest, so staff see the
+    // right one on top and the greyed-out ones explain why they can't be added.
+    const rank = (x) => (loggedGroupKeys.has(despatchKeyOf(x)) ? 1 : (isIndiaShop && !x.verified) || !isPendingSale(x) ? 2 : 0);
+    return allSales.filter(x => {
+      const name = (x.customer || "").toLowerCase();
+      const phone = (x.phone || x.contact || "").replace(/\D/g, "");
+      return name.includes(q) || (digits && phone.includes(digits)) || String(x.id || "").toLowerCase().includes(q);
     })
-      .sort((a, b) => (b.readyToShip ? 1 : 0) - (a.readyToShip ? 1 : 0))
-      .slice(0, 12);
-  }, [allSales, search]);
+      .sort((a, b) => (rank(a) - rank(b)) || (b.date || "").localeCompare(a.date || ""))
+      .slice(0, 15);
+  }, [allSales, search, loggedGroupKeys, saleGroupKey, isIndiaShop]);
 
   // Every entry, grouped by dispatchDate — used by the Print/WhatsApp/Copy
   // exports so they can still present a day-by-day breakdown even though
@@ -942,13 +987,20 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     });
   }, [visibleEntries, last30Cutoff]);
 
+  // Every ROS India entry, newest day first (the default, un-windowed list).
+  const allEntriesIndia = useMemo(() => visibleEntries.filter(e => e.dispatchDate).slice().sort((a, b) => {
+    const d = (b.dispatchDate || "").localeCompare(a.dispatchDate || "");
+    if (d !== 0) return d;
+    return (a.createdAt || "").localeCompare(b.createdAt || "");
+  }), [visibleEntries]);
+
   // The entries the flat Log-view table actually shows.
   // ROS India: the last 30 days by default, or one full month once a
   // month tag is picked (see monthFilter). Every other shop: everything,
   // or just the one date currently selected via the day-chip strip.
   const filteredEntries = useMemo(() => {
     if (isIndiaShop) {
-      return monthFilter === "recent30" ? last30EntriesIndia : (entriesByMonthIndia[monthFilter] || []);
+      return monthFilter === "all" ? allEntriesIndia : (entriesByMonthIndia[monthFilter] || []);
     }
     const list = dateFilter === "all"
       ? visibleEntries.slice().sort((a, b) => {
@@ -958,7 +1010,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
         })
       : (entriesByDateAll[dateFilter] || []);
     return list;
-  }, [isIndiaShop, monthFilter, last30EntriesIndia, entriesByMonthIndia, visibleEntries, entriesByDateAll, dateFilter]);
+  }, [isIndiaShop, monthFilter, allEntriesIndia, entriesByMonthIndia, visibleEntries, entriesByDateAll, dateFilter]);
 
   // Per-day counts across the ENTIRE log (not just the visible week) —
   // feeds the Calendar view's day badges.
@@ -1062,7 +1114,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
       || (e.trackingNo || "").replace(/\s+/g, "").toLowerCase().includes(ixQTrack);
   }));
   const ixMatchCourier = (e) => courierFilter === "ALL" || courierKey(e) === courierFilter;
-  const ixMatchStatus = (e) => statusFilter === "ALL" || rowTrackState(e) === statusFilter;
+  const ixMatchStatus = (e) => statusFilter === "ALL" || (statusFilter === "open" ? rowTrackState(e) !== "delivered" : rowTrackState(e) === statusFilter);
   const ixMatchAddr = (e) => addrFilter === "ALL" || !(liveAddressFor(e) || "").trim();
   const ixScope = ixBase.filter(e => ixMatchCourier(e) && ixMatchStatus(e) && ixMatchAddr(e));   // before the day filter
   const shownEntries = !isIndiaShop ? filteredEntries : (dayFilter === "all" ? ixScope : ixScope.filter(e => e.dispatchDate === dayFilter));
@@ -1075,25 +1127,8 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   const ixStatusCounts = { transit: 0, delivered: 0, notrack: 0 };
   ixBase.filter(e => ixMatchCourier(e) && ixMatchAddr(e)).forEach(e => { ixStatusCounts[rowTrackState(e)]++; });
   const ixStatusTotal = ixStatusCounts.transit + ixStatusCounts.delivered + ixStatusCounts.notrack;
-
-  // One cell per calendar day of the window (newest first) so quiet days
-  // show as 0 instead of silently disappearing.
-  const ixDayCounts = {};
-  ixScope.forEach(e => { if (e.dispatchDate) ixDayCounts[e.dispatchDate] = (ixDayCounts[e.dispatchDate] || 0) + 1; });
-  const ixDayList = (() => {
-    if (!isIndiaShop) return [];
-    const out = [];
-    if (monthFilter === "recent30") {
-      for (let i = 0; i < 30; i++) { const d = new Date(); d.setDate(d.getDate() - i); out.push(localISO(d)); }
-    } else {
-      const [y, m] = monthFilter.split("-").map(Number);
-      const last = new Date(y, m, 0).getDate();
-      const today = todayISO();
-      for (let d = last; d >= 1; d--) { const iso = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`; if (iso <= today) out.push(iso); }
-    }
-    return out;
-  })();
-  const ixDayMax = Math.max(1, ...Object.values(ixDayCounts));
+  const ixOpenTotal = ixStatusCounts.transit + ixStatusCounts.notrack;   // not yet delivered
+  const ixCourierTotal = ixBase.filter(e => ixMatchStatus(e) && ixMatchAddr(e)).length;
 
   // Consecutive same-date rows → one group each (shownEntries is already date-desc).
   const ixGroups = [];
@@ -1124,10 +1159,23 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
       notNotified: scope.filter(e => !e.notified).length,
     };
   })();
+  // Sales marked "ready to despatch" under the OLD button that never made it
+  // onto the log (the very bug this redesign fixes) — offered for one-click rescue.
+  const ixOrphans = (() => {
+    if (!isIndiaShop || loading) return [];
+    const seen = new Set(); const out = [];
+    allSales.forEach(x => {
+      if (!x.readyToShip || !isPendingSale(x) || (x.trackingNo || "").trim()) return;
+      const k = despatchKeyOf(x);
+      if (loggedGroupKeys.has(k) || seen.has(k)) return;
+      seen.add(k); out.push(anchorSaleForGroup(groupMembers[k]) || x);
+    });
+    return out;
+  })();
   const ixMissingAddr = isIndiaShop ? filteredEntries.filter(e => !(liveAddressFor(e) || "").trim()).length : 0;
-  const ixFiltersActive = courierFilter !== "ALL" || statusFilter !== "ALL" || addrFilter !== "ALL" || dayFilter !== "all" || !!ixQ;
-  const ixClearFilters = () => { setCourierFilter("ALL"); setStatusFilter("ALL"); setAddrFilter("ALL"); setDayFilter("all"); setListSearch(""); };
-  const ixMonthTitle = monthFilter === "recent30" ? "Last 30 days" : monthLabel(monthFilter);
+  const ixFiltersActive = courierFilter !== "ALL" || statusFilter !== "open" || addrFilter !== "ALL" || dayFilter !== "all" || monthFilter !== "all" || !!ixQ;
+  const ixClearFilters = () => { setCourierFilter("ALL"); setStatusFilter("open"); setAddrFilter("ALL"); setDayFilter("all"); setMonthFilter("all"); setListSearch(""); };
+  const ixMonthTitle = monthFilter === "all" ? "All time" : monthLabel(monthFilter);
 
   const persist = async (uuidOrNull, payload) => {
     setSavingIds(p => ({ ...p, [uuidOrNull || "__new__"]: true }));
@@ -1136,26 +1184,90 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     return res;
   };
 
-  const addFromSale = async (sale) => {
-    const draft = {
-      saleId: sale.id,
-      dispatchDate: addDate,
-      customer: sale.customer || "",
-      phone: sale.phone || sale.contact || "",
-      address: sale.address || "",
-      trackingNo: "",
-      shipper: DEFAULT_SHIPPER,
-      notified: false,
-      remarks: "",
-    };
-    const res = await persist(null, draft);
-    if (res?.error) { showAlert("Could not add to dispatch log: " + res.error); return; }
-    setEntries(prev => [...prev, { ...draft, uuid: res.uuid, createdAt: new Date().toISOString() }]);
-    setSearch("");
-    // Select the date chip the new row landed on, so it's immediately
-    // visible even if addDate isn't today / isn't the currently selected chip.
-    setDateFilter(addDate);
+  /* Explicit "Add to Despatch Log" — the ONLY way a row is created now
+     (ROS India no longer auto-adds from a "ready to ship" flag; that
+     background routine could be interrupted mid-insert, which produced both
+     missing rows and duplicates).
+       • one click = one row for the whole instalment group (Advance/Final…);
+       • a lock stops a double-click, and the database is re-read first so a
+         row added a second ago by someone else is caught too;
+       • the sales in the group are marked "awaiting tracking" so the Sales
+         page shows it straight away;
+       • ROS India: only sales verified by admin can be added (same rule the
+         old Sales-page button enforced). opts.force skips that for sales
+         that were already marked ready under the old flow. */
+  const addFromSale = async (sale, opts = {}) => {
+    const key = despatchKeyOf(sale);
+    const members = (groupMembers[key] && groupMembers[key].length) ? groupMembers[key] : [sale];
+    const anchor = anchorSaleForGroup(members) || sale;
+    if (isIndiaShop && !sale.verified && !opts.force) {
+      if (!opts.quiet) showAlert(`${sale.customer || "This sale"} hasn't been verified against the bank statement yet — ask admin to verify it first.`);
+      return { ok: false, reason: "unverified" };
+    }
+    if (addingKeysRef.current.has(key)) return { ok: false, reason: "busy" };
+    addingKeysRef.current.add(key);
+    try {
+      const ids = new Set(members.map(m => m.id));
+      const fresh = await dbLoadDispatchLog(shopId);
+      const existing = (fresh || entries).find(e => ids.has(e.saleId));
+      if (existing) {
+        if (!opts.quiet) showAlert(`${sale.customer || "This sale"} is already on the Despatch Log (${ddmmyyyy(existing.dispatchDate)}).`);
+        if (fresh && !entries.some(e => e.uuid === existing.uuid)) setEntries(prev => [...prev, existing]);
+        return { ok: false, reason: "exists" };
+      }
+      const draft = {
+        saleId: anchor.id,
+        dispatchDate: opts.date || addDate,
+        customer: anchor.customer || sale.customer || "",
+        phone: anchor.phone || anchor.contact || sale.phone || sale.contact || "",
+        address: anchor.address || sale.address || "",
+        trackingNo: "",
+        shipper: DEFAULT_SHIPPER,
+        notified: false,
+        remarks: "",
+      };
+      const res = await persist(null, draft);
+      if (res?.error) {
+        const dup = /duplicate|unique|23505/i.test(String(res.error));
+        if (!opts.quiet) showAlert(dup ? `${sale.customer || "This sale"} is already on the Despatch Log.` : "Could not add to dispatch log: " + res.error);
+        return { ok: false, reason: dup ? "exists" : "error" };
+      }
+      setEntries(prev => [...prev, { ...draft, uuid: res.uuid, createdAt: new Date().toISOString() }]);
+      // Mark every transaction in the group "awaiting tracking" on the Sales page.
+      const failed = [];
+      if (onSaleFieldEdit) {
+        for (const m of members) {
+          if (m.readyToShip) continue;
+          try { await onSaleFieldEdit(m.id, { readyToShip: true }); } catch (err) { failed.push(m.id); console.error("readyToShip mark failed", m.id, err); }
+        }
+      }
+      if (failed.length && !opts.quiet) showAlert("Added to the Despatch Log, but couldn't mark the sale as 'awaiting tracking' on the Sales page. It will still receive the tracking number once you enter it here.");
+      setSearch("");
+      if (isIndiaShop) {
+        // Make sure the new row isn't hidden behind a leftover filter.
+        setCourierFilter("ALL"); setStatusFilter("open"); setAddrFilter("ALL"); setListSearch(""); setDayFilter("all");
+        setMonthFilter("all");
+      } else {
+        setDateFilter(opts.date || addDate);
+      }
+      return { ok: true };
+    } finally {
+      addingKeysRef.current.delete(key);
+    }
   };
+
+  const addAllOrphans = async () => {
+    if (orphanBusy) return;
+    setOrphanBusy(true);
+    let ok = 0, fail = 0;
+    for (const o of ixOrphans) {
+      const r = await addFromSale(o, { quiet: true, force: true });
+      if (r.ok) ok++; else if (r.reason !== "exists") fail++;
+    }
+    setOrphanBusy(false);
+    showAlert(`Added ${ok} to the Despatch Log.` + (fail ? `\n\n${fail} couldn't be added — please add them with "Add Despatch".` : ""));
+  };
+  const openAddModal = () => { setAddDate(todayISO()); setSearch(""); setAddedNote(""); setShowAdd(true); };
 
   // Auto-add: any sale flagged "Ready to Ship" in the Sales tab that
   // isn't on the log yet gets added automatically, dated today — no
@@ -1170,7 +1282,9 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   // to Ship" on more than one of them must still only create ONE despatch
   // row for that parcel, not one per transaction.
   useEffect(() => {
-    if (loading) return;
+    // ROS India no longer auto-adds (see addFromSale above) — rows are only
+    // created by an explicit "Add Despatch". Kept for any other shop.
+    if (loading || isIndiaShop) return;
     const seenKeys = new Set();
     const toAdd = [];
     allSales.forEach(s => {
@@ -1275,13 +1389,23 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
       // despatch row still shows tracking saved, but the Sales tab would
       // otherwise be left stuck on the old status with no sign anything
       // went wrong.
-      const failures = await pushToLinkedSales(merged, { trackingNo: merged.trackingNo, carrier: merged.shipper }, "tracking");
+      const failures = await pushToLinkedSales(merged, { trackingNo: merged.trackingNo, carrier: merged.shipper, readyToShip: false }, "tracking");
       if (failures.length) {
         const msg = `Couldn't update the linked sale (${failures.map(f=>f.id).join(", ")}) to Fulfilled: ${failures[0].message}`;
         showAlert(`Tracking saved here, but ${msg}\n\nPlease flip its status manually on the Sales tab.`);
         await setLinkWarning(uuid, msg);
       } else {
         await setLinkWarning(uuid, "");
+      }
+    }
+    // Tracking CLEARED here → clear it on the linked sale(s) too (plain field
+    // save, never touches status), so the two pages can't disagree.
+    if (isIndiaShop && "trackingNo" in patch && !merged.trackingNo && merged.saleId && onSaleFieldEdit) {
+      const linkedSale = allSales.find(s => s.id === merged.saleId);
+      const members = linkedSale ? ((groupMembers[despatchKeyOf(linkedSale)] || []).length ? groupMembers[despatchKeyOf(linkedSale)] : [linkedSale]) : [];
+      for (const m of members) {
+        if (!(m.trackingNo || "").trim()) continue;
+        try { await onSaleFieldEdit(m.id, { trackingNo: "" }); } catch (err) { console.error("clear tracking failed", m.id, err); }
       }
     }
     // Delivery confirmation — once a row is marked (or unmarked) delivered,
@@ -1388,16 +1512,35 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     if (!hadError) setAddressModalUuid(null);
   };
 
+  // Admins can remove any row. Everyone else can only remove a row that has no
+  // tracking yet and isn't delivered (i.e. a wrong / duplicate entry) — once a
+  // parcel has shipped it stays on the record unless an admin removes it.
+  const canDeleteRow = (e) => isAdmin || (!e.trackingNo && !e.delivered);
   const removeEntry = async (uuid) => {
-    if (!isAdmin) return; // guarded here too, not just in the UI
-    if (!(await showConfirm("Remove this row from the despatch log? This cannot be undone."))) return;
     const removed = entries.find(e => e.uuid === uuid);
+    if (!removed) return;
+    if (!canDeleteRow(removed)) { showAlert("This parcel already has tracking, so only an admin can remove it."); return; }
+    if (!(await showConfirm(isIndiaShop
+      ? "Remove this row from the despatch log?\n\nThe sale goes back to Pending on the Sales page. This cannot be undone."
+      : "Remove this row from the despatch log? This cannot be undone."))) return;
     setEntries(prev => prev.filter(e => e.uuid !== uuid));
     await dbDeleteDispatchEntry(uuid, shopId);
-    // Stop auto-add from immediately recreating this row — the linked
-    // sale (or, if it's part of a linked group, ANY sale in that group)
-    // is likely still flagged "Ready to Ship" in Sales.
-    if (removed?.saleId) {
+    if (isIndiaShop) {
+      // Put the sale(s) back to plain Pending (no longer "awaiting tracking") —
+      // nothing is left hidden in this browser, so it can simply be added again.
+      if (removed.saleId && onSaleFieldEdit) {
+        const linkedSale = allSales.find(x => x.id === removed.saleId);
+        const members = linkedSale ? ((groupMembers[despatchKeyOf(linkedSale)] || []).length ? groupMembers[despatchKeyOf(linkedSale)] : [linkedSale]) : [];
+        for (const m of members) {
+          if (!m.readyToShip || !isPendingSale(m)) continue;
+          try { await onSaleFieldEdit(m.id, { readyToShip: false }); } catch (err) { console.error("un-mark failed", m.id, err); }
+        }
+      }
+      return;
+    }
+    // Other shops: stop auto-add from immediately recreating this row — the
+    // linked sale (or ANY sale in its group) is likely still flagged "Ready to Ship".
+    if (removed.saleId) {
       const linkedSale = allSales.find(x => x.id === removed.saleId);
       const key = linkedSale ? despatchKeyOf(linkedSale) : removed.saleId;
       setDismissedSaleIds(prev => {
@@ -1425,9 +1568,9 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   // though the on-screen table no longer is.
   const exportDates = Array.from(new Set(exportEntries.map(e => e.dispatchDate).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   const exportRangeLabel = isIndiaShop
-    ? (dayFilter !== "all" ? ddmmyyyy(dayFilter) : (monthFilter === "recent30" ? "Last 30 Days" : monthLabel(monthFilter)))
+    ? (dayFilter !== "all" ? ddmmyyyy(dayFilter) : (monthFilter === "all" ? "All Dates" : monthLabel(monthFilter)))
         + (courierFilter !== "ALL" ? ` · ${courierLabel(courierFilter)}` : "")
-        + (statusFilter !== "ALL" ? ` · ${statusFilter === "transit" ? "In transit" : statusFilter === "delivered" ? "Delivered" : "Awaiting tracking"}` : "")
+        + (statusFilter !== "ALL" ? ` · ${statusFilter === "open" ? "Not yet delivered" : statusFilter === "transit" ? "In transit" : statusFilter === "delivered" ? "Delivered" : "Awaiting tracking"}` : "")
     : (dateFilter === "all"
         ? (exportDates.length ? `${ddmmyyyy(exportDates[0])} – ${ddmmyyyy(exportDates[exportDates.length - 1])}` : "No despatches yet")
         : ddmmyyyy(dateFilter));
@@ -1683,7 +1826,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
           <div className="dx-actions">
             <button className={"dx-iconbtn note" + (e.remarks ? " on" : "")} onClick={() => { setRemarkDraft(e.remarks || ""); setDxPopup({ type: "remark", uuid: e.uuid }); }}
               title={e.remarks ? `Remarks: ${e.remarks}` : "Add remarks"}><IcoNote /></button>
-            {isAdmin && <button className="dx-del" onClick={() => removeEntry(e.uuid)} title="Remove row">✕</button>}
+            {canDeleteRow(e) && <button className="dx-del" onClick={() => removeEntry(e.uuid)} title={isAdmin ? "Remove row" : "Remove this entry (only possible before tracking is added)"}>✕</button>}
           </div>
         </td>
       </tr>
@@ -1760,6 +1903,53 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
       {isIndiaShop && (
         <>
           <style>{INDIA_CSS}</style>
+          {showAdd && (
+            <div className="dx-modal-bg" onClick={() => setShowAdd(false)}>
+              <div className="dx-modal dx-addmodal" onClick={ev => ev.stopPropagation()}>
+                <div className="dx-modal-h">
+                  <div><div className="t">Add to Despatch Log</div><div className="s">Search the sale — its details are filled in for you.</div></div>
+                  <button className="dx-x" onClick={() => setShowAdd(false)} title="Close (Esc)">✕</button>
+                </div>
+                <div className="dx-addbar">
+                  <IcoSearch />
+                  <input autoFocus value={search} onChange={ev => { setSearch(ev.target.value); setAddedNote(""); }} placeholder="Customer name, phone number or invoice no." />
+                </div>
+                <div className="dx-adddate">
+                  <label>Despatch date <input type="date" value={addDate} max={todayISO()} onChange={ev => setAddDate(ev.target.value)} /></label>
+                  {addedNote && <span className="dx-added">✓ {addedNote}</span>}
+                </div>
+                <div className="dx-results">
+                  {!search.trim() ? (
+                    <div className="dx-res-empty">Start typing to find a sale.</div>
+                  ) : searchResults.length === 0 ? (
+                    <div className="dx-res-empty">No sale found for “{search.trim()}”.</div>
+                  ) : searchResults.map(x => {
+                    const gk = despatchKeyOf(x);
+                    const onLog = loggedGroupKeys.has(gk);
+                    const unverified = isIndiaShop && !x.verified;
+                    const notPending = !isPendingSale(x);
+                    const blocked = onLog || unverified || notPending;
+                    const why = onLog ? "Already on log" : notPending ? (x.ful || x.status) : "Not verified — ask admin";
+                    return (
+                      <div key={x.id} className={"dx-res" + (blocked ? " off" : "")}>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div className="n">{titleCase(x.customer) || "—"} <span className="mono">{x.phone || x.contact || "No phone"}</span></div>
+                          <div className="m">{(x.item || "—").toString().slice(0, 60)} · {shop?.symbol || "₹"}{Number(x.amount || 0).toLocaleString()} · {shortDateY(x.date)}</div>
+                        </div>
+                        {blocked ? (
+                          <span className={"dx-restag" + (onLog ? " log" : "")}>{why}</span>
+                        ) : (
+                          <button className="dx-btn pri" onClick={async () => { const r = await addFromSale(x); if (r.ok) setAddedNote(`${titleCase(x.customer)} added to the log`); }}>
+                            <IcoPlus /> Add
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
           {dxPopup && (() => {
             const pe = entries.find(x => x.uuid === dxPopup.uuid);
             if (!pe) return null;
@@ -1802,6 +1992,49 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
               </div>
             );
           })()}
+          {/* ── Month calendar pop-up: parcels despatched on each date ── */}
+          {monthPop && (() => {
+            const [py, pm] = monthPop.split("-").map(Number);
+            const lead = (new Date(py, pm - 1, 1).getDay() + 6) % 7;   // Mon = 0
+            const dim = new Date(py, pm, 0).getDate();
+            const cells = [];
+            for (let i = 0; i < lead; i++) cells.push(null);
+            for (let d = 1; d <= dim; d++) cells.push(`${py}-${String(pm).padStart(2, "0")}-${String(d).padStart(2, "0")}`);
+            const monthTotal = (entriesByMonthIndia[monthPop] || []).length;
+            const today = todayISO();
+            return (
+              <div className="dx-modal-bg" onClick={() => setMonthPop(null)}>
+                <div className="dx-modal dx-calmodal" onClick={ev => ev.stopPropagation()}>
+                  <div className="dx-modal-h">
+                    <div>
+                      <div className="t">📅 {monthLabel(monthPop)}</div>
+                      <div className="s">{monthTotal} parcel{monthTotal !== 1 ? "s" : ""} despatched · click a date to see just that day</div>
+                    </div>
+                    <button className="dx-x" onClick={() => setMonthPop(null)} title="Close (Esc)">✕</button>
+                  </div>
+                  <div className="dx-cal">
+                    {["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(w => <div key={w} className="dx-cal-w">{w}</div>)}
+                    {cells.map((iso, i) => {
+                      if (!iso) return <div key={"b" + i} />;
+                      const n = calendarCounts[iso] || 0;
+                      return (
+                        <button key={iso} disabled={n === 0} onClick={() => { setDayFilter(iso); setMonthPop(null); }}
+                          className={"dx-cal-d" + (n > 0 ? " has" : "") + (iso === today ? " today" : "") + (dayFilter === iso ? " on" : "")}
+                          title={`${weekdayName(iso)}, ${shortDateY(iso)} — ${n} despatched`}>
+                          <span className="d">{Number(iso.slice(8))}</span>
+                          <span className="n">{n || ""}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <div className="dx-modal-f">
+                    <button className="dx-btn" onClick={() => setMonthPop(null)}>Close</button>
+                    <button className="dx-btn pri" onClick={() => { setDayFilter("all"); setMonthPop(null); }}>Show whole month</button>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
           {/* ── Header ── */}
           <div className="dx-top">
             <div>
@@ -1821,11 +2054,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                 <>
                   <button className="dx-btn" onClick={handlePrint} disabled={!exportEntries.length}>🖨️ Print / Export</button>
                   <button className="dx-btn" onClick={copyWeekList} disabled={!exportEntries.length}>📋 Copy List</button>
-                  <button className="dx-btn wa" onClick={sendBulkWhatsApp} disabled={!exportEntries.length}
-                    title="Send the shown despatches as one message, grouped by day — no fixed recipient, for your despatch team chat">
-                    <IcoWA /> Send Sheet via WhatsApp
-                  </button>
-                  <button className="dx-btn pri" onClick={() => setShowAdd(v => !v)}><IcoPlus /> {showAdd ? "Close" : "Add Despatch"}</button>
+                  <button className="dx-hero" onClick={openAddModal} title="Add a sale to the Despatch Log"><span className="pl"><IcoPlus /></span> Add Despatch</button>
                 </>
               )}
             </div>
@@ -1862,46 +2091,32 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                 <div className="dx-frow">
                   <div className="dx-flabel">Month</div>
                   <div className="dx-chips">
-                    <button className={"dx-chip" + (monthFilter === "recent30" ? " on" : "")} onClick={() => { setMonthFilter("recent30"); setDayFilter("all"); }}>
-                      Last 30 Days <b>{last30EntriesIndia.length}</b>
+                    <button className={"dx-chip" + (monthFilter === "all" ? " on" : "")} onClick={() => { setMonthFilter("all"); setDayFilter("all"); setStatusFilter("open"); setMonthPop(null); }}
+                      title="Back to the default view — every parcel not yet delivered">
+                      All months <b>{allEntriesIndia.length}</b>
                     </button>
                     {monthTagsIndia.map(mk => (
-                      <button key={mk} className={"dx-chip" + (monthFilter === mk ? " on" : "")} onClick={() => { setMonthFilter(mk); setDayFilter("all"); }}>
-                        {monthLabel(mk)} <b>{entriesByMonthIndia[mk].length}</b>
+                      <button key={mk} className={"dx-chip" + (monthFilter === mk ? " on" : "")} title="Open this month's calendar"
+                        onClick={() => { setMonthFilter(mk); setDayFilter("all"); setStatusFilter("ALL"); setMonthPop(mk); }}>
+                        📅 {monthLabel(mk)} <b>{entriesByMonthIndia[mk].length}</b>
                       </button>
                     ))}
                   </div>
+                  {dayFilter !== "all" && (
+                    <button className="dx-chip on" onClick={() => setDayFilter("all")} title="Show the whole month again" style={{ flex: "0 0 auto" }}>
+                      {weekdayShort(dayFilter)} {Number(dayFilter.slice(8))} {monthLabel(dayFilter.slice(0, 7))} ✕
+                    </button>
+                  )}
                   <label className="dx-search">
                     <IcoSearch />
                     <input value={listSearch} onChange={e => setListSearch(e.target.value)} placeholder="Search name, phone or tracking no." />
                   </label>
                 </div>
-                <div className="dx-frow">
-                  <div className="dx-flabel">Date</div>
-                  <div className="dx-days">
-                    <div className={"dx-day-cell" + (dayFilter === "all" ? " on" : "")} onClick={() => setDayFilter("all")}>
-                      <div className="d">All</div><div className="n">{ixScope.length}</div>
-                      <div className="bar"><i style={{ width: "100%" }} /></div>
-                    </div>
-                    {ixDayList.map(d => {
-                      const n = ixDayCounts[d] || 0;
-                      return (
-                        <div key={d} className={"dx-day-cell" + (dayFilter === d ? " on" : "") + (n === 0 && dayFilter !== d ? " z" : "")}
-                          title={`${weekdayName(d)}, ${shortDateY(d)} — ${n} despatched`}
-                          onClick={() => { if (n > 0 || dayFilter === d) setDayFilter(dayFilter === d ? "all" : d); }}>
-                          <div className="d">{weekdayShort(d)} {Number(d.slice(8))}</div>
-                          <div className="n">{n}</div>
-                          <div className="bar"><i style={{ width: `${Math.round((n / ixDayMax) * 100)}%` }} /></div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
                 <div className="dx-divider" />
                 <div className="dx-frow">
                   <div className="dx-flabel">Courier</div>
                   <div className="dx-chips" style={{ flex: "0 1 auto" }}>
-                    <button className={"dx-chip" + (courierFilter === "ALL" ? " on" : "")} onClick={() => setCourierFilter("ALL")}>All <b>{ixStatusTotal}</b></button>
+                    <button className={"dx-chip" + (courierFilter === "ALL" ? " on" : "")} onClick={() => setCourierFilter("ALL")}>All <b>{ixCourierTotal}</b></button>
                     {ixCourierKeys.map(k => (
                       <button key={k} className={"dx-chip" + (courierFilter === k ? " on" : "")} onClick={() => setCourierFilter(courierFilter === k ? "ALL" : k)}>
                         {courierLabel(k)} <b>{ixCourierCounts[k] || 0}</b>
@@ -1910,10 +2125,11 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                   </div>
                   <div className="dx-flabel" style={{ width: "auto", marginLeft: 18 }}>Status</div>
                   <div className="dx-segf">
+                    <button className={statusFilter === "open" ? "on t" : ""} onClick={() => setStatusFilter("open")}>📦 Pending Delivery · {ixOpenTotal}</button>
+                    <button className={statusFilter === "transit" ? "on t" : ""} onClick={() => setStatusFilter(statusFilter === "transit" ? "open" : "transit")}>🚚 In Transit · {ixStatusCounts.transit}</button>
+                    <button className={statusFilter === "notrack" ? "on n" : ""} onClick={() => setStatusFilter(statusFilter === "notrack" ? "open" : "notrack")}>Awaiting tracking · {ixStatusCounts.notrack}</button>
+                    <button className={statusFilter === "delivered" ? "on d" : ""} onClick={() => setStatusFilter(statusFilter === "delivered" ? "open" : "delivered")}>✅ Delivered · {ixStatusCounts.delivered}</button>
                     <button className={statusFilter === "ALL" ? "on n" : ""} onClick={() => setStatusFilter("ALL")}>All · {ixStatusTotal}</button>
-                    <button className={statusFilter === "transit" ? "on t" : ""} onClick={() => setStatusFilter(statusFilter === "transit" ? "ALL" : "transit")}>🚚 In Transit · {ixStatusCounts.transit}</button>
-                    <button className={statusFilter === "delivered" ? "on d" : ""} onClick={() => setStatusFilter(statusFilter === "delivered" ? "ALL" : "delivered")}>✅ Delivered · {ixStatusCounts.delivered}</button>
-                    <button className={statusFilter === "notrack" ? "on n" : ""} onClick={() => setStatusFilter(statusFilter === "notrack" ? "ALL" : "notrack")}>Awaiting tracking · {ixStatusCounts.notrack}</button>
                   </div>
                   <div className="dx-count">
                     {ixMissingAddr > 0 && (
@@ -1927,10 +2143,13 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                 </div>
               </div>
 
-              {showAdd && (
-                <div className="dx-card dx-addbox">
-                  <div className="ttl">Add a despatch — search a sale by customer name or phone</div>
-                  {renderAddBox()}
+              {ixOrphans.length > 0 && (
+                <div className="dx-orphan">
+                  <div>
+                    <b>⚠ {ixOrphans.length} sale{ixOrphans.length !== 1 ? "s are" : " is"} marked "ready to despatch" but not on this log</b>
+                    <span> — {ixOrphans.slice(0, 4).map(o => titleCase(o.customer)).join(", ")}{ixOrphans.length > 4 ? ` and ${ixOrphans.length - 4} more` : ""}. They were marked before the new Add Despatch button.</span>
+                  </div>
+                  <button className="dx-btn pri" disabled={orphanBusy} onClick={addAllOrphans}>{orphanBusy ? "Adding…" : `Add ${ixOrphans.length === 1 ? "it" : "all " + ixOrphans.length} to the log`}</button>
                 </div>
               )}
 
@@ -1941,8 +2160,10 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                 ) : shownEntries.length === 0 ? (
                   <div className="dx-empty">
                     {filteredEntries.length === 0
-                      ? (monthFilter === "recent30" ? "Nothing despatched in the last 30 days." : `Nothing despatched in ${monthLabel(monthFilter)}.`)
-                      : "No despatches match these filters."}
+                      ? (monthFilter === "all" ? "Nothing despatched yet." : `Nothing despatched in ${monthLabel(monthFilter)}.`)
+                      : (statusFilter === "open" && courierFilter === "ALL" && addrFilter === "ALL" && dayFilter === "all" && !ixQ
+                          ? "All caught up — no parcels are waiting to be delivered."
+                          : "No despatches match these filters.")}
                     {ixFiltersActive && filteredEntries.length > 0 && (<div style={{ marginTop: 8 }}><button className="dx-clear" onClick={ixClearFilters}>Clear filters</button></div>)}
                   </div>
                 ) : (
