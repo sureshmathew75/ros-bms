@@ -89,9 +89,14 @@ const CSS = `
 @media (max-width:700px){.exq-hide-sm{display:none}}
 `;
 
-export default function BankPayoutsPanel({ exps = [], fmt, shop, shopId, setExpData, expCats = [], setExpCats, pushDeleted }) {
+export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId, setExpData, expCats = [], setExpCats, pushDeleted }) {
   const banks = BANKS[shopId] || BANKS.default;
-  const CATEGORIES = [...BUILTIN_CATEGORIES, ...expCats.filter(c => !BUILTIN_CATEGORIES.includes(c))];
+  // Petty Cash spends are mirrored into `expenses` by the Petty Cash page (category "Petty Cash").
+  // They are cash, not bank payouts, so this page leaves them out (nothing is deleted — they stay
+  // on the Petty Cash page and in the shop's overall expense totals).
+  const isPettyCash = (e) => (e.cat || "").trim().toLowerCase() === "petty cash";
+  const exps = useMemo(() => allExps.filter(e => !isPettyCash(e)), [allExps]);
+  const CATEGORIES = [...BUILTIN_CATEGORIES, ...expCats.filter(c => !BUILTIN_CATEGORIES.includes(c) && c.trim().toLowerCase() !== "petty cash")];
   const ac = shop?.accent || "#6366f1";
   const acText = shop?.accentText || ac;
   const acBg = shop?.accentBg || ac + "14";
@@ -449,7 +454,7 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
       <div style={{ padding: "18px 20px 12px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12 }}>
         <div>
           <h2 style={{ margin: 0, fontSize: 18, fontWeight: 800 }}>💳 Expenses</h2>
-          <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748b" }}>Bank payouts — enter every debit from the statement, one line each</p>
+          <p style={{ margin: "2px 0 0", fontSize: 12, color: "#64748b" }}>Bank payouts — enter every debit from the statement, one line each · Petty Cash spends stay on the Petty Cash page</p>
         </div>
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           {monthBar()}
