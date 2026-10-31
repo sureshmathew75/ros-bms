@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from "react";
+import { useState, useEffect, useMemo, useRef, Fragment } from "react";
 import { dbSaveDispatchEntry, dbLoadDispatchLog, dbDeleteDispatchEntry } from "../db";
 import { showAlert, showConfirm } from "./PopupHost";
 import AddressEntryModal from "./AddressEntryModal";
@@ -347,6 +347,174 @@ function monthLabel(ym) {
 }
 const currentMonthKey = () => todayISO().slice(0, 7);
 
+/* ═══════════════════════════════════════════════════════════════════════
+   ROS INDIA — redesigned Log view helpers (display only; no data logic)
+   ═══════════════════════════════════════════════════════════════════════ */
+const MON_ABBR = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const shortDate = (iso) => { if (!iso) return "—"; const [, m, d] = iso.split("-"); return `${d} ${MON_ABBR[Number(m) - 1]}`; };
+const shortDateY = (iso) => { if (!iso) return "—"; const [y, m, d] = iso.split("-"); return `${d} ${MON_ABBR[Number(m) - 1]} ${y}`; };
+const weekdayShort = (iso) => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString("en-GB", { weekday: "short" }); };
+const titleCase = (s) => (s || "").toLowerCase().replace(/(^|[\s.\-'(])([a-z])/g, (_, a, b) => a + b.toUpperCase());
+const shipperLabel = (s) => { const u = (s || "").toUpperCase(); return u === "SPEEDPOST" ? "Speed Post" : u === "FEDEX" ? "FedEx" : (s || ""); };
+const daysBetween = (a, b) => {
+  if (!a || !b) return null;
+  const [y1, m1, d1] = a.split("-").map(Number); const [y2, m2, d2] = b.split("-").map(Number);
+  return Math.round((new Date(y2, m2 - 1, d2) - new Date(y1, m1 - 1, d1)) / 86400000);
+};
+// Delivery state used by the Status filter: delivered / in transit (has
+// tracking, not yet delivered) / awaiting tracking (nothing to track yet).
+const rowTrackState = (e) => e.delivered ? "delivered" : (e.trackingNo ? "transit" : "notrack");
+const courierLabel = (k) => k === "NONE" ? "No courier" : k === "SPEEDPOST" ? "Speed Post" : k === "FEDEX" ? "FedEx" : k === "OTHERS" ? "Others" : k;
+const courierKey = (e) => (e.shipper || "").trim().toUpperCase() || "NONE";
+
+const Svg = ({ size = 14, fill = "none", children }) => (
+  <svg width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke={fill === "none" ? "currentColor" : "none"}
+    strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>{children}</svg>
+);
+const IcoPhone = () => <Svg size={12}><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" /></Svg>;
+const IcoCopy = () => <Svg size={13}><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></Svg>;
+const IcoCheck = ({ size = 13 }) => <Svg size={size}><path d="M20 6 9 17l-5-5" /></Svg>;
+const IcoExt = () => <Svg size={12}><path d="M7 17 17 7M8 7h9v9" /></Svg>;
+const IcoSearch = () => <Svg size={14}><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></Svg>;
+const IcoEdit = () => <Svg size={12}><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></Svg>;
+const IcoNote = () => <Svg size={14}><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M8 13h8M8 17h5" /></Svg>;
+const IcoTruck = () => <Svg size={20}><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7z" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></Svg>;
+const IcoPlus = () => <Svg size={14}><path d="M12 5v14M5 12h14" /></Svg>;
+const IcoWA = () => (
+  <Svg size={14} fill="currentColor"><path d="M12 2a10 10 0 0 0-8.5 15.2L2 22l4.9-1.5A10 10 0 1 0 12 2zm5.4 14c-.2.6-1.3 1.2-1.8 1.2-.5.1-1 .2-3.3-.7-2.8-1.2-4.6-4-4.7-4.2-.1-.2-1.1-1.5-1.1-2.8s.7-2 1-2.3c.2-.3.5-.3.7-.3h.5c.2 0 .4 0 .6.5l.8 1.9c.1.2.1.4 0 .5l-.4.6c-.1.2-.3.3-.1.6.2.3.8 1.3 1.7 2.1 1.2 1 2.1 1.3 2.4 1.5.3.1.5.1.6-.1l.9-1.1c.2-.3.4-.2.6-.1l1.8.9c.3.1.5.2.5.3.1.2.1.8-.1 1.4z" /></Svg>
+);
+
+const INDIA_CSS = `
+.dx{font-family:'DM Sans',system-ui,-apple-system,'Segoe UI',sans-serif;color:#0f172a;-webkit-font-smoothing:antialiased;--ink:#0f172a;--mut:#64748b;--line:#e5e9f0}
+.dx *{box-sizing:border-box}
+.dx .mono{font-family:'DM Mono',ui-monospace,SFMono-Regular,Consolas,monospace}
+.dx button{font-family:inherit}
+/* header */
+.dx-top{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin-bottom:18px}
+.dx-h1{display:flex;align-items:center;gap:12px;margin:0;font-size:22px;font-weight:800;letter-spacing:-.4px}
+.dx-h1-ic{display:inline-flex;align-items:center;justify-content:center;width:38px;height:38px;border-radius:11px;background:var(--acbg);color:var(--ac)}
+.dx-sub{margin:3px 0 0 50px;color:var(--mut);font-size:12.5px}
+.dx-acts-top{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.dx-btn{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:10px;border:1px solid var(--line);background:#fff;color:#334155;font-weight:700;font-size:12.5px;cursor:pointer;transition:background .12s,border-color .12s}
+.dx-btn:hover:not(:disabled){background:#f8fafc;border-color:#cbd5e1}
+.dx-btn:disabled{opacity:.5;cursor:not-allowed}
+.dx-btn.pri{background:linear-gradient(135deg,var(--ac),var(--ac2));color:#fff;border:none;box-shadow:0 4px 12px var(--acsh)}
+.dx-btn.pri:hover:not(:disabled){filter:brightness(1.06);background:linear-gradient(135deg,var(--ac),var(--ac2))}
+.dx-btn.wa{background:#25d366;color:#fff;border:none}
+.dx-btn.wa:hover:not(:disabled){background:#1fbd5a}
+.dx-seg{display:inline-flex;background:#f1f5f9;border:1px solid var(--line);border-radius:10px;padding:2px}
+.dx-seg button{padding:6px 14px;border-radius:8px;border:none;background:transparent;font-weight:700;font-size:12.5px;color:#64748b;cursor:pointer}
+.dx-seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 3px rgba(15,23,42,.14)}
+/* KPI cards */
+.dx-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:14px;margin-bottom:16px}
+.dx-kpi{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px 13px;box-shadow:0 1px 3px rgba(15,23,42,.05);position:relative;overflow:hidden}
+.dx-kpi:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--c,#cbd5e1)}
+.dx-kpi .l{font-size:10.5px;font-weight:800;color:var(--mut);text-transform:uppercase;letter-spacing:.07em}
+.dx-kpi .v{font-size:27px;font-weight:800;margin-top:3px;letter-spacing:-.6px;line-height:1.15}
+.dx-kpi .v small{font-size:13px;font-weight:700;letter-spacing:0}
+.dx-kpi .s{font-size:11.5px;color:var(--mut);margin-top:2px}
+/* filters */
+.dx-card{background:#fff;border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 4px rgba(15,23,42,.05)}
+.dx-filters{padding:14px 16px;margin-bottom:14px;display:flex;flex-direction:column;gap:12px}
+.dx-frow{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.dx-flabel{font-size:10.5px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.09em;width:58px;flex-shrink:0}
+.dx-chips{display:flex;gap:6px;flex-wrap:nowrap;overflow-x:auto;scrollbar-width:thin;padding:2px 0;flex:1;min-width:0}
+.dx-chip{display:inline-flex;align-items:center;gap:7px;padding:6px 13px;border-radius:999px;border:1px solid var(--line);background:#f8fafc;color:#475569;font-weight:600;font-size:12.5px;cursor:pointer;white-space:nowrap;flex:0 0 auto;transition:all .12s}
+.dx-chip:hover{border-color:#cbd5e1;background:#f1f5f9}
+.dx-chip b{font-size:10.5px;background:#e2e8f0;color:#64748b;border-radius:999px;padding:1px 7px;font-weight:800}
+.dx-chip.on{background:var(--acbg);border-color:var(--ac);color:var(--actext);font-weight:800}
+.dx-chip.on b{background:var(--ac);color:#fff}
+.dx-search{display:flex;align-items:center;gap:8px;background:#f8fafc;border:1px solid var(--line);border-radius:10px;padding:7px 12px;width:300px;max-width:100%;color:#94a3b8;flex-shrink:0}
+.dx-search input{border:none;outline:none;background:transparent;flex:1;min-width:0;font-size:12.5px;color:#0f172a;font-family:inherit}
+.dx-search:focus-within{border-color:var(--ac);background:#fff}
+.dx-days{display:flex;gap:7px;overflow-x:auto;flex:1;min-width:0;padding:2px 2px 6px;scrollbar-width:thin}
+.dx-day-cell{flex:0 0 auto;min-width:60px;text-align:center;border:1px solid var(--line);border-radius:10px;padding:6px 6px 5px;background:#fff;cursor:pointer;transition:all .12s}
+.dx-day-cell:hover:not(.z){border-color:#cbd5e1}
+.dx-day-cell .d{font-size:9.5px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.04em}
+.dx-day-cell .n{font-size:16px;font-weight:800;line-height:1.2}
+.dx-day-cell .bar{height:3px;border-radius:3px;background:#f1f5f9;margin-top:4px;overflow:hidden}
+.dx-day-cell .bar i{display:block;height:100%;background:#f9a8d4;border-radius:3px}
+.dx-day-cell.on{border-color:var(--ac);background:var(--acbg)}
+.dx-day-cell.on .n{color:var(--actext)}
+.dx-day-cell.on .bar i{background:var(--ac)}
+.dx-day-cell.z{cursor:default}.dx-day-cell.z .n{color:#cbd5e1}
+.dx-divider{height:1px;background:#f1f5f9}
+.dx-segf{display:inline-flex;background:#f1f5f9;border:1px solid var(--line);border-radius:10px;padding:2px;flex-wrap:wrap}
+.dx-segf button{padding:6px 13px;border-radius:8px;border:none;background:transparent;font-weight:700;font-size:12.5px;color:#64748b;cursor:pointer;white-space:nowrap}
+.dx-segf button.on{background:#fff;box-shadow:0 1px 3px rgba(15,23,42,.14);color:var(--ink)}
+.dx-segf button.on.t{color:#b45309}.dx-segf button.on.d{color:#15803d}.dx-segf button.on.n{color:#475569}
+.dx-count{margin-left:auto;color:#94a3b8;font-size:12.5px;display:flex;align-items:center;gap:12px}
+.dx-count b{color:#334155}
+.dx-clear{border:none;background:none;color:var(--ac);font-weight:700;font-size:12.5px;cursor:pointer;padding:0;text-decoration:underline}
+/* add box */
+.dx-addbox{padding:14px 16px;margin-bottom:14px}
+.dx-addbox .ttl{font-size:12.5px;font-weight:800;margin-bottom:10px;color:#334155}
+/* table */
+.dx-tablewrap{overflow-x:auto;border-radius:16px}
+.dx-table{width:100%;border-collapse:collapse;min-width:1240px;font-size:13px}
+.dx-table thead th{background:#f8fafc;text-align:left;font-size:10.5px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.08em;padding:11px 12px;border-bottom:1px solid var(--line);white-space:nowrap}
+.dx-day td{background:var(--acbg2);padding:8px 14px;border-top:1px solid var(--acline);border-bottom:1px solid var(--acline)}
+.dx-day-in{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.dx-day-title{font-weight:800;color:var(--actext);font-size:12.5px}
+.dx-day-c{font-weight:600;color:var(--mut);font-size:11.5px}
+.dx-pill{font-size:10.5px;font-weight:800;padding:2px 9px;border-radius:999px}
+.dx-pill.amber{background:#fef3c7;color:#b45309}.dx-pill.green{background:#dcfce7;color:#15803d}.dx-pill.grey{background:#f1f5f9;color:#64748b}
+.dx-table tbody tr.dx-r td{padding:10px 12px;border-bottom:1px solid #f1f5f9;vertical-align:middle}
+.dx-table tbody tr.dx-r:hover td{background:#fbfcfe}
+.dx-table tbody tr.dx-r.deliv td{background:#fafefb}
+.dx-table tbody tr.dx-r.deliv:hover td{background:#f4fcf6}
+.dx-date{font-weight:700;font-size:12.5px;white-space:nowrap}
+.dx-date small{display:block;color:#94a3b8;font-weight:600;font-size:11px;margin-top:1px}
+.dx-date.today{color:var(--actext)}
+.dx-cust{font-weight:700;font-size:13.5px;line-height:1.25}
+.dx-phone{display:flex;align-items:center;gap:5px;color:#475569;margin-top:3px;font-size:12px}
+.dx-badge{display:inline-block;margin-top:4px;font-size:9.5px;font-weight:800;border-radius:999px;padding:1px 7px;white-space:nowrap}
+.dx-addr{display:flex;align-items:flex-start;gap:6px}
+.dx-addr-t{flex:1;min-width:0;color:#475569;line-height:1.45;font-size:12.5px;cursor:default;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.dx-addr-t.more{cursor:pointer}
+.dx-addr-t.open{display:block;white-space:pre-wrap;-webkit-line-clamp:unset}
+.dx-addr-t.empty{color:#94a3b8;font-style:italic;cursor:pointer}
+.dx-more{font-size:10px;font-weight:800;color:var(--ac);cursor:pointer;margin-top:2px}
+.dx-remark{margin-top:4px;font-size:11.5px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;border-radius:7px;padding:2px 8px;display:inline-block;max-width:100%}
+.dx-remark-in{margin-top:5px;width:100%;padding:5px 8px;border:1px solid var(--ac);border-radius:7px;font-size:12px;font-family:inherit;outline:none}
+.dx-iconbtn{flex-shrink:0;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;border-radius:8px;border:1px solid var(--line);background:#fff;color:#64748b;cursor:pointer;transition:all .12s}
+.dx-iconbtn:hover{color:var(--ac);border-color:var(--ac)}
+.dx-iconbtn.ok{background:#dcfce7;color:#15803d;border-color:#bbf7d0}
+.dx-iconbtn.note.on{background:#fef3c7;color:#92400e;border-color:#fde68a}
+.dx-ship{appearance:none;-webkit-appearance:none;border:1px solid transparent;border-radius:8px;padding:5px 24px 5px 10px;font-weight:700;font-size:12px;cursor:pointer;font-family:inherit;outline:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2394a3b8' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center}
+.dx-ship:focus{border-color:var(--ac)}
+.dx-trk-wrap{display:flex;align-items:center;gap:6px}
+.dx-trk{flex:1;min-width:0;width:100%;border:1px solid transparent;background:transparent;border-radius:8px;padding:5px 8px;font-size:12px;font-weight:500;letter-spacing:.1px;outline:none;color:#0f172a;transition:all .12s}
+.dx-trk:hover{border-color:var(--line);background:#fff}
+.dx-trk:focus{border-color:var(--ac);background:#fff}
+.dx-trk.dup{border-color:#fca5a5;background:#fef2f2}
+.dx-trk::placeholder{color:#cbd5e1;font-family:'DM Sans',sans-serif}
+.dx-warn{font-size:10.5px;color:#dc2626;font-weight:700;margin-top:2px;padding-left:8px}
+.dx-track{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:9px;border:1px solid #c7d2fe;background:#eef2ff;color:#4338ca;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap;transition:all .12s}
+.dx-track:hover{background:#e0e7ff}
+.dx-muted{color:#cbd5e1;font-size:12px;white-space:nowrap}
+.dx-hint{color:#94a3b8;font-size:11px;font-style:italic;white-space:nowrap}
+.dx-dl{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.dx-mark{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:9px;border:1px dashed #fcd34d;background:#fffbeb;color:#92400e;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap}
+.dx-mark:hover{background:#fef3c7}
+.dx-dinput{padding:5px 7px;border:1px solid #e2e8f0;border-radius:8px;font-size:11.5px;font-family:'DM Mono',monospace;color:#334155;background:#fff;outline:none;width:118px}
+.dx-dinput:focus{border-color:var(--ac)}
+.dx-deliv{display:inline-flex;align-items:center;gap:6px;padding:6px 11px;border-radius:9px;background:#f0fdf4;border:1px solid #bbf7d0;color:#15803d;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap}
+.dx-deliv span{font-weight:600;font-size:11.5px;color:#3f8f5d}
+.dx-link{border:none;background:none;color:#94a3b8;font-size:11.5px;text-decoration:underline;cursor:pointer;padding:0}
+.dx-link:hover{color:#475569}
+.dx-inform{display:inline-flex;align-items:center;gap:7px;padding:7px 13px;border-radius:10px;border:none;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap;transition:all .12s}
+.dx-inform.send{background:#25d366;color:#fff;box-shadow:0 3px 8px rgba(37,211,102,.3)}
+.dx-inform.send:hover{background:#1fbd5a}
+.dx-inform.done{background:#ecfdf5;color:#15803d;border:1px solid #a7f3d0;padding:6px 12px}
+.dx-inform.off{background:#f1f5f9;color:#94a3b8;cursor:not-allowed}
+.dx-actions{display:flex;align-items:center;gap:6px}
+.dx-del{border:none;background:none;color:#cbd5e1;cursor:pointer;font-size:15px;padding:2px 4px}
+.dx-del:hover{color:#dc2626}
+.dx-empty{padding:46px 20px;text-align:center;color:#94a3b8;font-size:13.5px}
+.dx-foot{padding:12px 16px;border-top:1px solid var(--line);color:#94a3b8;font-size:12px;display:flex;justify-content:space-between}
+`;
+
 /* ── Dismissed-sale tracking ──────────────────────────────────────────
    Auto-add (below) creates a row for any "Ready to Ship" sale that isn't
    on the log. Deleting that row doesn't un-flag the sale in Sales, so
@@ -401,6 +569,13 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   const [copiedTrackingUuid, setCopiedTrackingUuid] = useState(null); // uuid whose 📋 copy button just fired — flips to ✓ briefly
   const [addressModalUuid, setAddressModalUuid] = useState(null); // uuid of the row whose "edit address" popup is open, if any
   const [savingAddress, setSavingAddress] = useState(false);
+  // ROS India redesigned Log view — extra display filters (none of these are stored anywhere).
+  const [courierFilter, setCourierFilter] = useState("ALL");   // "ALL" | uppercase shipper key | "NONE"
+  const [statusFilter, setStatusFilter] = useState("ALL");     // "ALL" | "transit" | "delivered" | "notrack"
+  const [dayFilter, setDayFilter] = useState("all");           // "all" | "YYYY-MM-DD"
+  const [listSearch, setListSearch] = useState("");            // filters rows already on the log (not the add-from-sale search)
+  const [showAdd, setShowAdd] = useState(false);               // reveals the add-from-sale search box
+  const [pendingDelDate, setPendingDelDate] = useState({});    // uuid -> date picked next to "Mark Delivered" before clicking it
   // Keys (see despatchKeyOf) currently in the middle of being written to
   // the despatch log by the auto-add effect below. React state only
   // reflects a new row once its insert has actually returned, so if the
@@ -817,6 +992,88 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     return { total, noTracking, notNotified, delivered, awaitingDelivery };
   }, [filteredEntries]);
 
+  /* ── ROS India redesigned Log view: filters, KPIs, grouping ──────────────
+     Everything here is display-only derivation over `filteredEntries`
+     (already limited to the Last-30-days / picked-month window above) — no
+     stored data and no save logic is touched. Courier / Status / Day /
+     text-search filters stack on top of the month window; each chip row's
+     counts reflect the OTHER active filters so the numbers always match
+     what you'd see after clicking. */
+  const ixQ = listSearch.trim().toLowerCase();
+  const ixQDigits = ixQ.replace(/\D/g, "");
+  const ixQTrack = ixQ.replace(/\s+/g, "");
+  const ixBase = !isIndiaShop ? [] : (!ixQ ? filteredEntries : filteredEntries.filter(e => {
+    const phoneDigits = (livePhoneFor(e) || "").replace(/\D/g, "");
+    return (e.customer || "").toLowerCase().includes(ixQ)
+      || (ixQDigits.length >= 3 && phoneDigits.includes(ixQDigits))
+      || (e.trackingNo || "").replace(/\s+/g, "").toLowerCase().includes(ixQTrack);
+  }));
+  const ixMatchCourier = (e) => courierFilter === "ALL" || courierKey(e) === courierFilter;
+  const ixMatchStatus = (e) => statusFilter === "ALL" || rowTrackState(e) === statusFilter;
+  const ixScope = ixBase.filter(e => ixMatchCourier(e) && ixMatchStatus(e));          // before the day filter
+  const shownEntries = !isIndiaShop ? filteredEntries : (dayFilter === "all" ? ixScope : ixScope.filter(e => e.dispatchDate === dayFilter));
+  const exportEntries = isIndiaShop ? shownEntries : filteredEntries;
+
+  const ixCourierCounts = {};
+  ixBase.filter(ixMatchStatus).forEach(e => { const k = courierKey(e); ixCourierCounts[k] = (ixCourierCounts[k] || 0) + 1; });
+  const ixCourierKeys = Array.from(new Set([...Object.keys(ixCourierCounts), ...(courierFilter !== "ALL" ? [courierFilter] : [])]))
+    .sort((a, b) => (ixCourierCounts[b] || 0) - (ixCourierCounts[a] || 0));
+  const ixStatusCounts = { transit: 0, delivered: 0, notrack: 0 };
+  ixBase.filter(ixMatchCourier).forEach(e => { ixStatusCounts[rowTrackState(e)]++; });
+  const ixStatusTotal = ixStatusCounts.transit + ixStatusCounts.delivered + ixStatusCounts.notrack;
+
+  // One cell per calendar day of the window (newest first) so quiet days
+  // show as 0 instead of silently disappearing.
+  const ixDayCounts = {};
+  ixScope.forEach(e => { if (e.dispatchDate) ixDayCounts[e.dispatchDate] = (ixDayCounts[e.dispatchDate] || 0) + 1; });
+  const ixDayList = (() => {
+    if (!isIndiaShop) return [];
+    const out = [];
+    if (monthFilter === "recent30") {
+      for (let i = 0; i < 30; i++) { const d = new Date(); d.setDate(d.getDate() - i); out.push(localISO(d)); }
+    } else {
+      const [y, m] = monthFilter.split("-").map(Number);
+      const last = new Date(y, m, 0).getDate();
+      const today = todayISO();
+      for (let d = last; d >= 1; d--) { const iso = `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`; if (iso <= today) out.push(iso); }
+    }
+    return out;
+  })();
+  const ixDayMax = Math.max(1, ...Object.values(ixDayCounts));
+
+  // Consecutive same-date rows → one group each (shownEntries is already date-desc).
+  const ixGroups = [];
+  shownEntries.forEach(e => {
+    const last = ixGroups[ixGroups.length - 1];
+    if (last && last.date === e.dispatchDate) last.rows.push(e);
+    else ixGroups.push({ date: e.dispatchDate, rows: [e] });
+  });
+
+  // KPI cards describe the whole month/30-day window (not the narrower
+  // Courier/Status/Day/search filters) so they stay a stable overview.
+  const ixKpi = (() => {
+    const scope = filteredEntries;
+    const transit = scope.filter(e => rowTrackState(e) === "transit");
+    const delivered = scope.filter(e => e.delivered);
+    const noTrack = scope.filter(e => rowTrackState(e) === "notrack").length;
+    const today = todayISO(), yday = yesterdayISO();
+    const oldest = transit.reduce((mx, e) => Math.max(mx, daysBetween(e.dispatchDate, today) || 0), 0);
+    const durs = delivered.map(e => ({ k: courierKey(e), d: daysBetween(e.dispatchDate, e.deliveredDate) })).filter(x => x.d !== null && x.d >= 0);
+    const avg = durs.length ? durs.reduce((s, x) => s + x.d, 0) / durs.length : null;
+    const byC = {};
+    durs.forEach(x => { (byC[x.k] ||= []).push(x.d); });
+    const perCourier = Object.entries(byC).sort((a, b) => b[1].length - a[1].length).slice(0, 2)
+      .map(([k, arr]) => `${courierLabel(k)} ${(arr.reduce((s, v) => s + v, 0) / arr.length).toFixed(1)}`);
+    return {
+      total: scope.length, transit: transit.length, delivered: delivered.length, noTrack, oldest, avg, perCourier,
+      todayN: scope.filter(e => e.dispatchDate === today).length, ydayN: scope.filter(e => e.dispatchDate === yday).length,
+      notNotified: scope.filter(e => !e.notified).length,
+    };
+  })();
+  const ixFiltersActive = courierFilter !== "ALL" || statusFilter !== "ALL" || dayFilter !== "all" || !!ixQ;
+  const ixClearFilters = () => { setCourierFilter("ALL"); setStatusFilter("ALL"); setDayFilter("all"); setListSearch(""); };
+  const ixMonthTitle = monthFilter === "recent30" ? "Last 30 days" : monthLabel(monthFilter);
+
   const persist = async (uuidOrNull, payload) => {
     setSavingIds(p => ({ ...p, [uuidOrNull || "__new__"]: true }));
     const res = await dbSaveDispatchEntry(shopId, uuidOrNull ? { ...payload, _uuid: uuidOrNull } : payload);
@@ -1111,9 +1368,11 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   // "All dates", or one picked day chip), chronological. Exports stay
   // grouped by day internally for a readable paper/WhatsApp record even
   // though the on-screen table no longer is.
-  const exportDates = Array.from(new Set(filteredEntries.map(e => e.dispatchDate).filter(Boolean))).sort((a, b) => a.localeCompare(b));
+  const exportDates = Array.from(new Set(exportEntries.map(e => e.dispatchDate).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   const exportRangeLabel = isIndiaShop
-    ? (monthFilter === "recent30" ? "Last 30 Days" : monthLabel(monthFilter))
+    ? (dayFilter !== "all" ? ddmmyyyy(dayFilter) : (monthFilter === "recent30" ? "Last 30 Days" : monthLabel(monthFilter)))
+        + (courierFilter !== "ALL" ? ` · ${courierLabel(courierFilter)}` : "")
+        + (statusFilter !== "ALL" ? ` · ${statusFilter === "transit" ? "In transit" : statusFilter === "delivered" ? "Delivered" : "Awaiting tracking"}` : "")
     : (dateFilter === "all"
         ? (exportDates.length ? `${ddmmyyyy(exportDates[0])} – ${ddmmyyyy(exportDates[exportDates.length - 1])}` : "No despatches yet")
         : ddmmyyyy(dateFilter));
@@ -1121,7 +1380,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   const copyWeekList = async () => {
     const lines = [`Despatch — ${exportRangeLabel}`, ""];
     exportDates.forEach(d => {
-      const dayList = entriesByDateAll[d] || [];
+      const dayList = exportEntries.filter(x => x.dispatchDate === d);
       lines.push(`${ddmmyyyy(d)} (${dayList.length})`);
       dayList.forEach((e, i) => lines.push(
         `  ${i + 1}. ${e.customer || "—"} — ${livePhoneFor(e) || "—"} — ${e.trackingNo || "no tracking yet"} (${e.shipper || "no shipper"})${e.delivered ? ` ✅ delivered ${ddmmyyyy(e.deliveredDate || "")}` : ""}`
@@ -1138,9 +1397,9 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
      internal despatch group chat. Mirrors the old Dispatch Sheet's "Send
      via WhatsApp" button in SalesPanel.jsx. */
   const sendBulkWhatsApp = () => {
-    const lines = [`🚚 *Despatch Log* — ${exportRangeLabel}`, `${filteredEntries.length} item${filteredEntries.length !== 1 ? "s" : ""}`, ""];
+    const lines = [`🚚 *Despatch Log* — ${exportRangeLabel}`, `${exportEntries.length} item${exportEntries.length !== 1 ? "s" : ""}`, ""];
     exportDates.forEach(d => {
-      const dayList = entriesByDateAll[d] || [];
+      const dayList = exportEntries.filter(x => x.dispatchDate === d);
       lines.push(`*${ddmmyyyy(d)}*`);
       dayList.forEach((e, i) => {
         lines.push(`${i + 1}. ${e.customer || "—"}`);
@@ -1163,7 +1422,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     const w = window.open("", "_blank");
     if (!w) return;
     const sections = exportDates.map(d => {
-      const dayList = entriesByDateAll[d] || [];
+      const dayList = exportEntries.filter(x => x.dispatchDate === d);
       const rows = dayList.map((e, i) => `
         <tr>
           <td>${i + 1}</td>
@@ -1188,7 +1447,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
         th{background:#f8fafc;text-transform:uppercase;letter-spacing:0.04em;font-size:10px;}
       </style></head><body>
       <h1>🚚 Despatch Log</h1>
-      <p>${exportRangeLabel} · ${filteredEntries.length} item${filteredEntries.length !== 1 ? "s" : ""}</p>
+      <p>${exportRangeLabel} · ${exportEntries.length} item${exportEntries.length !== 1 ? "s" : ""}</p>
       ${sections}
       </body></html>`);
     w.document.close();
@@ -1204,11 +1463,241 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
 
   const jumpToDay = (iso) => {
     setViewMode("log");
-    setDateFilter(iso);
+    if (isIndiaShop) {
+      // ROS India's Log is month-scoped: open that day's month, then narrow to the day.
+      setMonthFilter(iso.slice(0, 7));
+      setCourierFilter("ALL"); setStatusFilter("ALL"); setListSearch("");
+      setDayFilter(iso);
+    } else {
+      setDateFilter(iso);
+    }
   };
 
+
+  // One ROS India table row. All behaviour (saveEntry, notify, markDelivered,
+  // address popup, remarks, remove…) is the same handlers the old table used.
+  const renderIndiaRow = (e) => {
+    const dupKey = (e.trackingNo || "").replace(/\s+/g, "").toUpperCase();
+    const isDup = dupKey && (trackingIndex[dupKey] || []).length > 1;
+    const canNotify = !!(e.trackingNo && e.shipper);
+    const shipperColor = shipperColorFor(e.shipper);
+    const linkedSaleForRow = allSales.find(s => s.id === e.saleId);
+    const rowGroupKey = linkedSaleForRow ? despatchKeyOf(linkedSaleForRow) : (e.saleId || e.uuid);
+    const rowGroupCount = (groupMembers[rowGroupKey] || []).length;
+    const isSameCustomerDup = dupCustomerGroupKeys.has(rowGroupKey);
+    const collisionOthers = linkedSaleForRow ? phoneCollisionFor(linkedSaleForRow) : null;
+    const fullAddress = liveAddressFor(e);
+    const addrOneLine = fullAddress.replace(/\s*\n\s*/g, ", ");
+    const addressHasMore = addrOneLine.length > 85;
+    const isAddressExpanded = !!expandedAddresses[e.uuid];
+    const phone = livePhoneFor(e);
+    const isRowToday = e.dispatchDate === todayISO();
+    const trackUrl = canNotify ? staffTrackingURL(e.shipper, e.trackingNo) : null;
+    return (
+      <tr key={e.uuid} className={"dx-r" + (e.delivered ? " deliv" : "")}>
+        {/* Date */}
+        <td style={{ width: 78 }}>
+          <div className={"dx-date" + (isRowToday ? " today" : "")}>{shortDate(e.dispatchDate)}
+            <small>{weekdayShort(e.dispatchDate)}{isRowToday ? " · Today" : ""}</small>
+          </div>
+        </td>
+        {/* Customer + phone (+ link / duplicate warnings, unchanged logic) */}
+        <td style={{ width: 175, minWidth: 150 }}>
+          <div className="dx-cust">{titleCase(e.customer) || "—"}</div>
+          <div className="dx-phone mono"><IcoPhone />{phone || "—"}</div>
+          {rowGroupCount > 1 && (
+            <span className="dx-badge" title="This row covers several linked sale transactions (e.g. Advance + Final) for one parcel — entering tracking here fulfils all of them."
+              style={{ color: "#4338ca", background: "#e0e7ff" }}>🔗 {rowGroupCount} linked</span>
+          )}
+          {isSameCustomerDup && (
+            <div><span className="dx-badge" title="Another despatch row exists for this same customer/phone but isn't linked to this one — check whether this is really a separate order."
+              style={{ color: "#b45309", background: "#fef3c7" }}>⚠ check duplicate</span></div>
+          )}
+          {collisionOthers && (
+            <div title={`Same phone number also appears under "${collisionOthers[0].customer}" in Sales — if that's the same person, link them so tracking reaches both.`}
+              style={{ marginTop: 4, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+              <span className="dx-badge" style={{ color: "#9a3412", background: "#ffedd5", marginTop: 0 }}>⚠ same phone as "{collisionOthers[0].customer}"</span>
+              <button
+                onClick={async () => {
+                  if (!(await showConfirm(`Link "${linkedSaleForRow.customer}" and "${collisionOthers[0].customer}" as the same customer?\n\nTracking entered on either one will then update both.`))) return;
+                  for (const other of collisionOthers) await handleManualLink(linkedSaleForRow, other);
+                }}
+                className="dx-badge" style={{ color: "#4338ca", background: "#e0e7ff", border: "none", cursor: "pointer", marginTop: 0 }}>
+                🔗 Link orders
+              </button>
+            </div>
+          )}
+          {e.linkWarning && (
+            <div title={e.linkWarning} style={{ marginTop: 4, display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap" }}>
+              <span className="dx-badge" style={{ color: "#991b1b", background: "#fee2e2", marginTop: 0 }}>⚠ Sales not updated</span>
+              <button onClick={() => retryLinkPush(e)} className="dx-badge" style={{ color: "#4338ca", background: "#e0e7ff", border: "none", cursor: "pointer", marginTop: 0 }}>↻ Retry</button>
+              <button onClick={() => setLinkWarning(e.uuid, "")} title="Dismiss without retrying" className="dx-badge" style={{ color: "#64748b", background: "#f1f5f9", border: "none", cursor: "pointer", marginTop: 0 }}>✕</button>
+            </div>
+          )}
+        </td>
+        {/* Address (always the live Sales address; ✏️ edits it there) + remarks */}
+        <td style={{ minWidth: 200 }}>
+          <div className="dx-addr">
+            <div style={{ flex: 1, minWidth: 0 }}>
+              {fullAddress ? (
+                <>
+                  <div className={"dx-addr-t" + (addressHasMore ? " more" : "") + (isAddressExpanded ? " open" : "")}
+                    onClick={() => addressHasMore && setExpandedAddresses(p => ({ ...p, [e.uuid]: !p[e.uuid] }))}
+                    title={addressHasMore ? (isAddressExpanded ? "Click to collapse" : "Click to see full address") : undefined}>
+                    {isAddressExpanded ? fullAddress : addrOneLine}
+                  </div>
+                  {addressHasMore && (
+                    <div className="dx-more" onClick={() => setExpandedAddresses(p => ({ ...p, [e.uuid]: !p[e.uuid] }))}>{isAddressExpanded ? "▲ less" : "▼ more"}</div>
+                  )}
+                </>
+              ) : (
+                <div className="dx-addr-t empty" onClick={() => e.saleId && setAddressModalUuid(e.uuid)}>No address yet — tap to add one</div>
+              )}
+              {openRemarksUuid === e.uuid ? (
+                <input autoFocus className="dx-remark-in" value={e.remarks} placeholder="Remarks"
+                  onChange={ev => updateEntry(e.uuid, { remarks: ev.target.value })}
+                  onBlur={ev => { saveEntry(e.uuid, { remarks: ev.target.value }); setOpenRemarksUuid(null); }}
+                  onKeyDown={ev => { if (ev.key === "Enter") ev.target.blur(); }} />
+              ) : e.remarks ? (
+                <div className="dx-remark" title="Click to edit remarks" style={{ cursor: "pointer" }} onClick={() => setOpenRemarksUuid(e.uuid)}>📝 {e.remarks}</div>
+              ) : null}
+            </div>
+            {e.saleId && (
+              <button className="dx-iconbtn" onClick={() => setAddressModalUuid(e.uuid)} title="Edit address"><IcoEdit /></button>
+            )}
+          </div>
+        </td>
+        {/* Shipper */}
+        <td style={{ width: 128 }}>
+          <select className="dx-ship" value={e.shipper}
+            onChange={ev => saveEntry(e.uuid, { shipper: ev.target.value })}
+            style={{ color: e.shipper ? shipperColor.color : "#94a3b8", backgroundColor: e.shipper ? shipperColor.bg : "#f8fafc", borderColor: e.shipper ? "transparent" : "#e2e8f0" }}>
+            <option value="">Select…</option>
+            {SHIPPERS.map(s => <option key={s} value={s}>{shipperLabel(s)}</option>)}
+          </select>
+        </td>
+        {/* Tracking number (editable) + copy */}
+        <td style={{ width: 212, minWidth: 190 }}>
+          <div className="dx-trk-wrap">
+            <input className={"dx-trk mono" + (isDup ? " dup" : "")} value={e.trackingNo} placeholder="Tracking no."
+              onChange={ev => updateEntry(e.uuid, { trackingNo: ev.target.value.toUpperCase() })}
+              onBlur={ev => saveEntry(e.uuid, { trackingNo: ev.target.value.toUpperCase() })} />
+            {e.trackingNo && (
+              <button className={"dx-iconbtn" + (copiedTrackingUuid === e.uuid ? " ok" : "")} onClick={() => copyTrackingNo(e.uuid, e.trackingNo)} title="Copy tracking number">
+                {copiedTrackingUuid === e.uuid ? <IcoCheck /> : <IcoCopy />}
+              </button>
+            )}
+          </div>
+          {isDup && <div className="dx-warn">⚠ used on another row</div>}
+        </td>
+        {/* Track */}
+        <td style={{ width: 96 }}>
+          {!canNotify ? <span className="dx-muted">—</span> : trackUrl ? (
+            <button className="dx-track" onClick={() => trackClick(e, trackUrl)}
+              title={MANUAL_ENTRY_SHIPPERS.has((e.shipper || "").toUpperCase()) ? "Opens the tracking page and copies the tracking number so you can paste it in" : "Opens this parcel's tracking page directly"}>
+              Track <IcoExt />
+            </button>
+          ) : <span className="dx-hint">Check {shipperLabel(e.shipper)} directly</span>}
+        </td>
+        {/* Delivery */}
+        <td style={{ width: 252 }}>
+          {!canNotify ? <span className="dx-muted">—</span> : e.delivered ? (
+            openDeliveryUuid === e.uuid ? (
+              <input autoFocus type="date" className="dx-dinput" defaultValue={e.deliveredDate || todayISO()} max={todayISO()}
+                onBlur={ev => markDelivered(e, ev.target.value)} />
+            ) : (
+              <div className="dx-dl">
+                <button className="dx-deliv" onClick={() => setOpenDeliveryUuid(e.uuid)} title="Click to correct the delivery date">
+                  <IcoCheck /> Delivered <span className="mono">{shortDateY(e.deliveredDate || todayISO())}</span>
+                </button>
+                <button className="dx-link" onClick={() => undoDelivered(e)} title="Undo — not actually delivered">Undo</button>
+              </div>
+            )
+          ) : (
+            <div className="dx-dl">
+              <button className="dx-mark" onClick={() => markDelivered(e, pendingDelDate[e.uuid] || todayISO())}
+                title="Mark this parcel delivered on the date shown — you can correct the date afterwards">
+                <IcoCheck /> Mark Delivered
+              </button>
+              <input type="date" className="dx-dinput" value={pendingDelDate[e.uuid] || todayISO()} max={todayISO()}
+                onChange={ev => setPendingDelDate(p => ({ ...p, [e.uuid]: ev.target.value }))} title="Delivery date" />
+            </div>
+          )}
+        </td>
+        {/* Inform customer (WhatsApp) */}
+        <td style={{ width: 132 }}>
+          <button className={"dx-inform " + (!canNotify ? "off" : e.notified ? "done" : "send")}
+            onClick={() => canNotify && notify(e)} disabled={!canNotify}
+            title={canNotify ? (e.notified ? "Notified — click to resend" : "Send tracking to customer") : "Add tracking number + shipper first"}>
+            {e.notified ? <><IcoCheck /> Informed</> : <><IcoWA /> Send Details</>}
+          </button>
+        </td>
+        {/* Remarks + admin remove */}
+        <td style={{ width: 66 }}>
+          <div className="dx-actions">
+            <button className={"dx-iconbtn note" + (e.remarks ? " on" : "")} onClick={() => setOpenRemarksUuid(e.uuid)}
+              title={e.remarks ? `Remarks: ${e.remarks}` : "Add remarks"}><IcoNote /></button>
+            {isAdmin && <button className="dx-del" onClick={() => removeEntry(e.uuid)} title="Remove row">✕</button>}
+          </div>
+        </td>
+      </tr>
+    );
+  };
+
+  // "Add a despatch" search box — same search-to-add behaviour as before,
+  // just defined once so both the classic and the ROS India layout use it.
+  const renderAddBox = () => (
+      <div style={{ marginBottom: 22, display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 320px", minWidth: 260, position: "relative" }}>
+          <input
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="🔍 Search customer name or phone to add to the despatch log…"
+            style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #e2e8f0", fontSize: 13.5, fontFamily: "inherit", boxSizing: "border-box" }}
+          />
+          {searchResults.length > 0 && (
+            <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: "white", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 10px 30px rgba(15,23,42,0.12)", zIndex: 50, maxHeight: 320, overflowY: "auto" }}>
+              {searchResults.map(s => (
+                <div key={s.id} onClick={() => addFromSale(s)}
+                  style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}
+                  onMouseEnter={e => e.currentTarget.style.background = "#f8fafc"}
+                  onMouseLeave={e => e.currentTarget.style.background = "white"}>
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", textTransform: "uppercase" }}>{s.customer || "—"}</div>
+                    <div style={{ fontSize: 11.5, color: "#64748b" }}>{s.phone || s.contact || "No phone"} · <span style={{ textTransform: "uppercase" }}>{s.item || "—"}</span></div>
+                  </div>
+                  <div style={{ flexShrink: 0, display: "flex", gap: 6 }}>
+                    {s.readyToShip && (
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: "#166534", background: "#dcfce7", borderRadius: 999, padding: "2px 8px" }}>Ready</span>
+                    )}
+                    {loggedSaleIds[s.id] && (
+                      <span style={{ fontSize: 10.5, fontWeight: 700, color: "#92400e", background: "#fef3c7", borderRadius: 999, padding: "2px 8px" }}>
+                        already on log ×{loggedSaleIds[s.id]}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "#64748b", fontWeight: 700, flexShrink: 0 }}>
+          Add to
+          <input type="date" value={addDate} max={todayISO()} onChange={e => setAddDate(e.target.value)}
+            style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, fontFamily: "inherit" }} />
+        </label>
+      </div>
+  );
+
   return (
-    <div style={{ padding: "20px 22px", maxWidth: 1180, margin: "0 auto" }}>
+    <div className={isIndiaShop ? "dx" : undefined}
+      style={{
+        padding: "20px 22px", maxWidth: isIndiaShop ? 1560 : 1180, margin: "0 auto",
+        ...(isIndiaShop ? {
+          "--ac": shop?.accent || "#e95597", "--ac2": "#c73d80", "--acsh": "rgba(233,85,151,0.33)",
+          "--acbg": shop?.accentBg || "#fef0f7", "--acbg2": "#fdf5f9", "--acline": "#fbe3ee", "--actext": shop?.accentText || "#7d1047",
+        } : {}),
+      }}>
       {waModal && <WaModal data={waModal} onClose={() => { waModal.onSent && waModal.onSent(); setWaModal(null); }} />}
       {addressModalUuid && (() => {
         const rowForAddress = entries.find(x => x.uuid === addressModalUuid);
@@ -1222,6 +1711,190 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
         );
       })()}
 
+      {isIndiaShop && (
+        <>
+          <style>{INDIA_CSS}</style>
+          {/* ── Header ── */}
+          <div className="dx-top">
+            <div>
+              <h1 className="dx-h1"><span className="dx-h1-ic"><IcoTruck /></span>Despatch Log</h1>
+              <p className="dx-sub">
+                {viewMode === "log"
+                  ? "Every parcel sent out — track it, mark it delivered, and keep the customer informed."
+                  : "Calendar & monthly trend"}
+              </p>
+            </div>
+            <div className="dx-acts-top">
+              <div className="dx-seg">
+                <button className={viewMode === "log" ? "on" : ""} onClick={() => setViewMode("log")}>📋 Log</button>
+                <button className={viewMode === "calendar" ? "on" : ""} onClick={() => setViewMode("calendar")}>📅 Calendar</button>
+              </div>
+              {viewMode === "log" && (
+                <>
+                  <button className="dx-btn" onClick={handlePrint} disabled={!exportEntries.length}>🖨️ Print / Export</button>
+                  <button className="dx-btn" onClick={copyWeekList} disabled={!exportEntries.length}>📋 Copy List</button>
+                  <button className="dx-btn wa" onClick={sendBulkWhatsApp} disabled={!exportEntries.length}
+                    title="Send the shown despatches as one message, grouped by day — no fixed recipient, for your despatch team chat">
+                    <IcoWA /> Send Sheet via WhatsApp
+                  </button>
+                  <button className="dx-btn pri" onClick={() => setShowAdd(v => !v)}><IcoPlus /> {showAdd ? "Close" : "Add Despatch"}</button>
+                </>
+              )}
+            </div>
+          </div>
+
+          {viewMode === "log" && (
+            <>
+              {/* ── Summary cards ── */}
+              <div className="dx-kpis">
+                <div className="dx-kpi" style={{ "--c": "var(--ac)" }}>
+                  <div className="l">Despatched · {ixMonthTitle}</div>
+                  <div className="v">{ixKpi.total}</div>
+                  <div className="s">Today {ixKpi.todayN} · Yesterday {ixKpi.ydayN}</div>
+                </div>
+                <div className="dx-kpi" style={{ "--c": "#f59e0b" }}>
+                  <div className="l">In Transit</div>
+                  <div className="v" style={{ color: "#b45309" }}>{ixKpi.transit}</div>
+                  <div className="s">{ixKpi.transit ? `oldest on the road: ${ixKpi.oldest} day${ixKpi.oldest === 1 ? "" : "s"}` : "nothing on the road"}{ixKpi.noTrack ? ` · ${ixKpi.noTrack} awaiting tracking` : ""}</div>
+                </div>
+                <div className="dx-kpi" style={{ "--c": "#22c55e" }}>
+                  <div className="l">Delivered</div>
+                  <div className="v" style={{ color: "#15803d" }}>{ixKpi.delivered}</div>
+                  <div className="s">{ixKpi.total ? `${Math.round((ixKpi.delivered / ixKpi.total) * 100)}% of ${ixMonthTitle.toLowerCase()}` : "—"}</div>
+                </div>
+                <div className="dx-kpi" style={{ "--c": "#3b82f6" }}>
+                  <div className="l">Avg. Delivery Time</div>
+                  <div className="v" style={{ color: "#1d4ed8" }}>{ixKpi.avg === null ? "—" : <>{ixKpi.avg.toFixed(1)} <small>days</small></>}</div>
+                  <div className="s">{ixKpi.perCourier.length ? ixKpi.perCourier.join(" · ") : "once parcels are marked delivered"}</div>
+                </div>
+              </div>
+
+              {/* ── Filters ── */}
+              <div className="dx-card dx-filters">
+                <div className="dx-frow">
+                  <div className="dx-flabel">Month</div>
+                  <div className="dx-chips">
+                    <button className={"dx-chip" + (monthFilter === "recent30" ? " on" : "")} onClick={() => { setMonthFilter("recent30"); setDayFilter("all"); }}>
+                      Last 30 Days <b>{last30EntriesIndia.length}</b>
+                    </button>
+                    {monthTagsIndia.map(mk => (
+                      <button key={mk} className={"dx-chip" + (monthFilter === mk ? " on" : "")} onClick={() => { setMonthFilter(mk); setDayFilter("all"); }}>
+                        {monthLabel(mk)} <b>{entriesByMonthIndia[mk].length}</b>
+                      </button>
+                    ))}
+                  </div>
+                  <label className="dx-search">
+                    <IcoSearch />
+                    <input value={listSearch} onChange={e => setListSearch(e.target.value)} placeholder="Search name, phone or tracking no." />
+                  </label>
+                </div>
+                <div className="dx-frow">
+                  <div className="dx-flabel">Date</div>
+                  <div className="dx-days">
+                    <div className={"dx-day-cell" + (dayFilter === "all" ? " on" : "")} onClick={() => setDayFilter("all")}>
+                      <div className="d">All</div><div className="n">{ixScope.length}</div>
+                      <div className="bar"><i style={{ width: "100%" }} /></div>
+                    </div>
+                    {ixDayList.map(d => {
+                      const n = ixDayCounts[d] || 0;
+                      return (
+                        <div key={d} className={"dx-day-cell" + (dayFilter === d ? " on" : "") + (n === 0 && dayFilter !== d ? " z" : "")}
+                          title={`${weekdayName(d)}, ${shortDateY(d)} — ${n} despatched`}
+                          onClick={() => { if (n > 0 || dayFilter === d) setDayFilter(dayFilter === d ? "all" : d); }}>
+                          <div className="d">{weekdayShort(d)} {Number(d.slice(8))}</div>
+                          <div className="n">{n}</div>
+                          <div className="bar"><i style={{ width: `${Math.round((n / ixDayMax) * 100)}%` }} /></div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div className="dx-divider" />
+                <div className="dx-frow">
+                  <div className="dx-flabel">Courier</div>
+                  <div className="dx-chips" style={{ flex: "0 1 auto" }}>
+                    <button className={"dx-chip" + (courierFilter === "ALL" ? " on" : "")} onClick={() => setCourierFilter("ALL")}>All <b>{ixStatusTotal}</b></button>
+                    {ixCourierKeys.map(k => (
+                      <button key={k} className={"dx-chip" + (courierFilter === k ? " on" : "")} onClick={() => setCourierFilter(courierFilter === k ? "ALL" : k)}>
+                        {courierLabel(k)} <b>{ixCourierCounts[k] || 0}</b>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="dx-flabel" style={{ width: "auto", marginLeft: 18 }}>Status</div>
+                  <div className="dx-segf">
+                    <button className={statusFilter === "ALL" ? "on n" : ""} onClick={() => setStatusFilter("ALL")}>All · {ixStatusTotal}</button>
+                    <button className={statusFilter === "transit" ? "on t" : ""} onClick={() => setStatusFilter(statusFilter === "transit" ? "ALL" : "transit")}>🚚 In Transit · {ixStatusCounts.transit}</button>
+                    <button className={statusFilter === "delivered" ? "on d" : ""} onClick={() => setStatusFilter(statusFilter === "delivered" ? "ALL" : "delivered")}>✅ Delivered · {ixStatusCounts.delivered}</button>
+                    <button className={statusFilter === "notrack" ? "on n" : ""} onClick={() => setStatusFilter(statusFilter === "notrack" ? "ALL" : "notrack")}>Awaiting tracking · {ixStatusCounts.notrack}</button>
+                  </div>
+                  <div className="dx-count">
+                    {ixKpi.notNotified > 0 && <span>💬 {ixKpi.notNotified} not yet informed</span>}
+                    <span>Showing <b>{shownEntries.length}</b> of {filteredEntries.length}</span>
+                    {ixFiltersActive && <button className="dx-clear" onClick={ixClearFilters}>Clear filters</button>}
+                  </div>
+                </div>
+              </div>
+
+              {showAdd && (
+                <div className="dx-card dx-addbox">
+                  <div className="ttl">Add a despatch — search a sale by customer name or phone</div>
+                  {renderAddBox()}
+                </div>
+              )}
+
+              {/* ── Table ── */}
+              <div className="dx-card" style={{ overflow: "hidden" }}>
+                {loading ? (
+                  <div className="dx-empty">Loading…</div>
+                ) : shownEntries.length === 0 ? (
+                  <div className="dx-empty">
+                    {filteredEntries.length === 0
+                      ? (monthFilter === "recent30" ? "Nothing despatched in the last 30 days." : `Nothing despatched in ${monthLabel(monthFilter)}.`)
+                      : "No despatches match these filters."}
+                    {ixFiltersActive && filteredEntries.length > 0 && (<div style={{ marginTop: 8 }}><button className="dx-clear" onClick={ixClearFilters}>Clear filters</button></div>)}
+                  </div>
+                ) : (
+                  <div className="dx-tablewrap">
+                    <table className="dx-table">
+                      <thead>
+                        <tr>
+                          {["Date", "Customer", "Address", "Shipper", "Tracking No.", "Track", "Delivery", "Inform Customer", ""].map((h, i) => <th key={i}>{h}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {ixGroups.map(g => {
+                          const nTransit = g.rows.filter(r => rowTrackState(r) === "transit").length;
+                          const nDeliv = g.rows.filter(r => r.delivered).length;
+                          const nNo = g.rows.filter(r => rowTrackState(r) === "notrack").length;
+                          return (
+                            <Fragment key={g.date}>
+                              <tr className="dx-day"><td colSpan={9}>
+                                <div className="dx-day-in">
+                                  <span className="dx-day-title">📅 {weekdayName(g.date)}, {Number(g.date.slice(8))} {monthLabel(g.date.slice(0, 7))}</span>
+                                  <span className="dx-day-c">{g.rows.length} despatched</span>
+                                  {nTransit > 0 && <span className="dx-pill amber">{nTransit} in transit</span>}
+                                  {nDeliv > 0 && <span className="dx-pill green">{nDeliv} delivered</span>}
+                                  {nNo > 0 && <span className="dx-pill grey">{nNo} awaiting tracking</span>}
+                                </div>
+                              </td></tr>
+                              {g.rows.map(renderIndiaRow)}
+                            </Fragment>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+                {!loading && shownEntries.length > 0 && (
+                  <div className="dx-foot"><span>{shownEntries.length} despatch{shownEntries.length !== 1 ? "es" : ""} · {ixMonthTitle}</span><span>Click an address to expand · tracking numbers are editable in place</span></div>
+                )}
+              </div>
+            </>
+          )}
+        </>
+      )}
+
+      {!isIndiaShop && (
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 16 }}>
         <div>
           <div style={{ fontSize: 20, fontWeight: 800, color: "#0f172a" }}>🚚 Despatch Log</div>
@@ -1244,8 +1917,9 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
           </div>
         </div>
       </div>
+      )}
 
-      {viewMode === "log" && (
+      {viewMode === "log" && !isIndiaShop && (
       <>
       {isIndiaShop ? (
         /* ROS India — month-tag strip: "Last 30 Days" (the default) plus
@@ -1308,47 +1982,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
         </div>
       </div>
 
-      {/* Search-to-add */}
-      <div style={{ marginBottom: 22, display: "flex", gap: 10, alignItems: "flex-start", flexWrap: "wrap" }}>
-        <div style={{ flex: "1 1 320px", minWidth: 260, position: "relative" }}>
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="🔍 Search customer name or phone to add to the despatch log…"
-            style={{ width: "100%", padding: "11px 14px", borderRadius: 10, border: "1px solid #e2e8f0", fontSize: 13.5, fontFamily: "inherit", boxSizing: "border-box" }}
-          />
-          {searchResults.length > 0 && (
-            <div style={{ position: "absolute", top: "calc(100% + 4px)", left: 0, right: 0, background: "white", border: "1px solid #e2e8f0", borderRadius: 10, boxShadow: "0 10px 30px rgba(15,23,42,0.12)", zIndex: 50, maxHeight: 320, overflowY: "auto" }}>
-              {searchResults.map(s => (
-                <div key={s.id} onClick={() => addFromSale(s)}
-                  style={{ padding: "10px 14px", cursor: "pointer", borderBottom: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}
-                  onMouseEnter={e => e.currentTarget.style.background = "#f8fafc"}
-                  onMouseLeave={e => e.currentTarget.style.background = "white"}>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: "#0f172a", textTransform: "uppercase" }}>{s.customer || "—"}</div>
-                    <div style={{ fontSize: 11.5, color: "#64748b" }}>{s.phone || s.contact || "No phone"} · <span style={{ textTransform: "uppercase" }}>{s.item || "—"}</span></div>
-                  </div>
-                  <div style={{ flexShrink: 0, display: "flex", gap: 6 }}>
-                    {s.readyToShip && (
-                      <span style={{ fontSize: 10.5, fontWeight: 700, color: "#166534", background: "#dcfce7", borderRadius: 999, padding: "2px 8px" }}>Ready</span>
-                    )}
-                    {loggedSaleIds[s.id] && (
-                      <span style={{ fontSize: 10.5, fontWeight: 700, color: "#92400e", background: "#fef3c7", borderRadius: 999, padding: "2px 8px" }}>
-                        already on log ×{loggedSaleIds[s.id]}
-                      </span>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-        <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: "#64748b", fontWeight: 700, flexShrink: 0 }}>
-          Add to
-          <input type="date" value={addDate} max={todayISO()} onChange={e => setAddDate(e.target.value)}
-            style={{ padding: "8px 10px", borderRadius: 8, border: "1px solid #e2e8f0", fontSize: 13, fontFamily: "inherit" }} />
-        </label>
-      </div>
+      {renderAddBox()}
 
       {loading ? (
         <div style={{ padding: 40, textAlign: "center", color: "#94a3b8", border: "1px solid #e2e8f0", borderRadius: 12 }}>Loading…</div>
