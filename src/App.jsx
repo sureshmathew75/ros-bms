@@ -9350,6 +9350,12 @@ return(
                 onInlineEdit={async (saleId, changes) => {
                   const sale = sales.find(s => s.id === saleId);
                   if (!sale) return;
+                  // ROS India: once admin has verified a sale, staff can no longer change its amount
+                  if (shopId === "ros-india" && user?.role === "staff" && sale.verified && changes && "amount" in changes) {
+                    const { amount: _lockedAmount, ...rest } = changes;
+                    changes = rest;
+                    if (Object.keys(changes).length === 0) return;
+                  }
                   const updated = { ...sale, ...changes };
                   await dbSaveSale(shopId, updated);
                   setSalesData(prev => ({
@@ -10008,7 +10014,13 @@ return(
               // Merge over the existing sale so fields the form does not track
               // (e.g. verified) are preserved on save
               const existingSale=(sales||[]).find(x=>x.id===updated.id);
-              const merged={...(existingSale||{}),...updated};
+              let merged={...(existingSale||{}),...updated};
+              // ROS India: verified sale + staff → money fields stay exactly as admin verified them
+              if(shopId==="ros-india"&&user?.role==="staff"&&existingSale?.verified){
+                ["amount","saleLines","discount","otherCharges","otherChargesLabel","taxRate","taxInclusive"].forEach(k=>{
+                  if(k in existingSale) merged[k]=existingSale[k]; else delete merged[k];
+                });
+              }
               const statusChanged=existingSale && (existingSale.status||existingSale.ful)!==(merged.status||merged.ful);
               const groupIds=statusChanged?findInstalmentGroupIds(merged,sales):[merged.id];
               if(statusChanged && (merged.status||merged.ful)==="FULFILLED" && groupIds.length>1){
@@ -17033,6 +17045,8 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
   const statusColor={"PENDING":"#a16207","FULFILLED":"#15803d","RETURN RQSTD":"#c2410c","RETURN RCVD":"#991b1b","EXCHANGED":"#4338ca","REFUNDED":"#6b21a8","GOOD FEEDBACK RCVD":"#065f46","NEGATIVE FEEDBACK RCVD":"#9f1239"};
   const PAY_OPTS = shopId==="ros-india" ? ["SIB","HDFC","FEDERAL BANK","PAYPAL INDIA","SHOP"] : ["SHOP","BANK","EXCHANGE","GIFT","PROMOTION","SHOPIFY"];
 
+  // ROS India: admin-verified sale → staff cannot change items / amount
+  const amountLocked=shopId==="ros-india"&&isStaff&&!!sale.verified;
   const [editCustOpen,setEditCustOpen]=useState(false);
   const [invoiceEditing,setInvoiceEditing]=useState(false);
   const [editCustMatches,setEditCustMatches]=useState([]);
@@ -17213,6 +17227,13 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
       </div>
 
       <Divider title="Order Details"/>
+      {amountLocked&&(
+        <div style={{background:"#fef3c7",border:"1px solid #fde68a",borderRadius:10,padding:"9px 14px",marginBottom:12,display:"flex",alignItems:"center",gap:8}}>
+          <span style={{fontSize:15}}>🔒</span>
+          <p style={{margin:0,fontSize:12,fontWeight:700,color:"#92400e"}}>Verified by admin — items and amount are locked.</p>
+        </div>
+      )}
+      <fieldset disabled={amountLocked} style={{border:0,padding:0,margin:0,minWidth:0}}>
 
       {/* Editable multi-item lines */}
       {hasLines&&(
@@ -17342,6 +17363,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
           </div>
         </div>
       </div>
+      </fieldset>
 
       {!isStaff&&<>
       <Divider title="Pricing"/>

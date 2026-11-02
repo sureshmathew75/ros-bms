@@ -2520,13 +2520,19 @@ We hope you enjoy your purchase! 💜
                             }
 
                             return (<>
+                              {(() => {
+                                // ROS India: admin-verified sale → staff cannot change the amount
+                                const amountLocked = isIndiaShop && isStaff && !!s.verified;
+                                return (
                               <span
-                                onClick={() => { setEditAmountId(s.id); setAmountInput(String(s.amount||"")); }}
-                                title="Click to edit amount"
-                                style={{ fontWeight: 800, fontSize: 13, color: "#0f172a", cursor: "text",
-                                  borderBottom: "1px dashed #cbd5e1", paddingBottom: 1 }}>
-                                {fmtVal(net)}
+                                onClick={() => { if (amountLocked) return; setEditAmountId(s.id); setAmountInput(String(s.amount||"")); }}
+                                title={amountLocked ? "Verified by admin — amount is locked" : "Click to edit amount"}
+                                style={{ fontWeight: 800, fontSize: 13, color: "#0f172a", cursor: amountLocked ? "default" : "text",
+                                  borderBottom: amountLocked ? "none" : "1px dashed #cbd5e1", paddingBottom: 1 }}>
+                                {amountLocked && <span style={{ fontSize: 10, marginRight: 4 }}>🔒</span>}{fmtVal(net)}
                               </span>
+                                );
+                              })()}
                               {(Number(s.adjAmt)||0) > 0 && (
                                 <div style={{ fontSize: 10, color: "#d97706", whiteSpace: "nowrap" }}>was {fmtVal(orig)}</div>
                               )}
