@@ -5,6 +5,7 @@ import AnalyticsPanel from "./components/AnalyticsPanel";
 import DocumentsPanel from "./components/DocumentsPanel";
 import ExpensesPanel from "./components/ExpensesPanel";
 import BankPayoutsPanel from "./components/BankPayoutsPanel";
+import ContractPayoutsPanel from "./components/ContractPayoutsPanel";
 import InvoicesPanel from "./components/InvoicesPanel";
 import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
@@ -15273,6 +15274,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
           {key:"history",  label:"📚 History"},
           {key:"salesbonus", label:"🎯 Sales Bonus"},
           {key:"advloan",  label:"💵 Advances & Loans"},
+          {key:"contract", label:"🎬 Contract Payouts"},
           {key:"annual",   label:"📄 Annual Summary"},
         ].map(t=>(
           <button key={t.key} onClick={()=>setSubTab(t.key)}
@@ -15284,7 +15286,7 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
       </div>
 
       {/* staff + salary strip (shared across Generate/History/Annual) */}
-      {subTab!=="advloan" && (
+      {subTab!=="advloan" && subTab!=="contract" && (
         <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap",marginBottom:14,padding:"14px 16px",background:shop.accentBg,borderRadius:12,border:"1px solid "+shop.accent+"33"}}>
           <div>
             <label style={{fontSize:10,fontWeight:800,color:shop.accentText,textTransform:"uppercase",letterSpacing:"0.06em",display:"block",marginBottom:3}}>Staff</label>
@@ -15419,6 +15421,11 @@ const PayrollPage = ({ shopId, shop, user, users=[] }) => {
             </>
           )}
         </div>
+      )}
+
+      {/* ── CONTRACT PAYOUTS (per-unit contractors, e.g. video editor) — separate from salary payslips ── */}
+      {subTab==="contract" && (
+        <ContractPayoutsPanel shop={shop} shopId={shopId} downloadPdf={downloadElementAsPdf} toWords={numberToWordsIndian}/>
       )}
 
       {/* ── HISTORY ── */}

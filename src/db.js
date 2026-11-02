@@ -1524,6 +1524,62 @@ export const dbDeleteSalesBonusRecord = async (id) => {
   return true;
 };
 
+/* ── Contract payouts (ROS India payroll → "Contract Payouts") — people paid
+   per unit of work (e.g. ₹200 per video) rather than a monthly salary.
+   contract_staff = who + their rate; contract_payouts = one saved slip per
+   person per month. Entirely separate from payroll_records, so salary
+   logic (attendance, advances, loans, carry-forward) is untouched. ───── */
+export const dbLoadContractStaff = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('contract_staff').select('*').eq('shop_id', shopId).order('created_at', { ascending: true });
+  if (error) { console.error('Load contract staff error:', error); return []; }
+  return (data || []).filter(r => r.active !== false).map(r => ({
+    name: r.name, position: r.position || '', rate: Number(r.rate) || 0,
+    unitLabel: r.unit_label || 'video', startMonth: r.start_month || '',
+  }));
+};
+
+export const dbSaveContractStaff = async (shopId, p) => {
+  if (!sb) return false;
+  const { error } = await sb.from('contract_staff').upsert({
+    shop_id: shopId, name: p.name, position: p.position || '', rate: Number(p.rate) || 0,
+    unit_label: p.unitLabel || 'video', start_month: p.startMonth || '', active: true,
+  }, { onConflict: 'shop_id,name' });
+  if (error) { console.error('Save contract staff error:', error); return false; }
+  return true;
+};
+
+export const dbLoadContractPayouts = async (shopId) => {
+  if (!sb) return [];
+  const { data, error } = await sb.from('contract_payouts').select('*').eq('shop_id', shopId).order('month', { ascending: false });
+  if (error) { console.error('Load contract payouts error:', error); return []; }
+  return (data || []).map(r => ({
+    id: r.id, staffName: r.staff_name, month: r.month,
+    units: Number(r.units) || 0, rate: Number(r.rate) || 0, amount: Number(r.amount) || 0,
+    note: r.note || '', generatedDate: r.generated_date, breakdown: r.breakdown_json || {},
+  }));
+};
+
+export const dbSaveContractPayout = async (shopId, staffName, month, units, rate, amount, note, breakdown) => {
+  if (!sb) return null;
+  const id = `CONTRACT-${staffName}-${month}`;
+  const { error } = await sb.from('contract_payouts').upsert({
+    id, shop_id: shopId, staff_name: staffName, month,
+    units: Number(units) || 0, rate: Number(rate) || 0, amount: Number(amount) || 0, note: note || '',
+    generated_date: new Date().toISOString().slice(0, 10),
+    breakdown_json: breakdown,
+  }, { onConflict: 'id' });
+  if (error) { console.error('Save contract payout error:', error); return null; }
+  return id;
+};
+
+export const dbDeleteContractPayout = async (id) => {
+  if (!sb) return false;
+  const { error } = await sb.from('contract_payouts').delete().eq('id', id);
+  if (error) { console.error('Delete contract payout error:', error); return false; }
+  return true;
+};
+
 /* ── Petty Cash: ONE shared cash float per shop ("the office kitty") —
    not a per-staff account — topped up in lump sums (₹1,000–2,000) to
    cover shipping/courier and petrol costs. A simple two-entry-type
