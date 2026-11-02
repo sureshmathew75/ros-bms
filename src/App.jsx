@@ -6,6 +6,8 @@ import DocumentsPanel from "./components/DocumentsPanel";
 import ExpensesPanel from "./components/ExpensesPanel";
 import BankPayoutsPanel from "./components/BankPayoutsPanel";
 import ContractPayoutsPanel from "./components/ContractPayoutsPanel";
+import ROS_FAVICON from "./ros-favicon.png";   // browser-tab icon for ROS India
+import ROS_INDIA_LOGO from "./ros-india-logo.png";   // registered-brand ROS INDIA logo (replaces the old L_IND everywhere)
 import InvoicesPanel from "./components/InvoicesPanel";
 import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
@@ -23,7 +25,6 @@ import PopupHost, { showAlert, showConfirm } from "./components/PopupHost";
 import {
   L_SEL,
   L_HAIR,
-  L_IND,
   STAGE_CFG,
   STAFF_CFG,
   AVATAR_STYLES,
@@ -121,7 +122,7 @@ const SHOPS = [
   },
   {
     id:"ros-india", name:"ROS INDIA", short:"India",
-    flag:"🇮🇳", currency:"INR", symbol:"₹", logo:L_IND,
+    flag:"🇮🇳", currency:"INR", symbol:"₹", logo:ROS_INDIA_LOGO, logoIncludesName:true,
     tagline:"Be Confident with Indian Style",
     todaySales:0, pendingOrders:0, stockValue:"—", monthRevenue:0,
     // Sidebar: deep navy (#00143c) → rose (#dc5078) — exact logo colours
@@ -249,7 +250,7 @@ const Modal=({title,onClose,accent,children,wide=false})=>{
 const SHOP_LOGO_SRC = {
   "ros-selections": L_SEL,
   "ros-hairlines":  L_HAIR,
-  "ros-india":      L_IND,
+  "ros-india":      ROS_INDIA_LOGO,
 };
 
 /* size: "card" (large, on coloured bg) | "sidebar" (small, on gradient bg) */
@@ -274,9 +275,9 @@ const ShopLogo = ({ shopId, size = "card" }) => {
         src={src}
         alt={shopId}
         style={{
-          height: isCard ? 40 : 32,
+          height: shopId==="ros-india" ? (isCard ? 46 : 38) : (isCard ? 40 : 32),
           width: "auto",
-          maxWidth: isCard ? 100 : 80,
+          maxWidth: shopId==="ros-india" ? (isCard ? 110 : 96) : (isCard ? 100 : 80),
           objectFit: "contain",
           display: "block",
         }}
@@ -7259,6 +7260,24 @@ const PurchasePLSection = ({ sale, allSales, shop, shopId, onSave }) => {
 
 const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,initialTab="sales",users=[]})=>{
   const [tab,setTab]=useState(user?.role==="staff"?(shopId==="ros-india"?"attendance":"sales"):(initialTab||"sales"));
+  // Browser tab title + icon (ROS India gets the registered-brand emblem)
+  useEffect(()=>{
+    try{
+      document.title="ROS ORBIT";
+      let link=document.querySelector("link[rel~='icon']");
+      if(!link){ link=document.createElement("link"); link.rel="icon"; document.head.appendChild(link); }
+      if(link.dataset.orig===undefined) link.dataset.orig=link.getAttribute("href")||"";
+      if(shopId==="ros-india"){ link.type="image/png"; link.href=ROS_FAVICON; }
+      else if(link.dataset.orig){ link.href=link.dataset.orig; }
+    }catch{}
+    // leaving the shop (back to the shop picker) → put the original icon back
+    return ()=>{
+      try{
+        const l=document.querySelector("link[rel~='icon']");
+        if(l&&l.dataset.orig) l.href=l.dataset.orig;
+      }catch{}
+    };
+  },[shopId]);
   const [petEnabled,setPetEnabled]=useState(()=>{
     try{ return localStorage.getItem("rosie_enabled")!=="false"; }catch{ return true; }
   });
@@ -8356,7 +8375,9 @@ return(
              what they need — on a narrower window it shrinks and clips instead
              of drawing on top of the search box or the "Developed by" credit. ── */}
           <div style={{gridColumn:2,minWidth:0,overflow:"hidden",display:"flex",alignItems:"center",justifyContent:"center",pointerEvents:"none"}}>
-            <OrbitMark size={isMobile?18:24} wordmarkSize={isMobile?11:14} showWordmark={!isMobile} dark={false} />
+            {shop.logoIncludesName
+              ? <img src={shop.logo} alt="ROS INDIA" style={{height:isMobile?26:36,maxWidth:"100%",objectFit:"contain",display:"block"}} />
+              : <OrbitMark size={isMobile?18:24} wordmarkSize={isMobile?11:14} showWordmark={!isMobile} dark={false} />}
           </div>
           <div style={{gridColumn:1,display:"flex",alignItems:"center",gap:14,minWidth:0}}>
             <button onClick={()=>isMobile?setMobileOpen(o=>!o):setColl(c=>!c)}
@@ -14603,11 +14624,19 @@ const PayslipDocument = ({ shop, staffName, monthLabel, breakdown, netPay, domId
         {/* header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:22}}>
           <div style={{display:"flex",alignItems:"center",gap:14}}>
-            <img src={shop.logo} alt={shop.name} style={{height:74,objectFit:"contain"}}/>
-            <div>
-              <div style={{fontSize:22,fontWeight:900,letterSpacing:"-0.01em",color:"#0f172a",lineHeight:1.15}}>{shop.name}</div>
-              <div style={{fontSize:11.5,color:"#64748b",marginTop:2}}>Kottayam, Kerala, India</div>
-            </div>
+            {shop.logoIncludesName ? (
+              /* the registered logo already carries the shop name — show it on its own, location underneath */
+              <div>
+                <img src={shop.logo} alt={shop.name} style={{height:86,objectFit:"contain",display:"block"}}/>
+                <div style={{fontSize:11.5,color:"#64748b",marginTop:3}}>Kottayam, Kerala, India</div>
+              </div>
+            ) : (<>
+              <img src={shop.logo} alt={shop.name} style={{height:74,objectFit:"contain"}}/>
+              <div>
+                <div style={{fontSize:22,fontWeight:900,letterSpacing:"-0.01em",color:"#0f172a",lineHeight:1.15}}>{shop.name}</div>
+                <div style={{fontSize:11.5,color:"#64748b",marginTop:2}}>Kottayam, Kerala, India</div>
+              </div>
+            </>)}
           </div>
           <div style={{textAlign:"right"}}>
             <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.16em",color:"#94a3b8",textTransform:"uppercase",marginBottom:4}}>Payslip</div>
@@ -14756,11 +14785,19 @@ const BonusStatementDocument = ({ shop, staffName, monthLabel, breakdown, amount
         {/* header */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:22}}>
           <div style={{display:"flex",alignItems:"center",gap:14}}>
-            <img src={shop.logo} alt={shop.name} style={{height:74,objectFit:"contain"}}/>
-            <div>
-              <div style={{fontSize:22,fontWeight:900,letterSpacing:"-0.01em",color:"#0f172a",lineHeight:1.15}}>{shop.name}</div>
-              <div style={{fontSize:11.5,color:"#64748b",marginTop:2}}>Kottayam, Kerala, India</div>
-            </div>
+            {shop.logoIncludesName ? (
+              /* the registered logo already carries the shop name — show it on its own, location underneath */
+              <div>
+                <img src={shop.logo} alt={shop.name} style={{height:86,objectFit:"contain",display:"block"}}/>
+                <div style={{fontSize:11.5,color:"#64748b",marginTop:3}}>Kottayam, Kerala, India</div>
+              </div>
+            ) : (<>
+              <img src={shop.logo} alt={shop.name} style={{height:74,objectFit:"contain"}}/>
+              <div>
+                <div style={{fontSize:22,fontWeight:900,letterSpacing:"-0.01em",color:"#0f172a",lineHeight:1.15}}>{shop.name}</div>
+                <div style={{fontSize:11.5,color:"#64748b",marginTop:2}}>Kottayam, Kerala, India</div>
+              </div>
+            </>)}
           </div>
           <div style={{textAlign:"right"}}>
             <div style={{fontSize:10,fontWeight:800,letterSpacing:"0.16em",color:"#94a3b8",textTransform:"uppercase",marginBottom:4}}>Sales Bonus Statement</div>

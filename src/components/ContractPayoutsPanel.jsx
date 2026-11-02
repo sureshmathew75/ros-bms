@@ -49,11 +49,18 @@ export const ContractSlipDocument = ({ shop, toWords, domId, slipId, generatedDa
         {/* header */}
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 22 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
-            <img src={shop.logo} alt={shop.name} style={{ height: 74, objectFit: "contain" }} />
-            <div>
-              <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: "-0.01em", lineHeight: 1.15 }}>{shop.name}</div>
-              <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 2 }}>Kottayam, Kerala, India</div>
-            </div>
+            {shop.logoIncludesName ? (
+              <div>
+                <img src={shop.logo} alt={shop.name} style={{ height: 86, objectFit: "contain", display: "block" }} />
+                <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 3 }}>Kottayam, Kerala, India</div>
+              </div>
+            ) : (<>
+              <img src={shop.logo} alt={shop.name} style={{ height: 74, objectFit: "contain" }} />
+              <div>
+                <div style={{ fontSize: 22, fontWeight: 900, letterSpacing: "-0.01em", lineHeight: 1.15 }}>{shop.name}</div>
+                <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 2 }}>Kottayam, Kerala, India</div>
+              </div>
+            </>)}
           </div>
           <div style={{ textAlign: "right" }}>
             <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: "0.16em", color: "#94a3b8", textTransform: "uppercase", marginBottom: 4 }}>Contractor Payment Slip</div>
