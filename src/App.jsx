@@ -6,7 +6,6 @@ import DocumentsPanel from "./components/DocumentsPanel";
 import ExpensesPanel from "./components/ExpensesPanel";
 import BankPayoutsPanel from "./components/BankPayoutsPanel";
 import ContractPayoutsPanel from "./components/ContractPayoutsPanel";
-import ROS_FAVICON from "./ros-favicon.png";   // browser-tab icon for ROS India
 import ROS_INDIA_LOGO from "./ros-india-logo.png";   // registered-brand ROS INDIA logo (replaces the old L_IND everywhere)
 import InvoicesPanel from "./components/InvoicesPanel";
 import LogisticsPanel from "./components/LogisticsPanel";
@@ -7260,23 +7259,9 @@ const PurchasePLSection = ({ sale, allSales, shop, shopId, onSave }) => {
 
 const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,customers,setCustomers,shopItems={},saveShopItems,initialTab="sales",users=[]})=>{
   const [tab,setTab]=useState(user?.role==="staff"?(shopId==="ros-india"?"attendance":"sales"):(initialTab||"sales"));
-  // Browser tab title + icon (ROS India gets the registered-brand emblem)
+  // Browser tab title (the tab icon is the ORBIT handshake favicon from index.html — left untouched)
   useEffect(()=>{
-    try{
-      document.title="ROS ORBIT";
-      let link=document.querySelector("link[rel~='icon']");
-      if(!link){ link=document.createElement("link"); link.rel="icon"; document.head.appendChild(link); }
-      if(link.dataset.orig===undefined) link.dataset.orig=link.getAttribute("href")||"";
-      if(shopId==="ros-india"){ link.type="image/png"; link.href=ROS_FAVICON; }
-      else if(link.dataset.orig){ link.href=link.dataset.orig; }
-    }catch{}
-    // leaving the shop (back to the shop picker) → put the original icon back
-    return ()=>{
-      try{
-        const l=document.querySelector("link[rel~='icon']");
-        if(l&&l.dataset.orig) l.href=l.dataset.orig;
-      }catch{}
-    };
+    try{ document.title="ROS ORBIT"; }catch{}
   },[shopId]);
   const [petEnabled,setPetEnabled]=useState(()=>{
     try{ return localStorage.getItem("rosie_enabled")!=="false"; }catch{ return true; }
