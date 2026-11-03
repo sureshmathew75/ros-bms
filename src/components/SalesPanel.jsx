@@ -3634,23 +3634,49 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                 </div>
               );
             })()}
-            {/* Purchase amount total — ROS INDIA, admin only (never shown to staff) */}
+            {/* Purchase amount + P/L — ROS INDIA, admin only (never shown to staff).
+                The same purchase invoice is saved on every row of a linked group, so
+                it is counted ONCE per distinct purchase (invoice no. + amount), never summed per row. */}
             {isIndiaShop && !isStaff && (() => {
-              const purTotal = linkedGroupView.reduce((a, x) => a + (Number(x.purAmount) || 0), 0);
-              const purOther = linkedGroupView.reduce((a, x) => a + (Number(x.purOtherCharges) || 0), 0);
+              const seen = new Set();
+              let purTotal = 0, purOther = 0;
+              linkedGroupView.forEach(x => {
+                const pa = Number(x.purAmount) || 0;
+                if (!(pa > 0)) return;
+                const key = String(x.purInvNo || "").trim().toLowerCase() + "|" + pa;
+                if (seen.has(key)) return;
+                seen.add(key);
+                purTotal += pa;
+                purOther += Number(x.purOtherCharges) || 0;
+              });
               if (!(purTotal > 0)) return null;
+              const soldNet = linkedGroupView.reduce((a, x) => a + (Number(x.amount) || 0) - Math.max(Number(x.adjAmt) || 0, Number(x.refundAmt) || 0), 0);
+              const pl = soldNet - purTotal - purOther;
+              const showPL = user?.role === "superadmin";
               return (
                 <div style={{
-                  display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
+                  display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap",
                   padding: "10px 14px", marginBottom: 12,
                   background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10,
                 }}>
-                  <div style={{ fontSize: 10, fontWeight: 700, color: "#166534", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                    🛒 Purchase Amount{purOther > 0 ? " (+ other charges)" : ""}
+                  <div>
+                    <div style={{ fontSize: 10, fontWeight: 700, color: "#166534", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                      🛒 Purchase Amount{purOther > 0 ? " (+ other charges)" : ""}
+                    </div>
+                    <div style={{ fontSize: 15, fontWeight: 800, color: "#166534", fontFamily: "DM Mono, monospace" }}>
+                      {shop.symbol}{purTotal.toLocaleString()}{purOther > 0 ? ` + ${shop.symbol}${purOther.toLocaleString()}` : ""}
+                    </div>
                   </div>
-                  <div style={{ fontSize: 15, fontWeight: 800, color: "#166534", fontFamily: "DM Mono, monospace" }}>
-                    {shop.symbol}{purTotal.toLocaleString()}{purOther > 0 ? ` + ${shop.symbol}${purOther.toLocaleString()}` : ""}
-                  </div>
+                  {showPL && (
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: pl >= 0 ? "#166534" : "#991b1b", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                        Profit / Loss
+                      </div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: pl >= 0 ? "#166534" : "#991b1b", fontFamily: "DM Mono, monospace" }}>
+                        {pl >= 0 ? "+" : "-"}{shop.symbol}{Math.abs(pl).toLocaleString()}
+                      </div>
+                    </div>
+                  )}
                 </div>
               );
             })()}
@@ -3689,7 +3715,11 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                       <div style={{ fontWeight: 800, fontSize: 14, color: "#0f172a", whiteSpace: "nowrap" }}>
                         {fmt ? fmt(shopId, Number(gs.amount) || 0) : gs.amount}
                       </div>
-                      {isIndiaShop && !isStaff && Number(gs.purAmount) > 0 && (
+                      {isIndiaShop && !isStaff && Number(gs.purAmount) > 0 && (() => {
+                        // same purchase saved on several linked rows → show it on the first one only
+                        const k = x => String(x.purInvNo || "").trim().toLowerCase() + "|" + (Number(x.purAmount) || 0);
+                        return linkedGroupView.findIndex(x => Number(x.purAmount) > 0 && k(x) === k(gs)) === i;
+                      })() && (
                         <div style={{
                           marginTop: 4, display: "inline-block", fontFamily: "DM Mono, monospace", fontSize: 11, fontWeight: 700,
                           color: "#166534", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 7,
