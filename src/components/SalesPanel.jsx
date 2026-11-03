@@ -3634,6 +3634,26 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                 </div>
               );
             })()}
+            {/* Purchase amount total — ROS INDIA, admin only (never shown to staff) */}
+            {isIndiaShop && !isStaff && (() => {
+              const purTotal = linkedGroupView.reduce((a, x) => a + (Number(x.purAmount) || 0), 0);
+              const purOther = linkedGroupView.reduce((a, x) => a + (Number(x.purOtherCharges) || 0), 0);
+              if (!(purTotal > 0)) return null;
+              return (
+                <div style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10,
+                  padding: "10px 14px", marginBottom: 12,
+                  background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 10,
+                }}>
+                  <div style={{ fontSize: 10, fontWeight: 700, color: "#166534", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                    🛒 Purchase Amount{purOther > 0 ? " (+ other charges)" : ""}
+                  </div>
+                  <div style={{ fontSize: 15, fontWeight: 800, color: "#166534", fontFamily: "DM Mono, monospace" }}>
+                    {shop.symbol}{purTotal.toLocaleString()}{purOther > 0 ? ` + ${shop.symbol}${purOther.toLocaleString()}` : ""}
+                  </div>
+                </div>
+              );
+            })()}
             <div style={{ overflowY: "auto", border: "1px solid #e2e8f0", borderRadius: 10 }}>
               {linkedGroupView.map((gs, i) => {
                 const gType = instalmentTagType(gs);
@@ -3665,8 +3685,19 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                         <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}><strong>📝 Remarks:</strong> <span style={{fontStyle:"italic"}}>{gs.rem||gs.remarks}</span></div>
                       )}
                     </div>
-                    <div style={{ fontWeight: 800, fontSize: 14, color: "#0f172a", whiteSpace: "nowrap" }}>
-                      {fmt ? fmt(shopId, Number(gs.amount) || 0) : gs.amount}
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontWeight: 800, fontSize: 14, color: "#0f172a", whiteSpace: "nowrap" }}>
+                        {fmt ? fmt(shopId, Number(gs.amount) || 0) : gs.amount}
+                      </div>
+                      {isIndiaShop && !isStaff && Number(gs.purAmount) > 0 && (
+                        <div style={{
+                          marginTop: 4, display: "inline-block", fontFamily: "DM Mono, monospace", fontSize: 11, fontWeight: 700,
+                          color: "#166534", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 7,
+                          padding: "2px 8px", whiteSpace: "nowrap",
+                        }} title={gs.purInvNo ? `Invoice: ${gs.purInvNo}` : "No invoice number on file"}>
+                          🛒 {shop.symbol}{Number(gs.purAmount).toLocaleString()}
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
