@@ -9,7 +9,7 @@ const today = () => new Date().toISOString().split('T')[0];
 /* ═══════════════════════════════════════════════════════════
    SALES
    ═══════════════════════════════════════════════════════════ */
-export const dbSaveSale = async (shopId, sale) => {
+export const dbSaveSale = async (shopId, sale, opts = {}) => {
   if (!sb) return;
 
   // Core columns — guaranteed to exist in every Supabase sales table
@@ -104,6 +104,13 @@ export const dbSaveSale = async (shopId, sale) => {
   const { data: existing } = await sb.from('sales')
     .select('id').eq('id', core.id).eq('shop_id', shopId).maybeSingle();
 
+  // New sales / imports pass { insertOnly: true }: if that invoice number is already
+  // taken in this shop, refuse to save instead of silently UPDATING (= overwriting)
+  // the earlier sale that owns the number.
+  if (existing && opts.insertOnly) {
+    throw new Error('Invoice number ' + core.id + ' already exists in this shop — not saved, to avoid overwriting the earlier sale');
+  }
+
   const upsert = async (data) => {
     if (existing) {
       return sb.from('sales').update(data).eq('id', core.id).eq('shop_id', shopId);
@@ -151,8 +158,12 @@ export const dbLoadSales = async (shopId) => {
   let from = 0;
   const PAGE = 1000;
   while (true) {
+    // Fixed ORDER BY is required when paging with range(): without it Postgres may
+    // return rows in a different order on each page request, which can silently
+    // skip or repeat rows once a shop has more than one page (1000) of sales.
     const { data, error } = await sb.from('sales').select('*')
       .eq('shop_id', shopId)
+      .order('id', { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) { console.error('Load sales error:', error); return null; }
     if (!data || data.length === 0) break;

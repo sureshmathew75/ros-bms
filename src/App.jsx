@@ -7835,6 +7835,12 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
 const addSale = async (form) => {
   const pfx = {["ros-selections"]:"SI",["ros-hairlines"]:"SH",["ros-india"]:"IN"}[shopId];
   const nid = form.invoiceNo || `${pfx}-${Date.now().toString().slice(-6)}`;
+  // Never let a new sale reuse an invoice number that already exists in this shop —
+  // saving would overwrite the earlier sale that owns it.
+  if((sales||[]).some(x=>x.id===nid)){
+    showAlert("Invoice number "+nid+" is already used by another sale in this shop, so this sale was NOT saved (it would have overwritten that sale). Please close this form, open New Sale again and save.");
+    return;
+  }
 
   // Encode saleLines into the item field so it survives Supabase round-trip
   // without needing a new column. Format: "__LINES__:{json}\n{displayText}"
@@ -7865,7 +7871,12 @@ const addSale = async (form) => {
   setModal(null);
   const _usedNum = parseInt((nid||"0").match(/^(?:ROS|IND)(\d{4})\d$/)?.[1]||"0")||0;
   if(_usedNum >= 1313) { try { localStorage.setItem("ros_lastInv_"+shopId, String(_usedNum)); } catch{} }
-  dbSaveSale(shopId, newSale).catch(err => console.error("❌ Supabase save failed:", err));
+  dbSaveSale(shopId, newSale, { insertOnly: true }).catch(err => {
+    console.error("❌ Supabase save failed:", err);
+    // The row is already on screen, so without this the user would think it was saved
+    // and only discover it missing after a refresh.
+    showAlert("⚠️ Sale "+nid+" was NOT saved to the database"+(err&&err.message?" ("+err.message+")":"")+". It will disappear when you refresh. Please take a screenshot of this message and send it to the developer, and do not close this page until it is re-entered.");
+  });
   // Auto-save/update customer record
   if(form.customer){
     const existing=customers.find(c=>c.name===form.customer);
@@ -9908,7 +9919,7 @@ return(
               const BATCH=50;
               for(let i=0;i<rows.length;i+=BATCH){
                 const batch=rows.slice(i,i+BATCH);
-                await Promise.all(batch.map(sale=>dbSaveSale(shopId,sale).catch(e=>console.error("Shopify import save failed:",sale.id,e))));
+                await Promise.all(batch.map(sale=>dbSaveSale(shopId,sale,{insertOnly:true}).catch(e=>console.error("Shopify import save failed:",sale.id,e))));
               }
             }}
           />
@@ -18395,7 +18406,13 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
         return indNums.length>0?Math.max(...indNums):1312;
       } else {
         const v=localStorage.getItem("ros_lastInv_"+shopId);
-        return v?parseInt(v)||1312:1312;
+        const localNum=v?parseInt(v)||1312:1312;
+        // The browser counter resets to 1312 on a new browser/device or cleared data, which
+        // re-issued old invoice numbers. Always continue from the highest number already
+        // used in this shop for the current financial year.
+        const re=new RegExp("^ROS(\\d{4})"+_fySuffix+"$");
+        const salesNum=(sales||[]).reduce((mx,s)=>{const m=String(s.id||"").match(re);return m?Math.max(mx,parseInt(m[1])):mx;},1312);
+        return Math.max(localNum,salesNum);
       }
     } catch{return 1312;}
   };
