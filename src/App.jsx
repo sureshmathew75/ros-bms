@@ -12361,6 +12361,20 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   const [collapsedLogDates, setCollapsedLogDates] = React.useState({}); // date -> bool, daily-log view
   const [sheetMonth, setSheetMonth] = React.useState(new Date().toISOString().slice(0,7)); // "YYYY-MM" shown in the Stock Sheet
 
+  // Admin quick correction: type the actual quantity straight into the sheet,
+  // confirm, and it is logged as a stock correction (same as ⚖️ Correct Stock).
+  const setStockQuickly = async (item, newQty) => {
+    const cur = Number(item.currentStock) || 0;
+    const delta = Number(newQty) - cur;
+    if (!(Number(newQty) >= 0) || delta === 0) return false;
+    const sign = delta > 0 ? "+" : "";
+    if (!(await showConfirm("Change stock of "+item.name+" from "+cur+" to "+newQty+" ("+sign+delta+")? This is logged as a stock correction on the item's history."))) return false;
+    const ok = await dbAddInventoryMovement(shopId, item.id, "correction", delta, new Date().toISOString().slice(0,10), null, null, "Quick stock correction by admin");
+    if (ok) { load(); return true; }
+    showAlert("Couldn't save — please check your connection and try again.");
+    return false;
+  };
+
   const load = React.useCallback(() => {
     setLoading(true);
     Promise.all([dbLoadInventoryItems(shopId), dbLoadInventoryMovements(shopId)]).then(([i, m]) => {
@@ -12640,6 +12654,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
 
         {correctFor && (
           <CorrectStockModal item={correctFor} onClose={()=>setCorrectFor(null)} onSave={async(delta,note)=>{
+            if(!(await showConfirm("Change stock of "+correctFor.name+" from "+correctFor.currentStock+" to "+(Number(correctFor.currentStock)+Number(delta))+" ("+(delta>0?"+":"")+delta+")?")))return;
             const ok = await dbAddInventoryMovement(shopId, correctFor.id, "correction", delta, new Date().toISOString().slice(0,10), null, null, note);
             if (ok) { setCorrectFor(null); load(); }
             else showAlert("Couldn't save — please check your connection and try again.");
@@ -12737,6 +12752,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           setSheetMonth={setSheetMonth}
           onLogSale={(item)=>setSoldFor({id:item.id,name:item.name})}
           onRestock={isAdmin ? (item)=>setRestockFor({id:item.id,name:item.name}) : null}
+          onSetStock={isAdmin ? setStockQuickly : null}
           onSelectItem={(id)=>setSelectedItemId(id)}
           fmtDate={fmtDate}
           returnedStock={returnedStockNow}
@@ -12972,9 +12988,11 @@ function rectOf(el) {
 const STOCK_CATEGORIES = ["Cover-Up Patches", "Receding Hairpieces", "Bangs and Fringes", "Updos", "Hair Accessories"];
 const OTHER_CATEGORY = "Other";
 
-const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSelectItem, fmtDate, returnedStock = [],
+const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSetStock, onSelectItem, fmtDate, returnedStock = [],
   fixedCategories = STOCK_CATEGORIES, sectionLabel = "Fresh Stock", sectionIcon = "📦", includeReturnedStock = true }) => {
   const [cellPopover, setCellPopover] = React.useState(null); // {itemId, date, anchor} | null
+  const [editStock, setEditStock] = React.useState(null); // {itemId, value} | null — admin quick stock entry in the Closing cell
+  const [savingStock, setSavingStock] = React.useState(false);
   const [monthPopover, setMonthPopover] = React.useState(null); // {itemId, type:'sale'|'restock', anchor} | null
   const todayStr = new Date().toISOString().slice(0,10);
 
@@ -13173,13 +13191,54 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                     <span style={{ fontWeight:800, fontSize:13, color: soldThisMonth>0?"#b91c1c":"#cbd5e1" }}>{soldThisMonth>0?soldThisMonth:"—"}</span>
                   </td>
                   <td style={{ ...stickyCell, left:LEFT_CLOSE, zIndex:2, background:rowBg, textAlign:"center" }}>
-                    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
-                      <span title="Opening + Added − Sold — a plain calculation, never adjusted by a stock correction. See this item's own History for any correction logged against it." style={{
-                        display:"inline-block", minWidth:34, padding:"3px 0", borderRadius:999, fontWeight:900, fontSize:14,
-                        color: closingBalance<=0?"#dc2626":closingBalance<=2?"#d97706":"#166534",
-                        background: closingBalance<=0?"#fef2f2":closingBalance<=2?"#fffbeb":"#f0fdf4",
-                      }}>{closingBalance}</span>
-                    </div>
+                    {(() => {
+                      const canQuickSet = !!onSetStock && sheetMonth === todayStr.slice(0,7);
+                      const nowStock = Number(item.currentStock) || 0;
+                      if (canQuickSet && editStock && editStock.itemId === item.id) {
+                        const submit = async () => {
+                          const v = editStock.value === "" ? NaN : Number(editStock.value);
+                          if (isNaN(v) || v < 0) return;
+                          if (v === nowStock) { setEditStock(null); return; }
+                          setSavingStock(true);
+                          const ok = await onSetStock(item, v);
+                          setSavingStock(false);
+                          if (ok !== false) setEditStock(null);
+                        };
+                        return (
+                          <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:3 }}>
+                            <input type="number" min="0" autoFocus value={editStock.value} disabled={savingStock}
+                              onChange={e=>setEditStock({ itemId:item.id, value:e.target.value })}
+                              onKeyDown={e=>{ if(e.key==="Enter") submit(); if(e.key==="Escape") setEditStock(null); }}
+                              style={{ width:52, padding:"4px 4px", borderRadius:7, border:"1.5px solid #7dd3fc", fontSize:13, fontWeight:800, textAlign:"center", fontFamily:"inherit", outline:"none" }}/>
+                            <div style={{ display:"flex", gap:4 }}>
+                              <button onClick={submit} disabled={savingStock} title="Save new stock quantity"
+                                style={{ border:"none", background:"#0369a1", color:"white", borderRadius:6, padding:"2px 7px", fontSize:11, fontWeight:800, cursor:"pointer", fontFamily:"inherit" }}>✓</button>
+                              <button onClick={()=>setEditStock(null)} disabled={savingStock} title="Cancel"
+                                style={{ border:"1px solid #e2e8f0", background:"white", color:"#94a3b8", borderRadius:6, padding:"2px 7px", fontSize:11, cursor:"pointer", fontFamily:"inherit" }}>✕</button>
+                            </div>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
+                          <span
+                            onClick={canQuickSet ? (e)=>{ e.stopPropagation(); setEditStock({ itemId:item.id, value:String(nowStock) }); } : undefined}
+                            title={canQuickSet
+                              ? "Click to type the correct stock quantity (asks you to confirm). Opening + Added − Sold shown here; corrections are logged on the item's History."
+                              : "Opening + Added − Sold — a plain calculation, never adjusted by a stock correction. See this item's own History for any correction logged against it."}
+                            style={{
+                              display:"inline-block", minWidth:34, padding:"3px 0", borderRadius:999, fontWeight:900, fontSize:14,
+                              color: closingBalance<=0?"#dc2626":closingBalance<=2?"#d97706":"#166534",
+                              background: closingBalance<=0?"#fef2f2":closingBalance<=2?"#fffbeb":"#f0fdf4",
+                              cursor: canQuickSet ? "text" : "default",
+                              outline: canQuickSet ? "1px dashed #94a3b8" : "none", outlineOffset: 2,
+                            }}>{closingBalance}</span>
+                          {sheetMonth === todayStr.slice(0,7) && nowStock !== closingBalance && (
+                            <span title="Actual stock now, after admin corrections" style={{ fontSize:9.5, fontWeight:800, color:"#0369a1", background:"#e0f2fe", borderRadius:5, padding:"1px 5px", whiteSpace:"nowrap" }}>Now {nowStock}</span>
+                          )}
+                        </div>
+                      );
+                    })()}
                   </td>
                   <td style={{ ...stickyCell, left:LEFT_ACTIONS, zIndex:2, background:rowBg, textAlign:"center", boxShadow:FROZEN_EDGE }}>
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
