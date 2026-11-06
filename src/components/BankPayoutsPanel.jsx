@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect, Fragment } from "react";
 import { dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveExpenseCategory } from "../db";
 import { showAlert, showConfirm } from "./PopupHost";
+import { BankIcon } from "./BankLogos";
 
 /* ─────────────────────────────────────────────────────────────────────────
    EXPENSES — BANK PAYOUTS  (all three shops)
@@ -36,6 +37,7 @@ const NON_EXPENSE_CATS = [DRAWINGS, TRANSFER];
 const isNonExpense = (e) => NON_EXPENSE_CATS.includes((e.cat || "").trim());
 const typeLabel = (e) => { const c = (e.cat || "").trim(); return c === DRAWINGS ? "Personal / drawings" : c === TRANSFER ? "Transfer between accounts" : "Business expense"; };
 const METHODS = ["Bank Transfer", "UPI", "PayPal", "Card", "Cash", "Cheque", "Other"];
+const BANK_ICON_KEYS = ["SIB", "HDFC", "FEDERAL BANK", "PAYPAL INDIA", "CASH"];
 const ACC_COLORS = { "SIB": "#2563eb", "HDFC": "#1d4ed8", "FEDERAL BANK": "#c2410c", "PAYPAL INDIA": "#4338ca", "CASH": "#15803d", "STARLING BANK": "#7c3aed", "LLOYDS BANK": "#15803d", "BANK": "#0369a1", "PAYPAL": "#4338ca", "OTHER": "#64748b" };
 
 const pad = (n) => String(n).padStart(2, "0");
@@ -383,7 +385,9 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
   const acctPill = (k) => (
     <span style={{ display: "inline-block", fontSize: 10.5, fontWeight: 800, padding: "2px 9px", borderRadius: 999, whiteSpace: "nowrap",
       color: k === "NONE" ? "#94a3b8" : (ACC_COLORS[k] || "#475569"), background: k === "NONE" ? "#f1f5f9" : (ACC_COLORS[k] || "#475569") + "14", border: "1px solid " + (k === "NONE" ? "#e2e8f0" : (ACC_COLORS[k] || "#475569") + "40") }}>
-      {acctLabel(k)}
+      {shopId === "ros-india" && k !== "NONE" && BANK_ICON_KEYS.includes(k)
+        ? <span style={{ display: "inline-flex", alignItems: "center", gap: 5 }}><BankIcon pay={k} size={14} /><span className="bk-name">{acctLabel(k)}</span></span>
+        : acctLabel(k)}
     </span>
   );
 

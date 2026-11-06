@@ -2,6 +2,7 @@ import { useState, useMemo, useRef, useEffect as useEff } from "react";
 import { formatDate } from "../utils";
 import { showAlert, showConfirm } from "./PopupHost";
 import { dbLoadDispatchLog, dbSaveDispatchEntry } from "../db";
+import { BankBadge, BankIcon, BankMenu } from "./BankLogos";
 /* ─────────────────────────────────────────────────────────────────────────
    SALES PANEL
    Period definitions:
@@ -1948,8 +1949,8 @@ We hope you enjoy your purchase! 💜
                   cursor: "pointer", fontFamily: "inherit",
                   fontWeight: isActive ? 800 : 600, fontSize: 12,
                 }}>
-                <span>{p.icon}</span>
-                <span>{p.label}</span>
+                {isIndiaShop ? <BankIcon pay={p.key} size={16} /> : <span>{p.icon}</span>}
+                <span className={isIndiaShop ? "bk-name" : undefined}>{p.label}</span>
                 <span style={{
                   background: isActive ? p.color : "#e2e8f0",
                   color: isActive ? "white" : "#64748b",
@@ -2589,7 +2590,18 @@ We hope you enjoy your purchase! 💜
                     )}
                     {showCol("Payment")&&(
                     <td style={{ padding: "12px 16px", textAlign: "right" }} onClick={e => e.stopPropagation()}>
-                      {editPayId === s.id ? (
+                      {editPayId === s.id ? (isIndiaShop ? (
+                        <BankMenu
+                          value={payBucket(s)}
+                          options={["SHOP", "SIB", "HDFC", "FEDERAL BANK", "PAYPAL INDIA"]}
+                          onClose={() => setEditPayId(null)}
+                          onPick={newPay => {
+                            const currentVal = payBucket(s);
+                            setEditPayId(null);
+                            if (newPay !== currentVal && onInlineEdit) onInlineEdit(s.id, { pay: newPay });
+                          }}
+                        />
+                      ) : (
                         <select
                           autoFocus
                           value={isIndiaShop ? payBucket(s) : (isBankPay(s) ? "BANK" : "SHOP")}
@@ -2611,13 +2623,15 @@ We hope you enjoy your purchase! 💜
                           {isIndiaShop && <option value="FEDERAL BANK">🏦 Federal Bank</option>}
                           {isIndiaShop && <option value="PAYPAL INDIA">💳 PayPal India</option>}
                         </select>
-                      ) : (
+                      )) : (
                         <div
                           onClick={() => onInlineEdit && setEditPayId(s.id)}
                           title={onInlineEdit ? "Click to change which account received it" : undefined}
                           style={{ cursor: onInlineEdit ? "pointer" : "default", display: "inline-flex", flexDirection: "column", alignItems: "flex-end", gap: 2 }}>
                           <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
-                            <Badge l={(isIndiaShop&&(s.pay==="BANK"||s.pay==="SIB"))?"SIB":(s.pay||"SHOP")} />
+                            {isIndiaShop
+                              ? <BankBadge pay={s.pay} fallback={<Badge l={(s.pay==="BANK"||s.pay==="SIB")?"SIB":(s.pay||"SHOP")} />} />
+                              : <Badge l={s.pay||"SHOP"} />}
                             {onInlineEdit && <span style={{ fontSize: 9, color: "#94a3b8" }}>▼</span>}
                           </div>
                           {(s.pay === "SHOP" || s.pay === "SHOPIFY" || !s.pay) && s.shopInvoiceNo && (
@@ -3530,7 +3544,9 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                         )}
                         {colOn("Payment")&&(
                           <td style={{padding:"11px 16px"}}>
-                            <Badge l={(isIndiaShop&&(s.pay==="BANK"||s.pay==="SIB"))?"SIB":(s.pay||"SHOP")} />
+                            {isIndiaShop
+                              ? <BankBadge pay={s.pay} fallback={<Badge l={(s.pay==="BANK"||s.pay==="SIB")?"SIB":(s.pay||"SHOP")} />} />
+                              : <Badge l={s.pay||"SHOP"} />}
                           </td>
                         )}
                         {colOn("Status")&&(
@@ -3702,7 +3718,9 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                       </div>
                       <div style={{ fontSize: 12, color: "#374151" }}>{gs.item || "—"}</div>
                       <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
-                        {gs.pay || "—"} · {gs.ful || gs.status || "—"}
+                        {isIndiaShop
+                          ? <><span style={{ verticalAlign: "middle" }}><BankBadge pay={gs.pay} size={14} fallback={<span>{gs.pay || "—"}</span>} /></span> · {gs.ful || gs.status || "—"}</>
+                          : <>{gs.pay || "—"} · {gs.ful || gs.status || "—"}</>}
                       </div>
                       {gs.address && gs.address.trim() && (
                         <div style={{ fontSize: 11, color: "#64748b", marginTop: 3 }}><strong>📍 Address:</strong> {gs.address}</div>

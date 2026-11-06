@@ -19,6 +19,7 @@ import FactoryQueuePanel from "./components/FactoryQueuePanel";
 import DayBookPanel, { whoseTurn } from "./components/DayBookPanel";
 import AddressEntryModal from "./components/AddressEntryModal";
 import MemosPanel from "./components/MemosPanel";
+import { BankPicker } from "./components/BankLogos";
 import WeeklyRoutinePanel from "./components/WeeklyRoutinePanel";
 import PopupHost, { showAlert, showConfirm } from "./components/PopupHost";
 import {
@@ -17373,9 +17374,11 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
       <Divider title="Payment"/>
       <div style={{display:"grid",gridTemplateColumns:(form.payBy==="SHOP"||form.payBy==="SHOPIFY")?"1fr 1fr":"1fr",gap:12,marginBottom:16}}>
         <div><label style={lbl}>Payment To</label>
-          <select ref={el=>{rosieFieldRefs.current.payBy=el;}} value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
-            {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
-          </select></div>
+          {shopId==="ros-india"
+            ? <BankPicker innerRef={el=>{rosieFieldRefs.current.payBy=el;}} value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} options={PAY_OPTS} onChange={v=>set("payBy",v)} />
+            : <select ref={el=>{rosieFieldRefs.current.payBy=el;}} value={PAY_OPTS.includes(form.payBy)?form.payBy:"SHOP"} onChange={e=>set("payBy",e.target.value)} style={inp}>
+                {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
+              </select>}</div>
         {(form.payBy==="SHOP"||form.payBy==="SHOPIFY")&&(<div><label style={lbl}>{form.payBy==="SHOPIFY"?"Shopify Order No.":"Shop Invoice No."}</label>
           <input value={form.shopInvoiceNo||""} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/>
         </div>)}
@@ -18690,7 +18693,9 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🚚 Payment & Delivery</p>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
-                <div><label style={lbl}>Payment To</label><select ref={el=>{rosieFieldRefs.current.payBy=el;}} value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{PAY_OPTIONS.map(o=><option key={o}>{o}</option>)}</select></div>
+                <div><label style={lbl}>Payment To</label>{shopId==="ros-india"
+                  ? <BankPicker innerRef={el=>{rosieFieldRefs.current.payBy=el;}} value={form.payBy} options={PAY_OPTIONS} onChange={v=>set("payBy",v)} />
+                  : <select ref={el=>{rosieFieldRefs.current.payBy=el;}} value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{PAY_OPTIONS.map(o=><option key={o}>{o}</option>)}</select>}</div>
                 {(form.payBy==="SHOP"||form.payBy==="SHOPIFY") ? (
                   <div><label style={lbl}>{form.payBy==="SHOPIFY"?"Shopify Order No.":"Shop Invoice No."}</label><input value={form.shopInvoiceNo} onChange={e=>set("shopInvoiceNo",e.target.value)} placeholder="e.g. 4666" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/></div>
                 ) : <div/>}
