@@ -1795,6 +1795,52 @@ export const dbAddInventoryMovement = async (shopId, itemId, type, qty, date, sa
   return true;
 };
 
+/* ── Admin tools: delete one wrong stock entry, and reset a whole stock list ── */
+
+// Removes a single movement and reverses its effect on the item's counters
+// (restock: stock and total-ever-stocked go back down; sale: stock goes back
+// up; correction: the signed adjustment is undone).
+export const dbDeleteInventoryMovement = async (shopId, movementId) => {
+  if (!sb) return false;
+  const { data: m, error: mErr } = await sb.from('inventory_movements').select('*').eq('id', movementId).eq('shop_id', shopId).maybeSingle();
+  if (mErr || !m) { console.error('Find inventory movement error:', mErr); return false; }
+  const { data: item, error: iErr } = await sb.from('inventory_items').select('current_stock,total_stocked').eq('id', m.item_id).maybeSingle();
+  if (iErr) { console.error('Fetch inventory item error:', iErr); return false; }
+  const qty = Number(m.qty) || 0;
+  const { error: delErr } = await sb.from('inventory_movements').delete().eq('id', movementId).eq('shop_id', shopId);
+  if (delErr) { console.error('Delete inventory movement error:', delErr); return false; }
+  if (item) {
+    const cur = Number(item.current_stock || 0);
+    const tot = Number(item.total_stocked || 0);
+    const patch = m.type === 'restock'
+      ? { current_stock: cur - qty, total_stocked: Math.max(0, tot - qty) }
+      : m.type === 'correction'
+        ? { current_stock: cur - qty }
+        : { current_stock: cur + qty };
+    const { error: uErr } = await sb.from('inventory_items').update(patch).eq('id', m.item_id);
+    if (uErr) { console.error('Update inventory stock after delete error:', uErr); return false; }
+  }
+  return true;
+};
+
+// Resets the given items: every movement (history) is removed and the counters go
+// back to 0. With deleteItems=true the products themselves are removed as well.
+export const dbResetInventoryItems = async (shopId, itemIds, deleteItems = false) => {
+  if (!sb) return false;
+  const ids = (itemIds || []).filter(Boolean);
+  if (ids.length === 0) return true;
+  const { error: mErr } = await sb.from('inventory_movements').delete().eq('shop_id', shopId).in('item_id', ids);
+  if (mErr) { console.error('Reset inventory movements error:', mErr); return false; }
+  if (deleteItems) {
+    const { error } = await sb.from('inventory_items').delete().eq('shop_id', shopId).in('id', ids);
+    if (error) { console.error('Reset (delete) inventory items error:', error); return false; }
+  } else {
+    const { error } = await sb.from('inventory_items').update({ current_stock: 0, total_stocked: 0 }).eq('shop_id', shopId).in('id', ids);
+    if (error) { console.error('Reset inventory items error:', error); return false; }
+  }
+  return true;
+};
+
 /* ── Upfront refunds: money returned before dispatch (cancellation,
    stock issue, payment problem) — no item ever comes back. ─────────── */
 export const dbLoadUpfrontRefunds = async (shopId) => {

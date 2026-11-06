@@ -43,7 +43,7 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadAuditDismissals, dbDismissAuditFinding,
   dbLoadAttendanceRecords, dbClockIn, dbClockOut, dbSetAttendanceRecord,
   dbLoadAttendanceHolidays, dbAddAttendanceHoliday, dbRemoveAttendanceHoliday,
-  dbLoadInventoryItems, dbAddInventoryItem, dbUpdateInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement,
+  dbLoadInventoryItems, dbAddInventoryItem, dbUpdateInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement, dbDeleteInventoryMovement, dbResetInventoryItems,
   dbLoadUpfrontRefunds, dbAddUpfrontRefund, dbDeleteUpfrontRefund,
   dbLoadGiftVouchers, dbAddGiftVoucher, dbUpdateGiftVoucher, dbDeleteGiftVoucher,
   dbLoadStaffSalaries, dbSaveStaffSalary, dbLoadStaffPositions, dbSaveStaffPosition, dbLoadCarryForward, dbUpdateCarryForward,
@@ -12356,6 +12356,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   const [soldFor, setSoldFor] = React.useState(null); // {id, name} | null — Log Sale modal
   const [correctFor, setCorrectFor] = React.useState(null); // {id, name, currentStock} | null — admin-only stock correction
   const [confirmDeleteId, setConfirmDeleteId] = React.useState(null);
+  const [showReset, setShowReset] = React.useState(false); // admin-only Reset Stock modal
   const [invView, setInvView] = React.useState("items"); // "items" | "log" | "monthly" — list view only
   const [collapsedLogDates, setCollapsedLogDates] = React.useState({}); // date -> bool, daily-log view
   const [sheetMonth, setSheetMonth] = React.useState(new Date().toISOString().slice(0,7)); // "YYYY-MM" shown in the Stock Sheet
@@ -12601,8 +12602,20 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
                   {fmtDate(m.date)}{m.saleId?` · Invoice ${m.saleId}`:""}{m.note?` · ${m.note}`:""}
                 </div>
               </div>
-              <div style={{fontSize:14,fontWeight:800,color:amountColor}}>
-                {signedQty>0?"+":""}{signedQty}
+              <div style={{display:"flex",alignItems:"center",gap:10}}>
+                <div style={{fontSize:14,fontWeight:800,color:amountColor}}>
+                  {signedQty>0?"+":""}{signedQty}
+                </div>
+                {isAdmin && (
+                  <button title="Delete this entry (stock is adjusted back)"
+                    onClick={async()=>{
+                      if(!(await showConfirm("Delete this stock entry ("+(signedQty>0?"+":"")+signedQty+" on "+fmtDate(m.date)+")? The stock count will be adjusted back automatically.")))return;
+                      const ok = await dbDeleteInventoryMovement(shopId, m.id);
+                      if (ok) load();
+                      else showAlert("Couldn't delete — please check your connection and try again.");
+                    }}
+                    style={{border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",borderRadius:7,width:26,height:26,cursor:"pointer",fontSize:12,lineHeight:1,padding:0,fontFamily:"inherit"}}>🗑</button>
+                )}
               </div>
             </div>
             );
@@ -12610,8 +12623,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
         </div>
 
         {restockFor && (
-          <RestockModal item={restockFor} onClose={()=>setRestockFor(null)} onSave={async(qty,note)=>{
-            const ok = await dbAddInventoryMovement(shopId, restockFor.id, "restock", qty, new Date().toISOString().slice(0,10), null, null, note);
+          <RestockModal item={restockFor} onClose={()=>setRestockFor(null)} onSave={async(qty,note,date)=>{
+            const ok = await dbAddInventoryMovement(shopId, restockFor.id, "restock", qty, date||new Date().toISOString().slice(0,10), null, null, note);
             if (ok) { setRestockFor(null); load(); }
             else showAlert("Couldn't save — please check your connection and try again.");
           }}/>
@@ -12647,10 +12660,16 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           </p>
         </div>
         {isAdmin && (
-          <button onClick={()=>setShowManageItems(true)}
-            style={{padding:"9px 16px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
-            ⚙️ Manage Items
-          </button>
+          <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+            <button onClick={()=>setShowReset(true)}
+              style={{padding:"9px 16px",borderRadius:10,border:"1.5px solid #fecaca",background:"#fff5f5",color:"#b91c1c",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              🔄 Reset Stock
+            </button>
+            <button onClick={()=>setShowManageItems(true)}
+              style={{padding:"9px 16px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+              ⚙️ Manage Items
+            </button>
+          </div>
         )}
       </div>
 
@@ -12845,6 +12864,20 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
         )
       )}
 
+      {showReset && (
+        <ResetStockModal
+          sectionLabel={stockSection==="clothes" ? "Clothes" : "Hair"}
+          items={activeItems}
+          movements={movements}
+          onClose={()=>setShowReset(false)}
+          onConfirm={async(mode)=>{
+            const ids = activeItems.map(i=>i.id);
+            const ok = await dbResetInventoryItems(shopId, ids, mode==="all");
+            if (ok) { setShowReset(false); setSelectedItemId(null); load(); }
+            else showAlert("Couldn't reset — please check your connection and try again. Nothing was lost; a backup file was already downloaded.");
+          }}/>
+      )}
+
       {showAddItem && (
         <AddInventoryItemModal
           categories={stockSection==="clothes" ? null : STOCK_CATEGORIES}
@@ -12867,8 +12900,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
       )}
 
       {restockFor && (
-        <RestockModal item={restockFor} onClose={()=>setRestockFor(null)} onSave={async(qty,note)=>{
-          const ok = await dbAddInventoryMovement(shopId, restockFor.id, "restock", qty, new Date().toISOString().slice(0,10), null, null, note);
+        <RestockModal item={restockFor} onClose={()=>setRestockFor(null)} onSave={async(qty,note,date)=>{
+          const ok = await dbAddInventoryMovement(shopId, restockFor.id, "restock", qty, date||new Date().toISOString().slice(0,10), null, null, note);
           if (ok) { setRestockFor(null); load(); }
           else showAlert("Couldn't save — please check your connection and try again.");
         }}/>
@@ -13645,9 +13678,74 @@ const ManageItemsModal = ({ items, onClose, onAddItem, onRequestDelete, onRename
   );
 };
 
+// Admin-only: wipe a stock list back to zero. Offers (1) zero everything but keep
+// the products, or (2) delete the products too. A CSV backup of the current list
+// and its history is downloaded automatically before anything is removed.
+const ResetStockModal = ({ sectionLabel, items, movements, onClose, onConfirm }) => {
+  const [mode, setMode] = React.useState("zero"); // "zero" | "all"
+  const [typed, setTyped] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const ids = new Set(items.map(i=>i.id));
+  const entryCount = movements.filter(m=>ids.has(m.itemId)).length;
+  const units = items.reduce((a,i)=>a+(Number(i.currentStock)||0),0);
+  const ok = typed.trim().toUpperCase()==="RESET" && items.length>0;
+  const downloadBackup = () => {
+    const q = v => '"'+String(v==null?"":v).replace(/"/g,'""')+'"';
+    const nameOf = Object.fromEntries(items.map(i=>[i.id,i.name]));
+    const rows = [["Row type","Item","Category","Current stock","Total ever stocked","Date","Movement","Qty","Customer / Invoice","Note"]];
+    items.forEach(i=>rows.push(["ITEM",i.name,i.category||"",i.currentStock,i.totalStocked,"","","","",""]));
+    movements.filter(m=>ids.has(m.itemId)).forEach(m=>rows.push(["MOVEMENT",nameOf[m.itemId]||m.itemId,"","","",m.date,m.type,m.qty,(m.customer||"")+(m.saleId?(" / "+m.saleId):""),m.note||""]));
+    const csv = "\ufeff"+rows.map(r=>r.map(q).join(",")).join("\r\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv],{type:"text/csv;charset=utf-8"}));
+    a.download = "stock-backup-"+sectionLabel.toLowerCase()+"-"+new Date().toISOString().slice(0,10)+".csv";
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+  const optStyle = (on) => ({display:"flex",gap:10,alignItems:"flex-start",padding:"10px 12px",borderRadius:10,cursor:"pointer",marginBottom:8,
+    border:"2px solid "+(on?"#dc2626":"#e2e8f0"),background:on?"#fef2f2":"white"});
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:340,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <div style={{background:"white",borderRadius:16,padding:22,maxWidth:420,width:"94%",maxHeight:"92vh",overflowY:"auto"}}>
+        <div style={{fontSize:16,fontWeight:800,color:"#0f172a",marginBottom:4}}>🔄 Reset {sectionLabel} Stock</div>
+        <p style={{fontSize:12,color:"#64748b",margin:"0 0 14px",lineHeight:1.5}}>
+          This list has <strong>{items.length}</strong> product{items.length===1?"":"s"}, <strong>{units}</strong> unit{units===1?"":"s"} in stock and <strong>{entryCount}</strong> history entr{entryCount===1?"y":"ies"}.
+          Only the <strong>{sectionLabel}</strong> list is affected.
+        </p>
+        <label style={optStyle(mode==="zero")} onClick={()=>setMode("zero")}>
+          <input type="radio" checked={mode==="zero"} onChange={()=>setMode("zero")} style={{marginTop:3}}/>
+          <span><span style={{display:"block",fontSize:13,fontWeight:800,color:"#0f172a"}}>Set all stock back to zero</span>
+            <span style={{fontSize:11.5,color:"#64748b"}}>Keeps the products, clears every count and the history. Start counting fresh.</span></span>
+        </label>
+        <label style={optStyle(mode==="all")} onClick={()=>setMode("all")}>
+          <input type="radio" checked={mode==="all"} onChange={()=>setMode("all")} style={{marginTop:3}}/>
+          <span><span style={{display:"block",fontSize:13,fontWeight:800,color:"#0f172a"}}>Delete everything</span>
+            <span style={{fontSize:11.5,color:"#64748b"}}>Removes the products as well — an empty list you build again with ⚙️ Manage Items.</span></span>
+        </label>
+        <div style={{margin:"12px 0",padding:"9px 12px",borderRadius:9,background:"#fffbeb",border:"1px solid #fde68a",fontSize:11.5,color:"#92400e",lineHeight:1.5}}>
+          This cannot be undone. A backup file (CSV) of the current list and its history will download automatically when you confirm.
+        </div>
+        <label style={{display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"}}>Type RESET to confirm</label>
+        <input value={typed} onChange={e=>setTyped(e.target.value)} placeholder="RESET" autoFocus
+          style={{width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box",marginBottom:16}}/>
+        <div style={{display:"flex",gap:10}}>
+          <button onClick={onClose}
+            style={{flex:1,padding:"10px 0",borderRadius:9,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+          <button disabled={!ok||busy}
+            onClick={async()=>{ setBusy(true); try{ downloadBackup(); }catch{} await onConfirm(mode); setBusy(false); }}
+            style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#dc2626",color:"white",fontWeight:700,fontSize:13,fontFamily:"inherit",
+              cursor:(!ok||busy)?"default":"pointer",opacity:(!ok||busy)?0.5:1}}>
+            {busy?"Resetting…":"Reset Now"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const RestockModal = ({ item, onClose, onSave }) => {
   const [qty, setQty] = React.useState("");
   const [note, setNote] = React.useState("");
+  const [date, setDate] = React.useState(() => new Date().toISOString().slice(0,10)); // admin can back-date a restock
   const [saving, setSaving] = React.useState(false);
   const inp = {width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
   const lbl = {display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
@@ -13659,6 +13757,10 @@ const RestockModal = ({ item, onClose, onSave }) => {
         <div style={{marginBottom:12}}>
           <label style={lbl}>Quantity Added</label>
           <input type="number" value={qty} onChange={e=>setQty(e.target.value)} placeholder="e.g. 10" style={inp} autoFocus/>
+        </div>
+        <div style={{marginBottom:12}}>
+          <label style={lbl}>Date Added</label>
+          <input type="date" value={date} onChange={e=>setDate(e.target.value)} style={inp}/>
         </div>
         <div style={{marginBottom:18}}>
           <label style={lbl}>Note (optional)</label>
@@ -13674,7 +13776,7 @@ const RestockModal = ({ item, onClose, onSave }) => {
               const q=Number(qty)||0;
               if(q<=0) return;
               setSaving(true);
-              await onSave(q, note);
+              await onSave(q, note, date);
               setSaving(false);
             }}
             disabled={!(Number(qty)>0)||saving}
