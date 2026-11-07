@@ -12344,6 +12344,11 @@ const STK_CSS = `
 .stk-b3d{transition:transform .08s,box-shadow .08s,filter .12s}
 .stk-b3d:hover:not(:disabled){filter:brightness(1.05)}
 .stk-b3d:active:not(:disabled){transform:translateY(1px);box-shadow:0 1px 2px rgba(15,23,42,.25) inset !important}
+.stk-dragging{opacity:.4}
+.stk-drop-before > td{box-shadow:inset 0 3px 0 #2563eb !important}
+.stk-drop-after > td{box-shadow:inset 0 -3px 0 #2563eb !important}
+.stk-grip{cursor:grab}
+.stk-grip:active{cursor:grabbing}
 .stk-lift{transition:transform .15s,box-shadow .15s}
 .stk-lift:hover{transform:translateY(-2px);box-shadow:0 1px 0 rgba(255,255,255,.9) inset,0 4px 8px rgba(15,23,42,.10),0 16px 28px -6px rgba(15,23,42,.20) !important}
 `;
@@ -13020,7 +13025,9 @@ function rectOf(el) {
 const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSetStock, onSelectItem, fmtDate, returnedStock = [],
   sectionLabel = "Fresh Stock", sectionIcon = "📦", includeReturnedStock = true,
   onReorderItems = null }) => {
-  const [arrange, setArrange] = React.useState(false); // admin-only: show ▲▼ to re-order products
+  const [arrange, setArrange] = React.useState(false); // admin-only: show drag handle + ▲▼ to re-order products
+  const [dragId, setDragId] = React.useState(null);     // product currently being dragged
+  const [dropMark, setDropMark] = React.useState(null);  // { id, pos:"before"|"after" } — where it would land
   const [cellPopover, setCellPopover] = React.useState(null); // {itemId, date, anchor} | null
   const [editStock, setEditStock] = React.useState(null); // {itemId, value} | null — admin quick stock entry in the Closing cell
   const [savingStock, setSavingStock] = React.useState(false);
@@ -13107,12 +13114,26 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
   // it visually obvious those columns are pinned, like Excel's freeze-pane
   // line.
   const arrangeOn = arrange && !!onReorderItems;
-  const ITEM_W = arrangeOn ? 244 : 190, OPEN_W = 66, ADDED_W = 60, SOLD_W = 60, CLOSE_W = 72, ACTIONS_W = 88;
+  const ITEM_W = arrangeOn ? 276 : 190, OPEN_W = 66, ADDED_W = 60, SOLD_W = 60, CLOSE_W = 72, ACTIONS_W = 88;
   const LEFT_OPEN = ITEM_W, LEFT_ADDED = ITEM_W+OPEN_W, LEFT_SOLD = ITEM_W+OPEN_W+ADDED_W, LEFT_CLOSE = ITEM_W+OPEN_W+ADDED_W+SOLD_W, LEFT_ACTIONS = ITEM_W+OPEN_W+ADDED_W+SOLD_W+CLOSE_W;
   const FROZEN_EDGE = "8px 0 12px -6px rgba(15,23,42,0.30)";
 
   const pillBtn = { padding:"7px 12px", borderRadius:8, border:"1px solid #e2e8f0", background:"white", color:"#475569", fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit" };
   const stickyHead = { position:"sticky", top:0, padding:"12px 10px", textAlign:"left", fontWeight:800, fontSize:10.5, color:"#334155", textTransform:"uppercase", letterSpacing:"0.06em", ...stkHeadFill, borderBottom:"2px solid #c9d5e4", boxShadow:"inset 0 1px 0 #fff" };
+  // Drag & drop: drop the dragged product before/after the row it is released on.
+  const dropOn = (targetId, pos) => {
+    const from = dragId;
+    setDragId(null); setDropMark(null);
+    if (!from || !onReorderItems || from === targetId) return;
+    const current = rows.map(r => r.item.id);
+    const ids = current.filter(id => id !== from);
+    let at = ids.indexOf(targetId);
+    if (at < 0) return;
+    if (pos === "after") at++;
+    ids.splice(at, 0, from);
+    if (ids.join("|") === current.join("|")) return;
+    onReorderItems(ids);
+  };
   const moveItem = (catRows, idx, dir) => {
     const j = idx + dir;
     if (!onReorderItems || j < 0 || j >= catRows.length) return;
@@ -13149,7 +13170,7 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
       </div>
 
       <div style={{ fontSize:11, color:"#94a3b8", marginBottom:10 }}>
-        {arrangeOn && <><b style={{color:"#0f172a"}}>Arranging:</b> use ▲ ▼ beside a product to move it up or down the list — saved instantly · <br/></>}
+        {arrangeOn && <><b style={{color:"#0f172a"}}>Arranging:</b> drag a product by its ⠿ handle and drop it where you want it, or use ▲ ▼ (best on a phone) — saved instantly · <br/></>}
         <span style={{color:"#b91c1c",fontWeight:700}}>S</span> = sold that day · <span style={{color:"#166534",fontWeight:700}}>I</span> = stock added that day · click a tagged day, or the Sold/Added totals, to see who/what · future days are intentionally blank
         <br/>
         <b>Opening</b> = what the month started with · <b>Closing</b> = Opening + Added − Sold, always a plain calculation · this month's Closing becomes next month's Opening automatically · an admin <span style={{color:"#7c3aed",fontWeight:700}}>⚖ correction</span> never changes these numbers — see the item's own History for any correction logged against it
@@ -13190,14 +13211,39 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                 {catRows.map(({ item, cells, openingBalance, soldThisMonth, addedThisMonth, correctedThisMonth, closingBalance, monthMoves }, ridx) => {
               const rowBg = ridx % 2 ? "#f6f9fc" : "white";
               return (
-                <tr key={item.id} className="stk-row">
+                <tr key={item.id} data-item-id={item.id}
+                  className={"stk-row" + (dragId === item.id ? " stk-dragging" : "") + (dropMark && dropMark.id === item.id ? (dropMark.pos === "before" ? " stk-drop-before" : " stk-drop-after") : "")}
+                  onDragOver={arrangeOn && dragId ? (e) => {
+                    e.preventDefault();
+                    const r = e.currentTarget.getBoundingClientRect();
+                    const pos = (e.clientY - r.top) < r.height / 2 ? "before" : "after";
+                    if (!dropMark || dropMark.id !== item.id || dropMark.pos !== pos) setDropMark({ id: item.id, pos });
+                  } : undefined}
+                  onDrop={arrangeOn && dragId ? (e) => {
+                    e.preventDefault();
+                    const r = e.currentTarget.getBoundingClientRect();
+                    dropOn(item.id, (e.clientY - r.top) < r.height / 2 ? "before" : "after");
+                  } : undefined}>
                   <td onClick={()=>onSelectItem(item.id)}
                     style={{ ...stickyCell, left:0, zIndex:2, background:rowBg, cursor:"pointer" }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8 }}>
                       {arrangeOn && (
-                        <span onClick={e=>e.stopPropagation()} style={{ display:"inline-flex", flexDirection:"column", gap:2, flexShrink:0 }}>
+                        <span onClick={e=>e.stopPropagation()} style={{ display:"inline-flex", alignItems:"center", gap:5, flexShrink:0 }}>
+                          <span draggable className="stk-grip" title="Drag to move this product"
+                            onDragStart={(e) => {
+                              setDragId(item.id);
+                              e.dataTransfer.effectAllowed = "move";
+                              try { e.dataTransfer.setData("text/plain", item.id); } catch {}
+                              const tr = e.currentTarget.closest("tr");
+                              if (tr && e.dataTransfer.setDragImage) e.dataTransfer.setDragImage(tr, 24, 20);
+                            }}
+                            onDragEnd={() => { setDragId(null); setDropMark(null); }}
+                            style={{ width:22, height:34, borderRadius:7, display:"inline-flex", alignItems:"center", justifyContent:"center", fontSize:16, lineHeight:1, color:"#64748b", userSelect:"none",
+                              border:"1px solid #c3d0e0", backgroundColor:"#f4f7fb", backgroundImage:"linear-gradient(180deg,#ffffff,#e6ecf4)", boxShadow:"0 1px 0 #fff inset, 0 1px 3px rgba(15,23,42,.18)" }}>⠿</span>
+                          <span style={{ display:"inline-flex", flexDirection:"column", gap:2 }}>
                           <button className="stk-b3d" disabled={ridx === 0} title="Move up" onClick={()=>moveItem(catRows, ridx, -1)} style={stkArrow(ridx === 0)}>▲</button>
                           <button className="stk-b3d" disabled={ridx === catRows.length-1} title="Move down" onClick={()=>moveItem(catRows, ridx, 1)} style={stkArrow(ridx === catRows.length-1)}>▼</button>
+                          </span>
                         </span>
                       )}
                       <span style={{ fontWeight:700, fontSize:13, color:"#0f172a", lineHeight:1.3, textTransform:"uppercase" }}>{item.name}</span>
