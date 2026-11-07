@@ -43,7 +43,7 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadAuditDismissals, dbDismissAuditFinding,
   dbLoadAttendanceRecords, dbClockIn, dbClockOut, dbSetAttendanceRecord,
   dbLoadAttendanceHolidays, dbAddAttendanceHoliday, dbRemoveAttendanceHoliday,
-  dbLoadInventoryItems, dbAddInventoryItem, dbUpdateInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement, dbDeleteInventoryMovement, dbResetInventoryItems, dbLoadInventoryCategories, dbSaveInventoryCategories, dbSetInventoryItemsCategory, dbSetInventoryItemOrder,
+  dbLoadInventoryItems, dbAddInventoryItem, dbUpdateInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement, dbDeleteInventoryMovement, dbResetInventoryItems, dbSetInventoryItemOrder,
   dbLoadUpfrontRefunds, dbAddUpfrontRefund, dbDeleteUpfrontRefund,
   dbLoadGiftVouchers, dbAddGiftVoucher, dbUpdateGiftVoucher, dbDeleteGiftVoucher,
   dbLoadStaffSalaries, dbSaveStaffSalary, dbLoadStaffPositions, dbSaveStaffPosition, dbLoadCarryForward, dbUpdateCarryForward,
@@ -12391,8 +12391,6 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   const [correctFor, setCorrectFor] = React.useState(null); // {id, name, currentStock} | null — admin-only stock correction
   const [confirmDeleteId, setConfirmDeleteId] = React.useState(null);
   const [showReset, setShowReset] = React.useState(false); // admin-only Reset Stock modal
-  const [showCategories, setShowCategories] = React.useState(false); // admin-only category manager
-  const [catStore, setCatStore] = React.useState({ hair: null, clothes: null }); // saved category lists (null = nothing saved yet → built-in defaults)
   const [invView, setInvView] = React.useState("items"); // "items" | "log" | "monthly" — list view only
   const [collapsedLogDates, setCollapsedLogDates] = React.useState({}); // date -> bool, daily-log view
   const [sheetMonth, setSheetMonth] = React.useState(new Date().toISOString().slice(0,7)); // "YYYY-MM" shown in the Stock Sheet
@@ -12413,8 +12411,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
 
   const load = React.useCallback(() => {
     setLoading(true);
-    Promise.all([dbLoadInventoryItems(shopId), dbLoadInventoryMovements(shopId), dbLoadInventoryCategories(shopId)]).then(([i, m, c]) => {
-      setItems(i); setMovements(m); setCatStore(c || { hair: null, clothes: null }); setLoading(false);
+    Promise.all([dbLoadInventoryItems(shopId), dbLoadInventoryMovements(shopId)]).then(([i, m]) => {
+      setItems(i); setMovements(m); setLoading(false);
     });
   }, [shopId]);
   React.useEffect(() => { load(); }, [load]);
@@ -12441,53 +12439,13 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   const activeItems = stockSection === "clothes" ? clothesItems : hairItems;
   const activeItemIds = React.useMemo(() => new Set(activeItems.map(i=>i.id)), [activeItems]);
 
-  // ── Categories (admin-managed). The saved list wins; until one is saved, Hair uses its
-  //    original five and Clothes uses whatever categories its products already carry.
-  const sectionKey = stockSection === "clothes" ? "clothes" : "hair";
-  const categoryList = React.useMemo(() => {
-    const saved = catStore[sectionKey];
-    if (saved && saved.length) return saved;
-    if (sectionKey === "hair") return STOCK_CATEGORIES;
-    return Array.from(new Set(activeItems.map(i => (i.category||"").trim()).filter(c => c && c !== OTHER_CATEGORY))).sort((a,b) => a.localeCompare(b));
-  }, [catStore, sectionKey, activeItems]);
-  const categoryCounts = React.useMemo(() => {
-    const c = {}; let other = 0;
-    activeItems.forEach(i => { if (categoryList.includes(i.category)) c[i.category] = (c[i.category]||0) + 1; else other++; });
-    return { byName: c, other };
-  }, [activeItems, categoryList]);
-
-  const saveCategoryList = async (names) => {
-    const prev = catStore;
-    setCatStore(p => ({ ...p, [sectionKey]: names }));
-    const ok = await dbSaveInventoryCategories(shopId, sectionKey, names);
-    if (!ok) {
-      setCatStore(prev);
-      showAlert("Couldn't save the category list. Please check your connection. If this keeps happening, the one-time SQL step (stock_categories_and_order.sql) has not been run in Supabase yet.");
-    }
-    return ok;
-  };
-  const renameCategory = async (oldName, newName) => {
-    const ids = activeItems.filter(i => i.category === oldName).map(i => i.id);
-    if (!(await dbSetInventoryItemsCategory(shopId, ids, newName))) {
-      showAlert("Couldn't rename — please check your connection and try again. Nothing was changed.");
-      return false;
-    }
-    setItems(p => p.map(i => ids.includes(i.id) ? { ...i, category: newName } : i));
-    return saveCategoryList(categoryList.map(c => c === oldName ? newName : c));
-  };
-  const moveCategory = async (name, dir) => {
-    const i = categoryList.indexOf(name), j = i + dir;
-    if (i < 0 || j < 0 || j >= categoryList.length) return;
-    const arr = [...categoryList]; [arr[i], arr[j]] = [arr[j], arr[i]];
-    await saveCategoryList(arr);
-  };
-  // `orderedIds`: one category's products, in the new order. Shown instantly, saved in the background.
+  // `orderedIds`: every product of the current window (Hair or Clothes), in the new order. Shown instantly, saved in the background.
   const reorderItems = async (orderedIds) => {
     const pos = new Map(orderedIds.map((id, i) => [id, i * 10]));
     setItems(p => p.map(i => pos.has(i.id) ? { ...i, sortOrder: pos.get(i.id) } : i));
     const ok = await dbSetInventoryItemOrder(shopId, orderedIds);
     if (!ok) {
-      showAlert("Couldn't save the new order. Please check your connection. If this keeps happening, the one-time SQL step (stock_categories_and_order.sql) has not been run in Supabase yet.");
+      showAlert("Couldn't save the new order. Please check your connection. If this keeps happening, the one-time SQL step (stock_product_order.sql) has not been run in Supabase yet.");
       load();
     }
   };
@@ -12765,10 +12723,6 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
               style={{...stkKey("#b91c1c","#fff5f5","#fecaca"),padding:"9px 16px",fontSize:13,fontWeight:700}}>
               🔄 Reset Stock
             </button>
-            <button onClick={()=>setShowCategories(true)} className="stk-b3d"
-              style={{...stkKey("#334155","#f8fafc","#cbd5e1"),padding:"9px 16px",fontSize:13,fontWeight:700}}>
-              🗂️ Categories
-            </button>
             <button onClick={()=>setShowManageItems(true)} className="stk-b3d"
               style={{padding:"9px 16px",borderRadius:10,border:"1px solid rgba(0,0,0,.18)",backgroundColor:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",
                 backgroundImage:"linear-gradient(180deg,rgba(255,255,255,.28),rgba(255,255,255,0) 55%,rgba(0,0,0,.10))",
@@ -12838,9 +12792,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           onSelectItem={(id)=>setSelectedItemId(id)}
           fmtDate={fmtDate}
           returnedStock={returnedStockNow}
-          fixedCategories={categoryList}
-          onReorderCategoryItems={isAdmin ? reorderItems : null}
-          onMoveCategory={isAdmin ? moveCategory : null}
+          onReorderItems={isAdmin ? reorderItems : null}
           sectionLabel={stockSection==="clothes" ? "Clothes Stock" : "Hair Stock"}
           sectionIcon={stockSection==="clothes" ? "👕" : "📦"}
           includeReturnedStock={stockSection!=="clothes"}
@@ -12982,19 +12934,10 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
 
       {showAddItem && (
         <AddInventoryItemModal
-          categories={categoryList}
-          allowNewCategory={isAdmin}
-          existingCategories={Array.from(new Set(activeItems.map(i=>i.category).filter(Boolean))).sort()}
           itemTypeLabel={stockSection==="clothes" ? "Clothes" : "Hair"}
           onClose={()=>setShowAddItem(false)}
-          onSave={async(name,stock,category)=>{
-            let cat = (category||"").trim();
-            if (cat && cat !== OTHER_CATEGORY) {
-              const hit = categoryList.find(c => c.toLowerCase() === cat.toLowerCase());
-              if (hit) cat = hit;
-              else if (!(await saveCategoryList([...categoryList, cat]))) return;
-            }
-            const id = await dbAddInventoryItem(shopId, name, stock, cat, stockSection==="clothes" ? "clothes" : "hair");
+          onSave={async(name,stock)=>{
+            const id = await dbAddInventoryItem(shopId, name, stock, null, stockSection==="clothes" ? "clothes" : "hair");
             if (id) { setShowAddItem(false); load(); }
             else showAlert("Couldn't add this item — please check your connection and try again.");
           }}/>
@@ -13016,22 +12959,9 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
         }}/>
       )}
 
-      {showCategories && (
-        <CategoriesModal
-          sectionLabel={stockSection==="clothes" ? "Clothes" : "Hair"}
-          categories={categoryList}
-          counts={categoryCounts.byName}
-          otherCount={categoryCounts.other}
-          onClose={()=>setShowCategories(false)}
-          onSaveList={saveCategoryList}
-          onRename={renameCategory}
-        />
-      )}
-
       {showManageItems && (
         <ManageItemsModal
           items={activeItems}
-          categories={categoryList}
           onClose={()=>setShowManageItems(false)}
           onAddItem={()=>{ setShowManageItems(false); setShowAddItem(true); }}
           onRequestDelete={(id)=>setConfirmDeleteId(id)}
@@ -13087,16 +13017,10 @@ function rectOf(el) {
   return { top:r.top, bottom:r.bottom, left:r.left, right:r.right, width:r.width, height:r.height };
 }
 
-// Fixed, ordered list of product categories the Stock Sheet groups items
-// under. An item with no category (or one that doesn't match this list)
-// falls into "Other" so nothing ever silently disappears from the sheet.
-const STOCK_CATEGORIES = ["Cover-Up Patches", "Receding Hairpieces", "Bangs and Fringes", "Updos", "Hair Accessories"];
-const OTHER_CATEGORY = "Other";
-
 const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSetStock, onSelectItem, fmtDate, returnedStock = [],
-  fixedCategories = STOCK_CATEGORIES, sectionLabel = "Fresh Stock", sectionIcon = "📦", includeReturnedStock = true,
-  onReorderCategoryItems = null, onMoveCategory = null }) => {
-  const [arrange, setArrange] = React.useState(false); // admin-only: show ▲▼ to re-order products/categories
+  sectionLabel = "Fresh Stock", sectionIcon = "📦", includeReturnedStock = true,
+  onReorderItems = null }) => {
+  const [arrange, setArrange] = React.useState(false); // admin-only: show ▲▼ to re-order products
   const [cellPopover, setCellPopover] = React.useState(null); // {itemId, date, anchor} | null
   const [editStock, setEditStock] = React.useState(null); // {itemId, value} | null — admin quick stock entry in the Closing cell
   const [savingStock, setSavingStock] = React.useState(false);
@@ -13172,34 +13096,8 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
     });
   }, [items, movementsByItem, days.join(","), sheetMonth]);
 
-  // Grouped for display only — same rows, arranged under a header per
-  // product category. Popover lookups and the print export both still use
-  // the flat `rows` list above, unaffected by grouping.
-  //
-  // Two modes, per `fixedCategories`: Hair Stock passes its fixed, ordered
-  // list (STOCK_CATEGORIES) — "Other" catches anything uncategorized so
-  // nothing silently disappears. Clothes Stock passes null instead (its
-  // categories aren't a fixed set — see the AskUserQuestion decision when
-  // this was built), so items are grouped by whatever free-text category
-  // was typed when they were added, alphabetically, with "Other" (for a
-  // blank category) sorted last.
-  const groupedRows = React.useMemo(() => {
-    const byCat = {};
-    rows.forEach(r => {
-      const cat = fixedCategories
-        ? (fixedCategories.includes(r.item.category) ? r.item.category : OTHER_CATEGORY)
-        : ((r.item.category||"").trim() || OTHER_CATEGORY);
-      (byCat[cat] ||= []).push(r);
-    });
-    if (fixedCategories) {
-      return [...fixedCategories, OTHER_CATEGORY]
-        .filter(cat => byCat[cat] && byCat[cat].length > 0)
-        .map(cat => ({ category: cat, rows: byCat[cat] }));
-    }
-    const names = Object.keys(byCat).filter(c => c !== OTHER_CATEGORY).sort((a,b)=>a.localeCompare(b));
-    if (byCat[OTHER_CATEGORY]) names.push(OTHER_CATEGORY);
-    return names.map(cat => ({ category: cat, rows: byCat[cat] }));
-  }, [rows, fixedCategories]);
+  // One flat list, in the order set by the admin (↕ Arrange Products). The group shape is kept so the row renderer below needs no changes.
+  const groupedRows = React.useMemo(() => [{ category: "all", rows }], [rows]);
 
   // Six columns stay frozen on the left as the sheet scrolls sideways
   // through the month — Item (full name, never truncated), the full
@@ -13208,7 +13106,7 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
   // actions. The shadow on the right edge of the frozen block is what makes
   // it visually obvious those columns are pinned, like Excel's freeze-pane
   // line.
-  const arrangeOn = arrange && !!onReorderCategoryItems;
+  const arrangeOn = arrange && !!onReorderItems;
   const ITEM_W = arrangeOn ? 244 : 190, OPEN_W = 66, ADDED_W = 60, SOLD_W = 60, CLOSE_W = 72, ACTIONS_W = 88;
   const LEFT_OPEN = ITEM_W, LEFT_ADDED = ITEM_W+OPEN_W, LEFT_SOLD = ITEM_W+OPEN_W+ADDED_W, LEFT_CLOSE = ITEM_W+OPEN_W+ADDED_W+SOLD_W, LEFT_ACTIONS = ITEM_W+OPEN_W+ADDED_W+SOLD_W+CLOSE_W;
   const FROZEN_EDGE = "8px 0 12px -6px rgba(15,23,42,0.30)";
@@ -13217,10 +13115,10 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
   const stickyHead = { position:"sticky", top:0, padding:"12px 10px", textAlign:"left", fontWeight:800, fontSize:10.5, color:"#334155", textTransform:"uppercase", letterSpacing:"0.06em", ...stkHeadFill, borderBottom:"2px solid #c9d5e4", boxShadow:"inset 0 1px 0 #fff" };
   const moveItem = (catRows, idx, dir) => {
     const j = idx + dir;
-    if (!onReorderCategoryItems || j < 0 || j >= catRows.length) return;
+    if (!onReorderItems || j < 0 || j >= catRows.length) return;
     const ids = catRows.map(r => r.item.id);
     [ids[idx], ids[j]] = [ids[j], ids[idx]];
-    onReorderCategoryItems(ids);
+    onReorderItems(ids);
   };
   const stickyCell = { position:"sticky", padding:"10px 10px", borderBottom:"1px solid #f1f5f9" };
 
@@ -13235,15 +13133,15 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
           <button onClick={()=>setSheetMonth(todayStr.slice(0,7))} style={pillBtn}>This Month</button>
         </div>
         <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-          {onReorderCategoryItems && (
+          {onReorderItems && (
             <button onClick={()=>setArrange(a=>!a)} className="stk-b3d"
-              title="Show ▲ ▼ buttons to change the order of products inside each category"
+              title="Show ▲ ▼ buttons to change the order of the products"
               style={arrange ? { ...stkKey("white", shop.accent||"#0f172a", "rgba(0,0,0,.2)"), padding:"8px 14px", fontSize:12.5, fontWeight:800 }
                              : { ...stkKey("#334155", "#f8fafc", "#cbd5e1"), padding:"8px 14px", fontSize:12.5, fontWeight:700 }}>
               {arrange ? "✓ Done Arranging" : "↕ Arrange Products"}
             </button>
           )}
-          <button onClick={()=>printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock, fixedCategories, sectionLabel, sectionIcon, includeReturnedStock)} className="stk-b3d"
+          <button onClick={()=>printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock, sectionLabel, sectionIcon, includeReturnedStock)} className="stk-b3d"
             style={{ ...stkKey("#334155", "#f8fafc", "#cbd5e1"), padding:"8px 14px", fontSize:12.5, fontWeight:700 }}>
             🖨️ Print / Export PDF
           </button>
@@ -13251,7 +13149,7 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
       </div>
 
       <div style={{ fontSize:11, color:"#94a3b8", marginBottom:10 }}>
-        {arrangeOn && <><b style={{color:"#0f172a"}}>Arranging:</b> use ▲ ▼ beside a product to move it up or down inside its category{onMoveCategory ? ", or beside a category name to move the whole category" : ""} — saved instantly · <br/></>}
+        {arrangeOn && <><b style={{color:"#0f172a"}}>Arranging:</b> use ▲ ▼ beside a product to move it up or down the list — saved instantly · <br/></>}
         <span style={{color:"#b91c1c",fontWeight:700}}>S</span> = sold that day · <span style={{color:"#166534",fontWeight:700}}>I</span> = stock added that day · click a tagged day, or the Sold/Added totals, to see who/what · future days are intentionally blank
         <br/>
         <b>Opening</b> = what the month started with · <b>Closing</b> = Opening + Added − Sold, always a plain calculation · this month's Closing becomes next month's Opening automatically · an admin <span style={{color:"#7c3aed",fontWeight:700}}>⚖ correction</span> never changes these numbers — see the item's own History for any correction logged against it
@@ -13289,29 +13187,6 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
           <tbody>
             {groupedRows.map(({ category, rows: catRows }) => (
               <React.Fragment key={category}>
-                <tr>
-                  <td colSpan={6 + days.length} style={{
-                    position:"sticky", left:0, padding:"8px 12px", backgroundColor:"#eef3f9",
-                    backgroundImage:"linear-gradient(180deg,#fbfcfe 0%,#e4ebf4 100%)",
-                    borderTop:"1px solid #d3deeb", borderBottom:"1px solid #c3d0e0", borderLeft:"4px solid "+(shop.accent||"#0f172a"),
-                    boxShadow:"0 1px 0 #fff inset, 0 3px 6px -2px rgba(15,23,42,.14)",
-                    fontWeight:800, fontSize:11, color:"#1e293b", textTransform:"uppercase", letterSpacing:"0.06em",
-                  }}>
-                    <span style={{ display:"inline-flex", alignItems:"center", gap:10 }}>
-                      {arrangeOn && onMoveCategory && category !== OTHER_CATEGORY && (() => {
-                        const ci = fixedCategories.indexOf(category);
-                        return (
-                          <span style={{ display:"inline-flex", flexDirection:"column", gap:2 }}>
-                            <button className="stk-b3d" disabled={ci <= 0} title="Move this category up" onClick={()=>onMoveCategory(category,-1)} style={stkArrow(ci <= 0)}>▲</button>
-                            <button className="stk-b3d" disabled={ci < 0 || ci >= fixedCategories.length-1} title="Move this category down" onClick={()=>onMoveCategory(category,1)} style={stkArrow(ci < 0 || ci >= fixedCategories.length-1)}>▼</button>
-                          </span>
-                        );
-                      })()}
-                      <span>{category}</span>
-                      <span style={{ fontSize:9.5, fontWeight:800, color:"#475569", backgroundColor:"#f8fafc", border:"1px solid #cbd5e1", borderRadius:999, padding:"1px 8px", boxShadow:"0 1px 0 #fff inset, 0 1px 2px rgba(15,23,42,.12)", letterSpacing:"0.02em" }}>{catRows.length}</span>
-                    </span>
-                  </td>
-                </tr>
                 {catRows.map(({ item, cells, openingBalance, soldThisMonth, addedThisMonth, correctedThisMonth, closingBalance, monthMoves }, ridx) => {
               const rowBg = ridx % 2 ? "#f6f9fc" : "white";
               return (
@@ -13582,13 +13457,13 @@ const MonthMovementsPopover = ({ item, type, anchor, monthLabel, moves, fmtDate,
 // `returnedStock` is the list of returns currently "in office" (see
 // InventoryPage's returnedStockNow) — passed in purely for the printout;
 // it isn't part of the ledger `rows` computes from, so it has to travel
-// separately. `fixedCategories`/`sectionLabel`/`sectionIcon` mirror the
+// separately. `sectionLabel`/`sectionIcon` mirror the
 // same props StockSheetView takes, so the printout always matches whichever
 // window (Hair Stock or Clothes Stock) it was printed from. Returns aren't
 // split by item type in the data model, so `includeReturnedStock` is only
 // true for Hair Stock's printout — showing the same combined return count
 // on a Clothes printout too would misleadingly imply it's clothes-only.
-function printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock = [], fixedCategories = STOCK_CATEGORIES, sectionLabel = "Fresh Stock", sectionIcon = "📦", includeReturnedStock = true) {
+function printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock = [], sectionLabel = "Fresh Stock", sectionIcon = "📦", includeReturnedStock = true) {
   const w = window.open("", "_blank");
   if (!w) return;
 
@@ -13611,30 +13486,10 @@ function printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock = [], fi
     .map(([name,count]) => `<tr><td style="text-align:left">${(name||"").toUpperCase()}</td><td>${count}</td></tr>`).join("")
     || `<tr><td colspan="2" style="color:#94a3b8">No returned stock currently in office.</td></tr>`;
 
-  // Grouped by category, same order/fallback (fixed list) or same
-  // alphabetical-free-text grouping (Clothes) as the on-screen sheet, so
-  // the printed record matches what's visible on the page — see the
-  // matching logic in StockSheetView's groupedRows.
-  const byCat = {};
-  rows.forEach(r => {
-    const cat = fixedCategories
-      ? (fixedCategories.includes(r.item.category) ? r.item.category : OTHER_CATEGORY)
-      : ((r.item.category||"").trim() || OTHER_CATEGORY);
-    (byCat[cat] ||= []).push(r);
-  });
-  const catOrder = fixedCategories
-    ? [...fixedCategories, OTHER_CATEGORY].filter(cat => byCat[cat] && byCat[cat].length > 0)
-    : (() => {
-        const names = Object.keys(byCat).filter(c => c !== OTHER_CATEGORY).sort((a,b)=>a.localeCompare(b));
-        if (byCat[OTHER_CATEGORY]) names.push(OTHER_CATEGORY);
-        return names;
-      })();
-  const summaryRows = catOrder
-    .map(cat => `<tr><td colspan="5" style="text-align:left;font-weight:800;background:#f8fafc;text-transform:uppercase;letter-spacing:0.04em;font-size:10px;">${cat}</td></tr>` +
-      byCat[cat].map(({ item, openingBalance, addedThisMonth, soldThisMonth, closingBalance }) =>
-        `<tr><td style="text-align:left;font-weight:700">${(item.name||"").toUpperCase()}</td><td>${openingBalance}</td><td>${addedThisMonth||"—"}</td><td>${soldThisMonth||"—"}</td><td style="font-weight:800">${closingBalance}</td></tr>`
-      ).join("")
-    ).join("");
+  // One flat list, in the same order as the on-screen sheet.
+  const summaryRows = rows.map(({ item, openingBalance, addedThisMonth, soldThisMonth, closingBalance }) =>
+    `<tr><td style="text-align:left;font-weight:700">${(item.name||"").toUpperCase()}</td><td>${openingBalance}</td><td>${addedThisMonth||"—"}</td><td>${soldThisMonth||"—"}</td><td style="font-weight:800">${closingBalance}</td></tr>`
+  ).join("");
 
   const saleRows = [];
   rows.forEach(({ item, monthMoves }) => {
@@ -13706,17 +13561,9 @@ function printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock = [], fi
   setTimeout(() => w.print(), 300);
 }
 
-// `categories`: a fixed, ordered list (Hair Stock's STOCK_CATEGORIES) shown
-// as a dropdown, or null (Clothes Stock) for a free-text field instead —
-// clothes categories aren't a fixed set, so staff type whatever fits (e.g.
-// "Sarees", "Kids Wear") and the Stock Sheet groups by whatever's typed.
-// `existingCategories` feeds the free-text field's autocomplete so the same
-// category doesn't end up typed two slightly different ways.
-const AddInventoryItemModal = ({ onClose, onSave, categories = STOCK_CATEGORIES, existingCategories = [], itemTypeLabel = "Inventory", allowNewCategory = false }) => {
+const AddInventoryItemModal = ({ onClose, onSave, itemTypeLabel = "Inventory" }) => {
   const [name, setName] = React.useState("");
   const [stock, setStock] = React.useState("");
-  const [category, setCategory] = React.useState(categories ? (categories.length ? categories[0] : OTHER_CATEGORY) : "");
-  const [newCat, setNewCat] = React.useState(false); // admin typing a brand-new category name
   const [saving, setSaving] = React.useState(false);
   const inp = {width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
   const lbl = {display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
@@ -13727,26 +13574,6 @@ const AddInventoryItemModal = ({ onClose, onSave, categories = STOCK_CATEGORIES,
         <div style={{marginBottom:12}}>
           <label style={lbl}>Item Name</label>
           <input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Side Bangs" style={inp} autoFocus/>
-        </div>
-        <div style={{marginBottom:12}}>
-          <label style={lbl}>Category</label>
-          {categories ? (
-            <>
-              <select value={newCat ? "__new__" : category} onChange={e=>{ if (e.target.value === "__new__") { setNewCat(true); setCategory(""); } else { setNewCat(false); setCategory(e.target.value); } }} style={inp}>
-                {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                <option value={OTHER_CATEGORY}>{OTHER_CATEGORY}</option>
-                {allowNewCategory && <option value="__new__">➕ New category…</option>}
-              </select>
-              {newCat && <input value={category} onChange={e=>setCategory(e.target.value)} placeholder="New category name" style={{...inp, marginTop:8}} autoFocus/>}
-            </>
-          ) : (
-            <>
-              <input value={category} onChange={e=>setCategory(e.target.value)} placeholder="e.g. Sarees, Kids Wear…" style={inp} list="clothes-category-suggestions"/>
-              <datalist id="clothes-category-suggestions">
-                {existingCategories.map(c => <option key={c} value={c}/>)}
-              </datalist>
-            </>
-          )}
         </div>
         <div style={{marginBottom:18}}>
           <label style={lbl}>Starting Stock</label>
@@ -13761,11 +13588,11 @@ const AddInventoryItemModal = ({ onClose, onSave, categories = STOCK_CATEGORIES,
             onClick={async()=>{
               if(!name.trim()) return;
               setSaving(true);
-              await onSave(name.trim(), Number(stock)||0, category);
+              await onSave(name.trim(), Number(stock)||0);
               setSaving(false);
             }}
-            disabled={!name.trim()||saving||(newCat&&!category.trim())}
-            style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#1e293b",color:"white",fontWeight:700,fontSize:13,cursor:(!name.trim()||saving||(newCat&&!category.trim()))?"default":"pointer",fontFamily:"inherit",opacity:(!name.trim()||saving||(newCat&&!category.trim()))?0.6:1}}>
+            disabled={!name.trim()||saving}
+            style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#1e293b",color:"white",fontWeight:700,fontSize:13,cursor:(!name.trim()||saving)?"default":"pointer",fontFamily:"inherit",opacity:(!name.trim()||saving)?0.6:1}}>
             {saving?"Saving…":"Add Item"}
           </button>
         </div>
@@ -13774,43 +13601,15 @@ const AddInventoryItemModal = ({ onClose, onSave, categories = STOCK_CATEGORIES,
   );
 };
 
-// Admin-only "settings" panel for what's tracked at all — add, rename,
-// recategorize, or delete an item. Deliberately its own dedicated place,
-// away from the daily Stock Sheet, so an accidental tap during normal
-// logging can never delete an item's stock history.
-// `categories`: same convention as AddInventoryItemModal — a fixed list
-// (Hair Stock) or null (Clothes Stock, free-text with autocomplete).
-const ManageItemsModal = ({ items, onClose, onAddItem, onRequestDelete, onRename, categories = STOCK_CATEGORIES }) => {
+// Admin-only "settings" panel for what's tracked at all — add, rename, or delete an item.
+// Deliberately its own dedicated place, away from the daily Stock Sheet, so an accidental
+// tap during normal logging can never delete an item's stock history.
+const ManageItemsModal = ({ items, onClose, onAddItem, onRequestDelete, onRename }) => {
   const [editingId, setEditingId] = React.useState(null);
   const [editName, setEditName] = React.useState("");
-  const [editCategory, setEditCategory] = React.useState(categories ? (categories.length ? categories[0] : OTHER_CATEGORY) : "");
   const [savingEdit, setSavingEdit] = React.useState(false);
 
-  const existingCategories = React.useMemo(() => Array.from(new Set(items.map(i=>i.category).filter(Boolean))).sort(), [items]);
-
-  const grouped = React.useMemo(() => {
-    const byCat = {};
-    items.forEach(item => {
-      const cat = categories
-        ? (categories.includes(item.category) ? item.category : OTHER_CATEGORY)
-        : ((item.category||"").trim() || OTHER_CATEGORY);
-      (byCat[cat] ||= []).push(item);
-    });
-    if (categories) {
-      return [...categories, OTHER_CATEGORY]
-        .filter(cat => byCat[cat] && byCat[cat].length > 0)
-        .map(cat => ({ category: cat, items: byCat[cat] }));
-    }
-    const names = Object.keys(byCat).filter(c => c !== OTHER_CATEGORY).sort((a,b)=>a.localeCompare(b));
-    if (byCat[OTHER_CATEGORY]) names.push(OTHER_CATEGORY);
-    return names.map(cat => ({ category: cat, items: byCat[cat] }));
-  }, [items, categories]);
-
-  const startEdit = (item) => {
-    setEditingId(item.id);
-    setEditName(item.name);
-    setEditCategory(categories ? (categories.includes(item.category) ? item.category : OTHER_CATEGORY) : (item.category || ""));
-  };
+  const startEdit = (item) => { setEditingId(item.id); setEditName(item.name); };
 
   const inp = {width:"100%",padding:"7px 10px",borderRadius:8,border:"1.5px solid #e2e8f0",fontSize:12.5,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
 
@@ -13821,7 +13620,7 @@ const ManageItemsModal = ({ items, onClose, onAddItem, onRequestDelete, onRename
           <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>⚙️ Manage Items</div>
           <button onClick={onClose} style={{border:"none",background:"transparent",color:"#94a3b8",fontSize:18,cursor:"pointer",lineHeight:1}}>✕</button>
         </div>
-        <p style={{fontSize:12,color:"#64748b",margin:"0 0 14px"}}>Add, rename, recategorize, or delete what you track here — none of this touches stock history.</p>
+        <p style={{fontSize:12,color:"#64748b",margin:"0 0 14px"}}>Add, rename, or delete what you track here — none of this touches stock history. To change the order, use <b>↕ Arrange Products</b> on the Stock Sheet.</p>
 
         <button onClick={onAddItem}
           style={{padding:"10px 0",borderRadius:10,border:"none",background:"#1e293b",color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit",marginBottom:16}}>
@@ -13831,157 +13630,46 @@ const ManageItemsModal = ({ items, onClose, onAddItem, onRequestDelete, onRename
         <div style={{overflowY:"auto",flex:1,borderTop:"1px solid #f1f5f9"}}>
           {items.length === 0 ? (
             <div style={{textAlign:"center",padding:"30px 10px",color:"#94a3b8",fontSize:12.5}}>No items tracked yet.</div>
-          ) : grouped.map(({ category, items: catItems }) => (
-            <div key={category}>
-              <div style={{padding:"10px 4px 6px",fontSize:10.5,fontWeight:800,color:"#334155",textTransform:"uppercase",letterSpacing:"0.05em"}}>{category}</div>
-              {catItems.map(item => (
-                <div key={item.id} style={{padding:"9px 4px",borderTop:"1px solid #f8fafc"}}>
-                  {editingId === item.id ? (
-                    <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                      <input value={editName} onChange={e=>setEditName(e.target.value)} style={inp} autoFocus/>
-                      {categories ? (
-                        <select value={editCategory} onChange={e=>setEditCategory(e.target.value)} style={inp}>
-                          {categories.map(c => <option key={c} value={c}>{c}</option>)}
-                          <option value={OTHER_CATEGORY}>{OTHER_CATEGORY}</option>
-                        </select>
-                      ) : (
-                        <>
-                          <input value={editCategory} onChange={e=>setEditCategory(e.target.value)} placeholder="Category" style={inp} list="clothes-category-suggestions-edit"/>
-                          <datalist id="clothes-category-suggestions-edit">
-                            {existingCategories.map(c => <option key={c} value={c}/>)}
-                          </datalist>
-                        </>
-                      )}
-                      <div style={{display:"flex",gap:8,marginTop:2}}>
-                        <button onClick={()=>setEditingId(null)}
-                          style={{flex:1,padding:"7px 0",borderRadius:8,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
-                          Cancel
-                        </button>
-                        <button
-                          onClick={async()=>{
-                            if(!editName.trim()) return;
-                            setSavingEdit(true);
-                            const ok = await onRename(item.id, { name: editName.trim(), category: editCategory });
-                            setSavingEdit(false);
-                            if (ok) setEditingId(null);
-                          }}
-                          disabled={!editName.trim()||savingEdit}
-                          style={{flex:1,padding:"7px 0",borderRadius:8,border:"none",background:"#1e293b",color:"white",fontWeight:700,fontSize:12,cursor:(!editName.trim()||savingEdit)?"default":"pointer",fontFamily:"inherit",opacity:(!editName.trim()||savingEdit)?0.6:1}}>
-                          {savingEdit?"Saving…":"Save"}
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{display:"flex",alignItems:"center",gap:8}}>
-                      <span style={{flex:1,fontSize:13,fontWeight:700,color:"#0f172a"}}>{item.name}</span>
-                      <button onClick={()=>startEdit(item)}
-                        style={{padding:"5px 10px",borderRadius:7,border:"1px solid #e2e8f0",background:"white",color:"#475569",fontWeight:700,fontSize:11.5,cursor:"pointer",fontFamily:"inherit"}}>
-                        ✏️ Edit
-                      </button>
-                      <button onClick={()=>onRequestDelete(item.id)}
-                        style={{padding:"5px 10px",borderRadius:7,border:"1px solid #fecaca",background:"#fef2f2",color:"#b91c1c",fontWeight:700,fontSize:11.5,cursor:"pointer",fontFamily:"inherit"}}>
-                        Delete
-                      </button>
-                    </div>
-                  )}
+          ) : items.map(item => (
+            <div key={item.id} style={{padding:"9px 4px",borderTop:"1px solid #f8fafc"}}>
+              {editingId === item.id ? (
+                <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                  <input value={editName} onChange={e=>setEditName(e.target.value)} style={inp} autoFocus/>
+                  <div style={{display:"flex",gap:8,marginTop:2}}>
+                    <button onClick={()=>setEditingId(null)}
+                      style={{flex:1,padding:"7px 0",borderRadius:8,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                      Cancel
+                    </button>
+                    <button
+                      onClick={async()=>{
+                        if(!editName.trim()) return;
+                        setSavingEdit(true);
+                        const ok = await onRename(item.id, { name: editName.trim() });
+                        setSavingEdit(false);
+                        if (ok) setEditingId(null);
+                      }}
+                      disabled={!editName.trim()||savingEdit}
+                      style={{flex:1,padding:"7px 0",borderRadius:8,border:"none",background:"#1e293b",color:"white",fontWeight:700,fontSize:12,cursor:(!editName.trim()||savingEdit)?"default":"pointer",fontFamily:"inherit",opacity:(!editName.trim()||savingEdit)?0.6:1}}>
+                      {savingEdit?"Saving…":"Save"}
+                    </button>
+                  </div>
                 </div>
-              ))}
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-};
-
-// Admin-only: add, rename, re-order and delete the product categories of the current stock window.
-// Renaming moves that category's products with it; a category can only be deleted once it is empty,
-// so no product can ever be orphaned. Stock history is never touched.
-const CategoriesModal = ({ sectionLabel, categories, counts, otherCount, onClose, onSaveList, onRename }) => {
-  const [newName, setNewName] = React.useState("");
-  const [editing, setEditing] = React.useState(null);
-  const [editVal, setEditVal] = React.useState("");
-  const [busy, setBusy] = React.useState(false);
-  const lc = (v) => String(v||"").trim().toLowerCase();
-  const taken = (n, except) => lc(n) === lc(OTHER_CATEGORY) || categories.some(c => c !== except && lc(c) === lc(n));
-  const run = async (fn) => { setBusy(true); try { return await fn(); } finally { setBusy(false); } };
-
-  const add = () => {
-    const n = newName.trim();
-    if (!n) return;
-    if (taken(n)) { showAlert("A category called \"" + n + "\" already exists."); return; }
-    run(async () => { if (await onSaveList([...categories, n])) setNewName(""); });
-  };
-  const move = (i, d) => {
-    const j = i + d;
-    if (j < 0 || j >= categories.length) return;
-    const arr = [...categories]; [arr[i], arr[j]] = [arr[j], arr[i]];
-    run(() => onSaveList(arr));
-  };
-  const saveRename = (old) => {
-    const n = editVal.trim();
-    if (!n || n === old) { setEditing(null); return; }
-    if (taken(n, old)) { showAlert("A category called \"" + n + "\" already exists."); return; }
-    run(async () => { if (await onRename(old, n)) setEditing(null); });
-  };
-  const del = async (c) => {
-    if ((counts[c]||0) > 0) { showAlert("\"" + c + "\" still has " + counts[c] + " product" + (counts[c]===1?"":"s") + ". Move them to another category (Manage Items → Edit) or delete them first."); return; }
-    if (categories.length <= 1) { showAlert("Keep at least one category."); return; }
-    if (!(await showConfirm("Delete the empty category \"" + c + "\"?"))) return;
-    run(() => onSaveList(categories.filter(x => x !== c)));
-  };
-
-  const inp = { flex:1, minWidth:0, padding:"8px 11px", borderRadius:9, border:"1.5px solid #d3deeb", fontSize:13, fontFamily:"inherit", outline:"none", boxSizing:"border-box" };
-  const mini = (on) => ({ ...stkArrow(!on), width:28, height:28, fontSize:11 });
-  return (
-    <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <style>{STK_CSS}</style>
-      <div style={{background:"white",borderRadius:16,padding:22,maxWidth:480,width:"96%",maxHeight:"86vh",display:"flex",flexDirection:"column",boxShadow:"0 4px 8px rgba(15,23,42,.10), 0 30px 60px -12px rgba(15,23,42,.40)"}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
-          <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>🗂️ {sectionLabel} Categories</div>
-          <button onClick={onClose} style={{border:"none",background:"transparent",color:"#94a3b8",fontSize:18,cursor:"pointer",lineHeight:1}}>✕</button>
-        </div>
-        <p style={{fontSize:12,color:"#64748b",margin:"0 0 14px"}}>Add, rename or re-order the groups on the Stock Sheet. To re-order products inside a group, use <b>↕ Arrange Products</b> on the sheet.</p>
-
-        <div style={{display:"flex",gap:8,marginBottom:14}}>
-          <input value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter") add(); }} placeholder="New category name…" style={inp} disabled={busy}/>
-          <button onClick={add} disabled={!newName.trim()||busy} className="stk-b3d"
-            style={{...stkKey("white","#1e293b","rgba(0,0,0,.25)"),padding:"8px 16px",fontSize:13,fontWeight:800,opacity:(!newName.trim()||busy)?0.55:1,cursor:(!newName.trim()||busy)?"default":"pointer"}}>+ Add</button>
-        </div>
-
-        <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:8,padding:"2px 2px 6px"}}>
-          {categories.length === 0 && <div style={{textAlign:"center",padding:"22px 10px",color:"#94a3b8",fontSize:12.5}}>No categories yet — add your first one above.</div>}
-          {categories.map((c, i) => (
-            <div key={c} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 10px",borderRadius:12,border:"1px solid #d3deeb",backgroundColor:"white",backgroundImage:"linear-gradient(180deg,#ffffff,#f4f7fb)",boxShadow:"0 1px 0 #fff inset, 0 2px 4px rgba(15,23,42,.07), 0 8px 14px -8px rgba(15,23,42,.18)"}}>
-              <span style={{width:22,height:22,borderRadius:7,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:10.5,fontWeight:900,color:"#475569",backgroundColor:"#eef2f7",boxShadow:"0 1px 0 #fff inset, 0 1px 2px rgba(15,23,42,.15)"}}>{i+1}</span>
-              {editing === c ? (
-                <>
-                  <input value={editVal} onChange={e=>setEditVal(e.target.value)} autoFocus style={inp} disabled={busy}
-                    onKeyDown={e=>{ if(e.key==="Enter") saveRename(c); if(e.key==="Escape") setEditing(null); }}/>
-                  <button onClick={()=>saveRename(c)} disabled={busy} className="stk-b3d" title="Save name" style={{...stkKey("white","#0369a1","rgba(0,0,0,.2)"),padding:"6px 10px",fontSize:12}}>✓</button>
-                  <button onClick={()=>setEditing(null)} disabled={busy} className="stk-b3d" title="Cancel" style={{...stkKey("#64748b","#f8fafc","#cbd5e1"),padding:"6px 10px",fontSize:12}}>✕</button>
-                </>
               ) : (
-                <>
-                  <span style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#0f172a",overflowWrap:"anywhere"}}>{c}</span>
-                  <span title="Products in this category" style={{fontSize:10.5,fontWeight:800,color:"#475569",backgroundColor:"#f1f5f9",border:"1px solid #d5dde8",borderRadius:999,padding:"2px 9px",whiteSpace:"nowrap"}}>{counts[c]||0} item{(counts[c]||0)===1?"":"s"}</span>
-                  <button className="stk-b3d" disabled={busy||i===0} title="Move up" onClick={()=>move(i,-1)} style={mini(!busy&&i!==0)}>▲</button>
-                  <button className="stk-b3d" disabled={busy||i===categories.length-1} title="Move down" onClick={()=>move(i,1)} style={mini(!busy&&i!==categories.length-1)}>▼</button>
-                  <button className="stk-b3d" disabled={busy} title="Rename" onClick={()=>{ setEditing(c); setEditVal(c); }} style={mini(!busy)}>✏️</button>
-                  <button className="stk-b3d" disabled={busy} title={(counts[c]||0)>0?"Has products — move them first":"Delete empty category"} onClick={()=>del(c)} style={{...mini(!busy),color:(counts[c]||0)>0?"#cbd5e1":"#b91c1c"}}>🗑</button>
-                </>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span style={{flex:1,fontSize:13,fontWeight:700,color:"#0f172a"}}>{item.name}</span>
+                  <button onClick={()=>startEdit(item)}
+                    style={{padding:"5px 10px",borderRadius:7,border:"1px solid #e2e8f0",background:"white",color:"#475569",fontWeight:700,fontSize:11.5,cursor:"pointer",fontFamily:"inherit"}}>
+                    ✏️ Edit
+                  </button>
+                  <button onClick={()=>onRequestDelete(item.id)}
+                    style={{padding:"5px 10px",borderRadius:7,border:"1px solid #fecaca",background:"#fef2f2",color:"#b91c1c",fontWeight:700,fontSize:11.5,cursor:"pointer",fontFamily:"inherit"}}>
+                    Delete
+                  </button>
+                </div>
               )}
             </div>
           ))}
-          {otherCount > 0 && (
-            <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 10px",borderRadius:12,border:"1px dashed #cbd5e1",backgroundColor:"#f8fafc"}}>
-              <span style={{flex:1,fontSize:12.5,fontWeight:700,color:"#64748b"}}>Other <span style={{fontWeight:600,color:"#94a3b8"}}>— products without a category above (always shown last)</span></span>
-              <span style={{fontSize:10.5,fontWeight:800,color:"#475569",backgroundColor:"#f1f5f9",border:"1px solid #d5dde8",borderRadius:999,padding:"2px 9px"}}>{otherCount} item{otherCount===1?"":"s"}</span>
-            </div>
-          )}
         </div>
-
-        <button onClick={onClose} className="stk-b3d" style={{...stkKey("#334155","#f8fafc","#cbd5e1"),marginTop:14,padding:"10px 0",fontSize:13,fontWeight:700}}>Done</button>
       </div>
     </div>
   );
