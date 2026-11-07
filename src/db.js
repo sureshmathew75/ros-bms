@@ -1713,6 +1713,7 @@ export const dbLoadInventoryItems = async (shopId) => {
   return (data || []).map(r => ({
     id: r.id, name: r.name, category: r.category || null, currentStock: Number(r.current_stock) || 0,
     totalStocked: Number(r.total_stocked) || 0, itemType: r.item_type || 'hair', createdAt: r.created_at,
+    sortOrder: (r.sort_order === null || r.sort_order === undefined) ? null : Number(r.sort_order),
   }));
 };
 
@@ -1749,6 +1750,63 @@ export const dbUpdateInventoryItem = async (shopId, itemId, { name, category } =
   if (Object.keys(patch).length === 0) return true;
   const { error } = await sb.from('inventory_items').update(patch).eq('id', itemId).eq('shop_id', shopId);
   if (error) { console.error('Update inventory item error:', error); return false; }
+  return true;
+};
+
+/* ── Stock categories + product order (admin-managed) ───────────────────
+   Needs stock_categories_and_order.sql. If that has not been run yet, the
+   loaders return null / the writers return false and the page simply keeps
+   its built-in behaviour — nothing breaks. ─────────────────────────────── */
+// -> { hair: [names] | null, clothes: [names] | null }  (null = nothing saved yet)
+export const dbLoadInventoryCategories = async (shopId) => {
+  if (!sb) return { hair: null, clothes: null };
+  const { data, error } = await sb.from('inventory_categories').select('item_type,name,sort_order')
+    .eq('shop_id', shopId).order('sort_order', { ascending: true }).order('name', { ascending: true });
+  if (error) { console.warn('Load inventory categories skipped:', error.message); return { hair: null, clothes: null }; }
+  const out = { hair: [], clothes: [] };
+  (data || []).forEach(r => { (out[r.item_type === 'clothes' ? 'clothes' : 'hair']).push(r.name); });
+  return { hair: out.hair.length ? out.hair : null, clothes: out.clothes.length ? out.clothes : null };
+};
+
+// Saves the complete, ordered category list for one window (adds new names,
+// re-numbers the order, removes names no longer in the list). Never touches items.
+export const dbSaveInventoryCategories = async (shopId, itemType, names) => {
+  if (!sb) return false;
+  const type = itemType === 'clothes' ? 'clothes' : 'hair';
+  const clean = [];
+  (names || []).forEach(n => { const v = String(n || '').trim(); if (v && !clean.includes(v)) clean.push(v); });
+  const rows = clean.map((name, i) => ({ shop_id: shopId, item_type: type, name, sort_order: i }));
+  if (rows.length) {
+    const { error } = await sb.from('inventory_categories').upsert(rows, { onConflict: 'shop_id,item_type,name' });
+    if (error) { console.error('Save inventory categories error:', error); return false; }
+  }
+  const { data: existing, error: lErr } = await sb.from('inventory_categories').select('id,name')
+    .eq('shop_id', shopId).eq('item_type', type);
+  if (lErr) { console.error('Save inventory categories error:', lErr); return false; }
+  const dropIds = (existing || []).filter(r => !clean.includes(r.name)).map(r => r.id);
+  if (dropIds.length) {
+    const { error: dErr } = await sb.from('inventory_categories').delete().in('id', dropIds);
+    if (dErr) { console.error('Save inventory categories error:', dErr); return false; }
+  }
+  return true;
+};
+
+// Moves several items into a category (used when a category is renamed).
+export const dbSetInventoryItemsCategory = async (shopId, itemIds, category) => {
+  if (!sb) return false;
+  if (!itemIds || !itemIds.length) return true;
+  const { error } = await sb.from('inventory_items').update({ category: category || null }).eq('shop_id', shopId).in('id', itemIds);
+  if (error) { console.error('Set items category error:', error); return false; }
+  return true;
+};
+
+// Saves the display order of products: itemIds in the order they should appear.
+export const dbSetInventoryItemOrder = async (shopId, itemIds) => {
+  if (!sb) return false;
+  const results = await Promise.all((itemIds || []).map((id, i) =>
+    sb.from('inventory_items').update({ sort_order: i * 10 }).eq('id', id).eq('shop_id', shopId)));
+  const bad = results.find(r => r.error);
+  if (bad) { console.error('Set item order error:', bad.error); return false; }
   return true;
 };
 

@@ -43,7 +43,7 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadAuditDismissals, dbDismissAuditFinding,
   dbLoadAttendanceRecords, dbClockIn, dbClockOut, dbSetAttendanceRecord,
   dbLoadAttendanceHolidays, dbAddAttendanceHoliday, dbRemoveAttendanceHoliday,
-  dbLoadInventoryItems, dbAddInventoryItem, dbUpdateInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement, dbDeleteInventoryMovement, dbResetInventoryItems,
+  dbLoadInventoryItems, dbAddInventoryItem, dbUpdateInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement, dbDeleteInventoryMovement, dbResetInventoryItems, dbLoadInventoryCategories, dbSaveInventoryCategories, dbSetInventoryItemsCategory, dbSetInventoryItemOrder,
   dbLoadUpfrontRefunds, dbAddUpfrontRefund, dbDeleteUpfrontRefund,
   dbLoadGiftVouchers, dbAddGiftVoucher, dbUpdateGiftVoucher, dbDeleteGiftVoucher,
   dbLoadStaffSalaries, dbSaveStaffSalary, dbLoadStaffPositions, dbSaveStaffPosition, dbLoadCarryForward, dbUpdateCarryForward,
@@ -599,7 +599,7 @@ const AUDIT_CATEGORIES=[
 /* ── getSaleFY: returns FY start year for a sale using invoice suffix as ground truth ── */
 const getSaleFY=(sale)=>{
   const id=String(sale.id||"");
-  const m=id.match(/^[A-Z]{2,3}(\d{4})(\d)$/);
+  const m=id.match(/^[A-Z]{2,4}(\d{4})(\d)$/);
   if(m){
     const suffix=+m[2];
     const nowY=new Date().getFullYear();
@@ -7870,7 +7870,7 @@ const addSale = async (form) => {
   // Update UI instantly
   setSalesData(d => ({...d, [shopId]: [newSale, ...d[shopId]]}));
   setModal(null);
-  const _usedNum = parseInt((nid||"0").match(/^(?:ROS|IND)(\d{4})\d$/)?.[1]||"0")||0;
+  const _usedNum = parseInt((nid||"0").match(/^(?:ROSH|ROS|IND)(\d{4})\d$/)?.[1]||"0")||0;
   if(_usedNum >= 1313) { try { localStorage.setItem("ros_lastInv_"+shopId, String(_usedNum)); } catch{} }
   dbSaveSale(shopId, newSale, { insertOnly: true }).catch(err => {
     console.error("❌ Supabase save failed:", err);
@@ -11502,14 +11502,14 @@ const ShopifyImportPanel = ({ shopId, shop, existingSales, onClose, onImport }) 
       catch { return 1312; }
     })();
     const salesNum = (existingSales || []).reduce((max, s) => {
-      const m = (s.id || "").match(/^ROS(\d{4})\d$/);
+      const m = (s.id || "").match(shopId === "ros-hairlines" ? /^ROSH(\d{4})\d$/ : /^ROS(\d{4})\d$/);
       return m ? Math.max(max, parseInt(m[1])) : max;
     }, 1312);
     let nextNum = Math.max(localNum, salesNum);
 
     const rows = chosen.map((order) => {
       nextNum += 1;
-      const invoiceId = `ROS${String(nextNum).padStart(4, "0")}${_fySuffix}`;
+      const invoiceId = `${shopId === "ros-hairlines" ? "ROSH" : "ROS"}${String(nextNum).padStart(4, "0")}${_fySuffix}`;
       const saleLines = order.items.map((it,li)=>({id:`L${li}`,name:it.name,qty:String(it.qty),price:String(it.price)}));
       const displayItem = order.items.map(it=>it.name).join(", ") || "Shopify Order";
       const encodedItem = saleLines.length>0 ? `__LINES__:${JSON.stringify(saleLines)}\n${displayItem}` : displayItem;
@@ -12336,6 +12336,40 @@ const AttendanceCalendar = ({ year, month, records, accent, onDayClick, holidayS
    logged as its own movement — sale-out or restock-in — so clicking an
    item shows a real ledger of who bought each unit, not just a count.
    Adding items / restocking is admin-only; everyone can view. ───────── */
+/* ── Stock page "raised" look — layered shadows, gradient headers, embossed number badges.
+   Pure presentation: no logic reads any of these. ─────────────────────────────────────── */
+const STK_CSS = `
+.stk-row > td{transition:background-color .12s}
+.stk-row:hover > td{background:#e9f2ff !important}
+.stk-b3d{transition:transform .08s,box-shadow .08s,filter .12s}
+.stk-b3d:hover:not(:disabled){filter:brightness(1.05)}
+.stk-b3d:active:not(:disabled){transform:translateY(1px);box-shadow:0 1px 2px rgba(15,23,42,.25) inset !important}
+.stk-lift{transition:transform .15s,box-shadow .15s}
+.stk-lift:hover{transform:translateY(-2px);box-shadow:0 1px 0 rgba(255,255,255,.9) inset,0 4px 8px rgba(15,23,42,.10),0 16px 28px -6px rgba(15,23,42,.20) !important}
+`;
+const STK_SHADOW = "0 1px 1px rgba(15,23,42,.05), 0 3px 6px rgba(15,23,42,.07), 0 12px 24px -4px rgba(15,23,42,.12), 0 28px 48px -16px rgba(15,23,42,.16)";
+const stkTableWrap = { overflowX:"auto", overflowY:"hidden", border:"1px solid #d3deeb", borderRadius:16, background:"white", boxShadow:STK_SHADOW };
+const stkHeadFill = { backgroundColor:"#eaf0f7", backgroundImage:"linear-gradient(180deg,#ffffff 0%,#e3eaf3 100%)" };
+const stkTab = (on, accent) => on
+  ? { padding:"8px 16px", borderRadius:999, fontSize:12, fontWeight:800, cursor:"pointer", fontFamily:"inherit", border:"1px solid rgba(0,0,0,.18)", color:"white",
+      backgroundColor:accent, backgroundImage:"linear-gradient(180deg,rgba(255,255,255,.28),rgba(255,255,255,0) 55%,rgba(0,0,0,.10))",
+      boxShadow:"0 1px 0 rgba(255,255,255,.35) inset, 0 -2px 0 rgba(0,0,0,.14) inset, 0 5px 10px -2px rgba(15,23,42,.30)", textShadow:"0 1px 0 rgba(0,0,0,.22)" }
+  : { padding:"8px 16px", borderRadius:999, fontSize:12, fontWeight:700, cursor:"pointer", fontFamily:"inherit", border:"1px solid #d3deeb", color:"#64748b",
+      backgroundColor:"white", backgroundImage:"linear-gradient(180deg,#ffffff,#eef2f7)",
+      boxShadow:"0 1px 0 #fff inset, 0 2px 4px rgba(15,23,42,.10)" };
+const stkCard = (bg, bd) => ({ borderRadius:14, backgroundColor:bg, border:"1px solid "+bd,
+  backgroundImage:"linear-gradient(180deg,rgba(255,255,255,.75),rgba(255,255,255,0) 65%)",
+  boxShadow:"0 1px 0 rgba(255,255,255,.9) inset, 0 2px 4px rgba(15,23,42,.06), 0 10px 20px -6px rgba(15,23,42,.16)" });
+const stkBadge = (color, bg, bd) => ({ display:"inline-block", minWidth:32, padding:"3px 9px", borderRadius:9, fontWeight:900, fontSize:13, lineHeight:1.25, color,
+  backgroundColor:bg, backgroundImage:"linear-gradient(180deg,rgba(255,255,255,.8),rgba(255,255,255,0) 60%)", border:"1px solid "+bd,
+  boxShadow:"0 1px 0 rgba(255,255,255,.9) inset, 0 2px 3px rgba(15,23,42,.14)", fontVariantNumeric:"tabular-nums" });
+const stkKey = (fg, bg, bd) => ({ border:"1.5px solid "+bd, borderRadius:9, padding:"6px 11px", fontSize:13, fontWeight:900, cursor:"pointer", fontFamily:"inherit", lineHeight:1, color:fg,
+  backgroundColor:bg, backgroundImage:"linear-gradient(180deg,rgba(255,255,255,.85),rgba(255,255,255,0) 70%)",
+  boxShadow:"0 1px 0 rgba(255,255,255,.9) inset, 0 -2px 0 rgba(15,23,42,.08) inset, 0 3px 5px rgba(15,23,42,.14)" });
+const stkArrow = (disabled) => ({ width:24, height:16, padding:0, borderRadius:5, fontSize:8, lineHeight:1, fontFamily:"inherit", border:"1px solid #c3d0e0",
+  cursor:disabled?"default":"pointer", color:disabled?"#cbd5e1":"#334155", backgroundColor:"#f4f7fb",
+  backgroundImage:"linear-gradient(180deg,#ffffff,#e6ecf4)", boxShadow:disabled?"none":"0 1px 0 #fff inset, 0 1px 3px rgba(15,23,42,.18)", opacity:disabled?0.6:1 });
+
 const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) => {
   const isAdmin = user?.role === "superadmin" || user?.role === "admin";
   // "Stock" combines two separate ledgers behind one page: Fresh Stock is
@@ -12357,6 +12391,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   const [correctFor, setCorrectFor] = React.useState(null); // {id, name, currentStock} | null — admin-only stock correction
   const [confirmDeleteId, setConfirmDeleteId] = React.useState(null);
   const [showReset, setShowReset] = React.useState(false); // admin-only Reset Stock modal
+  const [showCategories, setShowCategories] = React.useState(false); // admin-only category manager
+  const [catStore, setCatStore] = React.useState({ hair: null, clothes: null }); // saved category lists (null = nothing saved yet → built-in defaults)
   const [invView, setInvView] = React.useState("items"); // "items" | "log" | "monthly" — list view only
   const [collapsedLogDates, setCollapsedLogDates] = React.useState({}); // date -> bool, daily-log view
   const [sheetMonth, setSheetMonth] = React.useState(new Date().toISOString().slice(0,7)); // "YYYY-MM" shown in the Stock Sheet
@@ -12377,8 +12413,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
 
   const load = React.useCallback(() => {
     setLoading(true);
-    Promise.all([dbLoadInventoryItems(shopId), dbLoadInventoryMovements(shopId)]).then(([i, m]) => {
-      setItems(i); setMovements(m); setLoading(false);
+    Promise.all([dbLoadInventoryItems(shopId), dbLoadInventoryMovements(shopId), dbLoadInventoryCategories(shopId)]).then(([i, m, c]) => {
+      setItems(i); setMovements(m); setCatStore(c || { hair: null, clothes: null }); setLoading(false);
     });
   }, [shopId]);
   React.useEffect(() => { load(); }, [load]);
@@ -12395,10 +12431,66 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   // Clothes existed, so nothing already tracked moves or disappears).
   // Everything below (dashboard, daily log, the sheet itself) is scoped to
   // whichever of the two is currently selected via stockSection.
-  const hairItems = React.useMemo(() => items.filter(i => (i.itemType||"hair") !== "clothes"), [items]);
-  const clothesItems = React.useMemo(() => items.filter(i => i.itemType === "clothes"), [items]);
+  // Products shown in the admin's chosen order (sort_order); anything not yet arranged sits after them, A→Z — same as before arranging existed.
+  const sortedItems = React.useMemo(() => [...items].sort((a,b) => {
+    const x = a.sortOrder == null ? 1e9 : a.sortOrder, y = b.sortOrder == null ? 1e9 : b.sortOrder;
+    return (x - y) || String(a.name||"").localeCompare(String(b.name||""));
+  }), [items]);
+  const hairItems = React.useMemo(() => sortedItems.filter(i => (i.itemType||"hair") !== "clothes"), [sortedItems]);
+  const clothesItems = React.useMemo(() => sortedItems.filter(i => i.itemType === "clothes"), [sortedItems]);
   const activeItems = stockSection === "clothes" ? clothesItems : hairItems;
   const activeItemIds = React.useMemo(() => new Set(activeItems.map(i=>i.id)), [activeItems]);
+
+  // ── Categories (admin-managed). The saved list wins; until one is saved, Hair uses its
+  //    original five and Clothes uses whatever categories its products already carry.
+  const sectionKey = stockSection === "clothes" ? "clothes" : "hair";
+  const categoryList = React.useMemo(() => {
+    const saved = catStore[sectionKey];
+    if (saved && saved.length) return saved;
+    if (sectionKey === "hair") return STOCK_CATEGORIES;
+    return Array.from(new Set(activeItems.map(i => (i.category||"").trim()).filter(c => c && c !== OTHER_CATEGORY))).sort((a,b) => a.localeCompare(b));
+  }, [catStore, sectionKey, activeItems]);
+  const categoryCounts = React.useMemo(() => {
+    const c = {}; let other = 0;
+    activeItems.forEach(i => { if (categoryList.includes(i.category)) c[i.category] = (c[i.category]||0) + 1; else other++; });
+    return { byName: c, other };
+  }, [activeItems, categoryList]);
+
+  const saveCategoryList = async (names) => {
+    const prev = catStore;
+    setCatStore(p => ({ ...p, [sectionKey]: names }));
+    const ok = await dbSaveInventoryCategories(shopId, sectionKey, names);
+    if (!ok) {
+      setCatStore(prev);
+      showAlert("Couldn't save the category list. Please check your connection. If this keeps happening, the one-time SQL step (stock_categories_and_order.sql) has not been run in Supabase yet.");
+    }
+    return ok;
+  };
+  const renameCategory = async (oldName, newName) => {
+    const ids = activeItems.filter(i => i.category === oldName).map(i => i.id);
+    if (!(await dbSetInventoryItemsCategory(shopId, ids, newName))) {
+      showAlert("Couldn't rename — please check your connection and try again. Nothing was changed.");
+      return false;
+    }
+    setItems(p => p.map(i => ids.includes(i.id) ? { ...i, category: newName } : i));
+    return saveCategoryList(categoryList.map(c => c === oldName ? newName : c));
+  };
+  const moveCategory = async (name, dir) => {
+    const i = categoryList.indexOf(name), j = i + dir;
+    if (i < 0 || j < 0 || j >= categoryList.length) return;
+    const arr = [...categoryList]; [arr[i], arr[j]] = [arr[j], arr[i]];
+    await saveCategoryList(arr);
+  };
+  // `orderedIds`: one category's products, in the new order. Shown instantly, saved in the background.
+  const reorderItems = async (orderedIds) => {
+    const pos = new Map(orderedIds.map((id, i) => [id, i * 10]));
+    setItems(p => p.map(i => pos.has(i.id) ? { ...i, sortOrder: pos.get(i.id) } : i));
+    const ok = await dbSetInventoryItemOrder(shopId, orderedIds);
+    if (!ok) {
+      showAlert("Couldn't save the new order. Please check your connection. If this keeps happening, the one-time SQL step (stock_categories_and_order.sql) has not been run in Supabase yet.");
+      load();
+    }
+  };
 
   // Shop-wide stock dashboard — totals across every tracked item IN THE
   // CURRENTLY SELECTED WINDOW (Hair or Clothes), not the two mixed
@@ -12499,24 +12591,15 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   const sectionToggle = (
     <div style={{display:"flex",gap:6,marginBottom:16,flexWrap:"wrap"}}>
       <button onClick={()=>setStockSection("fresh")}
-        style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
-          border:"1px solid "+(stockSection==="fresh"?shop.accent:"#e2e8f0"),
-          background:stockSection==="fresh"?shop.accent:"white",
-          color:stockSection==="fresh"?"white":"#64748b"}}>
+        className="stk-b3d" style={stkTab(stockSection==="fresh", shop.accent)}>
         🆕 Hair Stock
       </button>
       <button onClick={()=>setStockSection("clothes")}
-        style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
-          border:"1px solid "+(stockSection==="clothes"?shop.accent:"#e2e8f0"),
-          background:stockSection==="clothes"?shop.accent:"white",
-          color:stockSection==="clothes"?"white":"#64748b"}}>
+        className="stk-b3d" style={stkTab(stockSection==="clothes", shop.accent)}>
         👕 Clothes Stock
       </button>
       <button onClick={()=>setStockSection("returned")}
-        style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
-          border:"1px solid "+(stockSection==="returned"?shop.accent:"#e2e8f0"),
-          background:stockSection==="returned"?shop.accent:"white",
-          color:stockSection==="returned"?"white":"#64748b"}}>
+        className="stk-b3d" style={stkTab(stockSection==="returned", shop.accent)}>
         ↩️ Returned Stock
       </button>
     </div>
@@ -12549,6 +12632,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
     const totalSold = selectedItem.totalStocked - selectedItem.currentStock;
     return (
       <div style={{padding:"0 0 40px"}}>
+        <style>{STK_CSS}</style>
         <button onClick={()=>setSelectedItemId(null)}
           style={{border:"none",background:"none",color:"#64748b",fontSize:12,fontWeight:700,cursor:"pointer",marginBottom:14,padding:0}}>
           ← Back to Inventory
@@ -12579,15 +12663,15 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
         </div>
 
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:24}}>
-          <div style={{padding:"14px 16px",borderRadius:12,background:stockBg(selectedItem.currentStock),border:"1px solid "+stockColor(selectedItem.currentStock)+"33"}}>
+          <div className="stk-lift" style={{padding:"14px 16px",...stkCard(stockBg(selectedItem.currentStock),stockColor(selectedItem.currentStock)+"44")}}>
             <div style={{fontSize:22,fontWeight:900,color:stockColor(selectedItem.currentStock)}}>{selectedItem.currentStock}</div>
             <div style={{fontSize:10.5,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>In Stock Now</div>
           </div>
-          <div style={{padding:"14px 16px",borderRadius:12,background:"#f8fafc",border:"1px solid #e2e8f0"}}>
+          <div className="stk-lift" style={{padding:"14px 16px",...stkCard("#f8fafc","#d3deeb")}}>
             <div style={{fontSize:22,fontWeight:900,color:"#0f172a"}}>{selectedItem.totalStocked}</div>
             <div style={{fontSize:10.5,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Total Ever Stocked</div>
           </div>
-          <div style={{padding:"14px 16px",borderRadius:12,background:"#f8fafc",border:"1px solid #e2e8f0"}}>
+          <div className="stk-lift" style={{padding:"14px 16px",...stkCard("#f8fafc","#d3deeb")}}>
             <div style={{fontSize:22,fontWeight:900,color:"#0f172a"}}>{totalSold}</div>
             <div style={{fontSize:10.5,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Total Sold</div>
           </div>
@@ -12606,7 +12690,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
             const signedQty = isCorrection ? Number(m.qty)||0 : (m.type==="restock" ? Number(m.qty)||0 : -(Number(m.qty)||0));
             const amountColor = signedQty>0 ? "#166534" : signedQty<0 ? "#991b1b" : "#64748b";
             return (
-            <div key={m.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 14px",borderRadius:10,border:"1px solid #e2e8f0",background:"white"}}>
+            <div key={m.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"11px 14px",borderRadius:12,border:"1px solid #d3deeb",background:"white",boxShadow:"0 1px 0 #fff inset, 0 2px 4px rgba(15,23,42,.06), 0 8px 16px -8px rgba(15,23,42,.14)"}}>
               <div>
                 <div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}>
                   {m.type==="restock" ? "🟢 Restocked" : isCorrection ? "⚖️ Stock Corrected" : "🔴 Sold"}
@@ -12667,6 +12751,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   /* ── ITEM LIST VIEW ── */
   return (
     <div style={{padding:"0 0 40px"}}>
+      <style>{STK_CSS}</style>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:10,marginBottom:18}}>
         <div>
           <h2 style={{margin:0,fontSize:18,fontWeight:800,color:"#0f172a"}}>{stockSection==="clothes"?"👕 Stock":"📦 Stock"}</h2>
@@ -12676,12 +12761,18 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
         </div>
         {isAdmin && (
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-            <button onClick={()=>setShowReset(true)}
-              style={{padding:"9px 16px",borderRadius:10,border:"1.5px solid #fecaca",background:"#fff5f5",color:"#b91c1c",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            <button onClick={()=>setShowReset(true)} className="stk-b3d"
+              style={{...stkKey("#b91c1c","#fff5f5","#fecaca"),padding:"9px 16px",fontSize:13,fontWeight:700}}>
               🔄 Reset Stock
             </button>
-            <button onClick={()=>setShowManageItems(true)}
-              style={{padding:"9px 16px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+            <button onClick={()=>setShowCategories(true)} className="stk-b3d"
+              style={{...stkKey("#334155","#f8fafc","#cbd5e1"),padding:"9px 16px",fontSize:13,fontWeight:700}}>
+              🗂️ Categories
+            </button>
+            <button onClick={()=>setShowManageItems(true)} className="stk-b3d"
+              style={{padding:"9px 16px",borderRadius:10,border:"1px solid rgba(0,0,0,.18)",backgroundColor:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",
+                backgroundImage:"linear-gradient(180deg,rgba(255,255,255,.28),rgba(255,255,255,0) 55%,rgba(0,0,0,.10))",
+                boxShadow:"0 1px 0 rgba(255,255,255,.35) inset, 0 -2px 0 rgba(0,0,0,.14) inset, 0 5px 10px -2px rgba(15,23,42,.30)",textShadow:"0 1px 0 rgba(0,0,0,.22)"}}>
               ⚙️ Manage Items
             </button>
           </div>
@@ -12692,21 +12783,21 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
 
       {/* ── Stock dashboard — current totals across every tracked item ── */}
       <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:10,marginBottom:18}}>
-        <div style={{padding:"12px 14px",borderRadius:12,background:shop.accentBg,border:"1px solid "+shop.accent+"33"}}>
+        <div className="stk-lift" style={{padding:"12px 14px",...stkCard(shop.accentBg,shop.accent+"33")}}>
           <div style={{fontSize:20,fontWeight:900,color:shop.accentText||shop.accent}}>{stockDashboard.openingThisMonth}</div>
           <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Opening Stock · This Month</div>
         </div>
-        <div style={{padding:"12px 14px",borderRadius:12,background:"#f8fafc",border:"1px solid #e2e8f0"}}>
+        <div className="stk-lift" style={{padding:"12px 14px",...stkCard("#f8fafc","#d3deeb")}}>
           <div style={{fontSize:20,fontWeight:900,color:"#0f172a"}}>{stockDashboard.soldThisMonth} <span style={{fontSize:13,fontWeight:700,color:"#94a3b8"}}>/ {stockDashboard.totalSoldAllTime}</span></div>
           <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Sold This Month / Total</div>
         </div>
-        <div style={{padding:"12px 14px",borderRadius:12,background:"#f0fdf4",border:"1px solid #86efac"}}>
+        <div className="stk-lift" style={{padding:"12px 14px",...stkCard("#f0fdf4","#86efac")}}>
           <div style={{fontSize:20,fontWeight:900,color:"#166534"}}>{stockDashboard.totalInStock}</div>
           <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Current Stock</div>
           <div style={{fontSize:10,color:"#94a3b8",marginTop:3}}>{stockDashboard.openingThisMonth} opening + {stockDashboard.addedThisMonth} added − {stockDashboard.soldThisMonth} sold</div>
         </div>
         {stockSection !== "clothes" && (
-          <div style={{padding:"12px 14px",borderRadius:12,background:"#f5f3ff",border:"1px solid #c4b5fd"}}>
+          <div className="stk-lift" style={{padding:"12px 14px",...stkCard("#f5f3ff","#c4b5fd")}}>
             <div style={{fontSize:20,fontWeight:900,color:"#5b21b6"}}>{returnedStockNow.length}</div>
             <div style={{fontSize:10,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",marginTop:2}}>Returned Stock In Office</div>
           </div>
@@ -12716,24 +12807,15 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
       {/* ── View toggle: Excel-style stock sheet vs. day-by-day movement log ── */}
       <div style={{display:"flex",gap:6,marginBottom:16}}>
         <button onClick={()=>setInvView("items")}
-          style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
-            border:"1px solid "+(invView==="items"?shop.accent:"#e2e8f0"),
-            background:invView==="items"?shop.accent:"white",
-            color:invView==="items"?"white":"#64748b"}}>
+          className="stk-b3d" style={stkTab(invView==="items", shop.accent)}>
           📊 Stock Sheet
         </button>
         <button onClick={()=>setInvView("log")}
-          style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
-            border:"1px solid "+(invView==="log"?shop.accent:"#e2e8f0"),
-            background:invView==="log"?shop.accent:"white",
-            color:invView==="log"?"white":"#64748b"}}>
+          className="stk-b3d" style={stkTab(invView==="log", shop.accent)}>
           🗓️ Daily Log
         </button>
         <button onClick={()=>setInvView("monthly")}
-          style={{padding:"6px 14px",borderRadius:999,fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
-            border:"1px solid "+(invView==="monthly"?shop.accent:"#e2e8f0"),
-            background:invView==="monthly"?shop.accent:"white",
-            color:invView==="monthly"?"white":"#64748b"}}>
+          className="stk-b3d" style={stkTab(invView==="monthly", shop.accent)}>
           📅 Monthly Summary
         </button>
       </div>
@@ -12756,7 +12838,9 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           onSelectItem={(id)=>setSelectedItemId(id)}
           fmtDate={fmtDate}
           returnedStock={returnedStockNow}
-          fixedCategories={stockSection==="clothes" ? null : STOCK_CATEGORIES}
+          fixedCategories={categoryList}
+          onReorderCategoryItems={isAdmin ? reorderItems : null}
+          onMoveCategory={isAdmin ? moveCategory : null}
           sectionLabel={stockSection==="clothes" ? "Clothes Stock" : "Hair Stock"}
           sectionIcon={stockSection==="clothes" ? "👕" : "📦"}
           includeReturnedStock={stockSection!=="clothes"}
@@ -12775,12 +12859,12 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
             <div style={{fontSize:11,color:"#94a3b8",marginBottom:10}}>
               <b>Opening</b> + <b>Added</b> − <b>Sold</b> = <b>Closing</b> · each month's Closing becomes the next month's Opening · a plain calculation, never changed by a stock correction · click a month to see it item by item
             </div>
-            <div style={{overflowX:"auto",border:"1px solid #e2e8f0",borderRadius:12}}>
+            <div style={stkTableWrap}>
               <table style={{borderCollapse:"collapse",width:"100%",minWidth:460,fontSize:13}}>
                 <thead>
-                  <tr style={{background:"#f8fafc"}}>
+                  <tr style={stkHeadFill}>
                     {["Month","Opening","Added","Sold","Closing"].map((h,i)=>(
-                      <th key={h} style={{padding:"10px 14px",textAlign:i===0?"left":"right",fontSize:10.5,fontWeight:800,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.04em",borderBottom:"1px solid #e2e8f0"}}>{h}</th>
+                      <th key={h} style={{padding:"10px 14px",textAlign:i===0?"left":"right",fontSize:10.5,fontWeight:800,color:"#334155",textTransform:"uppercase",letterSpacing:"0.06em",borderBottom:"2px solid #c9d5e4",boxShadow:"inset 0 1px 0 #fff"}}>{h}</th>
                     ))}
                   </tr>
                 </thead>
@@ -12790,7 +12874,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
                     const [yy,mm] = r.key.split("-").map(Number);
                     const label = new Date(yy, mm-1, 1).toLocaleDateString("en-GB",{month:"long",year:"numeric"});
                     return (
-                      <tr key={r.key}
+                      <tr key={r.key} className="stk-row"
                         onClick={()=>{ setSheetMonth(r.key); setInvView("items"); }}
                         title="Open this month in the Stock Sheet"
                         style={{cursor:"pointer",background:isNow?(shop.accentBg||"#eef2ff"):"white"}}>
@@ -12798,15 +12882,15 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
                           {label}{isNow && <span style={{marginLeft:8,fontSize:9.5,fontWeight:800,color:shop.accentText||shop.accent,textTransform:"uppercase",letterSpacing:"0.05em"}}>This month</span>}
                         </td>
                         <td style={{padding:"11px 14px",borderBottom:"1px solid #f1f5f9",textAlign:"right",fontVariantNumeric:"tabular-nums",color:"#475569"}}>{r.opening}</td>
-                        <td style={{padding:"11px 14px",borderBottom:"1px solid #f1f5f9",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700,color:r.added?"#166534":"#cbd5e1"}}>{r.added?"+"+r.added:"—"}</td>
-                        <td style={{padding:"11px 14px",borderBottom:"1px solid #f1f5f9",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:700,color:r.sold?"#b91c1c":"#cbd5e1"}}>{r.sold?"−"+r.sold:"—"}</td>
-                        <td style={{padding:"11px 14px",borderBottom:"1px solid #f1f5f9",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:900,color:"#0f172a"}}>{r.closing}</td>
+                        <td style={{padding:"9px 14px",borderBottom:"1px solid #eef2f7",textAlign:"right"}}>{r.added ? <span style={stkBadge("#166534","#ecfdf3","#b7ebc6")}>{"+"+r.added}</span> : <span style={{color:"#cbd5e1",fontWeight:700}}>—</span>}</td>
+                        <td style={{padding:"9px 14px",borderBottom:"1px solid #eef2f7",textAlign:"right"}}>{r.sold ? <span style={stkBadge("#b91c1c","#fef2f2","#fbcaca")}>{"−"+r.sold}</span> : <span style={{color:"#cbd5e1",fontWeight:700}}>—</span>}</td>
+                        <td style={{padding:"9px 14px",borderBottom:"1px solid #eef2f7",textAlign:"right"}}><span style={stkBadge("#0f172a","#eef2f7","#cbd5e1")}>{r.closing}</span></td>
                       </tr>
                     );
                   })}
                 </tbody>
                 <tfoot>
-                  <tr style={{background:"#f8fafc"}}>
+                  <tr style={{backgroundColor:"#eaf0f7",backgroundImage:"linear-gradient(180deg,#e3eaf3,#f4f7fb)",boxShadow:"0 -2px 4px rgba(15,23,42,.06)"}}>
                     <td style={{padding:"11px 14px",fontWeight:800,color:"#475569",fontSize:11,textTransform:"uppercase",letterSpacing:"0.04em"}}>All months</td>
                     <td style={{padding:"11px 14px",textAlign:"right",color:"#94a3b8"}}>—</td>
                     <td style={{padding:"11px 14px",textAlign:"right",fontVariantNumeric:"tabular-nums",fontWeight:800,color:"#166534"}}>+{monthlySummary.reduce((s,r)=>s+r.added,0)}</td>
@@ -12835,10 +12919,12 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
               const isCollapsed = collapsedLogDates[date] !== undefined ? collapsedLogDates[date] : !isToday;
               const netChange = dayMoves.reduce((s,m)=> s + (m.type==="correction" ? (Number(m.qty)||0) : m.type==="restock" ? (Number(m.qty)||0) : -(Number(m.qty)||0)), 0);
               return (
-                <div key={date} style={{borderRadius:12,border:"1px solid #e2e8f0",overflow:"hidden"}}>
+                <div key={date} style={{borderRadius:14,border:"1px solid #d3deeb",overflow:"hidden",boxShadow:STK_SHADOW}}>
                   <div onClick={()=>setCollapsedLogDates(prev=>({...prev,[date]:!isCollapsed}))}
                     style={{padding:"10px 14px",cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:6,
-                      background:isToday?(shop.accent||"#0f172a"):(shop.accentBg||"#eef2ff"),
+                      backgroundColor:isToday?(shop.accent||"#0f172a"):(shop.accentBg||"#eef2ff"),
+                      backgroundImage:isToday?"linear-gradient(180deg,rgba(255,255,255,.22),rgba(0,0,0,.10))":"linear-gradient(180deg,rgba(255,255,255,.7),rgba(255,255,255,0))",
+                      boxShadow:"0 1px 0 rgba(255,255,255,.35) inset",
                       color:isToday?"white":(shop.accentText||"#4338ca")}}>
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
                       <span style={{fontSize:11}}>{isCollapsed?"▶":"▼"}</span>
@@ -12896,12 +12982,19 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
 
       {showAddItem && (
         <AddInventoryItemModal
-          categories={stockSection==="clothes" ? null : STOCK_CATEGORIES}
+          categories={categoryList}
+          allowNewCategory={isAdmin}
           existingCategories={Array.from(new Set(activeItems.map(i=>i.category).filter(Boolean))).sort()}
           itemTypeLabel={stockSection==="clothes" ? "Clothes" : "Hair"}
           onClose={()=>setShowAddItem(false)}
           onSave={async(name,stock,category)=>{
-            const id = await dbAddInventoryItem(shopId, name, stock, category, stockSection==="clothes" ? "clothes" : "hair");
+            let cat = (category||"").trim();
+            if (cat && cat !== OTHER_CATEGORY) {
+              const hit = categoryList.find(c => c.toLowerCase() === cat.toLowerCase());
+              if (hit) cat = hit;
+              else if (!(await saveCategoryList([...categoryList, cat]))) return;
+            }
+            const id = await dbAddInventoryItem(shopId, name, stock, cat, stockSection==="clothes" ? "clothes" : "hair");
             if (id) { setShowAddItem(false); load(); }
             else showAlert("Couldn't add this item — please check your connection and try again.");
           }}/>
@@ -12923,10 +13016,22 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
         }}/>
       )}
 
+      {showCategories && (
+        <CategoriesModal
+          sectionLabel={stockSection==="clothes" ? "Clothes" : "Hair"}
+          categories={categoryList}
+          counts={categoryCounts.byName}
+          otherCount={categoryCounts.other}
+          onClose={()=>setShowCategories(false)}
+          onSaveList={saveCategoryList}
+          onRename={renameCategory}
+        />
+      )}
+
       {showManageItems && (
         <ManageItemsModal
           items={activeItems}
-          categories={stockSection==="clothes" ? null : STOCK_CATEGORIES}
+          categories={categoryList}
           onClose={()=>setShowManageItems(false)}
           onAddItem={()=>{ setShowManageItems(false); setShowAddItem(true); }}
           onRequestDelete={(id)=>setConfirmDeleteId(id)}
@@ -12989,7 +13094,9 @@ const STOCK_CATEGORIES = ["Cover-Up Patches", "Receding Hairpieces", "Bangs and 
 const OTHER_CATEGORY = "Other";
 
 const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSetStock, onSelectItem, fmtDate, returnedStock = [],
-  fixedCategories = STOCK_CATEGORIES, sectionLabel = "Fresh Stock", sectionIcon = "📦", includeReturnedStock = true }) => {
+  fixedCategories = STOCK_CATEGORIES, sectionLabel = "Fresh Stock", sectionIcon = "📦", includeReturnedStock = true,
+  onReorderCategoryItems = null, onMoveCategory = null }) => {
+  const [arrange, setArrange] = React.useState(false); // admin-only: show ▲▼ to re-order products/categories
   const [cellPopover, setCellPopover] = React.useState(null); // {itemId, date, anchor} | null
   const [editStock, setEditStock] = React.useState(null); // {itemId, value} | null — admin quick stock entry in the Closing cell
   const [savingStock, setSavingStock] = React.useState(false);
@@ -13101,12 +13208,20 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
   // actions. The shadow on the right edge of the frozen block is what makes
   // it visually obvious those columns are pinned, like Excel's freeze-pane
   // line.
-  const ITEM_W = 190, OPEN_W = 66, ADDED_W = 60, SOLD_W = 60, CLOSE_W = 72, ACTIONS_W = 88;
+  const arrangeOn = arrange && !!onReorderCategoryItems;
+  const ITEM_W = arrangeOn ? 244 : 190, OPEN_W = 66, ADDED_W = 60, SOLD_W = 60, CLOSE_W = 72, ACTIONS_W = 88;
   const LEFT_OPEN = ITEM_W, LEFT_ADDED = ITEM_W+OPEN_W, LEFT_SOLD = ITEM_W+OPEN_W+ADDED_W, LEFT_CLOSE = ITEM_W+OPEN_W+ADDED_W+SOLD_W, LEFT_ACTIONS = ITEM_W+OPEN_W+ADDED_W+SOLD_W+CLOSE_W;
-  const FROZEN_EDGE = "6px 0 10px -6px rgba(15,23,42,0.22)";
+  const FROZEN_EDGE = "8px 0 12px -6px rgba(15,23,42,0.30)";
 
   const pillBtn = { padding:"7px 12px", borderRadius:8, border:"1px solid #e2e8f0", background:"white", color:"#475569", fontWeight:700, fontSize:12, cursor:"pointer", fontFamily:"inherit" };
-  const stickyHead = { position:"sticky", top:0, padding:"11px 10px", textAlign:"left", fontWeight:800, fontSize:10.5, color:"#475569", textTransform:"uppercase", letterSpacing:"0.03em", background:"#f8fafc", borderBottom:"1.5px solid #e2e8f0" };
+  const stickyHead = { position:"sticky", top:0, padding:"12px 10px", textAlign:"left", fontWeight:800, fontSize:10.5, color:"#334155", textTransform:"uppercase", letterSpacing:"0.06em", ...stkHeadFill, borderBottom:"2px solid #c9d5e4", boxShadow:"inset 0 1px 0 #fff" };
+  const moveItem = (catRows, idx, dir) => {
+    const j = idx + dir;
+    if (!onReorderCategoryItems || j < 0 || j >= catRows.length) return;
+    const ids = catRows.map(r => r.item.id);
+    [ids[idx], ids[j]] = [ids[j], ids[idx]];
+    onReorderCategoryItems(ids);
+  };
   const stickyCell = { position:"sticky", padding:"10px 10px", borderBottom:"1px solid #f1f5f9" };
 
   return (
@@ -13119,19 +13234,30 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
             style={{ ...pillBtn, opacity: atCurrentMonthOrLater?0.4:1, cursor: atCurrentMonthOrLater?"not-allowed":"pointer" }}>→</button>
           <button onClick={()=>setSheetMonth(todayStr.slice(0,7))} style={pillBtn}>This Month</button>
         </div>
-        <button onClick={()=>printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock, fixedCategories, sectionLabel, sectionIcon, includeReturnedStock)}
-          style={{ padding:"8px 14px", borderRadius:10, border:"1px solid #e2e8f0", background:"white", color:"#334155", fontWeight:700, fontSize:12.5, cursor:"pointer", fontFamily:"inherit" }}>
-          🖨️ Print / Export PDF
-        </button>
+        <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+          {onReorderCategoryItems && (
+            <button onClick={()=>setArrange(a=>!a)} className="stk-b3d"
+              title="Show ▲ ▼ buttons to change the order of products inside each category"
+              style={arrange ? { ...stkKey("white", shop.accent||"#0f172a", "rgba(0,0,0,.2)"), padding:"8px 14px", fontSize:12.5, fontWeight:800 }
+                             : { ...stkKey("#334155", "#f8fafc", "#cbd5e1"), padding:"8px 14px", fontSize:12.5, fontWeight:700 }}>
+              {arrange ? "✓ Done Arranging" : "↕ Arrange Products"}
+            </button>
+          )}
+          <button onClick={()=>printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock, fixedCategories, sectionLabel, sectionIcon, includeReturnedStock)} className="stk-b3d"
+            style={{ ...stkKey("#334155", "#f8fafc", "#cbd5e1"), padding:"8px 14px", fontSize:12.5, fontWeight:700 }}>
+            🖨️ Print / Export PDF
+          </button>
+        </div>
       </div>
 
       <div style={{ fontSize:11, color:"#94a3b8", marginBottom:10 }}>
+        {arrangeOn && <><b style={{color:"#0f172a"}}>Arranging:</b> use ▲ ▼ beside a product to move it up or down inside its category{onMoveCategory ? ", or beside a category name to move the whole category" : ""} — saved instantly · <br/></>}
         <span style={{color:"#b91c1c",fontWeight:700}}>S</span> = sold that day · <span style={{color:"#166534",fontWeight:700}}>I</span> = stock added that day · click a tagged day, or the Sold/Added totals, to see who/what · future days are intentionally blank
         <br/>
         <b>Opening</b> = what the month started with · <b>Closing</b> = Opening + Added − Sold, always a plain calculation · this month's Closing becomes next month's Opening automatically · an admin <span style={{color:"#7c3aed",fontWeight:700}}>⚖ correction</span> never changes these numbers — see the item's own History for any correction logged against it
       </div>
 
-      <div style={{ overflowX:"auto", overflowY:"hidden", border:"1px solid #e2e8f0", borderRadius:12 }}>
+      <div style={stkTableWrap}>
         <table style={{ borderCollapse:"collapse", fontSize:12.5, width:"max-content" }}>
           <thead>
             <tr>
@@ -13149,10 +13275,12 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                 const isWeekend = dow === 0 || dow === 6;
                 return (
                   <th key={d} style={{
-                    padding:"11px 4px", textAlign:"center", fontWeight:800, fontSize:11, minWidth:36,
-                    color: isToday ? "white" : isFuture ? "#cbd5e1" : "#64748b",
-                    background: isToday ? (shop.accent||"#0f172a") : isFuture ? "#fbfbfb" : isWeekend ? "#f8fafc" : "white",
-                    borderBottom:"1.5px solid #e2e8f0", borderLeft:"1px solid #f1f5f9",
+                    padding:"12px 4px", textAlign:"center", fontWeight:800, fontSize:11, minWidth:36,
+                    color: isToday ? "white" : isFuture ? "#cbd5e1" : "#475569",
+                    backgroundColor: isToday ? (shop.accent||"#0f172a") : isWeekend ? "#e3eaf3" : "#eaf0f7",
+                    backgroundImage: isToday ? "linear-gradient(180deg,rgba(255,255,255,.28),rgba(0,0,0,.12))" : "linear-gradient(180deg,#ffffff 0%,"+(isWeekend?"#d9e2ee":"#e3eaf3")+" 100%)",
+                    borderBottom:"2px solid #c9d5e4", borderLeft:"1px solid #dfe7f1", boxShadow:"inset 0 1px 0 rgba(255,255,255,.8)",
+                    textShadow: isToday ? "0 1px 0 rgba(0,0,0,.25)" : "none",
                   }}>{dayNum}</th>
                 );
               })}
@@ -13163,32 +13291,54 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
               <React.Fragment key={category}>
                 <tr>
                   <td colSpan={6 + days.length} style={{
-                    position:"sticky", left:0, padding:"7px 10px", background:"#f1f5f9",
-                    borderTop:"1px solid #e2e8f0", borderBottom:"1px solid #e2e8f0",
-                    fontWeight:800, fontSize:11, color:"#334155", textTransform:"uppercase", letterSpacing:"0.05em",
-                  }}>{category}</td>
+                    position:"sticky", left:0, padding:"8px 12px", backgroundColor:"#eef3f9",
+                    backgroundImage:"linear-gradient(180deg,#fbfcfe 0%,#e4ebf4 100%)",
+                    borderTop:"1px solid #d3deeb", borderBottom:"1px solid #c3d0e0", borderLeft:"4px solid "+(shop.accent||"#0f172a"),
+                    boxShadow:"0 1px 0 #fff inset, 0 3px 6px -2px rgba(15,23,42,.14)",
+                    fontWeight:800, fontSize:11, color:"#1e293b", textTransform:"uppercase", letterSpacing:"0.06em",
+                  }}>
+                    <span style={{ display:"inline-flex", alignItems:"center", gap:10 }}>
+                      {arrangeOn && onMoveCategory && category !== OTHER_CATEGORY && (() => {
+                        const ci = fixedCategories.indexOf(category);
+                        return (
+                          <span style={{ display:"inline-flex", flexDirection:"column", gap:2 }}>
+                            <button className="stk-b3d" disabled={ci <= 0} title="Move this category up" onClick={()=>onMoveCategory(category,-1)} style={stkArrow(ci <= 0)}>▲</button>
+                            <button className="stk-b3d" disabled={ci < 0 || ci >= fixedCategories.length-1} title="Move this category down" onClick={()=>onMoveCategory(category,1)} style={stkArrow(ci < 0 || ci >= fixedCategories.length-1)}>▼</button>
+                          </span>
+                        );
+                      })()}
+                      <span>{category}</span>
+                      <span style={{ fontSize:9.5, fontWeight:800, color:"#475569", backgroundColor:"#f8fafc", border:"1px solid #cbd5e1", borderRadius:999, padding:"1px 8px", boxShadow:"0 1px 0 #fff inset, 0 1px 2px rgba(15,23,42,.12)", letterSpacing:"0.02em" }}>{catRows.length}</span>
+                    </span>
+                  </td>
                 </tr>
                 {catRows.map(({ item, cells, openingBalance, soldThisMonth, addedThisMonth, correctedThisMonth, closingBalance, monthMoves }, ridx) => {
-              const rowBg = ridx % 2 ? "#fdfbf3" : "white";
+              const rowBg = ridx % 2 ? "#f6f9fc" : "white";
               return (
-                <tr key={item.id}>
+                <tr key={item.id} className="stk-row">
                   <td onClick={()=>onSelectItem(item.id)}
                     style={{ ...stickyCell, left:0, zIndex:2, background:rowBg, cursor:"pointer" }}>
                     <div style={{ display:"flex", alignItems:"center", gap:8 }}>
+                      {arrangeOn && (
+                        <span onClick={e=>e.stopPropagation()} style={{ display:"inline-flex", flexDirection:"column", gap:2, flexShrink:0 }}>
+                          <button className="stk-b3d" disabled={ridx === 0} title="Move up" onClick={()=>moveItem(catRows, ridx, -1)} style={stkArrow(ridx === 0)}>▲</button>
+                          <button className="stk-b3d" disabled={ridx === catRows.length-1} title="Move down" onClick={()=>moveItem(catRows, ridx, 1)} style={stkArrow(ridx === catRows.length-1)}>▼</button>
+                        </span>
+                      )}
                       <span style={{ fontWeight:700, fontSize:13, color:"#0f172a", lineHeight:1.3, textTransform:"uppercase" }}>{item.name}</span>
                     </div>
                   </td>
                   <td title="What this item's stock stood at when the month began"
                     style={{ ...stickyCell, left:LEFT_OPEN, zIndex:2, background:rowBg, textAlign:"center" }}>
-                    <span style={{ fontWeight:800, fontSize:13, color:"#475569" }}>{openingBalance}</span>
+                    <span style={stkBadge("#475569","#f1f5f9","#d5dde8")}>{openingBalance}</span>
                   </td>
                   <td onClick={(e)=> addedThisMonth>0 && setMonthPopover({ itemId:item.id, type:"restock", anchor:rectOf(e.currentTarget) })}
                     style={{ ...stickyCell, left:LEFT_ADDED, zIndex:2, background:rowBg, textAlign:"center", position:"sticky", cursor: addedThisMonth>0?"pointer":"default" }}>
-                    <span style={{ fontWeight:800, fontSize:13, color: addedThisMonth>0?"#166534":"#cbd5e1" }}>{addedThisMonth>0?addedThisMonth:"—"}</span>
+                    <span style={addedThisMonth>0 ? stkBadge("#166534","#ecfdf3","#b7ebc6") : { fontWeight:800, fontSize:13, color:"#cbd5e1" }}>{addedThisMonth>0?addedThisMonth:"—"}</span>
                   </td>
                   <td onClick={(e)=> soldThisMonth>0 && setMonthPopover({ itemId:item.id, type:"sale", anchor:rectOf(e.currentTarget) })}
                     style={{ ...stickyCell, left:LEFT_SOLD, zIndex:2, background:rowBg, textAlign:"center", position:"sticky", cursor: soldThisMonth>0?"pointer":"default" }}>
-                    <span style={{ fontWeight:800, fontSize:13, color: soldThisMonth>0?"#b91c1c":"#cbd5e1" }}>{soldThisMonth>0?soldThisMonth:"—"}</span>
+                    <span style={soldThisMonth>0 ? stkBadge("#b91c1c","#fef2f2","#fbcaca") : { fontWeight:800, fontSize:13, color:"#cbd5e1" }}>{soldThisMonth>0?soldThisMonth:"—"}</span>
                   </td>
                   <td style={{ ...stickyCell, left:LEFT_CLOSE, zIndex:2, background:rowBg, textAlign:"center" }}>
                     {(() => {
@@ -13227,9 +13377,11 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                               ? "Click to type the correct stock quantity (asks you to confirm). Opening + Added − Sold shown here; corrections are logged on the item's History."
                               : "Opening + Added − Sold — a plain calculation, never adjusted by a stock correction. See this item's own History for any correction logged against it."}
                             style={{
-                              display:"inline-block", minWidth:34, padding:"3px 0", borderRadius:999, fontWeight:900, fontSize:14,
-                              color: closingBalance<=0?"#dc2626":closingBalance<=2?"#d97706":"#166534",
-                              background: closingBalance<=0?"#fef2f2":closingBalance<=2?"#fffbeb":"#f0fdf4",
+                              ...stkBadge(
+                                closingBalance<=0?"#dc2626":closingBalance<=2?"#d97706":"#166534",
+                                closingBalance<=0?"#fef2f2":closingBalance<=2?"#fffbeb":"#f0fdf4",
+                                closingBalance<=0?"#fbcaca":closingBalance<=2?"#f9dca4":"#b7ebc6"),
+                              minWidth:40, padding:"4px 10px", fontSize:14, borderRadius:999,
                               cursor: canQuickSet ? "text" : "default",
                               outline: canQuickSet ? "1px dashed #94a3b8" : "none", outlineOffset: 2,
                             }}>{closingBalance}</span>
@@ -13244,12 +13396,12 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                     <div style={{ display:"flex", alignItems:"center", justifyContent:"center", gap:6 }}>
                       {onRestock && (
                         <button onClick={(e)=>{e.stopPropagation();onRestock(item);}} title="Add stock in (restock)"
-                          style={{ border:"1.5px solid #86efac", borderRadius:8, padding:"6px 10px", fontSize:13, fontWeight:900, cursor:"pointer", background:"#f0fdf4", color:"#166534", fontFamily:"inherit", lineHeight:1 }}>
+                          className="stk-b3d" style={stkKey("#166534","#f0fdf4","#86efac")}>
                           +
                         </button>
                       )}
                       <button onClick={(e)=>{e.stopPropagation();onLogSale(item);}} title="Log stock out (sale)"
-                        style={{ border:"1.5px solid #fca5a5", borderRadius:8, padding:"6px 10px", fontSize:13, fontWeight:900, cursor:"pointer", background:"#fef2f2", color:"#b91c1c", fontFamily:"inherit", lineHeight:1 }}>
+                        className="stk-b3d" style={stkKey("#b91c1c","#fef2f2","#fca5a5")}>
                         −
                       </button>
                     </div>
@@ -13268,10 +13420,10 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                         {c.hasMoves && (
                           <div style={{ display:"flex", flexDirection:"column", alignItems:"center", gap:2 }}>
                             {c.sold>0 && (
-                              <span style={{ fontSize:9.5, fontWeight:800, color:"#b91c1c", background:"#fef2f2", borderRadius:5, padding:"1px 5px" }}>S {c.sold}</span>
+                              <span style={{ fontSize:9.5, fontWeight:800, color:"#b91c1c", background:"#fef2f2", border:"1px solid #fbcaca", borderRadius:6, padding:"1px 5px", boxShadow:"0 1px 0 #fff inset, 0 1px 2px rgba(15,23,42,.14)" }}>S {c.sold}</span>
                             )}
                             {c.added>0 && (
-                              <span style={{ fontSize:9.5, fontWeight:800, color:"#166534", background:"#f0fdf4", borderRadius:5, padding:"1px 5px" }}>I {c.added}</span>
+                              <span style={{ fontSize:9.5, fontWeight:800, color:"#166534", background:"#f0fdf4", border:"1px solid #b7ebc6", borderRadius:6, padding:"1px 5px", boxShadow:"0 1px 0 #fff inset, 0 1px 2px rgba(15,23,42,.14)" }}>I {c.added}</span>
                             )}
                           </div>
                         )}
@@ -13360,7 +13512,7 @@ const CellMovementPopover = ({ item, date, anchor, movements, fmtDate, onClose }
   return ReactDOM.createPortal(
     <div ref={ref} onClick={e=>e.stopPropagation()} style={{
       ...style, zIndex:300, background:"white", border:"1px solid #e2e8f0", borderRadius:10,
-      boxShadow:"0 10px 30px rgba(15,23,42,0.18)", padding:"10px 12px", textAlign:"left",
+      boxShadow:"0 2px 4px rgba(15,23,42,0.08), 0 16px 36px -6px rgba(15,23,42,0.28)", padding:"10px 12px", textAlign:"left",
     }}>
       <div style={{ fontSize:11, fontWeight:800, color:"#0f172a", marginBottom:6 }}><span style={{textTransform:"uppercase"}}>{item.name}</span> · {fmtDate(date)}</div>
       {dayMoves.length === 0 ? (
@@ -13400,7 +13552,7 @@ const MonthMovementsPopover = ({ item, type, anchor, monthLabel, moves, fmtDate,
   return ReactDOM.createPortal(
     <div ref={ref} onClick={e=>e.stopPropagation()} style={{
       ...style, zIndex:300, background:"white", border:"1px solid #e2e8f0", borderRadius:10,
-      boxShadow:"0 10px 30px rgba(15,23,42,0.18)", padding:"10px 12px", textAlign:"left",
+      boxShadow:"0 2px 4px rgba(15,23,42,0.08), 0 16px 36px -6px rgba(15,23,42,0.28)", padding:"10px 12px", textAlign:"left",
     }}>
       <div style={{ fontSize:11, fontWeight:800, color:"#0f172a", textTransform:"uppercase" }}>{item.name}</div>
       <div style={{ fontSize:10.5, color:"#94a3b8", marginBottom:6 }}>{typeLabel} in {monthLabel} · {type==="correction" && total>=0 ? "+" : ""}{total} total</div>
@@ -13560,16 +13712,17 @@ function printStockSheet(rows, monthLabel, shop, fmtDate, returnedStock = [], fi
 // "Sarees", "Kids Wear") and the Stock Sheet groups by whatever's typed.
 // `existingCategories` feeds the free-text field's autocomplete so the same
 // category doesn't end up typed two slightly different ways.
-const AddInventoryItemModal = ({ onClose, onSave, categories = STOCK_CATEGORIES, existingCategories = [], itemTypeLabel = "Inventory" }) => {
+const AddInventoryItemModal = ({ onClose, onSave, categories = STOCK_CATEGORIES, existingCategories = [], itemTypeLabel = "Inventory", allowNewCategory = false }) => {
   const [name, setName] = React.useState("");
   const [stock, setStock] = React.useState("");
-  const [category, setCategory] = React.useState(categories ? categories[0] : "");
+  const [category, setCategory] = React.useState(categories ? (categories.length ? categories[0] : OTHER_CATEGORY) : "");
+  const [newCat, setNewCat] = React.useState(false); // admin typing a brand-new category name
   const [saving, setSaving] = React.useState(false);
   const inp = {width:"100%",padding:"9px 12px",borderRadius:9,border:"1.5px solid #e2e8f0",fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box"};
   const lbl = {display:"block",fontSize:11,fontWeight:700,color:"#374151",marginBottom:4,textTransform:"uppercase",letterSpacing:"0.05em"};
   return (
     <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:"white",borderRadius:16,padding:22,maxWidth:340,width:"92%"}}>
+      <div style={{background:"white",borderRadius:16,padding:22,maxWidth:340,width:"92%",boxShadow:"0 4px 8px rgba(15,23,42,.10), 0 30px 60px -12px rgba(15,23,42,.40)"}}>
         <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:16}}>+ Add {itemTypeLabel} Item</div>
         <div style={{marginBottom:12}}>
           <label style={lbl}>Item Name</label>
@@ -13578,10 +13731,14 @@ const AddInventoryItemModal = ({ onClose, onSave, categories = STOCK_CATEGORIES,
         <div style={{marginBottom:12}}>
           <label style={lbl}>Category</label>
           {categories ? (
-            <select value={category} onChange={e=>setCategory(e.target.value)} style={inp}>
-              {categories.map(c => <option key={c} value={c}>{c}</option>)}
-              <option value={OTHER_CATEGORY}>{OTHER_CATEGORY}</option>
-            </select>
+            <>
+              <select value={newCat ? "__new__" : category} onChange={e=>{ if (e.target.value === "__new__") { setNewCat(true); setCategory(""); } else { setNewCat(false); setCategory(e.target.value); } }} style={inp}>
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+                <option value={OTHER_CATEGORY}>{OTHER_CATEGORY}</option>
+                {allowNewCategory && <option value="__new__">➕ New category…</option>}
+              </select>
+              {newCat && <input value={category} onChange={e=>setCategory(e.target.value)} placeholder="New category name" style={{...inp, marginTop:8}} autoFocus/>}
+            </>
           ) : (
             <>
               <input value={category} onChange={e=>setCategory(e.target.value)} placeholder="e.g. Sarees, Kids Wear…" style={inp} list="clothes-category-suggestions"/>
@@ -13607,8 +13764,8 @@ const AddInventoryItemModal = ({ onClose, onSave, categories = STOCK_CATEGORIES,
               await onSave(name.trim(), Number(stock)||0, category);
               setSaving(false);
             }}
-            disabled={!name.trim()||saving}
-            style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#1e293b",color:"white",fontWeight:700,fontSize:13,cursor:(!name.trim()||saving)?"default":"pointer",fontFamily:"inherit",opacity:(!name.trim()||saving)?0.6:1}}>
+            disabled={!name.trim()||saving||(newCat&&!category.trim())}
+            style={{flex:1,padding:"10px 0",borderRadius:9,border:"none",background:"#1e293b",color:"white",fontWeight:700,fontSize:13,cursor:(!name.trim()||saving||(newCat&&!category.trim()))?"default":"pointer",fontFamily:"inherit",opacity:(!name.trim()||saving||(newCat&&!category.trim()))?0.6:1}}>
             {saving?"Saving…":"Add Item"}
           </button>
         </div>
@@ -13626,7 +13783,7 @@ const AddInventoryItemModal = ({ onClose, onSave, categories = STOCK_CATEGORIES,
 const ManageItemsModal = ({ items, onClose, onAddItem, onRequestDelete, onRename, categories = STOCK_CATEGORIES }) => {
   const [editingId, setEditingId] = React.useState(null);
   const [editName, setEditName] = React.useState("");
-  const [editCategory, setEditCategory] = React.useState(categories ? categories[0] : "");
+  const [editCategory, setEditCategory] = React.useState(categories ? (categories.length ? categories[0] : OTHER_CATEGORY) : "");
   const [savingEdit, setSavingEdit] = React.useState(false);
 
   const existingCategories = React.useMemo(() => Array.from(new Set(items.map(i=>i.category).filter(Boolean))).sort(), [items]);
@@ -13659,7 +13816,7 @@ const ManageItemsModal = ({ items, onClose, onAddItem, onRequestDelete, onRename
 
   return (
     <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
-      <div style={{background:"white",borderRadius:16,padding:22,maxWidth:460,width:"96%",maxHeight:"84vh",display:"flex",flexDirection:"column"}}>
+      <div style={{background:"white",borderRadius:16,padding:22,maxWidth:460,width:"96%",maxHeight:"84vh",display:"flex",flexDirection:"column",boxShadow:"0 4px 8px rgba(15,23,42,.10), 0 30px 60px -12px rgba(15,23,42,.40)"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
           <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>⚙️ Manage Items</div>
           <button onClick={onClose} style={{border:"none",background:"transparent",color:"#94a3b8",fontSize:18,cursor:"pointer",lineHeight:1}}>✕</button>
@@ -13732,6 +13889,99 @@ const ManageItemsModal = ({ items, onClose, onAddItem, onRequestDelete, onRename
             </div>
           ))}
         </div>
+      </div>
+    </div>
+  );
+};
+
+// Admin-only: add, rename, re-order and delete the product categories of the current stock window.
+// Renaming moves that category's products with it; a category can only be deleted once it is empty,
+// so no product can ever be orphaned. Stock history is never touched.
+const CategoriesModal = ({ sectionLabel, categories, counts, otherCount, onClose, onSaveList, onRename }) => {
+  const [newName, setNewName] = React.useState("");
+  const [editing, setEditing] = React.useState(null);
+  const [editVal, setEditVal] = React.useState("");
+  const [busy, setBusy] = React.useState(false);
+  const lc = (v) => String(v||"").trim().toLowerCase();
+  const taken = (n, except) => lc(n) === lc(OTHER_CATEGORY) || categories.some(c => c !== except && lc(c) === lc(n));
+  const run = async (fn) => { setBusy(true); try { return await fn(); } finally { setBusy(false); } };
+
+  const add = () => {
+    const n = newName.trim();
+    if (!n) return;
+    if (taken(n)) { showAlert("A category called \"" + n + "\" already exists."); return; }
+    run(async () => { if (await onSaveList([...categories, n])) setNewName(""); });
+  };
+  const move = (i, d) => {
+    const j = i + d;
+    if (j < 0 || j >= categories.length) return;
+    const arr = [...categories]; [arr[i], arr[j]] = [arr[j], arr[i]];
+    run(() => onSaveList(arr));
+  };
+  const saveRename = (old) => {
+    const n = editVal.trim();
+    if (!n || n === old) { setEditing(null); return; }
+    if (taken(n, old)) { showAlert("A category called \"" + n + "\" already exists."); return; }
+    run(async () => { if (await onRename(old, n)) setEditing(null); });
+  };
+  const del = async (c) => {
+    if ((counts[c]||0) > 0) { showAlert("\"" + c + "\" still has " + counts[c] + " product" + (counts[c]===1?"":"s") + ". Move them to another category (Manage Items → Edit) or delete them first."); return; }
+    if (categories.length <= 1) { showAlert("Keep at least one category."); return; }
+    if (!(await showConfirm("Delete the empty category \"" + c + "\"?"))) return;
+    run(() => onSaveList(categories.filter(x => x !== c)));
+  };
+
+  const inp = { flex:1, minWidth:0, padding:"8px 11px", borderRadius:9, border:"1.5px solid #d3deeb", fontSize:13, fontFamily:"inherit", outline:"none", boxSizing:"border-box" };
+  const mini = (on) => ({ ...stkArrow(!on), width:28, height:28, fontSize:11 });
+  return (
+    <div style={{position:"fixed",inset:0,zIndex:320,background:"rgba(15,23,42,0.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <style>{STK_CSS}</style>
+      <div style={{background:"white",borderRadius:16,padding:22,maxWidth:480,width:"96%",maxHeight:"86vh",display:"flex",flexDirection:"column",boxShadow:"0 4px 8px rgba(15,23,42,.10), 0 30px 60px -12px rgba(15,23,42,.40)"}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+          <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>🗂️ {sectionLabel} Categories</div>
+          <button onClick={onClose} style={{border:"none",background:"transparent",color:"#94a3b8",fontSize:18,cursor:"pointer",lineHeight:1}}>✕</button>
+        </div>
+        <p style={{fontSize:12,color:"#64748b",margin:"0 0 14px"}}>Add, rename or re-order the groups on the Stock Sheet. To re-order products inside a group, use <b>↕ Arrange Products</b> on the sheet.</p>
+
+        <div style={{display:"flex",gap:8,marginBottom:14}}>
+          <input value={newName} onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{ if(e.key==="Enter") add(); }} placeholder="New category name…" style={inp} disabled={busy}/>
+          <button onClick={add} disabled={!newName.trim()||busy} className="stk-b3d"
+            style={{...stkKey("white","#1e293b","rgba(0,0,0,.25)"),padding:"8px 16px",fontSize:13,fontWeight:800,opacity:(!newName.trim()||busy)?0.55:1,cursor:(!newName.trim()||busy)?"default":"pointer"}}>+ Add</button>
+        </div>
+
+        <div style={{overflowY:"auto",flex:1,display:"flex",flexDirection:"column",gap:8,padding:"2px 2px 6px"}}>
+          {categories.length === 0 && <div style={{textAlign:"center",padding:"22px 10px",color:"#94a3b8",fontSize:12.5}}>No categories yet — add your first one above.</div>}
+          {categories.map((c, i) => (
+            <div key={c} style={{display:"flex",alignItems:"center",gap:8,padding:"9px 10px",borderRadius:12,border:"1px solid #d3deeb",backgroundColor:"white",backgroundImage:"linear-gradient(180deg,#ffffff,#f4f7fb)",boxShadow:"0 1px 0 #fff inset, 0 2px 4px rgba(15,23,42,.07), 0 8px 14px -8px rgba(15,23,42,.18)"}}>
+              <span style={{width:22,height:22,borderRadius:7,flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:10.5,fontWeight:900,color:"#475569",backgroundColor:"#eef2f7",boxShadow:"0 1px 0 #fff inset, 0 1px 2px rgba(15,23,42,.15)"}}>{i+1}</span>
+              {editing === c ? (
+                <>
+                  <input value={editVal} onChange={e=>setEditVal(e.target.value)} autoFocus style={inp} disabled={busy}
+                    onKeyDown={e=>{ if(e.key==="Enter") saveRename(c); if(e.key==="Escape") setEditing(null); }}/>
+                  <button onClick={()=>saveRename(c)} disabled={busy} className="stk-b3d" title="Save name" style={{...stkKey("white","#0369a1","rgba(0,0,0,.2)"),padding:"6px 10px",fontSize:12}}>✓</button>
+                  <button onClick={()=>setEditing(null)} disabled={busy} className="stk-b3d" title="Cancel" style={{...stkKey("#64748b","#f8fafc","#cbd5e1"),padding:"6px 10px",fontSize:12}}>✕</button>
+                </>
+              ) : (
+                <>
+                  <span style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#0f172a",overflowWrap:"anywhere"}}>{c}</span>
+                  <span title="Products in this category" style={{fontSize:10.5,fontWeight:800,color:"#475569",backgroundColor:"#f1f5f9",border:"1px solid #d5dde8",borderRadius:999,padding:"2px 9px",whiteSpace:"nowrap"}}>{counts[c]||0} item{(counts[c]||0)===1?"":"s"}</span>
+                  <button className="stk-b3d" disabled={busy||i===0} title="Move up" onClick={()=>move(i,-1)} style={mini(!busy&&i!==0)}>▲</button>
+                  <button className="stk-b3d" disabled={busy||i===categories.length-1} title="Move down" onClick={()=>move(i,1)} style={mini(!busy&&i!==categories.length-1)}>▼</button>
+                  <button className="stk-b3d" disabled={busy} title="Rename" onClick={()=>{ setEditing(c); setEditVal(c); }} style={mini(!busy)}>✏️</button>
+                  <button className="stk-b3d" disabled={busy} title={(counts[c]||0)>0?"Has products — move them first":"Delete empty category"} onClick={()=>del(c)} style={{...mini(!busy),color:(counts[c]||0)>0?"#cbd5e1":"#b91c1c"}}>🗑</button>
+                </>
+              )}
+            </div>
+          ))}
+          {otherCount > 0 && (
+            <div style={{display:"flex",alignItems:"center",gap:8,padding:"9px 10px",borderRadius:12,border:"1px dashed #cbd5e1",backgroundColor:"#f8fafc"}}>
+              <span style={{flex:1,fontSize:12.5,fontWeight:700,color:"#64748b"}}>Other <span style={{fontWeight:600,color:"#94a3b8"}}>— products without a category above (always shown last)</span></span>
+              <span style={{fontSize:10.5,fontWeight:800,color:"#475569",backgroundColor:"#f1f5f9",border:"1px solid #d5dde8",borderRadius:999,padding:"2px 9px"}}>{otherCount} item{otherCount===1?"":"s"}</span>
+            </div>
+          )}
+        </div>
+
+        <button onClick={onClose} className="stk-b3d" style={{...stkKey("#334155","#f8fafc","#cbd5e1"),marginTop:14,padding:"10px 0",fontSize:13,fontWeight:700}}>Done</button>
       </div>
     </div>
   );
@@ -18556,7 +18806,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const _yr=_now.getMonth()>=3?_now.getFullYear():_now.getFullYear()-1;
   // India uses 2-digit suffix (e.g. 27 for FY 2026-27), UK uses 1-digit
   const _fySuffix = shopId==="ros-india" ? String(_yr+1).slice(-2) : String(_yr+1).slice(-1);
-  const _pfx = shopId==="ros-india" ? "IND" : "ROS";
+  const _pfx = shopId==="ros-india" ? "IND" : shopId==="ros-hairlines" ? "ROSH" : "ROS";
   // For India: extract 4-digit base from IND[4digits][2digits], reset to 1312 each April
   const _getLastNum=()=>{
     try {
@@ -18574,7 +18824,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
         // The browser counter resets to 1312 on a new browser/device or cleared data, which
         // re-issued old invoice numbers. Always continue from the highest number already
         // used in this shop for the current financial year.
-        const re=new RegExp("^ROS(\\d{4})"+_fySuffix+"$");
+        const re=new RegExp("^"+_pfx+"(\\d{4})"+_fySuffix+"$");
         const salesNum=(sales||[]).reduce((mx,s)=>{const m=String(s.id||"").match(re);return m?Math.max(mx,parseInt(m[1])):mx;},1312);
         return Math.max(localNum,salesNum);
       }
