@@ -18560,6 +18560,7 @@ const AddTabInput=({onAdd,accent})=>{
 const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,onDeleteShopItem,customers=[],sales=[],isSuperadmin=false,canDiscount=false,onAdjustExpected})=>{
   const rosieFieldRefs=useRef({});
   const [priceDiff,setPriceDiff]=useState(null); // line prices that differ from the price list — Advance? / reason is asked before saving
+  const [typeManual,setTypeManual]=useState(false); // staff picked the payment type themselves — stop auto-suggesting
   const [partPaidAsk,setPartPaidAsk]=useState(null); // received < sale total: "Is this an Advance?"
   const [finalShort,setFinalShort]=useState(null); // Final payment leaves the deal short of the Expected total / price list
   const [paymentTypeAcked,setPaymentTypeAcked]=useState(false);
@@ -18681,10 +18682,10 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const rowAmts=lines.map(l=>parseFloat(((parseFloat(l.qty)||0)*(parseFloat(l.price)||0)).toFixed(2)));
   const recvAmts=lines.map(l=>parseFloat(l.recv)||0);   // staff always type what was actually received — nothing is pre-filled
   const receivedTotal=parseFloat(recvAmts.reduce((a,x)=>a+x,0).toFixed(2));
-  // The Advance this Part / Final entry belongs to (same customer + phone), if any.
-  const dealInfo=()=>{
-    if(!_ps||!(form.paymentType==="PART"||form.paymentType==="FINAL")) return null;
-    const virt={id:"__new__",customer:form.customer,phone:form.contact,contact:form.contact,date:form.date,paymentType:form.paymentType,invoiceNo:form.invoiceNo||"~",amount:receivedTotal};
+  // The open Advance this customer (same name + phone) has, if any — a Part / Final entry would belong to it.
+  const openDealInfo=()=>{
+    if(!_ps) return null;
+    const virt={id:"__new__",customer:form.customer,phone:form.contact,contact:form.contact,date:form.date,paymentType:"PART",invoiceNo:form.invoiceNo||"~",amount:0};
     const all=[...(sales||[]),virt];
     const ids=findInstalmentGroupIds(virt,all);
     if(ids.length<2) return null;
@@ -18697,7 +18698,13 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     const prior=group.filter(x=>x.id!=="__new__").reduce((a,x)=>a+(Number(x.amount)||0),0);
     return {expected,source,prior,advanceId:adv.id,parts:group.length-2};
   };
-  const _deal=dealInfo();
+  const _openDeal=openDealInfo();
+  const _deal=(_openDeal&&(form.paymentType==="PART"||form.paymentType==="FINAL"))?_openDeal:null;
+  // Suggested payment type from the amounts (only once something has been received).
+  const _suggest=(!_ps||!(receivedTotal>0))?null
+    :_openDeal?((_openDeal.expected-_openDeal.prior-receivedTotal)<=0.5?"FINAL":"PART")
+    :((grandTotal-receivedTotal)<=0.5?"FULL":"ADVANCE");
+  useEffect(()=>{ if(_suggest&&!typeManual) setForm(f=>f.paymentType===_suggest?f:{...f,paymentType:_suggest}); },[_suggest,typeManual]);
   const _calc=_deal
     ?{mode:"deal",expected:_deal.expected,priorReceived:_deal.prior,receivedNow:receivedTotal,balance:parseFloat((_deal.expected-_deal.prior-receivedTotal).toFixed(2)),advLabel:_deal.advanceId}
     :{mode:"normal",itemsTotal:itemsSubtotal,gstAmt,saleTotal:grandTotal,receivedNow:receivedTotal,balance:parseFloat((grandTotal-receivedTotal).toFixed(2))};
@@ -18738,7 +18745,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     const filledLines=lines.filter(l=>l.name.trim()||(parseFloat(l.price)>0));
     if(_ps&&!(receivedTotal>0)){showAlert("Please enter the amount received (the Received box on the item row).");return;}
     // Price list check (ROS India / ROS Hairlines UK): a line priced differently from the list needs a reason.
-    const _mism=(_ps&&(form.paymentType||"FULL")==="FULL"&&!(Number(form.taxRate)>0))?priceMismatches(filledLines,shopId):[];
+    const _mism=(_ps&&["FULL","ADVANCE"].includes(form.paymentType||"FULL")&&!(Number(form.taxRate)>0))?priceMismatches(filledLines,shopId):[];
     if(_mism.length>0&&!priceReason){setPriceDiff(_mism);return;}
     if(_ps){
       if(_calc.balance<-0.5){showAlert("The amount received is more than the "+(_deal?"balance of this sale":"sale total")+" ("+shop.symbol+Math.abs(_calc.balance).toLocaleString()+" too much). Please check the Received amounts.");return;}
@@ -18800,6 +18807,39 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const rosieAllDone = rosieActiveIdx===-1;
   const rosieNudge = rosieAllDone ? "All set! Review and hit Save Sale when ready. ✅" : rosieSteps[rosieActiveIdx].label;
 
+  // Payment type (Full / Advance / Part / Final) — for ROS India / Hairlines UK it sits under the notebook and is
+  // suggested from the amounts: balance due → Advance, fully paid → Full, then Part / Final once an Advance exists.
+  const _TL={FULL:"Full",ADVANCE:"Advance",PART:"Part",FINAL:"Final"};
+  const payTypeUI=(<>
+      <div ref={el=>{rosieFieldRefs.current.paymentType=el;}}>
+      <PaymentTypeControl value={form.paymentType} onChange={v=>{setTypeManual(true);set("paymentType",v)}} accent={shop.accent}/>
+      </div>
+
+      {/* Expected Total — only shown for Advance payment type */}
+      {form.paymentType==="ADVANCE"&&(
+        <div style={{marginBottom:12,padding:"12px 14px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10}}>
+          <label style={{...lbl,color:"#92400e"}}>💰 Expected Total ({shop.symbol})</label>
+          <input type="number" value={form.expectedTotal||""} onChange={e=>set("expectedTotal",e.target.value)}
+            placeholder={_ps?("Defaults to the sale total "+shop.symbol+grandTotal.toLocaleString()):"Enter full expected amount e.g. 1500"}
+            style={{...inp,border:"1.5px solid #fbbf24",background:"white"}} onFocus={fo} onBlur={bl}/>
+          <p style={{margin:"4px 0 0",fontSize:11,color:"#92400e"}}>
+            Total amount across all instalments. Used to calculate balance.
+          </p>
+          {(()=>{const _lt=isPriceShop(shopId)?listTotalForLines(lines.filter(l=>l.name.trim()),shopId):null;return _lt?(<p style={{margin:"6px 0 0",fontSize:11.5,fontWeight:700,color:"#166534"}}>Price list total: {shop.symbol}{_lt.total.toLocaleString()}{_lt.delivery?" (incl. "+shop.symbol+_lt.delivery+" delivery)":""} <button type="button" onClick={()=>set("expectedTotal",String(_lt.total))} style={{marginLeft:6,padding:"2px 10px",borderRadius:999,border:"1px solid #86efac",background:"#f0fdf4",color:"#166534",fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Use</button></p>):null;})()}
+        </div>
+      )}
+  </>);
+  const suggestBanner=(()=>{
+    if(!_ps||!_suggest) return null;
+    const money=n=>shop.symbol+Number(n).toLocaleString();
+    const why=_suggest==="ADVANCE"?"Balance due "+money(_calc.balance)+" — this looks like an Advance."
+      :_suggest==="FULL"?"Fully received — this is a Full payment."
+      :_suggest==="PART"?"This customer has an open Advance ("+_openDeal.advanceId+") and a balance will remain after this payment — this looks like a Part payment."
+      :"This customer has an open Advance ("+_openDeal.advanceId+") and this payment completes it — this looks like the Final payment.";
+    const sameAsChosen=form.paymentType===_suggest;
+    if(!typeManual||sameAsChosen) return (<div style={{margin:"0 0 8px",padding:"8px 11px",borderRadius:9,background:"#eff6ff",border:"1px solid #bfdbfe",fontSize:12,fontWeight:700,color:"#1d4ed8"}}>💡 {why} Marked as <b>{_TL[_suggest]}</b>.{(_suggest==="PART"||_suggest==="FINAL")&&<span style={{fontWeight:600,color:"#475569"}}> If this is a separate new order, choose Full.</span>}</div>);
+    return (<div style={{margin:"0 0 8px",padding:"8px 11px",borderRadius:9,background:"#fffbeb",border:"1px solid #fde68a",fontSize:12,fontWeight:700,color:"#92400e",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><span>⚠ {why} You chose <b>{_TL[form.paymentType]||form.paymentType}</b>.</span><button type="button" onClick={()=>{setTypeManual(false);set("paymentType",_suggest);}} style={{padding:"2px 10px",borderRadius:999,border:"1px solid #f59e0b",background:"white",color:"#92400e",fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Use {_TL[_suggest]}</button></div>);
+  })();
   return(<>
     {priceDiff&&(<PriceDiffModal shopId={shopId} mismatches={priceDiff} accent={shop.accent} onCancel={()=>setPriceDiff(null)} onConfirm={(r)=>{setPriceDiff(null);handleSave(r);}}/>)}
     {partPaidAsk&&(<PartPaidModal shopId={shopId} info={{saleTotal:grandTotal,received:receivedTotal,balance:_calc.balance}} accent={shop.accent} onCancel={()=>setPartPaidAsk(null)} onAdvance={()=>{const _r=partPaidAsk.reason;setPartPaidAsk(null);handleSave(_r||undefined,{asAdvance:true});}}/>)}
@@ -18894,7 +18934,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             </div>
 
             {/* Items */}
-            {_ps&&(<SaleNotebook shopId={shopId} shop={shop} lines={lines} rowAmts={rowAmts} recvAmts={recvAmts} showHint={(form.paymentType||"FULL")==="FULL"&&!(Number(form.taxRate)>0)} rosieRefs={rosieFieldRefs}
+            {_ps&&(<SaleNotebook shopId={shopId} shop={shop} lines={lines} rowAmts={rowAmts} recvAmts={recvAmts} showHint={!["PART","FINAL"].includes(form.paymentType||"FULL")&&!(Number(form.taxRate)>0)} rosieRefs={rosieFieldRefs}
               onName={(id,v)=>updateLine(id,"name",v)}
               onPick={(id,en)=>setLines(ls=>ls.map(l=>l.id===id?{...l,name:en.label,price:String(priceFor(en,shopId))}:l))}
               onQty={(id,v)=>updateLine(id,"qty",v)} onPrice={(id,v)=>updateLine(id,"price",v)} onRecv={(id,v)=>updateLine(id,"recv",v)}
@@ -18902,6 +18942,10 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               onRemove={removeLine} onAdd={addLine}
               calc={_calc} other={form.otherCharges} discount={form.discount} onOther={v=>set("otherCharges",v)} onDiscount={v=>set("discount",v)}
               taxRate={form.taxRate} onTax={r=>set("taxRate",r)}/>)}
+            {_ps&&(<div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
+              {suggestBanner}
+              {payTypeUI}
+            </div>)}
             {!_ps&&(<div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🛍️ Items</p>
               {/* ── Quick-pick tab bar (replaced by price-list suggestions in India / Hairlines UK) ── */}
@@ -19031,23 +19075,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🏷️ Tags & Notes</p>
               <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
 
-      <div ref={el=>{rosieFieldRefs.current.paymentType=el;}}>
-      <PaymentTypeControl value={form.paymentType} onChange={v=>set("paymentType",v)} accent={shop.accent}/>
-      </div>
-
-      {/* Expected Total — only shown for Advance payment type */}
-      {form.paymentType==="ADVANCE"&&(
-        <div style={{marginBottom:12,padding:"12px 14px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10}}>
-          <label style={{...lbl,color:"#92400e"}}>💰 Expected Total ({shop.symbol})</label>
-          <input type="number" value={form.expectedTotal||""} onChange={e=>set("expectedTotal",e.target.value)}
-            placeholder="Enter full expected amount e.g. 1500"
-            style={{...inp,border:"1.5px solid #fbbf24",background:"white"}} onFocus={fo} onBlur={bl}/>
-          <p style={{margin:"4px 0 0",fontSize:11,color:"#92400e"}}>
-            Total amount across all instalments. Used to calculate balance.
-          </p>
-          {(()=>{const _lt=isPriceShop(shopId)?listTotalForLines(lines.filter(l=>l.name.trim()),shopId):null;return _lt?(<p style={{margin:"6px 0 0",fontSize:11.5,fontWeight:700,color:"#166534"}}>Price list total: {shop.symbol}{_lt.total.toLocaleString()}{_lt.delivery?" (incl. "+shop.symbol+_lt.delivery+" delivery)":""} <button type="button" onClick={()=>set("expectedTotal",String(_lt.total))} style={{marginLeft:6,padding:"2px 10px",borderRadius:999,border:"1px solid #86efac",background:"#f0fdf4",color:"#166534",fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Use</button></p>):null;})()}
-        </div>
-      )}
+      {!_ps&&payTypeUI}
               <div style={{marginTop:7}}><label style={lbl}>Remarks</label><input value={form.remarks} onChange={e=>set("remarks",e.target.value)} placeholder="Notes…" style={inp} onFocus={fo} onBlur={bl}/></div>
             </div>
 
