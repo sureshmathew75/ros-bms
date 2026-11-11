@@ -53,8 +53,10 @@ export default function SaleNotebook({
   const balBg = bal0 ? "#f0fdf4" : balance > 0 ? "#fffbeb" : "#fef2f2";
 
   return (
-    <div style={{ position: "relative", background: PAPER, border: "1px solid #e6dcc0", borderRadius: 12, padding: "12px 14px 14px 42px", marginBottom: 8, overflow: "hidden",
+    <div className="sale-nb" style={{ position: "relative", background: PAPER, border: "1px solid #e6dcc0", borderRadius: 12, padding: "12px 14px 14px 42px", marginBottom: 8, overflow: "hidden",
       boxShadow: "0 1px 0 #fff inset, 0 8px 18px -10px rgba(90,70,20,.35)" }}>
+      {/* placeholders (Item 1, 0 …) must look clearly like hints, not typed text */}
+      <style>{".sale-nb input::placeholder{color:#cbd5e1 !important;font-weight:400 !important;font-style:italic;opacity:1}"}</style>
       {/* margin rule + binder holes */}
       <div style={{ position: "absolute", top: 0, bottom: 0, left: 29, width: 1.5, background: MARGIN }} />
       <div style={{ position: "absolute", top: 0, bottom: 0, left: 33, width: 1.5, background: MARGIN }} />
