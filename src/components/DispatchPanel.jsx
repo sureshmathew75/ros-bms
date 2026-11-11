@@ -1566,7 +1566,11 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     const message = buildDispatchTrackingMsg(entry, shop);
     setWaModal({
       phone, customerName: entry.customer, message,
-      onSent: () => saveEntry(entry.uuid, { notified: true }),
+      onSent: () => {
+        saveEntry(entry.uuid, { notified: true });
+        // also mark the sale itself, so its Notify button on the Sales page shows "✓ Notified"
+        if (entry.saleId && onSaleFieldEdit) { try { onSaleFieldEdit(entry.saleId, { trackingNotified: true }); } catch {} }
+      },
     });
   };
 

@@ -151,7 +151,11 @@ export const shortfallForSales = (members, shopId) => {
     if (p != null && explained) matched++;
   });
   if (!matched) return null;
-  const delivery = shopId === "ros-hairlines" ? UK_DELIVERY : 0;
+  // Hairlines: use the shipping actually charged on the sale (£7 UK, a different amount abroad, or 0 if waived);
+  // older sales without a "Shipping" line fall back to the standard £7.
+  const delivery = shopId === "ros-hairlines"
+    ? (String(s.otherChargesLabel || "") === "Shipping" ? (Number(s.otherCharges) || 0) : UK_DELIVERY)
+    : 0;
   listTotal += delivery;
   const received = Number(s.amount) || 0;
   return { listTotal, received, short: listTotal - received, delivery };

@@ -1,5 +1,6 @@
 import React from "react";
 import { ItemSuggestInput, PriceHint } from "./PriceListPanel";
+import { UK_DELIVERY } from "../priceList";
 
 /* ── "Notebook" style items + totals block for the New Sale form (ROS India / ROS Hairlines UK) ──
    Rows:   Item · Qty · Price (price-list price, editable) · Received
@@ -112,7 +113,23 @@ export default function SaleNotebook({
         ) : (
           <>
             <Line label="Items total" value={sym + num(shopId, calc.itemsTotal)} />
-            <Line label="+ Other charges"><MoneyInput sym={sym} accent={accent} value={other} onChange={onOther} /></Line>
+            {shopId === "ros-hairlines" ? (
+              <Line label="+ Shipping">
+                <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
+                  {!(parseFloat(other) > 0)
+                    ? <button type="button" onClick={() => onOther(String(UK_DELIVERY))}
+                        style={{ fontSize: 10.5, fontWeight: 800, color: "#475569", background: "white", border: "1px solid #cbd5e1", borderRadius: 999, padding: "2px 9px", cursor: "pointer", fontFamily: "inherit" }}>Add {sym}{UK_DELIVERY} shipping</button>
+                    : parseFloat(other) === UK_DELIVERY
+                      ? <button type="button" onClick={() => onOther("0")} title="Waive the shipping charge"
+                          style={{ fontSize: 10.5, fontWeight: 800, color: "#b45309", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 999, padding: "2px 9px", cursor: "pointer", fontFamily: "inherit" }}>Waive</button>
+                      : null}
+                  {!(parseFloat(other) > 0) && <span style={{ fontSize: 10.5, fontWeight: 800, color: "#15803d" }}>Waived</span>}
+                  <MoneyInput sym={sym} accent={accent} value={other} onChange={onOther} />
+                </span>
+              </Line>
+            ) : (
+              <Line label="+ Other charges"><MoneyInput sym={sym} accent={accent} value={other} onChange={onOther} /></Line>
+            )}
             <Line label="− Discount"><MoneyInput sym={sym} accent={accent} value={discount} onChange={onDiscount} /></Line>
             <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 0" }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b", marginRight: 4 }}>GST</span>

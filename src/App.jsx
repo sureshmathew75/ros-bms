@@ -12,7 +12,7 @@ import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
 import PriceListPanel, { ItemSuggestInput, PriceDiffModal, PriceHint, priceNoteText, FinalShortModal, PartPaidModal } from "./components/PriceListPanel";
 import SaleNotebook from "./components/SaleNotebook";
-import { isPriceShop, priceFor, matchEntry, priceMismatches, listTotalForLines } from "./priceList";
+import { isPriceShop, priceFor, matchEntry, priceMismatches, listTotalForLines, UK_DELIVERY } from "./priceList";
 import PurchasesPanel from "./components/PurchasesPanel";
 import ReportsPanel from "./components/ReportsPanel";
 import SalesPanel from "./components/SalesPanel";
@@ -18615,8 +18615,10 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     taxInclusive: false,
     taxRate:     0,
     discount:    "",
-    otherCharges:"",
-    otherChargesLabel:"Other Charges",
+    // ROS Hairlines UK: the price list excludes delivery, so £7 UK shipping is added to every sale (staff can waive it
+    // or type the international amount). It is stored in Other Charges, labelled "Shipping".
+    otherCharges:shopId==="ros-hairlines"?String(UK_DELIVERY):"",
+    otherChargesLabel:shopId==="ros-hairlines"?"Shipping":"Other Charges",
     payBy:       defaultPay,
     shopInvoiceNo: "",
     paidBy:      "",

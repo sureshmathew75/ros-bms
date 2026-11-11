@@ -1001,7 +1001,20 @@ We hope you enjoy your purchase! 💜
     const msg = buildTrackingMsg(sale, carrier, trackNo);
     setWaModal({
       phone, customerName: sale.customer, message: msg,
-      onSent: () => onInlineEdit && onInlineEdit(sale.id, { trackingNotified: true }),
+      onSent: async () => {
+        if (onInlineEdit) await onInlineEdit(sale.id, { trackingNotified: true });
+        // ROS India: keep the Despatch Log's "Informed" flag in step, so the same customer isn't messaged twice.
+        if (isIndiaShop) {
+          try {
+            const rows = await dbLoadDispatchLog("ros-india");
+            const gKey = getInstalmentKey(sale);
+            const group = gKey ? (instalmentGroups[gKey] || []) : [];
+            const ids = new Set((group.length > 1 ? group : [sale]).map(m => m.id));
+            const row = (rows || []).find(r => ids.has(r.saleId));
+            if (row && !row.notified) await dbSaveDispatchEntry("ros-india", { ...row, _uuid: row.uuid, notified: true });
+          } catch (err) { console.error("Could not mark the Despatch Log row as informed:", err); }
+        }
+      },
     });
   };
 
@@ -2924,9 +2937,9 @@ We hope you enjoy your purchase! 💜
                             </span>
                           )}
 
-                          {s.trackingNo && !isIndiaShop && (
+                          {s.trackingNo && (
                             <button
-                              onClick={() => openTrackingWA(s, s.carrier || UK_DEFAULT_CARRIER, s.trackingNo)}
+                              onClick={() => openTrackingWA(s, isIndiaShop ? carrierValue(s.carrier || DEFAULT_CARRIER) : (s.carrier || UK_DEFAULT_CARRIER), s.trackingNo)}
                               title={s.trackingNotified ? "Notified — click to resend" : "Send tracking to customer"}
                               style={{
                                 marginTop: 2, padding: "3px 9px", borderRadius: 999, border: "none", cursor: "pointer",

@@ -21,7 +21,7 @@ const POLICIES = {
    – Under £100: **£5** deduction
    – £100 to £200: **£10** deduction
    – Over £200: **£20** deduction
-• If you prefer an **exchange**, no deductions will be made and we will credit your account with the original item cost towards the exchange item.`,
+• If you prefer an **exchange**, no deductions will be made and we will credit your account with the original item cost towards the exchange item. The customer bears the **shipping cost of the exchanged item**.`,
 
   "ros-india": `${COMMON_TOP("**+91 889 1757 889** (or call **+91 77 47 814 888**)")}
 • All other returns are refundable after deducting a service charge, based on the item value:
