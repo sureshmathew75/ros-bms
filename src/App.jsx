@@ -18678,7 +18678,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
      Row Received = what the customer actually paid for that item (typed by staff). Sale total = items + other
      charges − discount (+GST). Balance due = Sale total − Received. For Part / Final entries linked to an Advance the
      balance is worked out from the Advance's Expected total and everything received so far. */
-  const _ps=isPriceShop(shopId);
+  const _ps=true;   // the notebook form is used by all three shops (price-list extras simply do nothing for ROS Selections)
   const _filledIdx=lines.map((l,i)=>(l.name.trim()||parseFloat(l.price)>0)?i:-1).filter(i=>i>=0);
   const _lastIdx=_filledIdx.length?_filledIdx[_filledIdx.length-1]:-1;
   const rowAmts=lines.map(l=>parseFloat(((parseFloat(l.qty)||0)*(parseFloat(l.price)||0)).toFixed(2)));
@@ -18809,6 +18809,41 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const rosieAllDone = rosieActiveIdx===-1;
   const rosieNudge = rosieAllDone ? "All set! Review and hit Save Sale when ready. ✅" : rosieSteps[rosieActiveIdx].label;
 
+  // Quick-pick item tabs (pinned + earlier item names) — ROS Selections UK only; India / Hairlines UK use price-list suggestions.
+  const quickPickUI=isPriceShop(shopId)?null:(()=>{
+                const savedLabels=shopItems.map(i=>typeof i==="object"?(i.name||i.label||""):String(i));
+                const savedSet=new Set(savedLabels);
+                const seen=new Set();
+                const histNames=[];
+                (sales||[]).forEach(s=>{(s.items||[]).forEach(it=>{const n=(it.name||"").trim();if(n&&!savedSet.has(n)&&!seen.has(n)){seen.add(n);histNames.push(n);}});});
+                histNames.sort((a,b)=>a.localeCompare(b));
+                const fillName=(name)=>{const ei=lines.findIndex(l=>!l.name.trim());if(ei>=0)updateLine(lines[ei].id,"name",name);else setLines(ls=>[...ls,{...blankLine(),name}]);};
+                return(
+                  <div style={{marginBottom:10}}>
+                    {savedLabels.length>0&&(
+                      <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:5}}>
+                        {savedLabels.map((label,idx)=>(
+                          <div key={idx} style={{display:"inline-flex",alignItems:"center",borderRadius:999,border:"1px solid "+shop.accent+"55",background:shop.accentBg,overflow:"hidden"}}>
+                            <button type="button" onClick={()=>fillName(label)} style={{padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",background:"transparent",border:"none",color:shop.accentText}}>{label}</button>
+                            <button type="button" onClick={()=>onDeleteShopItem&&onDeleteShopItem(label)} title="Remove" style={{padding:"0 8px 0 0",fontSize:12,cursor:"pointer",background:"transparent",border:"none",color:"#94a3b8",lineHeight:1}}>×</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {histNames.length>0&&(
+                      <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:5}}>
+                        {histNames.map((name,i)=>(
+                          <div key={i} style={{display:"inline-flex",alignItems:"center",borderRadius:999,border:"1px solid #cbd5e1",background:"white",overflow:"hidden"}}>
+                            <button type="button" onClick={()=>fillName(name)} style={{padding:"4px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:"transparent",border:"none",color:"#475569"}}>{name}</button>
+                            <button type="button" onClick={()=>onAddShopItem&&onAddShopItem(name)} title="Pin tab" style={{padding:"0 8px 0 0",fontSize:11,cursor:"pointer",background:"transparent",border:"none",color:"#94a3b8",lineHeight:1}}>★</button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <AddTabInput onAdd={(name)=>onAddShopItem&&onAddShopItem(name)} accent={shop.accent}/>
+                  </div>
+                );
+              })();
   // Payment type (Full / Advance / Part / Final) — for ROS India / Hairlines UK it sits under the notebook and is
   // suggested from the amounts: balance due → Advance, fully paid → Full, then Part / Final once an Advance exists.
   const _TL={FULL:"Full",ADVANCE:"Advance",PART:"Part",FINAL:"Final"};
@@ -18936,7 +18971,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             </div>
 
             {/* Items */}
-            {_ps&&(<SaleNotebook shopId={shopId} shop={shop} lines={lines} rowAmts={rowAmts} recvAmts={recvAmts} showHint={!["PART","FINAL"].includes(form.paymentType||"FULL")&&!(Number(form.taxRate)>0)} rosieRefs={rosieFieldRefs}
+            {_ps&&(<SaleNotebook topSlot={quickPickUI} shopId={shopId} shop={shop} lines={lines} rowAmts={rowAmts} recvAmts={recvAmts} showHint={!["PART","FINAL"].includes(form.paymentType||"FULL")&&!(Number(form.taxRate)>0)} rosieRefs={rosieFieldRefs}
               onName={(id,v)=>updateLine(id,"name",v)}
               onPick={(id,en)=>setLines(ls=>ls.map(l=>l.id===id?{...l,name:en.label,price:String(priceFor(en,shopId))}:l))}
               onQty={(id,v)=>updateLine(id,"qty",v)} onPrice={(id,v)=>updateLine(id,"price",v)} onRecv={(id,v)=>updateLine(id,"recv",v)}
@@ -18948,69 +18983,6 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               {suggestBanner}
               {payTypeUI}
             </div>)}
-            {!_ps&&(<div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
-              <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🛍️ Items</p>
-              {/* ── Quick-pick tab bar (replaced by price-list suggestions in India / Hairlines UK) ── */}
-              {!isPriceShop(shopId)&&(()=>{
-                const savedLabels=shopItems.map(i=>typeof i==="object"?(i.name||i.label||""):String(i));
-                const savedSet=new Set(savedLabels);
-                const seen=new Set();
-                const histNames=[];
-                (sales||[]).forEach(s=>{(s.items||[]).forEach(it=>{const n=(it.name||"").trim();if(n&&!savedSet.has(n)&&!seen.has(n)){seen.add(n);histNames.push(n);}});});
-                histNames.sort((a,b)=>a.localeCompare(b));
-                const fillName=(name)=>{const ei=lines.findIndex(l=>!l.name.trim());if(ei>=0)updateLine(lines[ei].id,"name",name);else setLines(ls=>[...ls,{...blankLine(),name}]);};
-                return(
-                  <div style={{marginBottom:10}}>
-                    {savedLabels.length>0&&(
-                      <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:5}}>
-                        {savedLabels.map((label,idx)=>(
-                          <div key={idx} style={{display:"inline-flex",alignItems:"center",borderRadius:999,border:"1px solid "+shop.accent+"55",background:shop.accentBg,overflow:"hidden"}}>
-                            <button type="button" onClick={()=>fillName(label)} style={{padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",background:"transparent",border:"none",color:shop.accentText}}>{label}</button>
-                            <button type="button" onClick={()=>onDeleteShopItem&&onDeleteShopItem(label)} title="Remove" style={{padding:"0 8px 0 0",fontSize:12,cursor:"pointer",background:"transparent",border:"none",color:"#94a3b8",lineHeight:1}}>×</button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    {histNames.length>0&&(
-                      <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:5}}>
-                        {histNames.map((name,i)=>(
-                          <div key={i} style={{display:"inline-flex",alignItems:"center",borderRadius:999,border:"1px solid #cbd5e1",background:"white",overflow:"hidden"}}>
-                            <button type="button" onClick={()=>fillName(name)} style={{padding:"4px 10px",fontSize:11,fontWeight:600,cursor:"pointer",fontFamily:"inherit",background:"transparent",border:"none",color:"#475569"}}>{name}</button>
-                            <button type="button" onClick={()=>onAddShopItem&&onAddShopItem(name)} title="Pin tab" style={{padding:"0 8px 0 0",fontSize:11,cursor:"pointer",background:"transparent",border:"none",color:"#94a3b8",lineHeight:1}}>★</button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                    <AddTabInput onAdd={(name)=>onAddShopItem&&onAddShopItem(name)} accent={shop.accent}/>
-                  </div>
-                );
-              })()}
-              {/* ── Item rows ── */}
-              <div style={{display:"grid",gridTemplateColumns:isPriceShop(shopId)?"1fr 52px 62px 76px 26px":"1fr 52px 76px 26px",gap:5,marginBottom:4}}>
-                <span style={{...lbl,marginBottom:0}}>Item</span><span style={{...lbl,marginBottom:0}}>Qty</span>{isPriceShop(shopId)&&<span style={{...lbl,marginBottom:0,textAlign:"center"}} title="Price-list price">List</span>}<span style={{...lbl,marginBottom:0}}>Price</span><span/>
-              </div>
-              {lines.map((line,idx)=>(
-                <div key={line.id} style={{display:"grid",gridTemplateColumns:isPriceShop(shopId)?"1fr 52px 62px 76px 26px":"1fr 52px 76px 26px",gap:5,marginBottom:5,alignItems:"center"}}>
-                  <ItemSuggestInput inputRef={el=>{if(idx===0)rosieFieldRefs.current.item=el;}} value={line.name} shopId={shopId} onChange={v=>updateLine(line.id,"name",v)} onPick={en=>setLines(ls=>ls.map(l=>l.id===line.id?{...l,name:en.label}:l))} placeholder={"Item "+(idx+1)} style={{...inp,padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
-                  <input type="number" onWheel={e=>e.target.blur()} value={line.qty} onChange={e=>updateLine(line.id,"qty",e.target.value)} style={{...inp,textAlign:"center",padding:"7px 5px"}} onFocus={fo} onBlur={bl}/>
-                  <input ref={el=>{if(idx===0)rosieFieldRefs.current.price=el;}} type="number" onWheel={e=>e.target.blur()} value={line.price} onChange={e=>updateLine(line.id,"price",e.target.value)} placeholder="0.00" style={{...inp,textAlign:"right",padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
-                  <button type="button" onClick={()=>removeLine(line.id)} style={{width:26,height:32,borderRadius:7,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
-                  <PriceHint shopId={shopId} name={line.name} price={line.price} hide={(form.paymentType||"FULL")!=="FULL"||Number(form.taxRate)>0}/>
-                </div>
-              ))}
-              <button type="button" onClick={addLine} style={{padding:"5px 12px",borderRadius:7,border:"1px dashed "+shop.accent+"55",background:shop.accentBg,color:shop.accentText,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>＋ Add Item</button>
-            </div>)}
-
-            {/* Pricing */}
-            {!_ps&&(<div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
-              <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>💰 Pricing</p>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:8}}>
-                <div><label style={lbl}>Discount ({shop.symbol})</label><input type="number" onWheel={e=>e.target.blur()} value={form.discount} onChange={e=>set("discount",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/></div>
-                <div><label style={lbl}>Other Charges ({shop.symbol})</label><input type="number" onWheel={e=>e.target.blur()} value={form.otherCharges} onChange={e=>set("otherCharges",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/></div>
-              </div>
-              <div style={{display:"flex",gap:5}}>{[0,5,10,18,20].map(r=>(<button key={r} type="button" onClick={()=>set("taxRate",r)} style={{flex:1,padding:"5px 0",borderRadius:8,border:"2px solid "+(form.taxRate===r?shop.accent:"#e2e8f0"),background:form.taxRate===r?shop.accent:"white",color:form.taxRate===r?"white":"#374151",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{r}%</button>))}</div>
-            </div>)}
-
             {/* Payment & Delivery */}
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🚚 Payment & Delivery</p>
@@ -19077,7 +19049,6 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🏷️ Tags & Notes</p>
               <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
 
-      {!_ps&&payTypeUI}
               <div style={{marginTop:7}}><label style={lbl}>Remarks</label><input value={form.remarks} onChange={e=>set("remarks",e.target.value)} placeholder="Notes…" style={inp} onFocus={fo} onBlur={bl}/></div>
             </div>
 
