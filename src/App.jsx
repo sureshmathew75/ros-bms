@@ -10,8 +10,8 @@ import ROS_INDIA_LOGO from "./ros-india-logo.png";   // registered-brand ROS IND
 import InvoicesPanel from "./components/InvoicesPanel";
 import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
-import PriceListPanel, { ItemSuggestInput, PriceDiffModal, PriceHint, priceNoteText } from "./components/PriceListPanel";
-import { isPriceShop, priceFor, matchEntry, priceMismatches } from "./priceList";
+import PriceListPanel, { ItemSuggestInput, PriceDiffModal, PriceHint, priceNoteText, ListPriceCell, FinalShortModal } from "./components/PriceListPanel";
+import { isPriceShop, priceFor, matchEntry, priceMismatches, listTotalForLines } from "./priceList";
 import PurchasesPanel from "./components/PurchasesPanel";
 import ReportsPanel from "./components/ReportsPanel";
 import SalesPanel from "./components/SalesPanel";
@@ -9861,6 +9861,14 @@ return(
           <NewSaleForm
             shopId={shopId} shop={shop}
             isSuperadmin={user?.role==="superadmin"}
+            canDiscount={user?.role==="superadmin"||user?.role==="admin"}
+            onAdjustExpected={async(saleId,newExpected,note)=>{
+              const sale=(sales||[]).find(x=>x.id===saleId);
+              if(!sale) return;
+              const changes={expectedTotal:String(newExpected),rem:[sale.rem,note].filter(x=>x&&String(x).trim()).join(" | ")};
+              try{ await dbSaveSale(shopId,{...sale,...changes}); }catch(err){ console.error("Expected total update failed:",err); showAlert("The discount was recorded on the Final payment, but updating the Advance's Expected Total failed. Please edit the Advance sale and set its Expected Total to "+newExpected+"."); return; }
+              setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>x.id===saleId?{...x,...changes}:x)}));
+            }}
             onSave={addSale} onClose={()=>setModal(null)}
            lastInvoiceNum={0}
             customers={customers}
@@ -17407,13 +17415,13 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
             return(
               <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 60px 90px 70px 28px",gap:4,marginBottom:6,alignItems:"center"}}>
                 <ItemSuggestInput inputRef={el=>{if(i===0)rosieFieldRefs.current.item=el;}} value={l.name} shopId={shopId} onChange={v=>setLine(i,"name",v)}
-                  onPick={en=>{setLine(i,"name",en.label);setLine(i,"price",String(priceFor(en,shopId)));}}
+                  onPick={en=>{setLine(i,"name",en.label);}}
                   placeholder="Item name"
                   style={{...inp,fontSize:12,padding:"6px 9px"}} onFocus={fo} onBlur={bl}/>
                 <input type="number" onWheel={e=>e.target.blur()} min="1" value={l.qty} onChange={e=>setLine(i,"qty",e.target.value)}
                   style={{...inp,fontSize:12,padding:"6px 6px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
                 <input ref={el=>{if(i===0)rosieFieldRefs.current.price=el;}} type="number" onWheel={e=>e.target.blur()} min="0" step="0.01" value={l.price} onChange={e=>setLine(i,"price",e.target.value)}
-                  placeholder="0.00"
+                  placeholder={(()=>{const _en=isPriceShop(shopId)?matchEntry(l.name):null;const _p=_en?priceFor(_en,shopId):null;return _p!=null?"List "+_p:"0.00";})()}
                   style={{...inp,fontSize:12,padding:"6px 6px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
                 <span style={{fontSize:12,fontWeight:700,color:shop.accent,textAlign:"right",paddingRight:4}}>
                   {shop.symbol}{lineTotal.toLocaleString()}
@@ -18548,9 +18556,10 @@ const AddTabInput=({onAdd,accent})=>{
   );
 };
 
-const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,onDeleteShopItem,customers=[],sales=[],isSuperadmin=false})=>{
+const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,onDeleteShopItem,customers=[],sales=[],isSuperadmin=false,canDiscount=false,onAdjustExpected})=>{
   const rosieFieldRefs=useRef({});
-  const [priceDiff,setPriceDiff]=useState(null); // line prices that differ from the price list — a reason is required before saving
+  const [priceDiff,setPriceDiff]=useState(null); // line prices that differ from the price list — Advance? / reason is asked before saving
+  const [finalShort,setFinalShort]=useState(null); // Final payment leaves the deal short of the Expected total / price list
   const [paymentTypeAcked,setPaymentTypeAcked]=useState(false);
   const [showAddressModal,setShowAddressModal]=useState(false);
   const defaultPay = shopId === "ros-india" ? "SIB" : "SHOP";
@@ -18660,8 +18669,27 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const gstAmt=parseFloat((preGstTotal*taxRate).toFixed(2));
   const grandTotal=parseFloat((preGstTotal+gstAmt).toFixed(2));
 
-  const handleSave=(reasonArg)=>{
+  // Final payment: is the deal (Advance + any Part payments + this Final) still short of the Expected total
+  // — or, when the Advance has none, of the price-list total of its items?
+  const finalShortInfo=()=>{
+    const virt={id:"__new__",customer:form.customer,phone:form.contact,contact:form.contact,date:form.date,paymentType:"FINAL",invoiceNo:form.invoiceNo||"~",amount:grandTotal};
+    const all=[...(sales||[]),virt];
+    const ids=findInstalmentGroupIds(virt,all);
+    if(ids.length<2) return null;
+    const group=all.filter(x=>ids.includes(x.id));
+    const adv=group.find(x=>inferPaymentType(x)==="ADVANCE");
+    if(!adv) return null;
+    let expected=Number(adv.expectedTotal)||0, source="expected";
+    if(!(expected>0)){const lt=listTotalForLines(adv.saleLines,shopId);expected=lt?lt.total:0;source="list";}
+    if(!(expected>0)) return null;
+    const received=group.reduce((a,x)=>a+(Number(x.amount)||0),0);
+    const short=expected-received;
+    if(short<=0.5) return null;
+    return {expected,received,short,source,advanceId:adv.id,parts:group.length-2};
+  };
+  const handleSave=(reasonArg,opt)=>{
     const priceReason=typeof reasonArg==="string"?reasonArg:null;
+    const o=opt||{};
     if(form.date && form.date>localTodayISO()){
       showAlert("Sale date can't be in the future. Please pick today's date or an earlier one.");
       return;
@@ -18682,12 +18710,28 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     const purAmt=parseFloat(form.purAmount)||0;
     const filledLines=lines.filter(l=>l.name.trim()||(parseFloat(l.price)>0));
     // Price list check (ROS India / ROS Hairlines UK): a line priced differently from the list needs a reason.
-    const _mism=(isPriceShop(shopId)&&(form.paymentType||"FULL")==="FULL"&&!(Number(form.taxRate)>0))?priceMismatches(filledLines,shopId):[];
+    const _mism=(isPriceShop(shopId)&&!o.asAdvance&&(form.paymentType||"FULL")==="FULL"&&!(Number(form.taxRate)>0))?priceMismatches(filledLines,shopId):[];
     if(_mism.length>0&&!priceReason){setPriceDiff(_mism);return;}
-    const _remarksOut=(_mism.length>0&&priceReason)?[form.remarks,priceNoteText(shopId,_mism,priceReason)].filter(x=>x&&String(x).trim()).join(" | "):form.remarks;
+    // Final payment (ROS India / Hairlines UK): alert when the deal is still short of the price list / Expected total.
+    if(isPriceShop(shopId)&&form.paymentType==="FINAL"&&!(Number(form.taxRate)>0)&&!o.finalOk){
+      const _fs=finalShortInfo();
+      if(_fs){setFinalShort(_fs);return;}
+    }
+    let _remarksOut=(_mism.length>0&&priceReason)?[form.remarks,priceNoteText(shopId,_mism,priceReason)].filter(x=>x&&String(x).trim()).join(" | "):form.remarks;
+    // "Yes — it's an Advance": save as an Advance, Expected Total = the price-list total of the items.
+    const _payType=o.asAdvance?"ADVANCE":form.paymentType;
+    let _expOut=form.expectedTotal;
+    if(o.asAdvance){const _lt=listTotalForLines(filledLines,shopId);if(_lt)_expOut=String(_lt.total);}
+    // Admin discount to match the price list: the Advance's Expected Total is lowered to what was actually received.
+    if(o.waive){
+      const _m=n=>shop.symbol+Number(n).toLocaleString();
+      const _note="Admin discount "+_m(o.waive.short)+" to match price list ("+_m(o.waive.expected)+" → agreed "+_m(o.waive.received)+")";
+      _remarksOut=[_remarksOut,_note].filter(x=>x&&String(x).trim()).join(" | ");
+      if(onAdjustExpected) onAdjustExpected(o.waive.advanceId,o.waive.received,_note);
+    }
     const combinedItem=filledLines.map(l=>`${l.name}(x${l.qty})`).join(", ")||"Sale";
     const combinedQty=filledLines.reduce((s,l)=>s+(parseFloat(l.qty)||0),0)||1;
-    onSave({...form,remarks:_remarksOut,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||"",dispatchFrom:form.dispatchFrom||""});
+    onSave({...form,paymentType:_payType,expectedTotal:_expOut,remarks:_remarksOut,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||"",dispatchFrom:form.dispatchFrom||""});
   };
 
   const rosieFilledLines = lines.filter(l=>l.name.trim());
@@ -18707,7 +18751,8 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const rosieNudge = rosieAllDone ? "All set! Review and hit Save Sale when ready. ✅" : rosieSteps[rosieActiveIdx].label;
 
   return(<>
-    {priceDiff&&(<PriceDiffModal shopId={shopId} mismatches={priceDiff} accent={shop.accent} onCancel={()=>setPriceDiff(null)} onConfirm={(r)=>{setPriceDiff(null);handleSave(r);}}/>)}
+    {priceDiff&&(()=>{const _lt=listTotalForLines(lines.filter(l=>l.name.trim()),shopId);return(<PriceDiffModal shopId={shopId} mismatches={priceDiff} accent={shop.accent} onCancel={()=>setPriceDiff(null)} onConfirm={(r)=>{setPriceDiff(null);handleSave(r);}} onAdvance={()=>{setPriceDiff(null);handleSave(undefined,{asAdvance:true});}} listTotal={_lt?_lt.total:0} delivery={_lt?_lt.delivery:0} receivedNow={grandTotal}/>);})()}
+    {finalShort&&(<FinalShortModal shopId={shopId} info={finalShort} accent={shop.accent} canWaive={!!canDiscount&&!!onAdjustExpected} onCancel={()=>setFinalShort(null)} onSaveAnyway={()=>{setFinalShort(null);handleSave(undefined,{finalOk:true});}} onWaive={()=>{const _w=finalShort;setFinalShort(null);handleSave(undefined,{finalOk:true,waive:_w});}}/>)}
     {showNewCust&&(<div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}><div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.50)",backdropFilter:"blur(4px)"}}/><div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.25)",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",zIndex:81}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 22px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"12",borderRadius:"20px 20px 0 0"}}><h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>➕ New Customer</h3><button onClick={()=>setShowNewCust(false)} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button></div><div style={{padding:22}}><NewCustomerForm shop={shop} onSave={handleAddCustomer} onClose={()=>setShowNewCust(false)} customers={customerList}/></div></div></div>)}
 
     {/* ── Single column layout ── */}
@@ -18836,13 +18881,14 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 );
               })()}
               {/* ── Item rows ── */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 52px 76px 26px",gap:5,marginBottom:4}}>
-                <span style={{...lbl,marginBottom:0}}>Item</span><span style={{...lbl,marginBottom:0}}>Qty</span><span style={{...lbl,marginBottom:0}}>Price</span><span/>
+              <div style={{display:"grid",gridTemplateColumns:isPriceShop(shopId)?"1fr 52px 62px 76px 26px":"1fr 52px 76px 26px",gap:5,marginBottom:4}}>
+                <span style={{...lbl,marginBottom:0}}>Item</span><span style={{...lbl,marginBottom:0}}>Qty</span>{isPriceShop(shopId)&&<span style={{...lbl,marginBottom:0,textAlign:"center"}} title="Price-list price">List</span>}<span style={{...lbl,marginBottom:0}}>Price</span><span/>
               </div>
               {lines.map((line,idx)=>(
-                <div key={line.id} style={{display:"grid",gridTemplateColumns:"1fr 52px 76px 26px",gap:5,marginBottom:5,alignItems:"center"}}>
-                  <ItemSuggestInput inputRef={el=>{if(idx===0)rosieFieldRefs.current.item=el;}} value={line.name} shopId={shopId} onChange={v=>updateLine(line.id,"name",v)} onPick={en=>setLines(ls=>ls.map(l=>l.id===line.id?{...l,name:en.label,price:String(priceFor(en,shopId))}:l))} placeholder={"Item "+(idx+1)} style={{...inp,padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
+                <div key={line.id} style={{display:"grid",gridTemplateColumns:isPriceShop(shopId)?"1fr 52px 62px 76px 26px":"1fr 52px 76px 26px",gap:5,marginBottom:5,alignItems:"center"}}>
+                  <ItemSuggestInput inputRef={el=>{if(idx===0)rosieFieldRefs.current.item=el;}} value={line.name} shopId={shopId} onChange={v=>updateLine(line.id,"name",v)} onPick={en=>setLines(ls=>ls.map(l=>l.id===line.id?{...l,name:en.label}:l))} placeholder={"Item "+(idx+1)} style={{...inp,padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
                   <input type="number" onWheel={e=>e.target.blur()} value={line.qty} onChange={e=>updateLine(line.id,"qty",e.target.value)} style={{...inp,textAlign:"center",padding:"7px 5px"}} onFocus={fo} onBlur={bl}/>
+                  {isPriceShop(shopId)&&<ListPriceCell shopId={shopId} name={line.name} onUse={p=>updateLine(line.id,"price",String(p))}/>}
                   <input ref={el=>{if(idx===0)rosieFieldRefs.current.price=el;}} type="number" onWheel={e=>e.target.blur()} value={line.price} onChange={e=>updateLine(line.id,"price",e.target.value)} placeholder="0.00" style={{...inp,textAlign:"right",padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
                   <button type="button" onClick={()=>removeLine(line.id)} style={{width:26,height:32,borderRadius:7,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
                   <PriceHint shopId={shopId} name={line.name} price={line.price} hide={(form.paymentType||"FULL")!=="FULL"||Number(form.taxRate)>0}/>
@@ -18941,6 +18987,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
           <p style={{margin:"4px 0 0",fontSize:11,color:"#92400e"}}>
             Total amount across all instalments. Used to calculate balance.
           </p>
+          {(()=>{const _lt=isPriceShop(shopId)?listTotalForLines(lines.filter(l=>l.name.trim()),shopId):null;return _lt?(<p style={{margin:"6px 0 0",fontSize:11.5,fontWeight:700,color:"#166534"}}>Price list total: {shop.symbol}{_lt.total.toLocaleString()}{_lt.delivery?" (incl. "+shop.symbol+_lt.delivery+" delivery)":""} <button type="button" onClick={()=>set("expectedTotal",String(_lt.total))} style={{marginLeft:6,padding:"2px 10px",borderRadius:999,border:"1px solid #86efac",background:"#f0fdf4",color:"#166534",fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>Use</button></p>):null;})()}
         </div>
       )}
               <div style={{marginTop:7}}><label style={lbl}>Remarks</label><input value={form.remarks} onChange={e=>set("remarks",e.target.value)} placeholder="Notes…" style={inp} onFocus={fo} onBlur={bl}/></div>

@@ -91,7 +91,21 @@ export const PriceHint = ({ shopId, name, price, hide }) => {
   if (exp == null) return <div style={{ ...base, color: "#64748b", background: "#f1f5f9" }}>Not sold in the UK (N/A on the price list)</div>;
   const pr = parseFloat(price);
   if (!(pr > 0) || Math.abs(pr - exp) <= 0.5) return null;
-  return <div style={{ ...base, color: "#b45309", background: "#fffbeb", border: "1px solid #fde68a" }}>⚠ List price {money(shopId, exp)} · you entered {money(shopId, pr)} ({pr < exp ? "−" : "+"}{money(shopId, Math.abs(pr - exp))})</div>;
+  if (pr < exp) return <div style={{ ...base, color: "#1d4ed8", background: "#eff6ff", border: "1px solid #bfdbfe" }}>Below the list price by {money(shopId, exp - pr)} — on Save you'll be asked if this is an Advance</div>;
+  return <div style={{ ...base, color: "#b45309", background: "#fffbeb", border: "1px solid #fde68a" }}>⚠ List price {money(shopId, exp)} · you entered {money(shopId, pr)} (+{money(shopId, pr - exp)})</div>;
+};
+
+/* ── Read-only "List" cell beside the Price box: the price-list price for the picked item.
+   Click it to copy it into the Price box (for a full payment). ─────────────── */
+export const ListPriceCell = ({ shopId, name, onUse }) => {
+  const en = isPriceShop(shopId) ? matchEntry(name) : null;
+  const p = en ? priceFor(en, shopId) : null;
+  const base = { boxSizing: "border-box", width: "100%", padding: "7px 4px", borderRadius: 9, fontSize: 12, fontWeight: 800, textAlign: "center", fontFamily: "DM Mono, monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" };
+  if (p == null) return <div title={en ? "Not sold in the UK" : "Not on the price list"} style={{ ...base, background: "#f8fafc", border: "1px dashed #e2e8f0", color: "#cbd5e1" }}>{en ? "N/A" : "—"}</div>;
+  return (
+    <button type="button" onClick={() => onUse && onUse(p)} title="Price-list price — click to use it as the price"
+      style={{ ...base, background: "#f0fdf4", border: "1px solid #bbf7d0", color: "#166534", cursor: "pointer" }}>{Number(p).toLocaleString(shopId === "ros-india" ? "en-IN" : "en-GB")}</button>
+  );
 };
 
 /* ── "Price differs from the list" — a reason is required ─────────────────── */
@@ -100,11 +114,48 @@ const REASONS = ["Festival / special offer", "Repeat customer discount", "Damage
 export const priceNoteText = (shopId, mismatches, reason) =>
   "Price note — " + mismatches.map(m => `${m.label}: list ${money(shopId, m.expected)}, sold ${money(shopId, m.entered)}`).join("; ") + " (" + reason + ")";
 
-export const PriceDiffModal = ({ shopId, mismatches, onCancel, onConfirm, accent = "#0f172a" }) => {
+export const PriceDiffModal = ({ shopId, mismatches, onCancel, onConfirm, onAdvance, listTotal, receivedNow, delivery, accent = "#0f172a" }) => {
+  const canAdvance = !!onAdvance && mismatches.some(m => m.diff < 0);
+  const [step, setStep] = useState(canAdvance ? "advance" : "reason");
   const [sel, setSel] = useState("");
   const [other, setOther] = useState("");
   const reason = sel === "Other" ? other.trim() : sel;
   const ok = !!reason;
+  if (step === "advance") {
+    const bal = (listTotal || 0) - (receivedNow || 0);
+    return (
+      <div style={{ position: "fixed", inset: 0, zIndex: 500, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div style={{ background: "white", borderRadius: 16, padding: 22, maxWidth: 440, width: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 30px 70px rgba(0,0,0,0.4)" }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: "#1d4ed8", marginBottom: 4 }}>Is this an Advance payment?</div>
+          <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>The amount entered is lower than the price list ({PRICE_LIST_EFFECTIVE}).</div>
+          <div style={{ border: "1px solid #bfdbfe", background: "#eff6ff", borderRadius: 10, marginBottom: 12 }}>
+            {mismatches.map((m, i) => (
+              <div key={i} style={{ padding: "9px 12px", borderTop: i ? "1px solid #bfdbfe" : "none", fontSize: 12.5 }}>
+                <div style={{ fontWeight: 800, color: "#0f172a" }}>{m.label}{m.qty > 1 ? " × " + m.qty : ""}</div>
+                <div style={{ color: "#475569", marginTop: 2 }}>List <b>{money(shopId, m.expected)}</b> · Entered <b>{money(shopId, m.entered)}</b></div>
+              </div>
+            ))}
+          </div>
+          {listTotal > 0 && (
+            <div style={{ fontSize: 12.5, color: "#334155", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 10, padding: "9px 12px", marginBottom: 14, lineHeight: 1.7 }}>
+              Price list total: <b>{money(shopId, listTotal)}</b>{delivery ? " (includes " + money(shopId, delivery) + " delivery)" : ""}<br />
+              Received now: <b>{money(shopId, receivedNow || 0)}</b><br />
+              Balance to come: <b style={{ color: "#b45309" }}>{money(shopId, Math.max(bal, 0))}</b>
+            </div>
+          )}
+          <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>If <b>Yes</b>, this entry is saved as an <b>Advance</b> with the price-list total as its Expected Total, so the Final payment can be checked against it.</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <button type="button" onClick={onAdvance}
+              style={{ padding: "11px 0", borderRadius: 10, border: "none", background: accent, color: "white", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Yes — it's an Advance</button>
+            <button type="button" onClick={() => setStep("reason")}
+              style={{ padding: "11px 0", borderRadius: 10, border: "1px solid #e2e8f0", background: "white", color: "#374151", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>No — customer paid in full at a different price</button>
+            <button type="button" onClick={onCancel}
+              style={{ padding: "9px 0", borderRadius: 10, border: "none", background: "transparent", color: "#64748b", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>← Go back &amp; fix</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 500, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div style={{ background: "white", borderRadius: 16, padding: 22, maxWidth: 440, width: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 30px 70px rgba(0,0,0,0.4)" }}>
@@ -143,6 +194,32 @@ export const PriceDiffModal = ({ shopId, mismatches, onCancel, onConfirm, accent
     </div>
   );
 };
+
+/* ── Final payment leaves the deal short of the price-list / Expected total ───
+   canWaive (admins only) shows "Add discount to match" which closes the gap as an admin discount. ── */
+export const FinalShortModal = ({ shopId, info, canWaive, onCancel, onSaveAnyway, onWaive, accent = "#0f172a" }) => (
+  <div style={{ position: "fixed", inset: 0, zIndex: 500, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div style={{ background: "white", borderRadius: 16, padding: 22, maxWidth: 440, width: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 30px 70px rgba(0,0,0,0.4)" }}>
+      <div style={{ fontSize: 15, fontWeight: 800, color: "#b91c1c", marginBottom: 4 }}>⚠️ Total received is short of the price list</div>
+      <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>This Final payment is linked to an Advance{info.parts > 0 ? " and " + info.parts + " other payment" + (info.parts > 1 ? "s" : "") : ""} for the same customer.</div>
+      <div style={{ fontSize: 13, color: "#334155", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 10, padding: "10px 12px", marginBottom: 14, lineHeight: 1.8 }}>
+        {info.source === "list" ? "Price list total" : "Expected total"}: <b>{money(shopId, info.expected)}</b><br />
+        Received so far (incl. this payment): <b>{money(shopId, info.received)}</b><br />
+        Short by: <b style={{ color: "#b91c1c" }}>{money(shopId, info.short)}</b>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <button type="button" onClick={onCancel}
+          style={{ padding: "11px 0", borderRadius: 10, border: "none", background: accent, color: "white", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>← Go back &amp; correct the amount</button>
+        {canWaive && (
+          <button type="button" onClick={onWaive}
+            style={{ padding: "11px 0", borderRadius: 10, border: "1px solid #86efac", background: "#f0fdf4", color: "#166534", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Admin: add {money(shopId, info.short)} discount to match the price list</button>
+        )}
+        <button type="button" onClick={onSaveAnyway}
+          style={{ padding: "10px 0", borderRadius: 10, border: "1px solid #e2e8f0", background: "white", color: "#64748b", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>Save anyway — balance stays open</button>
+      </div>
+    </div>
+  </div>
+);
 
 /* ── The Price List tab ───────────────────────────────────────────────────── */
 export default function PriceListPanel({ shop, shopId }) {

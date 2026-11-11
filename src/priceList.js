@@ -157,6 +157,23 @@ export const shortfallForSales = (members, shopId) => {
   return { listTotal, received, short: listTotal - received, delivery };
 };
 
+/* What the price list says a set of sale lines should come to: lines that match the list at list price,
+   other (custom) lines at their entered price, plus the £7 delivery once for Hairlines UK.
+   Returns null when no line matches the list (nothing to compare with). */
+export const listTotalForLines = (lines, shopId) => {
+  if (!isPriceShop(shopId)) return null;
+  let total = 0, matched = 0;
+  (Array.isArray(lines) ? lines : []).forEach(l => {
+    if (!l || !String(l.name || "").trim()) return;
+    const q = parseFloat(l.qty) || 1;
+    const e = matchEntry(l.name), p = e ? priceFor(e, shopId) : null;
+    if (p != null) { total += p * q; matched++; } else total += (parseFloat(l.price) || 0) * q;
+  });
+  if (!matched) return null;
+  const delivery = shopId === "ros-hairlines" ? UK_DELIVERY : 0;
+  return { total: total + delivery, delivery };
+};
+
 export const shortfallMessage = (shopId, sf, customer) => {
   const m = (n) => priceSymbol(shopId) + Number(n).toLocaleString(shopId === "ros-india" ? "en-IN" : "en-GB");
   return "⚠️ Amount not fully received" + (customer ? " — " + customer : "") + "\n\n" +
