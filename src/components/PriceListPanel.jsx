@@ -91,8 +91,7 @@ export const PriceHint = ({ shopId, name, price, hide }) => {
   if (exp == null) return <div style={{ ...base, color: "#64748b", background: "#f1f5f9" }}>Not sold in the UK (N/A on the price list)</div>;
   const pr = parseFloat(price);
   if (!(pr > 0) || Math.abs(pr - exp) <= 0.5) return null;
-  if (pr < exp) return <div style={{ ...base, color: "#1d4ed8", background: "#eff6ff", border: "1px solid #bfdbfe" }}>Below the list price by {money(shopId, exp - pr)} — on Save you'll be asked if this is an Advance</div>;
-  return <div style={{ ...base, color: "#b45309", background: "#fffbeb", border: "1px solid #fde68a" }}>⚠ List price {money(shopId, exp)} · you entered {money(shopId, pr)} (+{money(shopId, pr - exp)})</div>;
+  return <div style={{ ...base, color: "#b45309", background: "#fffbeb", border: "1px solid #fde68a" }}>⚠ List price {money(shopId, exp)} · you entered {money(shopId, pr)} ({pr < exp ? "−" : "+"}{money(shopId, Math.abs(pr - exp))})</div>;
 };
 
 /* ── Read-only "List" cell beside the Price box: the price-list price for the picked item.
@@ -194,6 +193,28 @@ export const PriceDiffModal = ({ shopId, mismatches, onCancel, onConfirm, onAdva
     </div>
   );
 };
+
+/* ── Received is less than the sale total: is this an Advance? ───────────── */
+export const PartPaidModal = ({ shopId, info, onCancel, onAdvance, accent = "#0f172a" }) => (
+  <div style={{ position: "fixed", inset: 0, zIndex: 500, background: "rgba(15,23,42,0.55)", display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+    <div style={{ background: "white", borderRadius: 16, padding: 22, maxWidth: 420, width: "100%", maxHeight: "90vh", overflowY: "auto", boxShadow: "0 30px 70px rgba(0,0,0,0.4)" }}>
+      <div style={{ fontSize: 15, fontWeight: 800, color: "#1d4ed8", marginBottom: 4 }}>Is this an Advance payment?</div>
+      <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>The amount received is less than the sale total.</div>
+      <div style={{ fontSize: 13, color: "#334155", background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 10, padding: "10px 12px", marginBottom: 12, lineHeight: 1.8 }}>
+        Sale total: <b>{money(shopId, info.saleTotal)}</b><br />
+        Received now: <b>{money(shopId, info.received)}</b><br />
+        Balance due: <b style={{ color: "#b45309" }}>{money(shopId, info.balance)}</b>
+      </div>
+      <div style={{ fontSize: 12, color: "#64748b", marginBottom: 12 }}>If <b>Yes</b>, this is saved as an <b>Advance</b> for {money(shopId, info.received)} with the sale total as its Expected Total, so the Part / Final payments can be checked against it.</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <button type="button" onClick={onAdvance}
+          style={{ padding: "11px 0", borderRadius: 10, border: "none", background: accent, color: "white", fontWeight: 800, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>Yes — it's an Advance</button>
+        <button type="button" onClick={onCancel}
+          style={{ padding: "10px 0", borderRadius: 10, border: "1px solid #e2e8f0", background: "white", color: "#374151", fontWeight: 700, fontSize: 13, cursor: "pointer", fontFamily: "inherit" }}>← No — go back &amp; fix the amounts</button>
+      </div>
+    </div>
+  </div>
+);
 
 /* ── Final payment leaves the deal short of the price-list / Expected total ───
    canWaive (admins only) shows "Add discount to match" which closes the gap as an admin discount. ── */

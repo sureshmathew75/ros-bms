@@ -10,7 +10,8 @@ import ROS_INDIA_LOGO from "./ros-india-logo.png";   // registered-brand ROS IND
 import InvoicesPanel from "./components/InvoicesPanel";
 import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
-import PriceListPanel, { ItemSuggestInput, PriceDiffModal, PriceHint, priceNoteText, ListPriceCell, FinalShortModal } from "./components/PriceListPanel";
+import PriceListPanel, { ItemSuggestInput, PriceDiffModal, PriceHint, priceNoteText, FinalShortModal, PartPaidModal } from "./components/PriceListPanel";
+import SaleNotebook from "./components/SaleNotebook";
 import { isPriceShop, priceFor, matchEntry, priceMismatches, listTotalForLines } from "./priceList";
 import PurchasesPanel from "./components/PurchasesPanel";
 import ReportsPanel from "./components/ReportsPanel";
@@ -18559,6 +18560,7 @@ const AddTabInput=({onAdd,accent})=>{
 const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,onDeleteShopItem,customers=[],sales=[],isSuperadmin=false,canDiscount=false,onAdjustExpected})=>{
   const rosieFieldRefs=useRef({});
   const [priceDiff,setPriceDiff]=useState(null); // line prices that differ from the price list — Advance? / reason is asked before saving
+  const [partPaidAsk,setPartPaidAsk]=useState(null); // received < sale total: "Is this an Advance?"
   const [finalShort,setFinalShort]=useState(null); // Final payment leaves the deal short of the Expected total / price list
   const [paymentTypeAcked,setPaymentTypeAcked]=useState(false);
   const [showAddressModal,setShowAddressModal]=useState(false);
@@ -18669,10 +18671,21 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const gstAmt=parseFloat((preGstTotal*taxRate).toFixed(2));
   const grandTotal=parseFloat((preGstTotal+gstAmt).toFixed(2));
 
-  // Final payment: is the deal (Advance + any Part payments + this Final) still short of the Expected total
-  // — or, when the Advance has none, of the price-list total of its items?
-  const finalShortInfo=()=>{
-    const virt={id:"__new__",customer:form.customer,phone:form.contact,contact:form.contact,date:form.date,paymentType:"FINAL",invoiceNo:form.invoiceNo||"~",amount:grandTotal};
+  /* ── Notebook figures (ROS India / Hairlines UK) ──
+     Row Received = what the customer paid for that item (fills itself in until you type). Sale total = items + other
+     charges − discount (+GST). Balance due = Sale total − Received. For Part / Final entries linked to an Advance the
+     balance is worked out from the Advance's Expected total and everything received so far. */
+  const _ps=isPriceShop(shopId);
+  const _filledIdx=lines.map((l,i)=>(l.name.trim()||parseFloat(l.price)>0)?i:-1).filter(i=>i>=0);
+  const _lastIdx=_filledIdx.length?_filledIdx[_filledIdx.length-1]:-1;
+  const rowAmts=lines.map(l=>parseFloat(((parseFloat(l.qty)||0)*(parseFloat(l.price)||0)).toFixed(2)));
+  const _allUntouched=lines.every(l=>l.recv===undefined);
+  const recvAmts=lines.map((l,i)=>l.recv!==undefined?(parseFloat(l.recv)||0):((_allUntouched&&i===_lastIdx)?parseFloat((rowAmts[i]+(grandTotal-itemsSubtotal)).toFixed(2)):rowAmts[i]));
+  const receivedTotal=parseFloat(recvAmts.reduce((a,x)=>a+x,0).toFixed(2));
+  // The Advance this Part / Final entry belongs to (same customer + phone), if any.
+  const dealInfo=()=>{
+    if(!_ps||!(form.paymentType==="PART"||form.paymentType==="FINAL")) return null;
+    const virt={id:"__new__",customer:form.customer,phone:form.contact,contact:form.contact,date:form.date,paymentType:form.paymentType,invoiceNo:form.invoiceNo||"~",amount:receivedTotal};
     const all=[...(sales||[]),virt];
     const ids=findInstalmentGroupIds(virt,all);
     if(ids.length<2) return null;
@@ -18682,10 +18695,25 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     let expected=Number(adv.expectedTotal)||0, source="expected";
     if(!(expected>0)){const lt=listTotalForLines(adv.saleLines,shopId);expected=lt?lt.total:0;source="list";}
     if(!(expected>0)) return null;
-    const received=group.reduce((a,x)=>a+(Number(x.amount)||0),0);
-    const short=expected-received;
+    const prior=group.filter(x=>x.id!=="__new__").reduce((a,x)=>a+(Number(x.amount)||0),0);
+    return {expected,source,prior,advanceId:adv.id,parts:group.length-2};
+  };
+  const _deal=dealInfo();
+  const _calc=_deal
+    ?{mode:"deal",expected:_deal.expected,priorReceived:_deal.prior,receivedNow:receivedTotal,balance:parseFloat((_deal.expected-_deal.prior-receivedTotal).toFixed(2)),advLabel:_deal.advanceId}
+    :{mode:"normal",itemsTotal:itemsSubtotal,gstAmt,saleTotal:grandTotal,receivedNow:receivedTotal,balance:parseFloat((grandTotal-receivedTotal).toFixed(2))};
+  const _instMode=_ps&&(form.paymentType==="PART"||form.paymentType==="FINAL");
+  const _partPaid=_ps&&!_instMode&&_calc.balance>0.5;      // first payment on a bigger sale
+  const _recvMode=_instMode||_partPaid;                    // saved Amount = money received (as Advance / Part / Final always were)
+  const entryAmount=(_ps&&_recvMode)?receivedTotal:grandTotal;
+  // Final payment: is the deal (Advance + any Part payments + this Final) still short of the Expected total
+  // — or, when the Advance has none, of the price-list total of its items?
+  const finalShortInfo=()=>{
+    if(!_deal) return null;
+    const received=_deal.prior+receivedTotal;
+    const short=_deal.expected-received;
     if(short<=0.5) return null;
-    return {expected,received,short,source,advanceId:adv.id,parts:group.length-2};
+    return {expected:_deal.expected,received,short,source:_deal.source,advanceId:_deal.advanceId,parts:_deal.parts};
   };
   const handleSave=(reasonArg,opt)=>{
     const priceReason=typeof reasonArg==="string"?reasonArg:null;
@@ -18710,18 +18738,40 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     const purAmt=parseFloat(form.purAmount)||0;
     const filledLines=lines.filter(l=>l.name.trim()||(parseFloat(l.price)>0));
     // Price list check (ROS India / ROS Hairlines UK): a line priced differently from the list needs a reason.
-    const _mism=(isPriceShop(shopId)&&!o.asAdvance&&(form.paymentType||"FULL")==="FULL"&&!(Number(form.taxRate)>0))?priceMismatches(filledLines,shopId):[];
+    const _mism=(_ps&&(form.paymentType||"FULL")==="FULL"&&!(Number(form.taxRate)>0))?priceMismatches(filledLines,shopId):[];
     if(_mism.length>0&&!priceReason){setPriceDiff(_mism);return;}
+    if(_ps){
+      if(_calc.balance<-0.5){showAlert("The amount received is more than the "+(_deal?"balance of this sale":"sale total")+" ("+shop.symbol+Math.abs(_calc.balance).toLocaleString()+" too much). Please check the Received amounts.");return;}
+      // Received is less than the sale total: ask if it is an Advance (staff can also pick Advance / Part / Final themselves).
+      if(_partPaid&&(form.paymentType||"FULL")==="FULL"&&!o.asAdvance){setPartPaidAsk({reason:priceReason});return;}
+    }
     // Final payment (ROS India / Hairlines UK): alert when the deal is still short of the price list / Expected total.
-    if(isPriceShop(shopId)&&form.paymentType==="FINAL"&&!(Number(form.taxRate)>0)&&!o.finalOk){
+    if(_ps&&form.paymentType==="FINAL"&&!o.finalOk){
       const _fs=finalShortInfo();
       if(_fs){setFinalShort(_fs);return;}
     }
     let _remarksOut=(_mism.length>0&&priceReason)?[form.remarks,priceNoteText(shopId,_mism,priceReason)].filter(x=>x&&String(x).trim()).join(" | "):form.remarks;
-    // "Yes — it's an Advance": save as an Advance, Expected Total = the price-list total of the items.
+    // "Yes — it's an Advance": save as an Advance; its Expected Total is the sale total (unless staff typed one).
     const _payType=o.asAdvance?"ADVANCE":form.paymentType;
     let _expOut=form.expectedTotal;
-    if(o.asAdvance){const _lt=listTotalForLines(filledLines,shopId);if(_lt)_expOut=String(_lt.total);}
+    if(_ps&&_partPaid&&_payType==="ADVANCE"&&!(Number(_expOut)>0)) _expOut=String(grandTotal);
+    // Part-paid entries are saved the way Advance / Part / Final always were: Amount = money received, no separate
+    // discount / other-charges / GST on the entry (the breakdown goes into the remarks), so reports, instalment
+    // groups, the dispatch alert and invoices keep working unchanged.
+    const _m0=n=>shop.symbol+Number(n).toLocaleString();
+    if(_ps&&_partPaid){
+      const _bits=[_m0(itemsSubtotal)+" items"];
+      if(otherChargesAmt) _bits.push("+ "+_m0(otherChargesAmt)+" other charges");
+      if(discountAmt) _bits.push("− "+_m0(discountAmt)+" discount");
+      if(gstAmt) _bits.push("+ "+_m0(gstAmt)+" GST");
+      _remarksOut=[_remarksOut,"Sale total "+_m0(grandTotal)+" ("+_bits.join(" ")+") — received "+_m0(receivedTotal)+", balance "+_m0(grandTotal-receivedTotal)].filter(x=>x&&String(x).trim()).join(" | ");
+    }
+    const _outLines=filledLines.map(l=>{
+      const _i=lines.indexOf(l),_q=parseFloat(l.qty)||0;
+      const base={id:l.id,name:l.name,qty:l.qty,price:l.price};
+      if(_ps&&_recvMode&&_q>0) base.price=String(parseFloat((recvAmts[_i]/_q).toFixed(4)));
+      return base;
+    });
     // Admin discount to match the price list: the Advance's Expected Total is lowered to what was actually received.
     if(o.waive){
       const _m=n=>shop.symbol+Number(n).toLocaleString();
@@ -18731,7 +18781,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     }
     const combinedItem=filledLines.map(l=>`${l.name}(x${l.qty})`).join(", ")||"Sale";
     const combinedQty=filledLines.reduce((s,l)=>s+(parseFloat(l.qty)||0),0)||1;
-    onSave({...form,paymentType:_payType,expectedTotal:_expOut,remarks:_remarksOut,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||"",dispatchFrom:form.dispatchFrom||""});
+    onSave({...form,paymentType:_payType,expectedTotal:_expOut,remarks:_remarksOut,item:combinedItem,qty:String(combinedQty),amount:entryAmount,saleLines:_outLines,discount:(_ps&&_recvMode)?0:discountAmt,otherCharges:(_ps&&_recvMode)?0:otherChargesAmt,taxRate:(_ps&&_recvMode)?0:form.taxRate,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||"",dispatchFrom:form.dispatchFrom||""});
   };
 
   const rosieFilledLines = lines.filter(l=>l.name.trim());
@@ -18751,7 +18801,8 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const rosieNudge = rosieAllDone ? "All set! Review and hit Save Sale when ready. ✅" : rosieSteps[rosieActiveIdx].label;
 
   return(<>
-    {priceDiff&&(()=>{const _lt=listTotalForLines(lines.filter(l=>l.name.trim()),shopId);return(<PriceDiffModal shopId={shopId} mismatches={priceDiff} accent={shop.accent} onCancel={()=>setPriceDiff(null)} onConfirm={(r)=>{setPriceDiff(null);handleSave(r);}} onAdvance={()=>{setPriceDiff(null);handleSave(undefined,{asAdvance:true});}} listTotal={_lt?_lt.total:0} delivery={_lt?_lt.delivery:0} receivedNow={grandTotal}/>);})()}
+    {priceDiff&&(<PriceDiffModal shopId={shopId} mismatches={priceDiff} accent={shop.accent} onCancel={()=>setPriceDiff(null)} onConfirm={(r)=>{setPriceDiff(null);handleSave(r);}}/>)}
+    {partPaidAsk&&(<PartPaidModal shopId={shopId} info={{saleTotal:grandTotal,received:receivedTotal,balance:_calc.balance}} accent={shop.accent} onCancel={()=>setPartPaidAsk(null)} onAdvance={()=>{const _r=partPaidAsk.reason;setPartPaidAsk(null);handleSave(_r||undefined,{asAdvance:true});}}/>)}
     {finalShort&&(<FinalShortModal shopId={shopId} info={finalShort} accent={shop.accent} canWaive={!!canDiscount&&!!onAdjustExpected} onCancel={()=>setFinalShort(null)} onSaveAnyway={()=>{setFinalShort(null);handleSave(undefined,{finalOk:true});}} onWaive={()=>{const _w=finalShort;setFinalShort(null);handleSave(undefined,{finalOk:true,waive:_w});}}/>)}
     {showNewCust&&(<div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}><div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.50)",backdropFilter:"blur(4px)"}}/><div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.25)",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",zIndex:81}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 22px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"12",borderRadius:"20px 20px 0 0"}}><h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>➕ New Customer</h3><button onClick={()=>setShowNewCust(false)} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button></div><div style={{padding:22}}><NewCustomerForm shop={shop} onSave={handleAddCustomer} onClose={()=>setShowNewCust(false)} customers={customerList}/></div></div></div>)}
 
@@ -18843,7 +18894,15 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             </div>
 
             {/* Items */}
-            <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
+            {_ps&&(<SaleNotebook shopId={shopId} shop={shop} lines={lines} rowAmts={rowAmts} recvAmts={recvAmts} showHint={(form.paymentType||"FULL")==="FULL"&&!(Number(form.taxRate)>0)} rosieRefs={rosieFieldRefs}
+              onName={(id,v)=>updateLine(id,"name",v)}
+              onPick={(id,en)=>setLines(ls=>ls.map(l=>l.id===id?{...l,name:en.label,price:String(priceFor(en,shopId))}:l))}
+              onQty={(id,v)=>updateLine(id,"qty",v)} onPrice={(id,v)=>updateLine(id,"price",v)} onRecv={(id,v)=>updateLine(id,"recv",v)}
+              onResetRecv={()=>setLines(ls=>ls.map(({recv,...r})=>r))}
+              onRemove={removeLine} onAdd={addLine}
+              calc={_calc} other={form.otherCharges} discount={form.discount} onOther={v=>set("otherCharges",v)} onDiscount={v=>set("discount",v)}
+              taxRate={form.taxRate} onTax={r=>set("taxRate",r)}/>)}
+            {!_ps&&(<div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🛍️ Items</p>
               {/* ── Quick-pick tab bar (replaced by price-list suggestions in India / Hairlines UK) ── */}
               {!isPriceShop(shopId)&&(()=>{
@@ -18895,17 +18954,17 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 </div>
               ))}
               <button type="button" onClick={addLine} style={{padding:"5px 12px",borderRadius:7,border:"1px dashed "+shop.accent+"55",background:shop.accentBg,color:shop.accentText,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>＋ Add Item</button>
-            </div>
+            </div>)}
 
             {/* Pricing */}
-            <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
+            {!_ps&&(<div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>💰 Pricing</p>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:8}}>
                 <div><label style={lbl}>Discount ({shop.symbol})</label><input type="number" onWheel={e=>e.target.blur()} value={form.discount} onChange={e=>set("discount",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/></div>
                 <div><label style={lbl}>Other Charges ({shop.symbol})</label><input type="number" onWheel={e=>e.target.blur()} value={form.otherCharges} onChange={e=>set("otherCharges",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/></div>
               </div>
               <div style={{display:"flex",gap:5}}>{[0,5,10,18,20].map(r=>(<button key={r} type="button" onClick={()=>set("taxRate",r)} style={{flex:1,padding:"5px 0",borderRadius:8,border:"2px solid "+(form.taxRate===r?shop.accent:"#e2e8f0"),background:form.taxRate===r?shop.accent:"white",color:form.taxRate===r?"white":"#374151",fontWeight:700,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{r}%</button>))}</div>
-            </div>
+            </div>)}
 
             {/* Payment & Delivery */}
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
@@ -19002,8 +19061,9 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
       <div style={{flexShrink:0,borderTop:"1px solid #f1f5f9",background:"white",padding:"10px 16px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div>
-            <p style={{margin:0,fontSize:10,color:"#94a3b8",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em"}}>Total</p>
-            <p style={{margin:0,fontSize:20,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace",letterSpacing:"-0.5px"}}>{shop.symbol}{grandTotal.toLocaleString()}</p>
+            <p style={{margin:0,fontSize:10,color:"#94a3b8",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em"}}>{_ps?"Received now":"Total"}</p>
+            <p style={{margin:0,fontSize:20,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace",letterSpacing:"-0.5px"}}>{shop.symbol}{(_ps?receivedTotal:grandTotal).toLocaleString()}</p>
+            {_ps&&_calc.balance>0.5&&(<p style={{margin:"1px 0 0",fontSize:11,fontWeight:800,color:"#b45309"}}>Balance due {shop.symbol}{_calc.balance.toLocaleString()}</p>)}
           </div>
           <div style={{display:"flex",gap:8}}>
             <button onClick={onClose} style={{padding:"10px 18px",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
