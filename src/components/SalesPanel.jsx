@@ -4,6 +4,7 @@ import { showAlert, showConfirm } from "./PopupHost";
 import { dbLoadDispatchLog, dbSaveDispatchEntry } from "../db";
 import { BankBadge, BankIcon, BankMenu } from "./BankLogos";
 import { shortfallForSales, shortfallMessage } from "../priceList";
+import { returnPolicySection } from "../despatchMessage";
 /* ─────────────────────────────────────────────────────────────────────────
    SALES PANEL
    Period definitions:
@@ -948,7 +949,7 @@ Please note that concerns reported after this notification period may be more di
 
 ━━━━━━━━━━━━━━━━━━
 
-*📦 IF YOUR PARCEL IS RETURNED TO US*
+${returnPolicySection(shop?.id)}*📦 IF YOUR PARCEL IS RETURNED TO US*
 
 If a parcel is returned to us because of **repeated unsuccessful delivery attempts**, failure to receive the parcel, an incorrect/incomplete address, **non-payment of import charges or any levy on the parcel**, or other circumstances within the recipient's control, the responsibility for the resulting return rests with the recipient.
 
