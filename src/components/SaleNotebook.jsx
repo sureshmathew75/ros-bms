@@ -14,6 +14,23 @@ const MONO = "DM Mono, monospace";
 
 const num = (shopId, n) => Number(n || 0).toLocaleString(shopId === "ros-india" ? "en-IN" : "en-GB", { maximumFractionDigits: 2 });
 
+/* defined at module level on purpose: components created inside SaleNotebook would be re-created on every keystroke and the box would lose focus */
+const Leader = () => <span style={{ flex: 1, borderBottom: "1.5px dotted #b8c4d6", margin: "0 8px 4px", minWidth: 12 }} />;
+const Line = ({ label, value, bold, color, children }) => (
+  <div style={{ display: "flex", alignItems: "flex-end", padding: "5px 0", fontSize: bold ? 14 : 13, fontWeight: bold ? 800 : 600, color: color || "#334155" }}>
+    <span style={{ whiteSpace: "nowrap" }}>{label}</span><Leader />
+    {children || <span style={{ fontFamily: MONO, fontWeight: 800, color: color || INK }}>{value}</span>}
+  </div>
+);
+const MoneyInput = ({ value, onChange, placeholder, sym, accent }) => (
+  <span style={{ display: "inline-flex", alignItems: "center", gap: 3, borderBottom: "1.5px solid #94a3b8" }}>
+    <span style={{ fontFamily: MONO, fontSize: 12, color: "#64748b" }}>{sym}</span>
+    <input type="number" onWheel={(e) => e.target.blur()} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder || "0"}
+      onFocus={(e) => (e.target.parentNode.style.borderBottomColor = accent)} onBlur={(e) => (e.target.parentNode.style.borderBottomColor = "#94a3b8")}
+      style={{ width: 92, border: "none", outline: "none", background: "transparent", textAlign: "right", fontFamily: MONO, fontWeight: 800, fontSize: 13, color: INK, padding: "2px 0" }} />
+  </span>
+);
+
 export default function SaleNotebook({
   shopId, shop, lines, rowAmts, recvAmts, showHint, rosieRefs,
   onName, onPick, onQty, onPrice, onRecv, onFillRecv, onRemove, onAdd,
@@ -34,22 +51,6 @@ export default function SaleNotebook({
   const bal0 = Math.abs(balance) <= 0.5;
   const balColor = bal0 ? "#15803d" : balance > 0 ? "#b45309" : "#b91c1c";
   const balBg = bal0 ? "#f0fdf4" : balance > 0 ? "#fffbeb" : "#fef2f2";
-
-  const Leader = () => <span style={{ flex: 1, borderBottom: "1.5px dotted #b8c4d6", margin: "0 8px 4px", minWidth: 12 }} />;
-  const Line = ({ label, value, bold, color, children }) => (
-    <div style={{ display: "flex", alignItems: "flex-end", padding: "5px 0", fontSize: bold ? 14 : 13, fontWeight: bold ? 800 : 600, color: color || "#334155" }}>
-      <span style={{ whiteSpace: "nowrap" }}>{label}</span><Leader />
-      {children || <span style={{ fontFamily: MONO, fontWeight: 800, color: color || INK }}>{value}</span>}
-    </div>
-  );
-  const MoneyInput = ({ value, onChange, placeholder }) => (
-    <span style={{ display: "inline-flex", alignItems: "center", gap: 3, borderBottom: "1.5px solid #94a3b8" }}>
-      <span style={{ fontFamily: MONO, fontSize: 12, color: "#64748b" }}>{sym}</span>
-      <input type="number" onWheel={(e) => e.target.blur()} value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder || "0"}
-        onFocus={(e) => (e.target.parentNode.style.borderBottomColor = accent)} onBlur={(e) => (e.target.parentNode.style.borderBottomColor = "#94a3b8")}
-        style={{ width: 92, border: "none", outline: "none", background: "transparent", textAlign: "right", fontFamily: MONO, fontWeight: 800, fontSize: 13, color: INK, padding: "2px 0" }} />
-    </span>
-  );
 
   return (
     <div style={{ position: "relative", background: PAPER, border: "1px solid #e6dcc0", borderRadius: 12, padding: "12px 14px 14px 42px", marginBottom: 8, overflow: "hidden",
@@ -85,7 +86,7 @@ export default function SaleNotebook({
               onChange={(e) => onPrice(line.id, e.target.value)} placeholder="0"
               style={field({ textAlign: "right", fontFamily: MONO, fontWeight: 700 })} onFocus={fo} onBlur={bl} />
             <input type="number" onWheel={(e) => e.target.blur()} value={line.recv === undefined ? "" : line.recv}
-              onChange={(e) => onRecv(line.id, e.target.value)} placeholder="enter"
+              onChange={(e) => onRecv(line.id, e.target.value)} placeholder=""
               title="Type the amount actually received for this item"
               style={field({ textAlign: "right", fontFamily: MONO, fontWeight: 800, color: short ? "#b45309" : INK, background: "#fffbea", borderBottom: "1.5px solid #e9d98a" })} onFocus={fo} onBlur={blR} />
             <button type="button" onClick={() => onRemove(line.id)} title="Remove item"
@@ -109,8 +110,8 @@ export default function SaleNotebook({
         ) : (
           <>
             <Line label="Items total" value={sym + num(shopId, calc.itemsTotal)} />
-            <Line label="+ Other charges"><MoneyInput value={other} onChange={onOther} /></Line>
-            <Line label="− Discount"><MoneyInput value={discount} onChange={onDiscount} /></Line>
+            <Line label="+ Other charges"><MoneyInput sym={sym} accent={accent} value={other} onChange={onOther} /></Line>
+            <Line label="− Discount"><MoneyInput sym={sym} accent={accent} value={discount} onChange={onDiscount} /></Line>
             <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 0" }}>
               <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b", marginRight: 4 }}>GST</span>
               {[0, 5, 10, 18, 20].map((r) => (
