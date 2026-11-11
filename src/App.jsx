@@ -18672,15 +18672,14 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const grandTotal=parseFloat((preGstTotal+gstAmt).toFixed(2));
 
   /* ── Notebook figures (ROS India / Hairlines UK) ──
-     Row Received = what the customer paid for that item (fills itself in until you type). Sale total = items + other
+     Row Received = what the customer actually paid for that item (typed by staff). Sale total = items + other
      charges − discount (+GST). Balance due = Sale total − Received. For Part / Final entries linked to an Advance the
      balance is worked out from the Advance's Expected total and everything received so far. */
   const _ps=isPriceShop(shopId);
   const _filledIdx=lines.map((l,i)=>(l.name.trim()||parseFloat(l.price)>0)?i:-1).filter(i=>i>=0);
   const _lastIdx=_filledIdx.length?_filledIdx[_filledIdx.length-1]:-1;
   const rowAmts=lines.map(l=>parseFloat(((parseFloat(l.qty)||0)*(parseFloat(l.price)||0)).toFixed(2)));
-  const _allUntouched=lines.every(l=>l.recv===undefined);
-  const recvAmts=lines.map((l,i)=>l.recv!==undefined?(parseFloat(l.recv)||0):((_allUntouched&&i===_lastIdx)?parseFloat((rowAmts[i]+(grandTotal-itemsSubtotal)).toFixed(2)):rowAmts[i]));
+  const recvAmts=lines.map(l=>parseFloat(l.recv)||0);   // staff always type what was actually received — nothing is pre-filled
   const receivedTotal=parseFloat(recvAmts.reduce((a,x)=>a+x,0).toFixed(2));
   // The Advance this Part / Final entry belongs to (same customer + phone), if any.
   const dealInfo=()=>{
@@ -18737,6 +18736,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     }
     const purAmt=parseFloat(form.purAmount)||0;
     const filledLines=lines.filter(l=>l.name.trim()||(parseFloat(l.price)>0));
+    if(_ps&&!(receivedTotal>0)){showAlert("Please enter the amount received (the Received box on the item row).");return;}
     // Price list check (ROS India / ROS Hairlines UK): a line priced differently from the list needs a reason.
     const _mism=(_ps&&(form.paymentType||"FULL")==="FULL"&&!(Number(form.taxRate)>0))?priceMismatches(filledLines,shopId):[];
     if(_mism.length>0&&!priceReason){setPriceDiff(_mism);return;}
@@ -18898,7 +18898,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               onName={(id,v)=>updateLine(id,"name",v)}
               onPick={(id,en)=>setLines(ls=>ls.map(l=>l.id===id?{...l,name:en.label,price:String(priceFor(en,shopId))}:l))}
               onQty={(id,v)=>updateLine(id,"qty",v)} onPrice={(id,v)=>updateLine(id,"price",v)} onRecv={(id,v)=>updateLine(id,"recv",v)}
-              onResetRecv={()=>setLines(ls=>ls.map(({recv,...r})=>r))}
+              onFillRecv={()=>setLines(ls=>{const _ix=ls.map((l,i)=>(l.name.trim()||parseFloat(l.price)>0)?i:-1).filter(i=>i>=0);const _last=_ix.length?_ix[_ix.length-1]:-1;return ls.map((l,i)=>{const _a=(parseFloat(l.qty)||0)*(parseFloat(l.price)||0);const _v=i===_last?_a+(grandTotal-itemsSubtotal):_a;return {...l,recv:_v?String(parseFloat(_v.toFixed(2))):""};});})}
               onRemove={removeLine} onAdd={addLine}
               calc={_calc} other={form.otherCharges} discount={form.discount} onOther={v=>set("otherCharges",v)} onDiscount={v=>set("discount",v)}
               taxRate={form.taxRate} onTax={r=>set("taxRate",r)}/>)}

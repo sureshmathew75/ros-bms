@@ -16,7 +16,7 @@ const num = (shopId, n) => Number(n || 0).toLocaleString(shopId === "ros-india" 
 
 export default function SaleNotebook({
   shopId, shop, lines, rowAmts, recvAmts, showHint, rosieRefs,
-  onName, onPick, onQty, onPrice, onRecv, onResetRecv, onRemove, onAdd,
+  onName, onPick, onQty, onPrice, onRecv, onFillRecv, onRemove, onAdd,
   calc, other, discount, onOther, onDiscount, taxRate, onTax,
 }) {
   const accent = shop.accent, sym = shop.symbol;
@@ -27,6 +27,7 @@ export default function SaleNotebook({
   });
   const fo = (e) => { e.target.style.borderBottomColor = accent; e.target.style.background = accent + "10"; };
   const bl = (e) => { e.target.style.borderBottomColor = "transparent"; e.target.style.background = "transparent"; };
+  const blR = (e) => { e.target.style.borderBottomColor = "#e9d98a"; e.target.style.background = "#fffbea"; };
   const head = { fontSize: 10, fontWeight: 800, color: "#64748b", textTransform: "uppercase", letterSpacing: "0.07em", padding: "0 4px 5px" };
 
   const balance = calc.balance;
@@ -72,8 +73,7 @@ export default function SaleNotebook({
       </div>
 
       {lines.map((line, idx) => {
-        const touched = line.recv !== undefined;
-        const short = recvAmts[idx] + 0.5 < rowAmts[idx];
+        const short = recvAmts[idx] > 0 && recvAmts[idx] + 0.5 < rowAmts[idx];
         return (
           <div key={line.id} style={{ display: "grid", gridTemplateColumns: cols, gap: 4, alignItems: "center", borderBottom: "1px solid " + RULE, padding: "1px 0" }}>
             <ItemSuggestInput inputRef={(el) => { if (idx === 0) rosieRefs.current.item = el; }} value={line.name} shopId={shopId}
@@ -84,10 +84,10 @@ export default function SaleNotebook({
             <input ref={(el) => { if (idx === 0) rosieRefs.current.price = el; }} type="number" onWheel={(e) => e.target.blur()} value={line.price}
               onChange={(e) => onPrice(line.id, e.target.value)} placeholder="0"
               style={field({ textAlign: "right", fontFamily: MONO, fontWeight: 700 })} onFocus={fo} onBlur={bl} />
-            <input type="number" onWheel={(e) => e.target.blur()} value={touched ? line.recv : (recvAmts[idx] ? String(+recvAmts[idx].toFixed(2)) : "")}
-              onChange={(e) => onRecv(line.id, e.target.value)} placeholder="0"
-              title={touched ? "Typed by you" : "Fills in automatically — type to change it (e.g. for an advance)"}
-              style={field({ textAlign: "right", fontFamily: MONO, fontWeight: 800, color: short ? "#b45309" : touched ? INK : "#15803d" })} onFocus={fo} onBlur={bl} />
+            <input type="number" onWheel={(e) => e.target.blur()} value={line.recv === undefined ? "" : line.recv}
+              onChange={(e) => onRecv(line.id, e.target.value)} placeholder="enter"
+              title="Type the amount actually received for this item"
+              style={field({ textAlign: "right", fontFamily: MONO, fontWeight: 800, color: short ? "#b45309" : INK, background: "#fffbea", borderBottom: "1.5px solid #e9d98a" })} onFocus={fo} onBlur={blR} />
             <button type="button" onClick={() => onRemove(line.id)} title="Remove item"
               style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: "#cbd5e1", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 0 }}
               onMouseEnter={(e) => (e.currentTarget.style.color = "#dc2626")} onMouseLeave={(e) => (e.currentTarget.style.color = "#cbd5e1")}>×</button>
@@ -132,7 +132,7 @@ export default function SaleNotebook({
               {bal0 ? "Balance due" : balance > 0 ? "Balance due" : "Received is more than the total by"}
             </span>
             {calc.mode !== "deal" && balance > 0.5 && (
-              <button type="button" onClick={onResetRecv} title="Set Received to the full sale total"
+              <button type="button" onClick={onFillRecv} title="Fill the Received boxes so the full sale total is received"
                 style={{ fontSize: 10.5, fontWeight: 800, color: balColor, background: "white", border: "1px solid " + balColor + "55", borderRadius: 999, padding: "2px 9px", cursor: "pointer", fontFamily: "inherit" }}>Mark fully received</button>
             )}
             <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 20, fontWeight: 900, color: balColor }}>{sym}{num(shopId, Math.abs(balance))}</span>
