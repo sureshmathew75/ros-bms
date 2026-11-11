@@ -3,6 +3,7 @@ import { formatDate } from "../utils";
 import { showAlert, showConfirm } from "./PopupHost";
 import { dbLoadDispatchLog, dbSaveDispatchEntry } from "../db";
 import { BankBadge, BankIcon, BankMenu } from "./BankLogos";
+import { shortfallForSales, shortfallMessage } from "../priceList";
 /* ─────────────────────────────────────────────────────────────────────────
    SALES PANEL
    Period definitions:
@@ -92,7 +93,7 @@ function fmtDateForSale(sale) {
   if (!dt || isNaN(dt.getTime())) return raw ? String(raw) : "—";
 
   const id = String(sale.id || "");
-  const rosMatch = id.match(/^[A-Z]{2,3}(\d{4})(\d)$/);
+  const rosMatch = id.match(/^[A-Z]{2,4}(\d{4})(\d)$/);
   if (rosMatch) {
     const suffix = +rosMatch[2];
     const nowYear = new Date().getFullYear();
@@ -172,7 +173,7 @@ function filterByPeriod(sales, period) {
     return sales.filter(s => {
       const id = String(s.id || "");
       // ROS pattern: 3 letters + 4 digits + 1 suffix digit
-      const rosMatch = id.match(/^[A-Z]{2,3}(\d{4})(\d)$/);
+      const rosMatch = id.match(/^[A-Z]{2,4}(\d{4})(\d)$/);
       if (rosMatch) {
         // Suffix digit is ground truth for FY
         return rosMatch[2] === fySuffix;
@@ -202,7 +203,7 @@ function filterByPeriod(sales, period) {
     // Extra check: if sale has ROS invoice suffix, ensure it matches the period's FY
     if (period === "month" || period === "week" || period === "day") {
       const id = String(s.id || "");
-      const rosMatch = id.match(/^[A-Z]{2,3}(\d{4})(\d)$/);
+      const rosMatch = id.match(/^[A-Z]{2,4}(\d{4})(\d)$/);
       if (rosMatch && rosMatch[2] !== periodFYSuffix) return false;
     }
     return true;
@@ -227,7 +228,7 @@ function fyStartYear(dateStrOrSale) {
 
   // Use invoice suffix as ground truth when available
   if (id) {
-    const rosMatch = String(id).match(/^[A-Z]{2,3}(\d{4})(\d)$/);
+    const rosMatch = String(id).match(/^[A-Z]{2,4}(\d{4})(\d)$/);
     if (rosMatch) {
       const suffix = +rosMatch[2];
       // suffix = last digit of FY end year
@@ -689,7 +690,7 @@ export default function SalesPanel({
       if (dt.getFullYear() !== py || (dt.getMonth() + 1) !== pm) return false;
       // Cross-check invoice suffix to reject wrong-year sales
       const id = String(s.id || "");
-      const rosMatch = id.match(/^[A-Z]{2,3}(\d{4})(\d)$/);
+      const rosMatch = id.match(/^[A-Z]{2,4}(\d{4})(\d)$/);
       if (rosMatch && rosMatch[2] !== pickedFYSuffix) return false;
       return true;
     });
@@ -1240,6 +1241,12 @@ We hope you enjoy your purchase! 💜
         // below) — nobody just clicked anything, so no popup out of the blue.
         if (!opts.silent) setBalanceBlockInfo({ sale: s, ...balInfo });
       }
+    }
+    // Price-list check: warn (not block) before dispatching a sale that is short of its price-list total.
+    // Declining still saves the tracking number, just not the Fulfilled status (same as the balance guard).
+    if (allowFulfil && !opts.silent && members.some(m => !PAST_FULFILLED.includes(m.ful || m.status || ""))) {
+      const sf = shortfallForSales(members, shopId);
+      if (sf && sf.short > 0.5 && !(await showConfirm(shortfallMessage(shopId, sf, s.customer)))) allowFulfil = false;
     }
     const today = localISO(new Date());
     await Promise.all(members.map(m => {
@@ -2679,11 +2686,22 @@ We hope you enjoy your purchase! 💜
                                 return;
                               }
                             }
-                            if (groupIds.length > 1) {
-                              applyCascade(s.id, newStatus, groupIds);
-                            } else if (onInlineEdit) {
-                              onInlineEdit(s.id, { ful: newStatus, status: newStatus });
+                            const proceed = () => {
+                              if (groupIds.length > 1) {
+                                applyCascade(s.id, newStatus, groupIds);
+                              } else if (onInlineEdit) {
+                                onInlineEdit(s.id, { ful: newStatus, status: newStatus });
+                              }
+                            };
+                            // Price-list check: warn (not block) before marking a short-paid sale Fulfilled.
+                            if (newStatus === "FULFILLED") {
+                              const sf = shortfallForSales(group.length > 1 ? group : [s], shopId);
+                              if (sf && sf.short > 0.5) {
+                                showConfirm(shortfallMessage(shopId, sf, s.customer)).then(ok => { if (ok) proceed(); });
+                                return;
+                              }
                             }
+                            proceed();
                           }}
                           onBlur={() => { setEditStatusId(null); setFulfilUnlockedId(null); }}
                           style={{ padding: "5px 8px", borderRadius: 8, border: "1.5px solid #7dd3fc",

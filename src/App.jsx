@@ -10,6 +10,8 @@ import ROS_INDIA_LOGO from "./ros-india-logo.png";   // registered-brand ROS IND
 import InvoicesPanel from "./components/InvoicesPanel";
 import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
+import PriceListPanel, { ItemSuggestInput, PriceDiffModal, PriceHint, priceNoteText } from "./components/PriceListPanel";
+import { isPriceShop, priceFor, matchEntry, priceMismatches } from "./priceList";
 import PurchasesPanel from "./components/PurchasesPanel";
 import ReportsPanel from "./components/ReportsPanel";
 import SalesPanel from "./components/SalesPanel";
@@ -7654,6 +7656,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"dashboard",l:"Dashboard",ic:"⊞"},
     {id:"sales",    l:"Sales",    ic:"🛒"},
     {id:"customers",l:"Customers",ic:"👥"},
+    {id:"pricelist",l:"Price List",ic:"🏷️"},
     {id:"dispatch", l:"Despatch Log", ic:"📤"},
     {id:"daybook",  l:"Day Book", ic:"📔"},
     {id:"memos",    l:"Memos",    ic:"🗒️"},
@@ -7673,7 +7676,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     {id:"analytics",l:"Analytics",ic:"📊"},
     {id:"reports",  l:"Reports",  ic:"📋"},
     {id:"factoryqueue",l:"Fulfilment Tracker",ic:"🏭"},
-  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india").filter(n=>n.id!=="payroll"||shopId==="ros-india").filter(n=>n.id!=="daybook"||shopId==="ros-india").filter(n=>n.id!=="memos"||shopId==="ros-india").filter(n=>n.id!=="weeklyroutine"||shopId==="ros-india").filter(n=>n.id!=="factoryqueue"||shopId==="ros-india").filter(n=>n.id!=="dispatch"||shopId==="ros-india");
+  ].filter(n=>(ROLE_NAV[user?.role||"admin"]||ROLE_NAV.admin).includes(n.id)).filter(n=>n.id!=="settings").filter(n=>n.id!=="attendance"||shopId==="ros-india").filter(n=>n.id!=="inventory"||shopId==="ros-india").filter(n=>n.id!=="pricelist"||isPriceShop(shopId)).filter(n=>n.id!=="payroll"||shopId==="ros-india").filter(n=>n.id!=="daybook"||shopId==="ros-india").filter(n=>n.id!=="memos"||shopId==="ros-india").filter(n=>n.id!=="weeklyroutine"||shopId==="ros-india").filter(n=>n.id!=="factoryqueue"||shopId==="ros-india").filter(n=>n.id!=="dispatch"||shopId==="ros-india");
 
   /* ── Factory Queue real-data mapping (ROS India only) ──────────────────
      Read-only. Maps real `sales`/`returns` into the shapes FactoryQueuePanel
@@ -8108,7 +8111,7 @@ return(
           {/* group labels */}
           {[
             {label:"MAIN",       ids:["dashboard","factoryqueue"]},
-            {label:"SALES",      ids:["sales","customers","returns","dispatch","daybook","memos"]},
+            {label:"SALES",      ids:["sales","customers","pricelist","returns","dispatch","daybook","memos"]},
             {label:"PURCHASES",  ids:["purchases","suppliers","logistics","agents"]},
             {label:"OPERATIONS", ids:["attendance","payroll","pettycash","inventory","weeklyroutine"]},
             {label:"EXPENSES",   ids:["expenses"]},
@@ -9555,6 +9558,9 @@ return(
           )}
 
           {/* ── INVENTORY (ROS India only) ── */}
+          {tab==="pricelist"&&isPriceShop(shopId)&&(
+            <PriceListPanel shop={shop} shopId={shopId}/>
+          )}
           {tab==="inventory"&&shopId==="ros-india"&&(
             <InventoryPage shopId={shopId} shop={shop} user={user} sales={sales} returns={returns} setReturns={setReturns} />
           )}
@@ -17144,6 +17150,9 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
   const hasLines=Array.isArray(sale.saleLines)&&sale.saleLines.length>0;
+  const [editPriceDiff,setEditPriceDiff]=useState(null);   // changed lines priced differently from the price list
+  const editReasonRef=useRef(null);                        // reason given in the dialog, read by the Save button when it re-runs
+  const editSaveBtnRef=useRef(null);
 
   // Editable saleLines state (for multi-item sales)
   const [editLines,setEditLines]=useState(()=>
@@ -17397,7 +17406,8 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
             const lineTotal=parseFloat(((parseFloat(l.qty)||1)*(parseFloat(l.price)||0)).toFixed(2));
             return(
               <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 60px 90px 70px 28px",gap:4,marginBottom:6,alignItems:"center"}}>
-                <input ref={el=>{if(i===0)rosieFieldRefs.current.item=el;}} value={l.name} onChange={e=>setLine(i,"name",e.target.value)}
+                <ItemSuggestInput inputRef={el=>{if(i===0)rosieFieldRefs.current.item=el;}} value={l.name} shopId={shopId} onChange={v=>setLine(i,"name",v)}
+                  onPick={en=>{setLine(i,"name",en.label);setLine(i,"price",String(priceFor(en,shopId)));}}
                   placeholder="Item name"
                   style={{...inp,fontSize:12,padding:"6px 9px"}} onFocus={fo} onBlur={bl}/>
                 <input type="number" onWheel={e=>e.target.blur()} min="1" value={l.qty} onChange={e=>setLine(i,"qty",e.target.value)}
@@ -17413,6 +17423,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
                   style={{width:24,height:24,borderRadius:6,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,padding:0,fontFamily:"inherit"}}>
                   ×
                 </button>
+                <PriceHint shopId={shopId} name={l.name} price={l.price} hide={(form.paymentType||"FULL")!=="FULL"||Number(form.taxRate)>0}/>
               </div>
             );
           })}
@@ -17755,8 +17766,15 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
               showAlert("Please enter the purchase date too — a purchase amount can't be saved on its own.");
               return;
             }
-            onSave({...form,id:(form.invAssigned&&form.invoiceNo)?form.invoiceNo:((shopId==="ros-india"&&new Date(form.date||sale.date||0)>=new Date(2026,3,1)&&!String(sale.id||"").includes("-"))?`IN-${Date.now().toString().slice(-6)}`:sale.id),ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),rem:form.remarks,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:parseFloat(form.discount)||0,otherCharges:parseFloat(form.otherCharges)||0,otherChargesLabel:form.otherChargesLabel||"Other Charges",contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""});
+            // Price list check — only lines whose item or price was changed in this edit (old sales are not re-flagged).
+            const _chg=hasLines?editLines.filter((l,i)=>{const o=(sale.saleLines||[])[i];return !o||o.name!==l.name||String(o.price)!==String(l.price);}):[];
+            const _mism=(isPriceShop(shopId)&&(form.paymentType||"FULL")==="FULL"&&!(Number(form.taxRate)>0))?priceMismatches(_chg,shopId):[];
+            const _reason=editReasonRef.current; editReasonRef.current=null;
+            if(_mism.length>0&&!_reason){setEditPriceDiff(_mism);return;}
+            const _remOut=(_mism.length>0&&_reason)?[form.remarks,priceNoteText(shopId,_mism,_reason)].filter(x=>x&&String(x).trim()).join(" | "):form.remarks;
+            onSave({...form,id:(form.invAssigned&&form.invoiceNo)?form.invoiceNo:((shopId==="ros-india"&&new Date(form.date||sale.date||0)>=new Date(2026,3,1)&&!String(sale.id||"").includes("-"))?`IN-${Date.now().toString().slice(-6)}`:sale.id),ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),rem:_remOut,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:parseFloat(form.discount)||0,otherCharges:parseFloat(form.otherCharges)||0,otherChargesLabel:form.otherChargesLabel||"Other Charges",contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""});
           }}
+          ref={editSaveBtnRef}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
           💾 Save Changes
         </button>
@@ -17765,6 +17783,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
           Cancel
         </button>
       </div>
+      {editPriceDiff&&(<PriceDiffModal shopId={shopId} mismatches={editPriceDiff} accent={shop.accent} onCancel={()=>setEditPriceDiff(null)} onConfirm={(r)=>{editReasonRef.current=r;setEditPriceDiff(null);setTimeout(()=>{if(editSaveBtnRef.current)editSaveBtnRef.current.click();},0);}}/>)}
       {showAddressModal && (
         <AddressEntryModal
           initialValue={form.address||""}
@@ -18531,6 +18550,7 @@ const AddTabInput=({onAdd,accent})=>{
 
 const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,onDeleteShopItem,customers=[],sales=[],isSuperadmin=false})=>{
   const rosieFieldRefs=useRef({});
+  const [priceDiff,setPriceDiff]=useState(null); // line prices that differ from the price list — a reason is required before saving
   const [paymentTypeAcked,setPaymentTypeAcked]=useState(false);
   const [showAddressModal,setShowAddressModal]=useState(false);
   const defaultPay = shopId === "ros-india" ? "SIB" : "SHOP";
@@ -18640,7 +18660,8 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const gstAmt=parseFloat((preGstTotal*taxRate).toFixed(2));
   const grandTotal=parseFloat((preGstTotal+gstAmt).toFixed(2));
 
-  const handleSave=()=>{
+  const handleSave=(reasonArg)=>{
+    const priceReason=typeof reasonArg==="string"?reasonArg:null;
     if(form.date && form.date>localTodayISO()){
       showAlert("Sale date can't be in the future. Please pick today's date or an earlier one.");
       return;
@@ -18660,9 +18681,13 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     }
     const purAmt=parseFloat(form.purAmount)||0;
     const filledLines=lines.filter(l=>l.name.trim()||(parseFloat(l.price)>0));
+    // Price list check (ROS India / ROS Hairlines UK): a line priced differently from the list needs a reason.
+    const _mism=(isPriceShop(shopId)&&(form.paymentType||"FULL")==="FULL"&&!(Number(form.taxRate)>0))?priceMismatches(filledLines,shopId):[];
+    if(_mism.length>0&&!priceReason){setPriceDiff(_mism);return;}
+    const _remarksOut=(_mism.length>0&&priceReason)?[form.remarks,priceNoteText(shopId,_mism,priceReason)].filter(x=>x&&String(x).trim()).join(" | "):form.remarks;
     const combinedItem=filledLines.map(l=>`${l.name}(x${l.qty})`).join(", ")||"Sale";
     const combinedQty=filledLines.reduce((s,l)=>s+(parseFloat(l.qty)||0),0)||1;
-    onSave({...form,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||"",dispatchFrom:form.dispatchFrom||""});
+    onSave({...form,remarks:_remarksOut,item:combinedItem,qty:String(combinedQty),amount:grandTotal,saleLines:filledLines,discount:discountAmt,otherCharges:otherChargesAmt,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||"",dispatchFrom:form.dispatchFrom||""});
   };
 
   const rosieFilledLines = lines.filter(l=>l.name.trim());
@@ -18682,6 +18707,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const rosieNudge = rosieAllDone ? "All set! Review and hit Save Sale when ready. ✅" : rosieSteps[rosieActiveIdx].label;
 
   return(<>
+    {priceDiff&&(<PriceDiffModal shopId={shopId} mismatches={priceDiff} accent={shop.accent} onCancel={()=>setPriceDiff(null)} onConfirm={(r)=>{setPriceDiff(null);handleSave(r);}}/>)}
     {showNewCust&&(<div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}><div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.50)",backdropFilter:"blur(4px)"}}/><div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.25)",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",zIndex:81}} onClick={e=>e.stopPropagation()}><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 22px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"12",borderRadius:"20px 20px 0 0"}}><h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>➕ New Customer</h3><button onClick={()=>setShowNewCust(false)} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b",display:"flex",alignItems:"center",justifyContent:"center"}}>×</button></div><div style={{padding:22}}><NewCustomerForm shop={shop} onSave={handleAddCustomer} onClose={()=>setShowNewCust(false)} customers={customerList}/></div></div></div>)}
 
     {/* ── Single column layout ── */}
@@ -18815,10 +18841,11 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               </div>
               {lines.map((line,idx)=>(
                 <div key={line.id} style={{display:"grid",gridTemplateColumns:"1fr 52px 76px 26px",gap:5,marginBottom:5,alignItems:"center"}}>
-                  <input ref={el=>{if(idx===0)rosieFieldRefs.current.item=el;}} value={line.name} onChange={e=>updateLine(line.id,"name",e.target.value)} placeholder={"Item "+(idx+1)} style={{...inp,padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
+                  <ItemSuggestInput inputRef={el=>{if(idx===0)rosieFieldRefs.current.item=el;}} value={line.name} shopId={shopId} onChange={v=>updateLine(line.id,"name",v)} onPick={en=>setLines(ls=>ls.map(l=>l.id===line.id?{...l,name:en.label,price:String(priceFor(en,shopId))}:l))} placeholder={"Item "+(idx+1)} style={{...inp,padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
                   <input type="number" onWheel={e=>e.target.blur()} value={line.qty} onChange={e=>updateLine(line.id,"qty",e.target.value)} style={{...inp,textAlign:"center",padding:"7px 5px"}} onFocus={fo} onBlur={bl}/>
                   <input ref={el=>{if(idx===0)rosieFieldRefs.current.price=el;}} type="number" onWheel={e=>e.target.blur()} value={line.price} onChange={e=>updateLine(line.id,"price",e.target.value)} placeholder="0.00" style={{...inp,textAlign:"right",padding:"7px 8px"}} onFocus={fo} onBlur={bl}/>
                   <button type="button" onClick={()=>removeLine(line.id)} style={{width:26,height:32,borderRadius:7,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center"}}>×</button>
+                  <PriceHint shopId={shopId} name={line.name} price={line.price} hide={(form.paymentType||"FULL")!=="FULL"||Number(form.taxRate)>0}/>
                 </div>
               ))}
               <button type="button" onClick={addLine} style={{padding:"5px 12px",borderRadius:7,border:"1px dashed "+shop.accent+"55",background:shop.accentBg,color:shop.accentText,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>＋ Add Item</button>
@@ -18933,7 +18960,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
           </div>
           <div style={{display:"flex",gap:8}}>
             <button onClick={onClose} style={{padding:"10px 18px",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
-            <button onClick={handleSave} style={{padding:"10px 24px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44",display:"flex",alignItems:"center",gap:6}}><span>🛒</span> Save Sale</button>
+            <button onClick={()=>handleSave()} style={{padding:"10px 24px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44",display:"flex",alignItems:"center",gap:6}}><span>🛒</span> Save Sale</button>
           </div>
         </div>
       </div>
@@ -20049,8 +20076,8 @@ const INITIAL_USERS=[
    avatar:"linear-gradient(135deg,#ec4899,#db2777)", shops:["ros-india"]},
 ];
 const ROLE_NAV={
-  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","pettycash","inventory","dispatch","daybook","memos","weeklyroutine","factoryqueue","settings"],
-  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","attendance","payroll","pettycash","inventory","dispatch","daybook","memos","weeklyroutine","factoryqueue"],
+  superadmin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","pricelist","attendance","payroll","pettycash","inventory","dispatch","daybook","memos","weeklyroutine","factoryqueue","settings"],
+  admin:["dashboard","sales","purchases","logistics","customers","suppliers","agents","products","expenses","documents","analytics","reports","returns","pricelist","attendance","payroll","pettycash","inventory","dispatch","daybook","memos","weeklyroutine","factoryqueue"],
   // Payroll is kept admin-only (not in staff's list) — it exposes salary,
   // advances and loan balances for every staff member, not just the
   // person viewing it. Petty Cash is different — everyone shares the one
@@ -20060,7 +20087,7 @@ const ROLE_NAV={
   // (ROS India only) is the same: admin posts, staff need to be able to
   // read them, so it's on staff's list too — MemosPanel itself hides the
   // "post" form from anyone who isn't admin/superadmin.
-  staff:["sales","customers","returns","attendance","pettycash","inventory","dispatch","daybook","memos","weeklyroutine","factoryqueue"],
+  staff:["sales","customers","pricelist","returns","attendance","pettycash","inventory","dispatch","daybook","memos","weeklyroutine","factoryqueue"],
 };
 const SHOP_IDS=["ros-selections","ros-hairlines","ros-india"];
 

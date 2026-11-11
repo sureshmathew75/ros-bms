@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useRef, Fragment } from "react";
 import { dbSaveDispatchEntry, dbLoadDispatchLog, dbDeleteDispatchEntry } from "../db";
 import { showAlert, showConfirm } from "./PopupHost";
 import AddressEntryModal from "./AddressEntryModal";
+import { shortfallForSales, shortfallMessage } from "../priceList";
 
 /* ─────────────────────────────────────────────────────────────────────────
    DISPATCH PANEL  (all three shops — daily despatch log)
@@ -1203,6 +1204,13 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     if (isIndiaShop && !sale.verified && !opts.force) {
       if (!opts.quiet) showAlert(`${sale.customer || "This sale"} hasn't been verified against the bank statement yet — ask admin to verify it first.`);
       return { ok: false, reason: "unverified" };
+    }
+    // Price-list check: warn (not block) when the amount received is less than the price-list total.
+    if (!opts.quiet && !opts.force) {
+      const sf = shortfallForSales(members, shopId);
+      if (sf && sf.short > 0.5 && !(await showConfirm(shortfallMessage(shopId, sf, anchor.customer || sale.customer)))) {
+        return { ok: false, reason: "short" };
+      }
     }
     if (addingKeysRef.current.has(key)) return { ok: false, reason: "busy" };
     addingKeysRef.current.add(key);
