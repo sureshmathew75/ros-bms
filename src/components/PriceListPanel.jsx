@@ -22,9 +22,17 @@ export const ItemSuggestInput = ({ value, onChange, onPick, shopId, placeholder,
   const [open, setOpen] = useState(false);
   const [hi, setHi] = useState(0);
   const wrapRef = useRef(null);
-  const list = useMemo(() => (isPriceShop(shopId) ? searchPriceList(value, shopId, 8) : []), [value, shopId]);
+  const scrollRef = useRef(null);
+  const byKey = useRef(false); // true while moving with the arrow keys, so the list follows the highlight
+  const list = useMemo(() => (isPriceShop(shopId) ? searchPriceList(value, shopId, 80) : []), [value, shopId]);
   const show = open && list.length > 0;
-  useEffect(() => { setHi(0); }, [value]);
+  useEffect(() => { setHi(0); if (scrollRef.current) scrollRef.current.scrollTop = 0; }, [value]);
+  useEffect(() => {
+    if (!byKey.current || !scrollRef.current) return;
+    byKey.current = false;
+    const el = scrollRef.current.children[hi];
+    if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
+  }, [hi]);
   useEffect(() => {
     if (!open) return;
     const h = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
@@ -41,8 +49,8 @@ export const ItemSuggestInput = ({ value, onChange, onPick, shopId, placeholder,
         onBlur={(e) => { onBlur && onBlur(e); }}
         onKeyDown={(e) => {
           if (!show) return;
-          if (e.key === "ArrowDown") { e.preventDefault(); setHi(h => Math.min(h + 1, list.length - 1)); }
-          else if (e.key === "ArrowUp") { e.preventDefault(); setHi(h => Math.max(h - 1, 0)); }
+          if (e.key === "ArrowDown") { e.preventDefault(); byKey.current = true; setHi(h => Math.min(h + 1, list.length - 1)); }
+          else if (e.key === "ArrowUp") { e.preventDefault(); byKey.current = true; setHi(h => Math.max(h - 1, 0)); }
           else if (e.key === "Enter") { e.preventDefault(); pick(list[hi]); }
           else if (e.key === "Escape") { setOpen(false); }
         }}
@@ -52,6 +60,7 @@ export const ItemSuggestInput = ({ value, onChange, onPick, shopId, placeholder,
           position: "absolute", top: "100%", left: 0, zIndex: 300, marginTop: 3, minWidth: 270, width: "max-content", maxWidth: "min(380px, 88vw)",
           background: "white", border: "1px solid #cbd5e1", borderRadius: 10, boxShadow: "0 12px 30px rgba(15,23,42,0.22)", overflow: "hidden",
         }}>
+          <div ref={scrollRef} style={{ maxHeight: 280, overflowY: "auto", overscrollBehavior: "contain" }}>
           {list.map((e, i) => (
             <div key={e.id} onMouseDown={(ev) => { ev.preventDefault(); pick(e); }} onMouseEnter={() => setHi(i)}
               style={{
@@ -64,7 +73,8 @@ export const ItemSuggestInput = ({ value, onChange, onPick, shopId, placeholder,
               <span style={{ fontSize: 12.5, fontWeight: 800, color: "#166534", whiteSpace: "nowrap" }}>{money(shopId, priceFor(e, shopId))}</span>
             </div>
           ))}
-          <div style={{ padding: "5px 11px", fontSize: 10, color: "#94a3b8", background: "#f8fafc" }}>Price list {PRICE_LIST_EFFECTIVE} · ↑↓ then Enter, or click</div>
+          </div>
+          <div style={{ padding: "5px 11px", fontSize: 10, color: "#94a3b8", background: "#f8fafc", borderTop: "1px solid #f1f5f9" }}>{list.length} item{list.length === 1 ? "" : "s"} · Price list {PRICE_LIST_EFFECTIVE} · scroll or ↑↓ then Enter, or click</div>
         </div>
       )}
     </div>
