@@ -4,7 +4,7 @@ import { showAlert, showConfirm } from "./PopupHost";
 import { dbLoadDispatchLog, dbSaveDispatchEntry } from "../db";
 import { BankBadge, BankIcon, BankMenu } from "./BankLogos";
 import { shortfallForSales, shortfallMessage } from "../priceList";
-import { returnPolicySection } from "../despatchMessage";
+import { returnPolicySection, addressCheckSection } from "../despatchMessage";
 /* ─────────────────────────────────────────────────────────────────────────
    SALES PANEL
    Period definitions:
@@ -891,19 +891,7 @@ We kindly recommend keeping an eye on the tracking updates until your parcel has
 
 ━━━━━━━━━━━━━━━━━━
 
-*🔎 IMPORTANT — PLEASE CHECK YOUR DELIVERY ADDRESS*
-
-**Before every dispatch, we provide the recipient with the tracking details and a photo of the address label attached to the parcel.**
-
-Please **carefully check the address shown on the label** and contact us as soon as possible if you notice any incorrect or missing information.
-
-⚠️ **Once the address details have been checked and confirmed, any subsequent delivery issue resulting from incorrect or incomplete information in the confirmed address will be the responsibility of the recipient.**
-
-This is why we strongly recommend checking the address label carefully **before or immediately after dispatch notification**, so that any genuine error can be brought to our attention at the earliest opportunity.
-
-━━━━━━━━━━━━━━━━━━
-
-*🚚 YOUR DELIVERY*
+${addressCheckSection(shop?.id)}*🚚 YOUR DELIVERY*
 
 Once your parcel has been dispatched, it is our responsibility to ensure that it is handed over to the carrier correctly and sent securely to your delivery address.
 

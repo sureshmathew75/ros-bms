@@ -33,7 +33,26 @@ const POLICIES = {
 };
 
 /* The whole section, including the separator line that follows it. Returns "" for an unknown shop. */
+const normShop = (id) => (String(id || "").startsWith("ros-india") ? "ros-india" : id);   // staff see India as "ros-india-staff"
+
 export const returnPolicySection = (shopId) => {
-  const body = POLICIES[shopId];
+  const body = POLICIES[normShop(shopId)];
   return body ? `${body}\n\n${RULE}\n\n` : "";
 };
+
+/* "Please check your delivery address" section (text + the separator line after it).
+   Left out for ROS India — pass any other shop id to get it. */
+const ADDRESS_CHECK = `*🔎 IMPORTANT — PLEASE CHECK YOUR DELIVERY ADDRESS*
+
+**Before every dispatch, we provide the recipient with the tracking details and a photo of the address label attached to the parcel.**
+
+Please **carefully check the address shown on the label** and contact us as soon as possible if you notice any incorrect or missing information.
+
+⚠️ **Once the address details have been checked and confirmed, any subsequent delivery issue resulting from incorrect or incomplete information in the confirmed address will be the responsibility of the recipient.**
+
+This is why we strongly recommend checking the address label carefully **before or immediately after dispatch notification**, so that any genuine error can be brought to our attention at the earliest opportunity.
+
+━━━━━━━━━━━━━━━━━━
+
+`;
+export const addressCheckSection = (shopId) => (normShop(shopId) === "ros-india" ? "" : ADDRESS_CHECK);
