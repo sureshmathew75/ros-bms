@@ -96,22 +96,22 @@ export const BankPicker = ({ value, options, onChange, innerRef }) => {
   const cur = bankKey(value);
   return (
     <div ref={innerRef} tabIndex={-1} role="radiogroup"
-      style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(98px,1fr))", gap: 8, outline: "none" }}>
+      style={{ display: "flex", flexWrap: "wrap", gap: 6, outline: "none" }}>
       {options.map(o => {
         const k = bankKey(o); const m = k && BANK_META[k];
         const on = cur === k;
         return (
           <button key={o} type="button" role="radio" aria-checked={on} className="bk-tile" onClick={() => onChange(o)}
             style={{
-              display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 10, cursor: "pointer", fontFamily: "inherit",
-              border: "2px solid " + (on ? (m ? m.color : "#0f172a") : "#e2e8f0"),
+              display: "flex", alignItems: "center", gap: 6, padding: "5px 9px", borderRadius: 9, cursor: "pointer", fontFamily: "inherit", flex: "0 1 auto",
+              border: "1.5px solid " + (on ? (m ? m.color : "#0f172a") : "#e2e8f0"),
               background: on ? (m ? m.bg : "#f1f5f9") : "white",
-              color: on ? (m ? m.color : "#0f172a") : "#475569", fontWeight: on ? 800 : 600, fontSize: 12, textAlign: "left",
+              color: on ? (m ? m.color : "#0f172a") : "#475569", fontWeight: on ? 800 : 600, fontSize: 11.5, textAlign: "left",
               boxShadow: on ? "0 2px 8px rgba(0,0,0,0.10)" : "none", transition: "all .12s",
             }}>
-            {m ? <BankIcon pay={k} size={22} /> : null}
+            {m ? <BankIcon pay={k} size={17} /> : null}
             <span className="bk-name" style={{ whiteSpace: "nowrap" }}>{m ? m.short : o}</span>
-            {on && <span style={{ marginLeft: "auto", fontSize: 12 }}>✓</span>}
+            {on && <span style={{ fontSize: 11 }}>✓</span>}
           </button>
         );
       })}

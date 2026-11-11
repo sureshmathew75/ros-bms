@@ -19013,7 +19013,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🚚 Payment & Delivery</p>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
-                <div><label style={lbl}>Payment To</label>{shopId==="ros-india"
+                <div style={shopId==="ros-india"?{gridColumn:"1 / -1"}:undefined}><label style={lbl}>Payment To</label>{shopId==="ros-india"
                   ? <BankPicker innerRef={el=>{rosieFieldRefs.current.payBy=el;}} value={form.payBy} options={PAY_OPTIONS} onChange={v=>set("payBy",v)} />
                   : <select ref={el=>{rosieFieldRefs.current.payBy=el;}} value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{PAY_OPTIONS.map(o=><option key={o}>{o}</option>)}</select>}</div>
                 {(form.payBy==="SHOP"||form.payBy==="SHOPIFY") ? (
@@ -19028,7 +19028,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               {shopId==="ros-india"&&(
                 <div style={{marginBottom:7}}>
                   <label style={lbl}>Dispatch Unit</label>
-                  <select value={form.dispatchFrom} onChange={e=>set("dispatchFrom",e.target.value)} style={inp}>
+                  <select value={form.dispatchFrom} onChange={e=>set("dispatchFrom",e.target.value)} style={{...inp,width:"auto",minWidth:170,maxWidth:"100%"}}>
                     <option value="India-Unit1">🇮🇳 Unit 1 (Default)</option>
                     <option value="India-Unit2">🇮🇳 Unit 2</option>
                     <option value="UK-Unit">🇬🇧 UK Unit</option>
