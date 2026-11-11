@@ -18800,8 +18800,8 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             {/* Items */}
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🛍️ Items</p>
-              {/* ── Quick-pick tab bar ── */}
-              {(()=>{
+              {/* ── Quick-pick tab bar (replaced by price-list suggestions in India / Hairlines UK) ── */}
+              {!isPriceShop(shopId)&&(()=>{
                 const savedLabels=shopItems.map(i=>typeof i==="object"?(i.name||i.label||""):String(i));
                 const savedSet=new Set(savedLabels);
                 const seen=new Set();
