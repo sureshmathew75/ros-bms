@@ -9,7 +9,7 @@ const COMMON_TOP = (contact) => `*↩️ RETURNS & EXCHANGES*
 • Please inform us **within 2 days** if you wish to return the item. Requests made later will be difficult to approve.
 • All return requests must be made via our WhatsApp number ${contact}. All other forms of request may not be accepted.
 • Return shipping and any associated charges are the liability of the buyer.
-• You can return the item for a **full refund** if it is damaged or was received in poor condition.`;
+• You can return the item for a **full refund** if the item is damaged or we sent you an incorrect item.`;
 
 const POLICIES = {
   "ros-selections": `${COMMON_TOP("**+44 77 47 814 888**")}
