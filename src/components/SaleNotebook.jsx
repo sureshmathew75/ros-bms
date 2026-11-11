@@ -131,15 +131,7 @@ export default function SaleNotebook({
               <Line label="+ Other charges"><MoneyInput sym={sym} accent={accent} value={other} onChange={onOther} /></Line>
             )}
             <Line label="− Discount"><MoneyInput sym={sym} accent={accent} value={discount} onChange={onDiscount} /></Line>
-            <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 0" }}>
-              <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b", marginRight: 4 }}>GST</span>
-              {[0, 5, 10, 18, 20].map((r) => (
-                <button key={r} type="button" onClick={() => onTax(r)}
-                  style={{ padding: "3px 9px", borderRadius: 999, border: "1.5px solid " + (taxRate === r ? accent : "#d5dce8"), background: taxRate === r ? accent : "transparent",
-                    color: taxRate === r ? "white" : "#64748b", fontWeight: 700, fontSize: 10.5, cursor: "pointer", fontFamily: "inherit" }}>{r}%</button>
-              ))}
-              {calc.gstAmt > 0 && <span style={{ marginLeft: "auto", fontFamily: MONO, fontSize: 12, fontWeight: 800, color: "#475569" }}>+{sym}{num(shopId, calc.gstAmt)}</span>}
-            </div>
+            {/* No GST buttons here: ROS India / Hairlines UK prices already include GST. */}
             <div style={{ borderTop: "1px solid #94a3b8", marginTop: 3 }} />
             <Line label="Sale total" value={sym + num(shopId, calc.saleTotal)} bold />
             <Line label="Received" value={sym + num(shopId, calc.receivedNow)} bold />
