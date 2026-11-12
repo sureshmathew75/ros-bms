@@ -474,7 +474,7 @@ const listPriceNote = (sale, shop) => {
     if (p != null) { total += p * (l.qty === undefined || l.qty === "" ? 1 : (parseFloat(l.qty) || 0)); hit++; }
   });
   if (!hit) return "";
-  return "List " + (shop.symbol || "") + (Math.round(total * 100) / 100).toLocaleString() + (hit < lines.length ? "+" : "");
+  return "Price " + (shop.symbol || "") + (Math.round(total * 100) / 100).toLocaleString() + (hit < lines.length ? "+" : "");
 };
 
 export default function SalesPanel({
