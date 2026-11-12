@@ -3,7 +3,7 @@ import { formatDate } from "../utils";
 import { showAlert, showConfirm } from "./PopupHost";
 import { dbLoadDispatchLog, dbSaveDispatchEntry } from "../db";
 import { BankBadge, BankIcon, BankMenu } from "./BankLogos";
-import { shortfallForSales, shortfallMessage, isPriceShop, findListEntry, priceFor } from "../priceList";
+import { shortfallForSales, shortfallMessage, listPriceOf } from "../priceList";
 import { returnPolicySection, addressCheckSection } from "../despatchMessage";
 /* ─────────────────────────────────────────────────────────────────────────
    SALES PANEL
@@ -458,23 +458,8 @@ const STATUS_ROW_BG = {
 /* Price-list price of a sale's items (ROS India / Hairlines UK), shown pale under the item name so it can be
    compared with the amount received. Items not on the list are left out ("+" marks that some are missing). */
 const listPriceNote = (sale, shop) => {
-  if (!sale || !isPriceShop(shop?.id)) return "";
-  // Items saved with lines use those; older / freehand entries fall back to the item text "NAME(x1), NAME(x2)".
-  let lines = Array.isArray(sale.saleLines) && sale.saleLines.length > 0 ? sale.saleLines : null;
-  if (!lines && sale.item) {
-    lines = String(sale.item).split(/\)\s*,\s*/).map(t => {
-      const m = t.match(/^(.*?)\s*\(x(\d+)\)?\s*$/i);
-      return m ? { name: m[1], qty: m[2] } : { name: t.replace(/\)\s*$/, ""), qty: "1" };
-    }).filter(l => l.name.trim());
-  }
-  if (!lines || lines.length === 0) return "";
-  let total = 0, hit = 0;
-  lines.forEach(l => {
-    const p = priceFor(findListEntry(l.name, shop.id), shop.id);
-    if (p != null) { total += p * (l.qty === undefined || l.qty === "" ? 1 : (parseFloat(l.qty) || 0)); hit++; }
-  });
-  if (!hit) return "";
-  return "Price " + (shop.symbol || "") + (Math.round(total * 100) / 100).toLocaleString() + (hit < lines.length ? "+" : "");
+  const r = listPriceOf(sale, shop?.id);
+  return r ? "Price " + (shop.symbol || "") + r.total.toLocaleString() + (r.hit < r.count ? "+" : "") : "";
 };
 
 export default function SalesPanel({
@@ -3667,7 +3652,9 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
             {(() => {
               const advanceSale = linkedGroupView.find(x => instalmentTagType(x) === "advance");
               const expectedTotal = Number(advanceSale?.expectedTotal) || 0;
-              if (!expectedTotal) return null;
+              // Price-list price of the deal's items (the Advance holds the items; else the first entry that matches)
+              const dealList = listPriceOf(advanceSale, shop?.id) || linkedGroupView.map(x => listPriceOf(x, shop?.id)).find(Boolean) || null;
+              if (!expectedTotal && !dealList) return null;
               const received = linkedGroupView.reduce((a, x) => a + (Number(x.amount) || 0), 0);
               const balance = expectedTotal - received;
               return (
@@ -3676,22 +3663,32 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                   padding: "12px 14px", marginBottom: 12,
                   background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10,
                 }}>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em" }}>Expected Total</div>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{fmt ? fmt(shopId, expectedTotal) : expectedTotal}</div>
-                  </div>
+                  {dealList && (
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em" }}>Price</div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{fmt ? fmt(shopId, dealList.total) : dealList.total}{dealList.hit < dealList.count ? "+" : ""}</div>
+                    </div>
+                  )}
+                  {expectedTotal > 0 && (
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em" }}>Expected Total</div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{fmt ? fmt(shopId, expectedTotal) : expectedTotal}</div>
+                    </div>
+                  )}
                   <div>
                     <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em" }}>Total Amount Received</div>
                     <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{fmt ? fmt(shopId, received) : received}</div>
                   </div>
-                  <div>
-                    <div style={{ fontSize: 10, fontWeight: 700, color: balance > 0 ? "#b91c1c" : "#15803d", textTransform: "uppercase", letterSpacing: "0.05em" }}>
-                      Balance to Receive
+                  {expectedTotal > 0 && (
+                    <div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: balance > 0 ? "#b91c1c" : "#15803d", textTransform: "uppercase", letterSpacing: "0.05em" }}>
+                        Balance to Receive
+                      </div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: balance > 0 ? "#b91c1c" : "#15803d" }}>
+                        {fmt ? fmt(shopId, Math.max(balance, 0)) : Math.max(balance, 0)}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 15, fontWeight: 800, color: balance > 0 ? "#b91c1c" : "#15803d" }}>
-                      {fmt ? fmt(shopId, Math.max(balance, 0)) : Math.max(balance, 0)}
-                    </div>
-                  </div>
+                  )}
                 </div>
               );
             })()}
@@ -3762,6 +3759,9 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                         <span style={{ fontSize: 11, color: "#94a3b8" }}>{gs.date || ""}</span>
                       </div>
                       <div style={{ fontSize: 12, color: "#374151" }}>{gs.item || "—"}</div>
+                      {listPriceNote(gs, shop) && (
+                        <div style={{ fontSize: 11, color: "#b4c0d0", marginTop: 1, fontFamily: "DM Mono,monospace" }}>{listPriceNote(gs, shop)}</div>
+                      )}
                       <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 2 }}>
                         {isIndiaShop
                           ? <><span style={{ verticalAlign: "middle" }}><BankBadge pay={gs.pay} size={14} fallback={<span>{gs.pay || "—"}</span>} /></span> · {gs.ful || gs.status || "—"}</>
@@ -3775,6 +3775,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                       )}
                     </div>
                     <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 9, fontWeight: 700, color: "#b4c0d0", textTransform: "uppercase", letterSpacing: "0.05em" }}>Received</div>
                       <div style={{ fontWeight: 800, fontSize: 14, color: "#0f172a", whiteSpace: "nowrap" }}>
                         {fmt ? fmt(shopId, Number(gs.amount) || 0) : gs.amount}
                       </div>

@@ -148,6 +148,30 @@ export const findListEntry = (name, shopId) => {
   return hits.length === 1 ? hits[0] : null;
 };
 
+/* Display helpers: price-list price of one sale line (price × qty) / of a whole sale. Old entries without saved
+   lines fall back to the item text "NAME(x1), NAME(x2)". null = nothing on the list matched. */
+const _qtyNum = (q) => (q === undefined || q === null || q === "" ? 1 : (parseFloat(q) || 0));
+export const listPriceOfLine = (line, shopId) => {
+  if (!line || !isPriceShop(shopId)) return null;
+  const p = priceFor(findListEntry(line.name, shopId), shopId);
+  return p == null ? null : p * _qtyNum(line.qty);
+};
+export const listPriceOf = (sale, shopId) => {
+  if (!sale || !isPriceShop(shopId)) return null;
+  let lines = Array.isArray(sale.saleLines) && sale.saleLines.length > 0 ? sale.saleLines : null;
+  if (!lines && sale.item) {
+    lines = String(sale.item).split(/\)\s*,\s*/).map(t => {
+      const m = t.match(/^(.*?)\s*\(x(\d+)\)?\s*$/i);
+      return m ? { name: m[1], qty: m[2] } : { name: t.replace(/\)\s*$/, ""), qty: "1" };
+    }).filter(l => l.name.trim());
+  }
+  if (!lines || lines.length === 0) return null;
+  let total = 0, hit = 0;
+  lines.forEach(l => { const v = listPriceOfLine(l, shopId); if (v != null) { total += v; hit++; } });
+  if (!hit) return null;
+  return { total: Math.round(total * 100) / 100, hit, count: lines.length };
+};
+
 /* Lines of a sale (saleLines) compared with the list. Only lines that match a list item AND carry a
    price are checked — custom items are never flagged. */
 export const priceMismatches = (lines, shopId) => {

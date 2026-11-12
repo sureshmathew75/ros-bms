@@ -12,7 +12,7 @@ import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
 import PriceListPanel, { ItemSuggestInput, PriceDiffModal, PriceHint, priceNoteText, FinalShortModal, PartPaidModal } from "./components/PriceListPanel";
 import SaleNotebook from "./components/SaleNotebook";
-import { isPriceShop, priceFor, matchEntry, priceMismatches, listTotalForLines, UK_DELIVERY } from "./priceList";
+import { isPriceShop, priceFor, matchEntry, priceMismatches, listTotalForLines, UK_DELIVERY, listPriceOf, listPriceOfLine } from "./priceList";
 import PurchasesPanel from "./components/PurchasesPanel";
 import ReportsPanel from "./components/ReportsPanel";
 import SalesPanel from "./components/SalesPanel";
@@ -11045,6 +11045,12 @@ return(
                     <span style={{fontSize:12,color:"#64748b"}}>Method</span>
                     <span style={{fontSize:12,fontWeight:700,color:"#1e293b"}}>{selRow.pay||"—"}</span>
                   </div>
+                  {(()=>{const _lp=listPriceOf(selRow,shop.id);return _lp?(
+                    <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                      <span style={{fontSize:12,color:"#64748b"}}>Price</span>
+                      <span style={{fontSize:13,fontWeight:700,color:"#64748b"}}>{fmt(shopId,_lp.total)}{_lp.hit<_lp.count?"+":""}</span>
+                    </div>
+                  ):null;})()}
                   <div style={{display:"flex",justifyContent:"space-between"}}>
                     <span style={{fontSize:12,color:"#64748b"}}>Amount</span>
                     <span style={{fontSize:14,fontWeight:900,color:shop.accent}}>
@@ -11171,6 +11177,7 @@ return(
                             <tr key={idx} style={{borderTop:"1px solid #f1f5f9",background:idx%2===0?"white":"#fafafa"}}>
                               <td style={{padding:"11px 14px"}}>
                                 <p style={{margin:0,fontWeight:700,fontSize:13,color:"#1e293b",textTransform:"uppercase"}}>{line.name||"Item "+(idx+1)}</p>
+                                {(()=>{const _lv=listPriceOfLine(line,shop.id);return _lv!=null?(<p style={{margin:"1px 0 0",fontSize:11,color:"#b4c0d0",fontFamily:"DM Mono,monospace"}}>Price {fmt(shopId,_lv)}</p>):null;})()}
                               </td>
                               <td style={{padding:"11px 14px",textAlign:"right",fontWeight:600,color:"#374151"}}>{q}</td>
                               <td style={{padding:"11px 14px",textAlign:"right",fontWeight:600,color:"#374151"}}>{fmt(shopId,p)}</td>
