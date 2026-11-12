@@ -17165,7 +17165,14 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
 
-  const hasLines=Array.isArray(sale.saleLines)&&sale.saleLines.length>0;
+  // Sales whose item lines were lost (older saves) but whose item text is "NAME(x1), NAME(x1)" are opened in the
+  // notebook too, with the old equal-split prices as a starting point, so an admin can set the real prices.
+  const _realLines=Array.isArray(sale.saleLines)&&sale.saleLines.length>0;
+  const _synthLines=(!_realLines&&String(sale.item||"").includes("(x"))
+    ?parseLegacyItems(sale.item,sale.qty,Number(sale.amount)||0).map(l=>({name:l.name,qty:String(l.qty),price:String(l.price)}))
+    :[];
+  const hasLines=_realLines||_synthLines.length>0;
+  const _lines0=_realLines?sale.saleLines:_synthLines;
   const [editPriceDiff,setEditPriceDiff]=useState(null);   // changed lines priced differently from the price list
   const editReasonRef=useRef(null);                        // reason given in the dialog, read by the Save button when it re-runs
   const editSaveBtnRef=useRef(null);
@@ -17173,7 +17180,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
   // Editable saleLines state (for multi-item sales) — notebook style, same figures as New Sale
   const _mkKey=()=>"e"+Math.random().toString(36).slice(2,9);
   const [editLines,setEditLines]=useState(()=>
-    hasLines ? sale.saleLines.map(l=>({...l,_k:_mkKey()})) : []
+    hasLines ? _lines0.map(l=>({...l,_k:_mkKey()})) : []
   );
   const _qtyOf=l=>(l.qty===undefined||l.qty===null||l.qty==="")?1:(parseFloat(l.qty)||0);
   const _rowAmt=l=>parseFloat((_qtyOf(l)*(parseFloat(l.price)||0)).toFixed(2));
@@ -17182,7 +17189,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
   // Received follows the sale total (fully received) until staff type their own Received amount.
   const [recvAuto,setRecvAuto]=useState(()=>{
     if(!hasLines) return true;
-    const _lines=sale.saleLines;
+    const _lines=_lines0;
     const _items=_lines.reduce((a,l)=>a+_rowAmt(l),0);
     const _d=parseFloat(sale.discount)||0,_o=parseFloat(sale.otherCharges)||0,_t=(Number(sale.taxRate)||0)/100;
     const _pre=_items-_d+_o;
@@ -17842,13 +17849,13 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
               }
             }
             // Price list check — only lines whose item or price was changed in this edit (old sales are not re-flagged).
-            const _chg=hasLines?editLines.filter(l=>{const o=(sale.saleLines||[]).find(x=>x.id!==undefined&&x.id===l.id)||(sale.saleLines||[])[editLines.indexOf(l)];return !o||o.name!==l.name||String(o.price)!==String(l.price);}):[];
+            const _chg=hasLines?editLines.filter(l=>{const o=_lines0.find(x=>x.id!==undefined&&x.id===l.id)||_lines0[editLines.indexOf(l)];return !o||o.name!==l.name||String(o.price)!==String(l.price);}):[];
             const _mism=(isPriceShop(shopId)&&(form.paymentType||"FULL")==="FULL"&&!(Number(form.taxRate)>0))?priceMismatches(_chg,shopId):[];
             const _reason=editReasonRef.current; editReasonRef.current=null;
             if(_mism.length>0&&!_reason){setEditPriceDiff(_mism);return;}
             let _remOut=(_mism.length>0&&_reason)?[form.remarks,priceNoteText(shopId,_mism,_reason)].filter(x=>x&&String(x).trim()).join(" | "):form.remarks;
             const _strip=l=>{const {_k,recv,...rest}=l;return rest;};
-            let _linesOut=hasLines?editLines.map(_strip):sale.saleLines;
+            let _linesOut=(hasLines&&!(_synthLines.length>0&&!moneyDirty))?editLines.map(_strip):sale.saleLines;
             let _amtOut=parseFloat(form.amount)||0, _discOut=parseFloat(form.discount)||0, _othOut=parseFloat(form.otherCharges)||0;
             let _taxOut=form.taxRate, _expOut=form.expectedTotal, _itemOut=form.item, _qtyOut=form.qty, _labelOut=form.otherChargesLabel||"Other Charges";
             if(_ro){

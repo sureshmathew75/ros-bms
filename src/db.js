@@ -21,7 +21,12 @@ export const dbSaveSale = async (shopId, sale, opts = {}) => {
     status:        String(sale.ful || sale.status || ''),
     pay:           String(sale.pay || ''),
     date:          String(sale.date || today()),
-    item:          String(sale.item || ''),
+    // Multi-item sales keep their item lines (name / qty / price) inside the item column as "__LINES__:{json}\n{text}".
+    // Callers usually pass the decoded sale (plain item text + saleLines), so re-encode here — otherwise ANY later
+    // save (tracking, status, edit …) would silently drop the per-item prices.
+    item:          (Array.isArray(sale.saleLines) && sale.saleLines.length > 0 && !String(sale.item || '').startsWith('__LINES__:'))
+                     ? '__LINES__:' + JSON.stringify(sale.saleLines) + '\n' + String(sale.item || '')
+                     : String(sale.item || ''),
     qty:           String(sale.qty || '1'),
     shopify_order_id: sale.shopifyOrderId || null,
     contact:       String(sale.contact || ''),
