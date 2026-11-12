@@ -5621,7 +5621,7 @@ const LogisticsTabPanel=({logs=[],shopId,shop,onNewShipment,onView,onEdit,onDele
 /* ═══════════════════════════════════════════════════════════
    PURCHASES TAB PANEL
    ═══════════════════════════════════════════════════════════ */
-const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExport,onImport,onView,onEdit,onDelete,onSetDelivery,setTab,setViewLogRow})=>{
+const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExport,onImport,onView,onEdit,onDelete,onSetDelivery,canSetStatus=false,setTab,setViewLogRow})=>{
   const [search,setSearch]=React.useState("");
   const [delivRow,setDelivRow]=React.useState(null);      // purchase whose delivery is being marked / changed
   const [delivDate,setDelivDate]=React.useState("");
@@ -5630,11 +5630,17 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
   const isCancelled=p=>String(p.status||"").toUpperCase()==="CANCELLED";
   const todayStr=()=>localTodayISO();
   const openDeliv=p=>{setDelivRow(p);setDelivDate((isDelivered(p)&&(p.receivedDate||p.received_date))||todayStr());};
+  // Admin picks the delivery status from the dropdown: Delivered asks for the date first.
+  const pickStatus=async(p,val)=>{
+    if(val==="RECEIVED"){openDeliv(p);return;}
+    if(val==="CANCELLED"&&!(await showConfirm("Mark purchase "+(p.id||"")+" as cancelled?"))) return;
+    if(onSetDelivery) await onSetDelivery(p,{status:val,date:""});
+  };
   const saveDeliv=async(delivered)=>{
     if(!delivRow||!onSetDelivery) return;
     if(delivered&&!delivDate) return;
     setDelivBusy(true);
-    const ok=await onSetDelivery(delivRow,{delivered,date:delivered?delivDate:""});
+    const ok=await onSetDelivery(delivRow,{status:delivered?"RECEIVED":"PENDING",date:delivered?delivDate:""});
     setDelivBusy(false);
     if(ok!==false) setDelivRow(null);
   };
@@ -5788,6 +5794,23 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
                   {/* Delivery status */}
                   <td style={{padding:"12px 16px",whiteSpace:"nowrap"}} onClick={e=>e.stopPropagation()}>
                     {(()=>{
+                      if(canSetStatus&&onSetDelivery){
+                        const cur=isDelivered(p)?"RECEIVED":isCancelled(p)?"CANCELLED":"PENDING";
+                        const pal={RECEIVED:{bg:"#f0fdf4",bd:"#bbf7d0",c:"#15803d"},PENDING:{bg:"#fffbeb",bd:"#fde68a",c:"#a16207"},CANCELLED:{bg:"#f1f5f9",bd:"#e2e8f0",c:"#64748b"}}[cur];
+                        const rd=p.receivedDate||p.received_date||"";
+                        const _d=p.date?Math.floor((Date.now()-new Date(p.date+"T00:00:00").getTime())/86400000):null;
+                        return(
+                          <div style={{display:"inline-flex",flexDirection:"column",alignItems:"flex-start",gap:2}}>
+                            <select value={cur} onChange={e=>pickStatus(p,e.target.value)} title="Set the delivery status"
+                              style={{appearance:"none",WebkitAppearance:"none",cursor:"pointer",fontFamily:"inherit",fontSize:11,fontWeight:800,color:pal.c,background:pal.bg+" url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2394a3b8' stroke-width='1.6'/%3E%3C/svg%3E\") no-repeat right 9px center",border:"1px solid "+pal.bd,borderRadius:999,padding:"4px 26px 4px 11px",outline:"none"}}>
+                              <option value="PENDING">Pending</option>
+                              <option value="RECEIVED">Delivered</option>
+                              <option value="CANCELLED">Cancelled</option>
+                            </select>
+                            {cur==="RECEIVED"&&rd&&<span style={{fontSize:10,fontWeight:600,color:"#16a34a",paddingLeft:6}}>on {fmtD(rd)}</span>}
+                            {cur==="PENDING"&&_d!=null&&_d>=0&&<span style={{fontSize:10,color:"#94a3b8",paddingLeft:6}}>{_d===0?"ordered today":"ordered "+_d+" day"+(_d!==1?"s":"")+" ago"}</span>}
+                          </div>);
+                      }
                       if(isCancelled(p)) return(
                         <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"3px 10px",borderRadius:999,background:"#f1f5f9",border:"1px solid #e2e8f0",color:"#64748b",fontSize:11,fontWeight:700}}>
                           <span style={{width:6,height:6,borderRadius:"50%",background:"#94a3b8"}}/>Cancelled
@@ -5883,12 +5906,12 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
                   {/* Actions */}
                   <td style={{padding:"12px 16px"}} onClick={e=>e.stopPropagation()}>
                     <div style={{display:"flex",gap:5}}>
-                      {!isDelivered(p)&&!isCancelled(p)&&onSetDelivery&&(
+                      {!canSetStatus&&!isDelivered(p)&&!isCancelled(p)&&onSetDelivery&&(
                         <button onClick={()=>openDeliv(p)} title="Mark this purchase as delivered"
                           style={{padding:"5px 10px",borderRadius:7,border:"1px solid #86efac",
                             background:"#f0fdf4",color:"#15803d",fontSize:11,fontWeight:800,
                             cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
-                          ✓ Delivered
+                          Mark delivered
                         </button>
                       )}
                       <button onClick={()=>onView(p)}
@@ -9477,10 +9500,11 @@ return(
               onNewPurchase={()=>setModal("new-purchase")}
               onView={(p)=>setViewPurchRow(p)}
               onEdit={(p)=>setEditPurchRow(p)}
-              onSetDelivery={async(p,{delivered,date})=>{
+              canSetStatus={user?.role==="admin"||user?.role==="superadmin"}
+              onSetDelivery={async(p,{status,date})=>{
                 const uuid=p.uuid;
                 if(!uuid){showAlert("This purchase hasn't synced yet — please refresh and try again.");return false;}
-                const next={...p,status:delivered?"RECEIVED":"PENDING",receivedDate:delivered?date:""};
+                const next={...p,status,receivedDate:status==="RECEIVED"?date:""};
                 const result=await dbSavePurchase(shopId,{...next,_uuid:uuid});
                 if(result&&result.error){showAlert("Couldn't update the delivery status — "+result.error);return false;}
                 setPurchData(prev=>prev.map(x=>(x.uuid||x.id)===uuid?{...x,status:next.status,receivedDate:next.receivedDate}:x));
