@@ -109,7 +109,7 @@ export default function SaleNotebook({
         {calc.mode === "deal" ? (
           <>
             <Line label={"Sale total (Advance" + (calc.advLabel ? " " + calc.advLabel : "") + ")"} value={sym + num(shopId, calc.expected)} />
-            <Line label="Received earlier" value={sym + num(shopId, calc.priorReceived)} />
+            <Line label={calc.priorLabel || "Received earlier"} value={sym + num(shopId, calc.priorReceived)} />
             <Line label="Received now" value={sym + num(shopId, calc.receivedNow)} />
           </>
         ) : (
@@ -134,7 +134,7 @@ export default function SaleNotebook({
             )}
             <Line label="− Discount"><MoneyInput sym={sym} accent={accent} value={discount} onChange={onDiscount} /></Line>
             {/* GST buttons: only ROS Selections UK — ROS India / Hairlines UK prices already include GST. */}
-            {shopId === "ros-selections" && (
+            {(shopId === "ros-selections" || taxRate > 0) && (
               <div style={{ display: "flex", alignItems: "center", gap: 5, padding: "5px 0" }}>
                 <span style={{ fontSize: 11, fontWeight: 700, color: "#64748b", marginRight: 4 }}>GST</span>
                 {[0, 5, 10, 18, 20].map((r) => (

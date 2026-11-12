@@ -10021,7 +10021,7 @@ return(
       {modal==="edit-sale"&&editRow&&(
         <Modal title={"✏️ Edit Sale — "+editRow.id} onClose={()=>{setModal(null);setEditRow(null);}} accent={shop.accent}>
           <EditSaleForm
-            shopId={shopId} shop={shop} sale={editRow} customers={customers} isStaff={user?.role==="staff"} isSuperadmin={user?.role==="superadmin"} isSuresh={user?.id==="suresh"}
+            shopId={shopId} shop={shop} sale={editRow} customers={customers} allSales={sales||[]} isStaff={user?.role==="staff"} isSuperadmin={user?.role==="superadmin"} isSuresh={user?.id==="suresh"}
             onSave={(updated)=>{
               // Merge over the existing sale so fields the form does not track
               // (e.g. verified) are preserved on save
@@ -17103,7 +17103,7 @@ const TagPicker=({value,onChange,accent,accentBg,inp,fo,bl,lbl})=>{
   );
 };
 
-const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,isSuperadmin=false,isSuresh=false})=>{
+const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],isStaff=false,isSuperadmin=false,isSuresh=false})=>{
   const [showAddressModal,setShowAddressModal]=useState(false);
   const rosieFieldRefs=useRef({});
   const [statusOverride,setStatusOverride]=useState(false); // admin-only: bypass the status chain
@@ -17163,28 +17163,36 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
   const editReasonRef=useRef(null);                        // reason given in the dialog, read by the Save button when it re-runs
   const editSaveBtnRef=useRef(null);
 
-  // Editable saleLines state (for multi-item sales)
+  // Editable saleLines state (for multi-item sales) — notebook style, same figures as New Sale
+  const _mkKey=()=>"e"+Math.random().toString(36).slice(2,9);
   const [editLines,setEditLines]=useState(()=>
-    hasLines ? sale.saleLines.map(l=>({...l})) : []
+    hasLines ? sale.saleLines.map(l=>({...l,_k:_mkKey()})) : []
   );
-  const setLine=(i,k,v)=>setEditLines(prev=>{
-    const next=[...prev];
-    next[i]={...next[i],[k]:v};
-    // Auto-recalculate grand total from lines
-    const total=next.reduce((s,l)=>s+(parseFloat(l.qty||1)*parseFloat(l.price||0)),0);
-    setForm(f=>({...f,amount:parseFloat(total.toFixed(2))}));
-    return next;
+  const _qtyOf=l=>(l.qty===undefined||l.qty===null||l.qty==="")?1:(parseFloat(l.qty)||0);
+  const _rowAmt=l=>parseFloat((_qtyOf(l)*(parseFloat(l.price)||0)).toFixed(2));
+  // Is the money on this sale still "as stored"? Until staff touch a money field the sale is saved exactly as before.
+  const [moneyDirty,setMoneyDirty]=useState(false);
+  // Received follows the sale total (fully received) until staff type their own Received amount.
+  const [recvAuto,setRecvAuto]=useState(()=>{
+    if(!hasLines) return true;
+    const _lines=sale.saleLines;
+    const _items=_lines.reduce((a,l)=>a+_rowAmt(l),0);
+    const _d=parseFloat(sale.discount)||0,_o=parseFloat(sale.otherCharges)||0,_t=(Number(sale.taxRate)||0)/100;
+    const _pre=_items-_d+_o;
+    const _grand=_pre+_pre*_t;
+    return Math.abs((Number(sale.amount)||0)-_grand)<=0.5;
   });
-  const addLine=()=>setEditLines(prev=>{
-    const next=[...prev,{name:"",qty:1,price:""}];
-    return next;
-  });
-  const removeLine=(i)=>setEditLines(prev=>{
-    const next=prev.filter((_,idx)=>idx!==i);
-    const total=next.reduce((s,l)=>s+(parseFloat(l.qty||1)*parseFloat(l.price||0)),0);
-    setForm(f=>({...f,amount:parseFloat(total.toFixed(2))}));
-    return next;
-  });
+  useEffect(()=>{
+    // Stored received amount differs from the computed sale total (older data): show what was really received, per row.
+    if(!hasLines||recvAuto) return;
+    const _items=editLines.reduce((a,l)=>a+_rowAmt(l),0);
+    const _fi=editLines.map((l,i)=>(String(l.name||"").trim()||parseFloat(l.price)>0)?i:-1).filter(i=>i>=0);
+    const _li=_fi.length?_fi[_fi.length-1]:-1;
+    setEditLines(prev=>prev.map((l,i)=>{const v=_rowAmt(l)+(i===_li?(Number(sale.amount)||0)-_items:0);return {...l,recv:v?String(parseFloat(v.toFixed(2))):""};}));
+  },[]); // eslint-disable-line react-hooks/exhaustive-deps
+  const setLineK=(k,patch)=>{setMoneyDirty(true);setEditLines(prev=>prev.map(l=>l._k===k?{...l,...patch}:l));};
+  const addLine=()=>{setMoneyDirty(true);setEditLines(prev=>[...prev,{_k:_mkKey(),name:"",qty:1,price:"",recv:""}]);};
+  const removeLine=(k)=>{setMoneyDirty(true);setEditLines(prev=>prev.length>1?prev.filter(l=>l._k!==k):prev);};
 
   const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white",transition:"border-color 0.15s"};
   const fo=e=>e.target.style.borderColor=shop.accent;
@@ -17220,6 +17228,68 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
     { done: !!form.payBy, label: "Payment To not set" },
   ];
   const rosieEditActiveIdx = rosieEditSteps.findIndex(s=>!s.done);
+
+  /* ── Notebook figures (same rules as New Sale) ── */
+  const _TLe={FULL:"Full",ADVANCE:"Advance",PART:"Part",FINAL:"Final"};
+  const _isInst=["ADVANCE","PART","FINAL"].includes(form.paymentType);
+  const _fillIdx=editLines.map((l,i)=>(String(l.name||"").trim()||parseFloat(l.price)>0)?i:-1).filter(i=>i>=0);
+  const _lastIdx=_fillIdx.length?_fillIdx[_fillIdx.length-1]:-1;
+  const rowAmts=editLines.map(_rowAmt);
+  const itemsSubtotal=parseFloat(rowAmts.reduce((a,x)=>a+x,0).toFixed(2));
+  const discountAmt=parseFloat(form.discount)||0;
+  const otherChargesAmt=parseFloat(form.otherCharges)||0;
+  const gstAmt=parseFloat(((itemsSubtotal-discountAmt+otherChargesAmt)*((Number(form.taxRate)||0)/100)).toFixed(2));
+  const grandTotal=parseFloat((itemsSubtotal-discountAmt+otherChargesAmt+gstAmt).toFixed(2));
+  const autoRecv=(i)=>parseFloat((rowAmts[i]+(i===_lastIdx?grandTotal-itemsSubtotal:0)).toFixed(2));
+  const recvAmts=editLines.map((l,i)=>recvAuto?autoRecv(i):(parseFloat(l.recv)||0));
+  const receivedTotal=parseFloat(recvAmts.reduce((a,x)=>a+x,0).toFixed(2));
+  const viewLines=editLines.map((l,i)=>({...l,id:l._k,recv:recvAuto?(autoRecv(i)?String(autoRecv(i)):""):(l.recv===undefined?"":l.recv)}));
+  // Advance / Part / Final: balance is worked out against the Advance's Expected total and the group's other payments.
+  const dealInfo=(()=>{
+    if(!hasLines||!_isInst) return null;
+    const me={...sale,paymentType:form.paymentType,customer:form.customer,phone:form.contact,contact:form.contact,date:form.date};
+    const all=(allSales||[]).map(x=>x.id===sale.id?me:x);
+    if(!all.some(x=>x.id===sale.id)) all.push(me);
+    const ids=findInstalmentGroupIds(me,all);
+    const group=all.filter(x=>ids.includes(x.id));
+    const prior=group.filter(x=>x.id!==sale.id).reduce((a,x)=>a+(Number(x.amount)||0),0);
+    let expected=0,adv=null;
+    if(form.paymentType==="ADVANCE"){ expected=Number(form.expectedTotal)||0; adv=me; }
+    else{
+      adv=group.find(x=>x.id!==sale.id&&inferPaymentType(x)==="ADVANCE");
+      if(!adv) return null;
+      expected=Number(adv.expectedTotal)||0;
+      if(!(expected>0)){const lt=isPriceShop(shopId)?listTotalForLines(adv.saleLines,shopId):null;expected=lt?lt.total:0;}
+    }
+    if(!(expected>0)) return null;
+    return {expected,prior,advLabel:adv.id};
+  })();
+  const _calc=dealInfo
+    ?{mode:"deal",expected:dealInfo.expected,priorReceived:dealInfo.prior,priorLabel:"Received in other instalments",receivedNow:receivedTotal,balance:parseFloat((dealInfo.expected-dealInfo.prior-receivedTotal).toFixed(2)),advLabel:dealInfo.advLabel}
+    :{mode:"normal",itemsTotal:itemsSubtotal,gstAmt,saleTotal:grandTotal,receivedNow:receivedTotal,balance:parseFloat((grandTotal-receivedTotal).toFixed(2))};
+  const _moneyFmt=n=>shop.symbol+Number(n).toLocaleString();
+  const editPayTypeUI=(<>
+    <div ref={el=>{rosieFieldRefs.current.paymentType=el;}}>
+      <PaymentTypeControl value={form.paymentType} onChange={v=>{
+        setMoneyDirty(true);
+        setForm(f=>({...f,paymentType:v,expectedTotal:(v==="ADVANCE"&&!(Number(f.expectedTotal)>0)&&grandTotal>0)?String(grandTotal):f.expectedTotal}));
+      }} accent={shop.accent}/>
+    </div>
+    {form.paymentType==="ADVANCE"&&(
+      <div style={{marginBottom:12,padding:"12px 14px",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10}}>
+        <label style={{...lbl,color:"#92400e"}}>💰 Expected Total ({shop.symbol})</label>
+        <input type="number" value={form.expectedTotal||""} onChange={e=>{setMoneyDirty(true);set("expectedTotal",e.target.value);}}
+          placeholder={"Defaults to the sale total "+shop.symbol+grandTotal.toLocaleString()}
+          style={{...inp,border:"1.5px solid #fbbf24",background:"white"}} onFocus={fo} onBlur={bl}/>
+        <p style={{margin:"4px 0 0",fontSize:11,color:"#92400e"}}>
+          Total amount across all instalments. Used to calculate balance.
+        </p>
+      </div>
+    )}
+  </>);
+  const editTypeBanner=(moneyDirty&&!_isInst&&_calc.balance>0.5&&receivedTotal>0)
+    ?(<div style={{margin:"0 0 8px",padding:"8px 11px",borderRadius:9,background:"#fffbeb",border:"1px solid #fde68a",fontSize:12,fontWeight:700,color:"#92400e"}}>⚠ Balance due {_moneyFmt(_calc.balance)} — if the customer will pay the rest later, choose <b>Advance</b> (or Part / Final) below. Otherwise press “Mark fully received”.</div>)
+    :null;
   return(
     <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",padding:"4px 20px 20px"}}>
       <div style={{padding:"0 20px"}}>
@@ -17395,52 +17465,28 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
       )}
       <fieldset disabled={amountLocked} style={{border:0,padding:0,margin:0,minWidth:0}}>
 
-      {/* Editable multi-item lines */}
-      {hasLines&&(
-        <div style={{background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"12px 14px",marginBottom:12}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
-            <p style={{margin:0,fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.05em"}}>Items</p>
-            <button type="button" onClick={addLine}
-              style={{fontSize:11,fontWeight:700,color:shop.accent,background:shop.accentBg,border:"1px solid "+shop.accent+"44",borderRadius:6,padding:"3px 10px",cursor:"pointer",fontFamily:"inherit"}}>
-              + Add Item
-            </button>
-          </div>
-          {/* Column headers */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 60px 90px 70px 28px",gap:4,marginBottom:4}}>
-            {["Item","Qty","Price","Total",""].map((h,i)=>(
-              <span key={i} style={{fontSize:10,fontWeight:700,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.04em",textAlign:i>0?"right":"left",paddingRight:i===3?4:0}}>{h}</span>
-            ))}
-          </div>
-          {editLines.map((l,i)=>{
-            const lineTotal=parseFloat(((parseFloat(l.qty)||1)*(parseFloat(l.price)||0)).toFixed(2));
-            return(
-              <div key={i} style={{display:"grid",gridTemplateColumns:"1fr 60px 90px 70px 28px",gap:4,marginBottom:6,alignItems:"center"}}>
-                <ItemSuggestInput inputRef={el=>{if(i===0)rosieFieldRefs.current.item=el;}} value={l.name} shopId={shopId} onChange={v=>setLine(i,"name",v)}
-                  onPick={en=>{setLine(i,"name",en.label);}}
-                  placeholder="Item name"
-                  style={{...inp,fontSize:12,padding:"6px 9px"}} onFocus={fo} onBlur={bl}/>
-                <input type="number" onWheel={e=>e.target.blur()} min="1" value={l.qty} onChange={e=>setLine(i,"qty",e.target.value)}
-                  style={{...inp,fontSize:12,padding:"6px 6px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
-                <input ref={el=>{if(i===0)rosieFieldRefs.current.price=el;}} type="number" onWheel={e=>e.target.blur()} min="0" step="0.01" value={l.price} onChange={e=>setLine(i,"price",e.target.value)}
-                  placeholder={(()=>{const _en=isPriceShop(shopId)?matchEntry(l.name):null;const _p=_en?priceFor(_en,shopId):null;return _p!=null?"List "+_p:"0.00";})()}
-                  style={{...inp,fontSize:12,padding:"6px 6px",textAlign:"right"}} onFocus={fo} onBlur={bl}/>
-                <span style={{fontSize:12,fontWeight:700,color:shop.accent,textAlign:"right",paddingRight:4}}>
-                  {shop.symbol}{lineTotal.toLocaleString()}
-                </span>
-                <button type="button" onClick={()=>removeLine(i)}
-                  title="Remove item"
-                  style={{width:24,height:24,borderRadius:6,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,display:"flex",alignItems:"center",justifyContent:"center",lineHeight:1,padding:0,fontFamily:"inherit"}}>
-                  ×
-                </button>
-                <PriceHint shopId={shopId} name={l.name} price={l.price} hide={(form.paymentType||"FULL")!=="FULL"||Number(form.taxRate)>0}/>
-              </div>
-            );
-          })}
-          {editLines.length===0&&(
-            <p style={{margin:"4px 0 0",fontSize:11,color:"#94a3b8",fontStyle:"italic"}}>No items — click "+ Add Item" to add one.</p>
-          )}
+      {/* Editable multi-item lines — notebook style (same as New Sale) */}
+      {hasLines&&(<>
+        <SaleNotebook shopId={shopId} shop={shop} lines={viewLines} rowAmts={rowAmts} recvAmts={recvAmts}
+          showHint={form.paymentType==="FULL"&&!(Number(form.taxRate)>0)} rosieRefs={rosieFieldRefs}
+          onName={(k,v)=>setEditLines(prev=>prev.map(l=>l._k===k?{...l,name:v}:l))}
+          onPick={(k,en)=>setLineK(k,{name:en.label,price:String(priceFor(en,shopId))})}
+          onQty={(k,v)=>setLineK(k,{qty:v})} onPrice={(k,v)=>setLineK(k,{price:v})}
+          onRecv={(k,v)=>{
+            setMoneyDirty(true);
+            setEditLines(prev=>prev.map((l,i)=>{const base=recvAuto?{...l,recv:autoRecv(i)?String(autoRecv(i)):""}:l;return l._k===k?{...base,recv:v}:base;}));
+            setRecvAuto(false);
+          }}
+          onFillRecv={()=>{setMoneyDirty(true);setRecvAuto(true);}}
+          onRemove={removeLine} onAdd={addLine}
+          calc={_calc} other={form.otherCharges} discount={form.discount}
+          onOther={v=>{setMoneyDirty(true);set("otherCharges",v);}} onDiscount={v=>{setMoneyDirty(true);set("discount",v);}}
+          taxRate={Number(form.taxRate)||0} onTax={r=>{setMoneyDirty(true);set("taxRate",Number(r));}}/>
+        <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:12,border:"1px solid #f1f5f9"}}>
+          {editTypeBanner}
+          {editPayTypeUI}
         </div>
-      )}
+      </>)}
 
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         {!hasLines&&(
@@ -17455,7 +17501,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
             <input type="number" onWheel={e=>e.target.blur()} min="1" value={form.qty} onChange={e=>set("qty",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
           </div>
         )}
-        <div style={{gridColumn:"1/-1"}}>
+        {!hasLines&&(<div style={{gridColumn:"1/-1"}}>
           {/* GST TOGGLE + RATE */}
           <div style={{background:form.taxRate===0?"#f8fafc":(form.taxInclusive?"#f0fdf4":"#eff6ff"),border:"1px solid "+(form.taxRate===0?"#e2e8f0":(form.taxInclusive?"#bbf7d0":"#bfdbfe")),borderRadius:10,padding:"12px 14px",marginBottom:10}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8}}>
@@ -17523,11 +17569,11 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
               );
             })()}
           </div>
-        </div>
+        </div>)}
       </div>
       </fieldset>
 
-      {!isStaff&&<>
+      {!isStaff&&!hasLines&&<>
       <Divider title="Pricing"/>
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         <div><label style={lbl}>Discount ({shop.symbol})</label>
@@ -17713,6 +17759,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
 
       <TagPicker value={form.tag} onChange={v=>set("tag",v)} accent={shop.accent} accentBg={shop.accentBg} inp={inp} fo={fo} bl={bl} lbl={lbl}/>
 
+      {!hasLines&&(<>
       <div ref={el=>{rosieFieldRefs.current.paymentType=el;}}>
       <PaymentTypeControl value={form.paymentType} onChange={v=>set("paymentType",v)} accent={shop.accent}/>
       </div>
@@ -17729,6 +17776,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
           </p>
         </div>
       )}
+      </>)}
       <div style={{marginBottom:16}}>
         <label style={lbl}>Remarks</label>
         <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Any additional notes…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
@@ -17761,7 +17809,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
 
       </div>{/* end padding wrapper */}
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
-        <button onClick={()=>{
+        <button onClick={async()=>{
             if(form.date&&form.date>localTodayISO()){
               showAlert("Sale date can't be in the future. Please pick today's date or an earlier one.");
               return;
@@ -17775,13 +17823,49 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],isStaff=false,
               showAlert("Please enter the purchase date too — a purchase amount can't be saved on its own.");
               return;
             }
+            // Money check (notebook) — only when a money field was touched; an untouched sale is saved exactly as stored.
+            const _ro=hasLines&&moneyDirty;
+            if(_ro){
+              if(!(receivedTotal>0)){showAlert("Please enter the amount received (the Received box on the item row).");return;}
+              if(_calc.balance<-0.5){showAlert("The amount received is more than the "+(dealInfo?"balance of this sale":"sale total")+" ("+_moneyFmt(Math.abs(_calc.balance))+" too much). Please check the Received amounts.");return;}
+              if(!_isInst&&_calc.balance>0.5){showAlert("Balance due is "+_moneyFmt(_calc.balance)+". If the customer will pay the rest later, set the Payment Type to Advance (or Part / Final); otherwise press “Mark fully received”.");return;}
+              if(form.paymentType==="FINAL"&&dealInfo&&_calc.balance>0.5&&!editReasonRef.current){
+                if(!(await showConfirm("This Final payment leaves the sale "+_moneyFmt(_calc.balance)+" short of the expected total ("+_moneyFmt(dealInfo.expected)+"). Save anyway?")))return;
+              }
+            }
             // Price list check — only lines whose item or price was changed in this edit (old sales are not re-flagged).
-            const _chg=hasLines?editLines.filter((l,i)=>{const o=(sale.saleLines||[])[i];return !o||o.name!==l.name||String(o.price)!==String(l.price);}):[];
+            const _chg=hasLines?editLines.filter(l=>{const o=(sale.saleLines||[]).find(x=>x.id!==undefined&&x.id===l.id)||(sale.saleLines||[])[editLines.indexOf(l)];return !o||o.name!==l.name||String(o.price)!==String(l.price);}):[];
             const _mism=(isPriceShop(shopId)&&(form.paymentType||"FULL")==="FULL"&&!(Number(form.taxRate)>0))?priceMismatches(_chg,shopId):[];
             const _reason=editReasonRef.current; editReasonRef.current=null;
             if(_mism.length>0&&!_reason){setEditPriceDiff(_mism);return;}
-            const _remOut=(_mism.length>0&&_reason)?[form.remarks,priceNoteText(shopId,_mism,_reason)].filter(x=>x&&String(x).trim()).join(" | "):form.remarks;
-            onSave({...form,id:(form.invAssigned&&form.invoiceNo)?form.invoiceNo:((shopId==="ros-india"&&new Date(form.date||sale.date||0)>=new Date(2026,3,1)&&!String(sale.id||"").includes("-"))?`IN-${Date.now().toString().slice(-6)}`:sale.id),ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),rem:_remOut,amount:parseFloat(form.amount)||0,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:hasLines?editLines:sale.saleLines,discount:parseFloat(form.discount)||0,otherCharges:parseFloat(form.otherCharges)||0,otherChargesLabel:form.otherChargesLabel||"Other Charges",contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""});
+            let _remOut=(_mism.length>0&&_reason)?[form.remarks,priceNoteText(shopId,_mism,_reason)].filter(x=>x&&String(x).trim()).join(" | "):form.remarks;
+            const _strip=l=>{const {_k,recv,...rest}=l;return rest;};
+            let _linesOut=hasLines?editLines.map(_strip):sale.saleLines;
+            let _amtOut=parseFloat(form.amount)||0, _discOut=parseFloat(form.discount)||0, _othOut=parseFloat(form.otherCharges)||0;
+            let _taxOut=form.taxRate, _expOut=form.expectedTotal, _itemOut=form.item, _qtyOut=form.qty, _labelOut=form.otherChargesLabel||"Other Charges";
+            if(_ro){
+              // Same mapping as New Sale: fully received → Amount = sale total; Advance / Part / Final → Amount = money received.
+              const _filled=editLines.filter(l=>String(l.name||"").trim()||(parseFloat(l.price)>0));
+              _linesOut=_filled.map(l=>{
+                const base=_strip(l),_q=_qtyOf(l),_i=editLines.indexOf(l);
+                if(_isInst&&_q>0) base.price=String(parseFloat((recvAmts[_i]/_q).toFixed(4)));
+                return base;
+              });
+              _amtOut=_isInst?receivedTotal:grandTotal;
+              _discOut=_isInst?0:discountAmt; _othOut=_isInst?0:otherChargesAmt; _taxOut=_isInst?0:form.taxRate;
+              if(shopId==="ros-hairlines") _labelOut="Shipping";
+              if(form.paymentType==="ADVANCE"&&!(Number(_expOut)>0)) _expOut=String(grandTotal);
+              if(_isInst&&(discountAmt||otherChargesAmt||gstAmt)){
+                const _bits=[_moneyFmt(itemsSubtotal)+" items"];
+                if(otherChargesAmt) _bits.push("+ "+_moneyFmt(otherChargesAmt)+" other charges");
+                if(discountAmt) _bits.push("− "+_moneyFmt(discountAmt)+" discount");
+                if(gstAmt) _bits.push("+ "+_moneyFmt(gstAmt)+" GST");
+                _remOut=[_remOut,"Sale total "+_moneyFmt(grandTotal)+" ("+_bits.join(" ")+") — received "+_moneyFmt(receivedTotal)+", balance "+_moneyFmt(grandTotal-receivedTotal)].filter(x=>x&&String(x).trim()).join(" | ");
+              }
+              _itemOut=_filled.map(l=>`${l.name}(x${l.qty})`).join(", ")||_itemOut;
+              _qtyOut=String(_filled.reduce((a,l)=>a+_qtyOf(l),0)||1);
+            }
+            onSave({...form,id:(form.invAssigned&&form.invoiceNo)?form.invoiceNo:((shopId==="ros-india"&&new Date(form.date||sale.date||0)>=new Date(2026,3,1)&&!String(sale.id||"").includes("-"))?`IN-${Date.now().toString().slice(-6)}`:sale.id),ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),rem:_remOut,amount:_amtOut,item:_itemOut,qty:_qtyOut,taxRate:_taxOut,expectedTotal:_expOut,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:_linesOut,discount:_discOut,otherCharges:_othOut,otherChargesLabel:_labelOut,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""});
           }}
           ref={editSaveBtnRef}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
