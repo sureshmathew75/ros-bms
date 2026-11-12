@@ -116,6 +116,38 @@ export const searchPriceList = (query, shopId, limit = 8) => {
   return out.slice(0, limit).map(x => x.e);
 };
 
+/* Finds the price-list entry for a sale line even when the name was typed freehand in the old style
+   ("10\"PONYTAIL WITH TIE", "12\"VOLMIZER PREMIUM"): exact match first, else every word must match — a word with one
+   typo still counts — and only a single, unambiguous entry is accepted. Used for display only. */
+const _near = (a, b) => {
+  if (a === b) return true;
+  if (a.length < 5 || Math.abs(a.length - b.length) > 1) return false;
+  let i = 0, j = 0, miss = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i++; j++; continue; }
+    if (++miss > 1) return false;
+    if (a.length > b.length) i++; else if (a.length < b.length) j++; else { i++; j++; }
+  }
+  return miss + (a.length - i) + (b.length - j) <= 1;
+};
+export const findListEntry = (name, shopId) => {
+  const exact = matchEntry(String(name || "").replace(/\s*\(x\d+\)\s*$/i, ""));
+  if (exact) return exact;
+  const q = normName(String(name || "").replace(/\s*\(x\d+\)\s*$/i, ""));
+  if (!q) return null;
+  const toks = q.split(" ").filter(Boolean);
+  const hits = [];
+  for (const { e, hay } of HAY) {
+    if (shopId && priceFor(e, shopId) == null) continue;
+    const words = hay.split(" ");
+    const ok = toks.every(t => /^\d+$/.test(t)
+      ? new RegExp("(^|[^0-9])" + t + "([^0-9]|$)").test(hay)
+      : hay.includes(t) || words.some(w => _near(t, w)));
+    if (ok) hits.push(e);
+  }
+  return hits.length === 1 ? hits[0] : null;
+};
+
 /* Lines of a sale (saleLines) compared with the list. Only lines that match a list item AND carry a
    price are checked — custom items are never flagged. */
 export const priceMismatches = (lines, shopId) => {

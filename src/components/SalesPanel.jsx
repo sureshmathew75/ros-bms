@@ -3,7 +3,7 @@ import { formatDate } from "../utils";
 import { showAlert, showConfirm } from "./PopupHost";
 import { dbLoadDispatchLog, dbSaveDispatchEntry } from "../db";
 import { BankBadge, BankIcon, BankMenu } from "./BankLogos";
-import { shortfallForSales, shortfallMessage, isPriceShop, matchEntry, priceFor } from "../priceList";
+import { shortfallForSales, shortfallMessage, isPriceShop, findListEntry, priceFor } from "../priceList";
 import { returnPolicySection, addressCheckSection } from "../despatchMessage";
 /* ─────────────────────────────────────────────────────────────────────────
    SALES PANEL
@@ -458,14 +458,23 @@ const STATUS_ROW_BG = {
 /* Price-list price of a sale's items (ROS India / Hairlines UK), shown pale under the item name so it can be
    compared with the amount received. Items not on the list are left out ("+" marks that some are missing). */
 const listPriceNote = (sale, shop) => {
-  if (!sale || !isPriceShop(shop?.id) || !Array.isArray(sale.saleLines) || sale.saleLines.length === 0) return "";
+  if (!sale || !isPriceShop(shop?.id)) return "";
+  // Items saved with lines use those; older / freehand entries fall back to the item text "NAME(x1), NAME(x2)".
+  let lines = Array.isArray(sale.saleLines) && sale.saleLines.length > 0 ? sale.saleLines : null;
+  if (!lines && sale.item) {
+    lines = String(sale.item).split(/\)\s*,\s*/).map(t => {
+      const m = t.match(/^(.*?)\s*\(x(\d+)\)?\s*$/i);
+      return m ? { name: m[1], qty: m[2] } : { name: t.replace(/\)\s*$/, ""), qty: "1" };
+    }).filter(l => l.name.trim());
+  }
+  if (!lines || lines.length === 0) return "";
   let total = 0, hit = 0;
-  sale.saleLines.forEach(l => {
-    const p = priceFor(matchEntry(l.name), shop.id);
+  lines.forEach(l => {
+    const p = priceFor(findListEntry(l.name, shop.id), shop.id);
     if (p != null) { total += p * (l.qty === undefined || l.qty === "" ? 1 : (parseFloat(l.qty) || 0)); hit++; }
   });
   if (!hit) return "";
-  return "List " + (shop.symbol || "") + (Math.round(total * 100) / 100).toLocaleString() + (hit < sale.saleLines.length ? "+" : "");
+  return "List " + (shop.symbol || "") + (Math.round(total * 100) / 100).toLocaleString() + (hit < lines.length ? "+" : "");
 };
 
 export default function SalesPanel({
