@@ -5621,8 +5621,23 @@ const LogisticsTabPanel=({logs=[],shopId,shop,onNewShipment,onView,onEdit,onDele
 /* ═══════════════════════════════════════════════════════════
    PURCHASES TAB PANEL
    ═══════════════════════════════════════════════════════════ */
-const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExport,onImport,onView,onEdit,onDelete,setTab,setViewLogRow})=>{
+const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExport,onImport,onView,onEdit,onDelete,onSetDelivery,setTab,setViewLogRow})=>{
   const [search,setSearch]=React.useState("");
+  const [delivRow,setDelivRow]=React.useState(null);      // purchase whose delivery is being marked / changed
+  const [delivDate,setDelivDate]=React.useState("");
+  const [delivBusy,setDelivBusy]=React.useState(false);
+  const isDelivered=p=>["RECEIVED","DELIVERED"].includes(String(p.status||"").toUpperCase());
+  const isCancelled=p=>String(p.status||"").toUpperCase()==="CANCELLED";
+  const todayStr=()=>localTodayISO();
+  const openDeliv=p=>{setDelivRow(p);setDelivDate((isDelivered(p)&&(p.receivedDate||p.received_date))||todayStr());};
+  const saveDeliv=async(delivered)=>{
+    if(!delivRow||!onSetDelivery) return;
+    if(delivered&&!delivDate) return;
+    setDelivBusy(true);
+    const ok=await onSetDelivery(delivRow,{delivered,date:delivered?delivDate:""});
+    setDelivBusy(false);
+    if(ok!==false) setDelivRow(null);
+  };
   const [statusFilter,setStatusFilter]=React.useState("ALL");
   const [shipPopover,setShipPopover]=React.useState(null); // {purchId, rect}
 
@@ -5644,7 +5659,8 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
       (p.supplier||"").toLowerCase().includes(q)||
       (p.item||"").toLowerCase().includes(q)||
       (p.invoiceNo||"").toLowerCase().includes(q);
-    const matchS=statusFilter==="ALL"||(p.status||"")=== statusFilter;
+    const matchS=statusFilter==="ALL"
+      ||(statusFilter==="RECEIVED"?isDelivered(p):statusFilter==="PENDING"?(!isDelivered(p)&&!isCancelled(p)):isCancelled(p));
     return matchQ&&matchS;
   });
 
@@ -5694,15 +5710,18 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
         </div>
         {/* Status filter */}
         <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
-          {["ALL","PENDING","RECEIVED","CANCELLED"].map(s=>(
+          {["ALL","PENDING","RECEIVED","CANCELLED"].map(s=>{
+            const cnt=s==="ALL"?purch.length:s==="RECEIVED"?purch.filter(isDelivered).length:s==="CANCELLED"?purch.filter(isCancelled).length:purch.filter(x=>!isDelivered(x)&&!isCancelled(x)).length;
+            const lbl=s==="ALL"?"All":s==="RECEIVED"?"Delivered":s==="PENDING"?"Pending":"Cancelled";
+            return(
             <button key={s} onClick={()=>setStatusFilter(s)}
               style={{padding:"4px 12px",borderRadius:999,fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",
                 border:"1px solid "+(statusFilter===s?shop.accent:"#e2e8f0"),
                 background:statusFilter===s?shop.accent:"white",
                 color:statusFilter===s?"white":"#64748b"}}>
-              {s==="ALL"?`All (${purch.length})`:s}
-            </button>
-          ))}
+              {lbl} ({cnt})
+            </button>);
+          })}
         </div>
       </div>
 
@@ -5711,7 +5730,7 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead>
             <tr>
-              {["PO ID","Date","Supplier","Item","Qty","Total","Pay By","Docs","Shipments","Actions"].map(h=>(
+              {["PO ID","Date","Supplier","Item","Qty","Total","Pay By","Delivery","Docs","Shipments","Actions"].map(h=>(
                 <th key={h} style={{padding:"10px 16px",fontSize:11,fontWeight:800,color:"#64748b",
                   textTransform:"uppercase",letterSpacing:"0.05em",background:"#f8fafc",
                   borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap",
@@ -5721,7 +5740,7 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
           </thead>
           <tbody>
             {filtered.length===0?(
-              <tr><td colSpan={10} style={{padding:"60px 20px",textAlign:"center",color:"#94a3b8"}}>
+              <tr><td colSpan={11} style={{padding:"60px 20px",textAlign:"center",color:"#94a3b8"}}>
                 <div style={{fontSize:36,marginBottom:10}}>📦</div>
                 <p style={{margin:0,fontSize:14,fontWeight:600}}>No purchases found</p>
               </td></tr>
@@ -5765,6 +5784,34 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
                   {/* Pay By */}
                   <td style={{padding:"12px 16px",color:"#64748b",fontSize:12,maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                     {p.payBy||p.pay_by||"—"}
+                  </td>
+                  {/* Delivery status */}
+                  <td style={{padding:"12px 16px",whiteSpace:"nowrap"}} onClick={e=>e.stopPropagation()}>
+                    {(()=>{
+                      if(isCancelled(p)) return(
+                        <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"3px 10px",borderRadius:999,background:"#f1f5f9",border:"1px solid #e2e8f0",color:"#64748b",fontSize:11,fontWeight:700}}>
+                          <span style={{width:6,height:6,borderRadius:"50%",background:"#94a3b8"}}/>Cancelled
+                        </span>);
+                      if(isDelivered(p)){
+                        const rd=p.receivedDate||p.received_date||"";
+                        return(
+                          <button type="button" onClick={()=>openDeliv(p)} title="Delivered — click to change the date or undo"
+                            style={{display:"inline-flex",flexDirection:"column",alignItems:"flex-start",gap:1,padding:"4px 11px",borderRadius:10,background:"#f0fdf4",border:"1px solid #bbf7d0",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+                            <span style={{display:"inline-flex",alignItems:"center",gap:6,color:"#15803d",fontSize:11,fontWeight:800}}>
+                              <span style={{width:15,height:15,borderRadius:"50%",background:"#16a34a",color:"white",fontSize:9,display:"inline-flex",alignItems:"center",justifyContent:"center",lineHeight:1}}>✓</span>Delivered
+                            </span>
+                            {rd&&<span style={{fontSize:10,fontWeight:600,paddingLeft:21,color:"#16a34a"}}>{fmtD(rd)}</span>}
+                          </button>);
+                      }
+                      const _d=p.date?Math.floor((Date.now()-new Date(p.date+"T00:00:00").getTime())/86400000):null;
+                      return(
+                        <div style={{display:"inline-flex",flexDirection:"column",alignItems:"flex-start",gap:1}}>
+                          <span style={{display:"inline-flex",alignItems:"center",gap:6,padding:"3px 10px",borderRadius:999,background:"#fffbeb",border:"1px solid #fde68a",color:"#a16207",fontSize:11,fontWeight:700}}>
+                            <span style={{width:6,height:6,borderRadius:"50%",background:"#f59e0b"}}/>Pending
+                          </span>
+                          {_d!=null&&_d>=0&&<span style={{fontSize:10,color:"#94a3b8",paddingLeft:4}}>{_d===0?"ordered today":"ordered "+_d+" day"+(_d!==1?"s":"")+" ago"}</span>}
+                        </div>);
+                    })()}
                   </td>
                   {/* Docs */}
                   <td style={{padding:"12px 16px",textAlign:"center"}} onClick={e=>{e.stopPropagation();onView(p);}}>
@@ -5836,6 +5883,14 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
                   {/* Actions */}
                   <td style={{padding:"12px 16px"}} onClick={e=>e.stopPropagation()}>
                     <div style={{display:"flex",gap:5}}>
+                      {!isDelivered(p)&&!isCancelled(p)&&onSetDelivery&&(
+                        <button onClick={()=>openDeliv(p)} title="Mark this purchase as delivered"
+                          style={{padding:"5px 10px",borderRadius:7,border:"1px solid #86efac",
+                            background:"#f0fdf4",color:"#15803d",fontSize:11,fontWeight:800,
+                            cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>
+                          ✓ Delivered
+                        </button>
+                      )}
                       <button onClick={()=>onView(p)}
                         style={{padding:"5px 10px",borderRadius:7,border:"1px solid #e2e8f0",
                           background:"white",color:"#374151",fontSize:11,fontWeight:700,
@@ -5872,6 +5927,51 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
           </span>
         </div>
       )}
+
+      {/* Delivery dialog */}
+      {delivRow&&(()=>{
+        const done=isDelivered(delivRow);
+        return(
+        <div style={{position:"fixed",inset:0,zIndex:90,display:"flex",alignItems:"center",justifyContent:"center",padding:16}} onClick={()=>!delivBusy&&setDelivRow(null)}>
+          <div style={{position:"absolute",inset:0,background:"rgba(15,23,42,0.45)",backdropFilter:"blur(3px)"}}/>
+          <div onClick={e=>e.stopPropagation()} style={{position:"relative",background:"white",borderRadius:18,boxShadow:"0 24px 60px rgba(0,0,0,0.25)",width:"100%",maxWidth:400,overflow:"hidden"}}>
+            <div style={{padding:"16px 20px",background:done?"#f0fdf4":"#f8fafc",borderBottom:"1px solid "+(done?"#bbf7d0":"#f1f5f9"),display:"flex",alignItems:"center",gap:12}}>
+              <div style={{width:38,height:38,borderRadius:12,background:done?"#16a34a":shop.accent,color:"white",display:"flex",alignItems:"center",justifyContent:"center",fontSize:18}}>{done?"✓":"📦"}</div>
+              <div>
+                <p style={{margin:0,fontSize:15,fontWeight:900,color:"#0f172a"}}>{done?"Delivery recorded":"Mark as delivered"}</p>
+                <p style={{margin:"1px 0 0",fontSize:12,color:"#64748b",fontFamily:"DM Mono,monospace",fontWeight:700}}>{delivRow.id}</p>
+              </div>
+            </div>
+            <div style={{padding:"16px 20px"}}>
+              <div style={{border:"1px solid #e2e8f0",borderRadius:12,padding:"10px 14px",marginBottom:14,background:"#fafbfc"}}>
+                <p style={{margin:0,fontSize:13,fontWeight:800,color:"#0f172a",textTransform:"uppercase"}}>{delivRow.item||"—"}</p>
+                <p style={{margin:"3px 0 0",fontSize:12,color:"#64748b"}}>
+                  {delivRow.supplier||"—"}{delivRow.qty?" · Qty "+delivRow.qty:""}{" · "}{fmt(shopId,(Number(delivRow.total)||0)+(Number(delivRow.gst)||0))}
+                </p>
+              </div>
+              <label style={{display:"block",fontSize:11,fontWeight:700,color:"#64748b",textTransform:"uppercase",letterSpacing:"0.05em",marginBottom:5}}>Delivered on</label>
+              <input type="date" value={delivDate} max={todayStr()} onChange={e=>setDelivDate(e.target.value)}
+                style={{width:"100%",boxSizing:"border-box",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,fontFamily:"inherit",outline:"none",color:"#374151"}}/>
+              <div style={{display:"flex",gap:10,marginTop:16}}>
+                <button onClick={()=>saveDeliv(true)} disabled={delivBusy||!delivDate}
+                  style={{flex:1,padding:"11px 0",borderRadius:11,border:"none",background:"#16a34a",color:"white",fontWeight:800,fontSize:13,cursor:delivBusy?"wait":"pointer",fontFamily:"inherit",opacity:(delivBusy||!delivDate)?0.6:1,boxShadow:"0 4px 14px rgba(22,163,74,0.3)"}}>
+                  {done?"Update date":"Confirm delivery"}
+                </button>
+                <button onClick={()=>setDelivRow(null)} disabled={delivBusy}
+                  style={{padding:"11px 18px",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
+                  Cancel
+                </button>
+              </div>
+              {done&&(
+                <button onClick={()=>saveDeliv(false)} disabled={delivBusy}
+                  style={{display:"block",width:"100%",marginTop:10,padding:"8px 0",borderRadius:9,border:"none",background:"transparent",color:"#b45309",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+                  ↺ Not delivered — mark as Pending again
+                </button>
+              )}
+            </div>
+          </div>
+        </div>);
+      })()}
     </div>
   );
 };
@@ -9377,6 +9477,15 @@ return(
               onNewPurchase={()=>setModal("new-purchase")}
               onView={(p)=>setViewPurchRow(p)}
               onEdit={(p)=>setEditPurchRow(p)}
+              onSetDelivery={async(p,{delivered,date})=>{
+                const uuid=p.uuid;
+                if(!uuid){showAlert("This purchase hasn't synced yet — please refresh and try again.");return false;}
+                const next={...p,status:delivered?"RECEIVED":"PENDING",receivedDate:delivered?date:""};
+                const result=await dbSavePurchase(shopId,{...next,_uuid:uuid});
+                if(result&&result.error){showAlert("Couldn't update the delivery status — "+result.error);return false;}
+                setPurchData(prev=>prev.map(x=>(x.uuid||x.id)===uuid?{...x,status:next.status,receivedDate:next.receivedDate}:x));
+                return true;
+              }}
               onDelete={async(p)=>{
                 if(!(await showConfirm("Delete purchase "+(p.id||p.purchase_ref||"")+"? This cannot be undone.")))return;
                 const uuid=p.uuid||p.id;
@@ -10275,7 +10384,7 @@ return(
                   {l:"Logistic By",v:viewPurchRow.logisticBy||viewPurchRow.logistic_by||"—"},
                   {l:"Logistic Ref",v:viewPurchRow.logisticRef||viewPurchRow.logistic_ref||"—"},
                   {l:"Received Date",v:viewPurchRow.receivedDate||viewPurchRow.received_date||"—"},
-                  {l:"Status",v:viewPurchRow.status||"PENDING"},
+                  {l:"Status",v:(String(viewPurchRow.status||"").toUpperCase()==="RECEIVED"?"Delivered":(viewPurchRow.status||"PENDING"))},
                   {l:"Remarks",v:viewPurchRow.remarks||"—",full:true},
                 ].map(({l,v,full})=>(
                   <div key={l} style={full?{gridColumn:"1/-1"}:{}}>
