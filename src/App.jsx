@@ -17469,7 +17469,8 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
       {hasLines&&(<>
         <SaleNotebook shopId={shopId} shop={shop} lines={viewLines} rowAmts={rowAmts} recvAmts={recvAmts}
           showHint={form.paymentType==="FULL"&&!(Number(form.taxRate)>0)} rosieRefs={rosieFieldRefs}
-          onName={(k,v)=>setEditLines(prev=>prev.map(l=>l._k===k?{...l,name:v}:l))}
+          lockPrice={isStaff}
+          onName={(k,v)=>{const _en=(isStaff&&isPriceShop(shopId))?matchEntry(v):null;const _p=_en?priceFor(_en,shopId):null;if(_p!=null) setMoneyDirty(true);setEditLines(prev=>prev.map(l=>l._k!==k?l:(_p!=null?{...l,name:v,price:String(_p)}:{...l,name:v})));}}
           onPick={(k,en)=>setLineK(k,{name:en.label,price:String(priceFor(en,shopId))})}
           onQty={(k,v)=>setLineK(k,{qty:v})} onPrice={(k,v)=>setLineK(k,{price:v})}
           onRecv={(k,v)=>{
@@ -19056,7 +19057,8 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
 
             {/* Items */}
             {_ps&&(<SaleNotebook topSlot={quickPickUI} shopId={shopId} shop={shop} lines={lines} rowAmts={rowAmts} recvAmts={recvAmts} showHint={!["PART","FINAL"].includes(form.paymentType||"FULL")&&!(Number(form.taxRate)>0)} rosieRefs={rosieFieldRefs}
-              onName={(id,v)=>updateLine(id,"name",v)}
+              lockPrice={!canDiscount}
+              onName={(id,v)=>setLines(ls=>ls.map(l=>{if(l.id!==id)return l;const _en=(!canDiscount&&isPriceShop(shopId))?matchEntry(v):null;const _p=_en?priceFor(_en,shopId):null;return _p!=null?{...l,name:v,price:String(_p)}:{...l,name:v};}))}
               onPick={(id,en)=>setLines(ls=>ls.map(l=>l.id===id?{...l,name:en.label,price:String(priceFor(en,shopId))}:l))}
               onQty={(id,v)=>updateLine(id,"qty",v)} onPrice={(id,v)=>updateLine(id,"price",v)} onRecv={(id,v)=>updateLine(id,"recv",v)}
               onFillRecv={()=>setLines(ls=>{const _ix=ls.map((l,i)=>(l.name.trim()||parseFloat(l.price)>0)?i:-1).filter(i=>i>=0);const _last=_ix.length?_ix[_ix.length-1]:-1;return ls.map((l,i)=>{const _a=(parseFloat(l.qty)||0)*(parseFloat(l.price)||0);const _v=i===_last?_a+(grandTotal-itemsSubtotal):_a;return {...l,recv:_v?String(parseFloat(_v.toFixed(2))):""};});})}

@@ -1,9 +1,9 @@
 import React from "react";
 import { ItemSuggestInput, PriceHint } from "./PriceListPanel";
-import { UK_DELIVERY } from "../priceList";
+import { UK_DELIVERY, isPriceShop, matchEntry, priceFor } from "../priceList";
 
 /* ── "Notebook" style items + totals block for the New Sale form (ROS India / ROS Hairlines UK) ──
-   Rows:   Item · Qty · Price (price-list price, editable) · Received
+   Rows:   Item · Qty · Price (price-list price — read-only for staff when the item is on the list) · Received
    Below:  Other charges, Discount, GST, then Sale total → Received → BALANCE DUE.
    Purely presentational — all numbers are worked out in NewSaleForm and passed in. */
 
@@ -35,7 +35,7 @@ const MoneyInput = ({ value, onChange, placeholder, sym, accent }) => (
 export default function SaleNotebook({
   shopId, shop, lines, rowAmts, recvAmts, showHint, rosieRefs, topSlot,
   onName, onPick, onQty, onPrice, onRecv, onFillRecv, onRemove, onAdd,
-  calc, other, discount, onOther, onDiscount, taxRate, onTax,
+  calc, other, discount, onOther, onDiscount, taxRate, onTax, lockPrice,
 }) {
   const accent = shop.accent, sym = shop.symbol;
   const cols = "minmax(0,1fr) 46px 84px 92px 22px";
@@ -80,6 +80,8 @@ export default function SaleNotebook({
 
       {lines.map((line, idx) => {
         const short = recvAmts[idx] > 0 && recvAmts[idx] + 0.5 < rowAmts[idx];
+        // Price-list items: the price is guidance only — staff can't change it (they enter what was received instead).
+        const locked = !!lockPrice && isPriceShop(shopId) && priceFor(matchEntry(line.name), shopId) != null;
         return (
           <div key={line.id} style={{ display: "grid", gridTemplateColumns: cols, gap: 4, alignItems: "center", borderBottom: "1px solid " + RULE, padding: "1px 0" }}>
             <ItemSuggestInput inputRef={(el) => { if (idx === 0) rosieRefs.current.item = el; }} value={line.name} shopId={shopId}
@@ -89,7 +91,10 @@ export default function SaleNotebook({
               style={field({ textAlign: "center", fontFamily: MONO })} onFocus={fo} onBlur={bl} />
             <input ref={(el) => { if (idx === 0) rosieRefs.current.price = el; }} type="number" onWheel={(e) => e.target.blur()} value={line.price}
               onChange={(e) => onPrice(line.id, e.target.value)} placeholder="0"
-              style={field({ textAlign: "right", fontFamily: MONO, fontWeight: 700 })} onFocus={fo} onBlur={bl} />
+              readOnly={locked} tabIndex={locked ? -1 : undefined}
+              title={locked ? "Price list price — cannot be changed. Enter what the customer paid in Received." : undefined}
+              style={field({ textAlign: "right", fontFamily: MONO, fontWeight: 700, ...(locked ? { color: "#64748b", cursor: "default", background: "#f1f5f9" } : null) })}
+              onFocus={locked ? undefined : fo} onBlur={locked ? undefined : bl} />
             <input type="number" onWheel={(e) => e.target.blur()} value={line.recv === undefined ? "" : line.recv}
               onChange={(e) => onRecv(line.id, e.target.value)} placeholder=""
               title="Type the amount actually received for this item"
