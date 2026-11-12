@@ -3,7 +3,7 @@ import { formatDate } from "../utils";
 import { showAlert, showConfirm } from "./PopupHost";
 import { dbLoadDispatchLog, dbSaveDispatchEntry } from "../db";
 import { BankBadge, BankIcon, BankMenu } from "./BankLogos";
-import { shortfallForSales, shortfallMessage, listPriceOf } from "../priceList";
+import { shortfallForSales, shortfallMessage, listPriceOf, listPriceAmounts } from "../priceList";
 import { returnPolicySection, addressCheckSection } from "../despatchMessage";
 /* ─────────────────────────────────────────────────────────────────────────
    SALES PANEL
@@ -459,7 +459,7 @@ const STATUS_ROW_BG = {
    compared with the amount received. Items not on the list are left out ("+" marks that some are missing). */
 const listPriceNote = (sale, shop) => {
   const r = listPriceOf(sale, shop?.id);
-  return r ? "Price " + (shop.symbol || "") + r.total.toLocaleString() + (r.hit < r.count ? "+" : "") : "";
+  return r ? "Price " + listPriceAmounts(r, n => (shop.symbol || "") + Number(n).toLocaleString()) : "";
 };
 
 export default function SalesPanel({
@@ -3666,7 +3666,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                   {dealList && (
                     <div>
                       <div style={{ fontSize: 10, fontWeight: 700, color: "#92400e", textTransform: "uppercase", letterSpacing: "0.05em" }}>Price</div>
-                      <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{fmt ? fmt(shopId, dealList.total) : dealList.total}{dealList.hit < dealList.count ? "+" : ""}</div>
+                      <div style={{ fontSize: 15, fontWeight: 800, color: "#0f172a" }}>{listPriceAmounts(dealList, n => (fmt ? fmt(shopId, n) : n))}</div>
                     </div>
                   )}
                   {expectedTotal > 0 && (

@@ -12,7 +12,7 @@ import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
 import PriceListPanel, { ItemSuggestInput, PriceDiffModal, PriceHint, priceNoteText, FinalShortModal, PartPaidModal } from "./components/PriceListPanel";
 import SaleNotebook from "./components/SaleNotebook";
-import { isPriceShop, priceFor, matchEntry, priceMismatches, listTotalForLines, UK_DELIVERY, listPriceOf, listPriceOfLine } from "./priceList";
+import { isPriceShop, priceFor, matchEntry, priceMismatches, listTotalForLines, UK_DELIVERY, listPriceOf, listPriceOfLine, listPriceAmounts } from "./priceList";
 import PurchasesPanel from "./components/PurchasesPanel";
 import ReportsPanel from "./components/ReportsPanel";
 import SalesPanel from "./components/SalesPanel";
@@ -11181,7 +11181,7 @@ return(
                   {(()=>{const _lp=listPriceOf(selRow,shop.id);return _lp?(
                     <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
                       <span style={{fontSize:12,color:"#64748b"}}>Price</span>
-                      <span style={{fontSize:13,fontWeight:700,color:"#64748b"}}>{fmt(shopId,_lp.total)}{_lp.hit<_lp.count?"+":""}</span>
+                      <span style={{fontSize:13,fontWeight:700,color:"#64748b"}}>{listPriceAmounts(_lp,n=>fmt(shopId,n))}</span>
                     </div>
                   ):null;})()}
                   <div style={{display:"flex",justifyContent:"space-between"}}>

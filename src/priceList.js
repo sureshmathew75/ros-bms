@@ -169,8 +169,18 @@ export const listPriceOf = (sale, shopId) => {
   let total = 0, hit = 0;
   lines.forEach(l => { const v = listPriceOfLine(l, shopId); if (v != null) { total += v; hit++; } });
   if (!hit) return null;
-  return { total: Math.round(total * 100) / 100, hit, count: lines.length };
+  // ROS Hairlines UK prices exclude delivery: £7 unless the sale's own Shipping charge says otherwise (waived / international).
+  let delivery = 0;
+  if (shopId === "ros-hairlines") {
+    const pt = sale.paymentType;
+    const full = !pt || pt === "FULL";
+    delivery = (full && sale.otherChargesLabel === "Shipping") ? (Number(sale.otherCharges) || 0) : UK_DELIVERY;
+  }
+  return { total: Math.round(total * 100) / 100, hit, count: lines.length, delivery };
 };
+/* "£175 + £7 dlvry" — f formats one amount (e.g. n => "£" + n.toLocaleString()). A trailing * means some items weren't on the list. */
+export const listPriceAmounts = (r, f) =>
+  f(r.total) + (r.hit < r.count ? "*" : "") + (r.delivery > 0 ? " + " + f(r.delivery) + " dlvry" : "");
 
 /* Lines of a sale (saleLines) compared with the list. Only lines that match a list item AND carry a
    price are checked — custom items are never flagged. */
