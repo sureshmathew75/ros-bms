@@ -3,7 +3,7 @@ import { formatDate } from "../utils";
 import { showAlert, showConfirm } from "./PopupHost";
 import { dbLoadDispatchLog, dbSaveDispatchEntry } from "../db";
 import { BankBadge, BankIcon, BankMenu } from "./BankLogos";
-import { shortfallForSales, shortfallMessage } from "../priceList";
+import { shortfallForSales, shortfallMessage, isPriceShop, matchEntry, priceFor } from "../priceList";
 import { returnPolicySection, addressCheckSection } from "../despatchMessage";
 /* ─────────────────────────────────────────────────────────────────────────
    SALES PANEL
@@ -455,6 +455,19 @@ const STATUS_ROW_BG = {
 /* ═══════════════════════════════════════════════════════════════════════════
    COMPONENT
    ═══════════════════════════════════════════════════════════════════════════ */
+/* Price-list price of a sale's items (ROS India / Hairlines UK), shown pale under the item name so it can be
+   compared with the amount received. Items not on the list are left out ("+" marks that some are missing). */
+const listPriceNote = (sale, shop) => {
+  if (!sale || !isPriceShop(shop?.id) || !Array.isArray(sale.saleLines) || sale.saleLines.length === 0) return "";
+  let total = 0, hit = 0;
+  sale.saleLines.forEach(l => {
+    const p = priceFor(matchEntry(l.name), shop.id);
+    if (p != null) { total += p * (l.qty === undefined || l.qty === "" ? 1 : (parseFloat(l.qty) || 0)); hit++; }
+  });
+  if (!hit) return "";
+  return "List " + (shop.symbol || "") + (Math.round(total * 100) / 100).toLocaleString() + (hit < sale.saleLines.length ? "+" : "");
+};
+
 export default function SalesPanel({
   Badge,
   customers,
@@ -2456,6 +2469,9 @@ We hope you enjoy your purchase! 💜
                           <span style={{ color: "#94a3b8", marginLeft: 4 }}>×{s.qty}</span>
                         )}
                       </span>
+                      {listPriceNote(s, shop) && (
+                        <div style={{ fontSize: 10, color: "#c3cddb", marginTop: 1, whiteSpace: "nowrap", fontFamily: "DM Mono,monospace" }}>{listPriceNote(s, shop)}</div>
+                      )}
                     </td>
                     )}
                     {/* Amount — inline editable */}
@@ -3505,7 +3521,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                               </span>
                               <div style={{marginTop:4}}>
                                 {(s._grp||[]).map(x=>(
-                                  <div key={x.id} style={{fontSize:11,marginBottom:2}}>• {x.item||"—"}</div>
+                                  <div key={x.id} style={{fontSize:11,marginBottom:2}}>• {x.item||"—"}{listPriceNote(x, shop)&&<span style={{fontSize:10,color:"#c3cddb",marginLeft:6,whiteSpace:"nowrap",fontFamily:"DM Mono,monospace"}}>{listPriceNote(x, shop)}</span>}</div>
                                 ))}
                               </div>
                               {(() => {
@@ -3521,7 +3537,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                                 </>);
                               })()}
                             </div>
-                          ) : (s.item||"—")}
+                          ) : (<>{s.item||"—"}{listPriceNote(s, shop)&&<div style={{fontSize:10,color:"#c3cddb",marginTop:1,whiteSpace:"nowrap",fontFamily:"DM Mono,monospace"}}>{listPriceNote(s, shop)}</div>}</>)}
                         </td>
                         )}
                         {colOn("Amount")&&(
