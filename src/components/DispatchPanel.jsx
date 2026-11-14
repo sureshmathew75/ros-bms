@@ -399,6 +399,8 @@ const IcoExt = () => <Svg size={12}><path d="M7 17 17 7M8 7h9v9" /></Svg>;
 const IcoSearch = () => <Svg size={14}><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></Svg>;
 const IcoEdit = () => <Svg size={12}><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></Svg>;
 const IcoNote = () => <Svg size={14}><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M8 13h8M8 17h5" /></Svg>;
+const IcoBox = () => <Svg size={15}><path d="M21 8 12 3 3 8v8l9 5 9-5z" /><path d="m3 8 9 5 9-5M12 13v8" /></Svg>;
+const IcoX = () => <Svg size={14}><path d="M18 6 6 18M6 6l12 12" /></Svg>;
 const IcoTruck = () => <Svg size={20}><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7z" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></Svg>;
 const IcoWarn = () => <Svg size={13}><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01" /></Svg>;
 const IcoPlus = () => <Svg size={14}><path d="M12 5v14M5 12h14" /></Svg>;
@@ -481,7 +483,7 @@ const INDIA_CSS = `
 .dx-topscroll{overflow-x:scroll;overflow-y:hidden;position:sticky;top:0;z-index:6;background:#eef2f7;border-radius:16px 16px 0 0;border-bottom:1px solid var(--line);height:14px;scrollbar-width:auto}
 .dx-table{width:100%;border-collapse:collapse;min-width:900px;font-size:12.5px}
 .dx-table thead th{background:#f8fafc;text-align:left;font-size:10.5px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.08em;padding:10px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
-.dx-cards{min-width:1110px;padding:18px;background:#e6eaf0;display:flex;flex-direction:column;gap:26px}
+.dx-cards{min-width:1000px;padding:18px;background:#e6eaf0;display:flex;flex-direction:column;gap:26px}
 .dx-daycard{background:#fff;border:1px solid #d3dae4;border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,.10),0 6px 14px rgba(15,23,42,.12),0 16px 32px rgba(15,23,42,.10)}
 .dx-daybar{background:#eef1f5;padding:10px 16px;border-bottom:2px solid #cbd5e1}
 .dx-daycard .dx-table{table-layout:fixed;min-width:0}
@@ -608,9 +610,13 @@ const INDIA_CSS = `
 .dx-st.delivered{background:#dcfce7;color:#15803d}
 .dx-st.lost{background:#fee2e2;color:#b91c1c}
 .dx-table tbody tr.dx-r.lostrow td{background:#fffafa}
-.dx-lostbtn{display:inline-flex;align-items:center;padding:5px 8px;border-radius:9px;border:1px solid #fecaca;background:#fff;color:#b91c1c;font-weight:800;font-size:11.5px;cursor:pointer;white-space:nowrap}
-.dx-lostbtn:hover{background:#fef2f2}
-.dx-lostbadge{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:9px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;font-weight:800;font-size:12px;white-space:nowrap}
+.dx-dcell{display:flex;align-items:center;gap:7px}
+.dx-dbtn{width:30px;height:30px;display:inline-flex;align-items:center;justify-content:center;border-radius:9px;cursor:pointer;padding:0}
+.dx-dbtn.open{border:1px dashed #fcd34d;background:#fffbeb;color:#92400e}
+.dx-dbtn.open:hover{background:#fef3c7}
+.dx-dbtn.ok{border:1px solid #bbf7d0;background:#f0fdf4;color:#15803d}
+.dx-dbtn.lost{border:1px solid #fecaca;background:#fef2f2;color:#b91c1c}
+.dx-ddate{font-size:11px;font-weight:600;color:#64748b;white-space:nowrap}
 .dx-st-sub{margin-top:3px;font-size:11px;color:#64748b;font-weight:600;white-space:nowrap}
 .dx-btns{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}
 .dx-table tbody tr.dx-r td{padding:6px 8px;border-bottom:2px solid #cbd5e1}
@@ -696,10 +702,10 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   const [addrFilter, setAddrFilter] = useState("ALL");        // "ALL" | "missing" — rows with no address on file
   const [dxPopup, setDxPopup] = useState(null);                // { type: "addr" | "remark", uuid } — small detail pop-ups from the table
   const [remarkDraft, setRemarkDraft] = useState("");
+  const [delivDraft, setDelivDraft] = useState(todayISO());   // date picked in the Delivery pop-up
   const [dxCopied, setDxCopied] = useState(false);
   const [orphanBusy, setOrphanBusy] = useState(false);          // "Add all to the log" in progress
   const [addedNote, setAddedNote] = useState("");               // "✓ Added …" line in the Add Despatch pop-up
-  const datePickRefs = useRef({});                         // uuid -> hidden <input type="date"> behind the Mark Delivered / Delivered button
   const tableTopRef = useRef(null);                        // always-visible horizontal scrollbar above the table (synced with the table itself)
   const tableBodyRef = useRef(null);
   const [tableScrollW, setTableScrollW] = useState(0);
@@ -1784,14 +1790,6 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
 
   // One ROS India table row. All behaviour (saveEntry, notify, markDelivered,
   // address popup, remarks, remove…) is the same handlers the old table used.
-  // Opens the native calendar pop-up for a row; the hidden date input's
-  // onChange then records the delivery date the user picked.
-  const openDatePicker = (uuid) => {
-    const el = datePickRefs.current[uuid];
-    if (!el) return;
-    try { el.showPicker(); } catch { el.focus(); try { el.click(); } catch { /* picker unsupported — nothing else to do */ } }
-  };
-
   const renderIndiaRow = (e) => {
     const dupKey = (e.trackingNo || "").replace(/\s+/g, "").toUpperCase();
     const isDup = dupKey && (trackingIndex[dupKey] || []).length > 1;
@@ -1898,37 +1896,16 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
         {/* 6 · Delivery — "Mark Delivered" opens the browser's calendar pop-up;
             picking a date marks the parcel delivered on that date. The
             delivered badge re-opens the same pop-up to correct the date. */}
-        <td style={{ width: 196 }}>
-          {e.lost ? (
-            <span className="dx-dl">
-              <span className="dx-lostbadge" title={`Marked lost ${shortDateMaybeY(e.lostDate || todayISO())}`}>❌ Lost <span className="mono">{shortDateMaybeY(e.lostDate || todayISO())}</span></span>
-              <button className="dx-link" onClick={() => undoLost(e)} title="Remove the Lost mark">Undo</button>
-            </span>
-          ) : (
-          <span className="dx-dl">
-          {!canNotify ? <span className="dx-muted">—</span> : (
-            <span className="dx-pickwrap">
-              {e.delivered ? (
-                <span className="dx-dl">
-                  <button className="dx-deliv" onClick={() => openDatePicker(e.uuid)} title="Click to correct the delivery date">
-                    <IcoCheck /> <span className="mono">{shortDateMaybeY(e.deliveredDate || todayISO())}</span>
-                  </button>
-                  <button className="dx-link" onClick={() => undoDelivered(e)} title="Undo — not actually delivered">Undo</button>
-                </span>
-              ) : (
-                <button className="dx-mark" onClick={() => openDatePicker(e.uuid)} title="Pick the date this parcel was delivered">
-                  <IcoCheck /> Mark Delivered
-                </button>
-              )}
-              <input type="date" className="dx-pickhid" tabIndex={-1} aria-hidden="true"
-                ref={el => { datePickRefs.current[e.uuid] = el; }}
-                value={e.deliveredDate || ""} max={todayISO()}
-                onChange={ev => { if (ev.target.value) markDelivered(e, ev.target.value); }} />
-            </span>
-          )}
-          <button className="dx-lostbtn" onClick={() => markLost(e)} title="Mark this parcel as lost (stops it being marked delivered automatically)">Lost</button>
-          </span>
-          )}
+        <td style={{ width: 128 }}>
+          <div className="dx-dcell">
+            <button className={"dx-dbtn " + (e.lost ? "lost" : e.delivered ? "ok" : "open")}
+              onClick={() => { setDelivDraft(e.deliveredDate || todayISO()); setDxPopup({ type: "delivery", uuid: e.uuid }); }}
+              aria-label="Delivery options"
+              title={e.lost ? `Lost ${shortDateMaybeY(e.lostDate || todayISO())} — click for options` : e.delivered ? `Delivered ${shortDateMaybeY(e.deliveredDate || todayISO())} — click for options` : "Mark delivered or lost"}>
+              {e.lost ? <IcoX /> : e.delivered ? <IcoCheck /> : <IcoBox />}
+            </button>
+            {(e.lost || e.delivered) && <span className="dx-ddate mono">{shortDateMaybeY(e.lost ? (e.lostDate || todayISO()) : (e.deliveredDate || todayISO()))}</span>}
+          </div>
         </td>
         {/* 7 · Inform customer (WhatsApp icon) */}
         <td className="dx-c" style={{ width: 48 }}>
@@ -2083,6 +2060,39 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                       </button>
                       {pe.saleId && <button className="dx-btn pri" onClick={() => { close(); setAddressModalUuid(pe.uuid); }}><IcoEdit /> Edit address</button>}
                     </div>
+                  </div>
+                </div>
+              );
+            }
+            if (dxPopup.type === "delivery") {
+              const canMark = !!(pe.trackingNo && pe.shipper);
+              const st = rowTrackState(pe);
+              return (
+                <div className="dx-modal-bg" onClick={close}>
+                  <div className="dx-modal" onClick={ev => ev.stopPropagation()}>
+                    {head}
+                    <div className="dx-modal-l">Current status</div>
+                    <div style={{ marginBottom: 14 }}>
+                      <span className={"dx-st " + st}>{st === "lost" ? "Lost" : st === "delivered" ? (pe.autoDelivered ? "Delivered · auto" : "Delivered") : st === "transit" ? "In transit" : "Awaiting tracking"}</span>
+                      {pe.trackingNo && <span className="mono" style={{ marginLeft: 10, fontSize: 12, color: "#64748b" }}>{pe.trackingNo}</span>}
+                    </div>
+                    {!pe.lost && (
+                      <>
+                        <div className="dx-modal-l">Delivery date</div>
+                        <input type="date" className="dx-dinput" style={{ width: "100%", marginBottom: 10, padding: "8px 10px", fontSize: 13 }} value={delivDraft} max={todayISO()} onChange={ev => setDelivDraft(ev.target.value)} />
+                        <button className="dx-btn pri" style={{ width: "100%", justifyContent: "center" }} disabled={!canMark || !delivDraft}
+                          onClick={() => { markDelivered(pe, delivDraft); close(); }}>
+                          <IcoCheck /> {pe.delivered ? "Update delivered date" : "Mark Delivered"}
+                        </button>
+                        {!canMark && <div style={{ marginTop: 6, fontSize: 11.5, color: "#94a3b8" }}>Add the tracking number and shipper first to mark this delivered.</div>}
+                      </>
+                    )}
+                    <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+                      {!pe.lost && <button className="dx-btn" style={{ flex: 1, justifyContent: "center", color: "#b91c1c", borderColor: "#fecaca" }} onClick={() => { close(); markLost(pe); }}><IcoX /> Mark as Lost</button>}
+                      {pe.lost && <button className="dx-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => { close(); undoLost(pe); }}>Remove Lost mark</button>}
+                      {pe.delivered && !pe.lost && <button className="dx-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => { close(); undoDelivered(pe); }}>Undo delivered</button>}
+                    </div>
+                    <div className="dx-modal-f"><button className="dx-btn" onClick={close}>Close</button></div>
                   </div>
                 </div>
               );
@@ -2303,7 +2313,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                             </div>
                             <table className="dx-table">
                               <colgroup>
-                                <col style={{ width: 250 }} /><col /><col style={{ width: 200 }} /><col style={{ width: 158 }} /><col style={{ width: 66 }} /><col style={{ width: 210 }} /><col style={{ width: 72 }} />
+                                <col style={{ width: 250 }} /><col /><col style={{ width: 200 }} /><col style={{ width: 158 }} /><col style={{ width: 66 }} /><col style={{ width: 128 }} /><col style={{ width: 72 }} />
                               </colgroup>
                               <thead>
                                 <tr>
