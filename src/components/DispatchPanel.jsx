@@ -370,7 +370,6 @@ const IcoSearch = () => <Svg size={14}><circle cx="11" cy="11" r="7" /><path d="
 const IcoEdit = () => <Svg size={12}><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z" /></Svg>;
 const IcoNote = () => <Svg size={14}><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" /><path d="M14 3v6h6M8 13h8M8 17h5" /></Svg>;
 const IcoTruck = () => <Svg size={20}><path d="M1 3h15v13H1zM16 8h4l3 3v5h-7z" /><circle cx="5.5" cy="18.5" r="2.5" /><circle cx="18.5" cy="18.5" r="2.5" /></Svg>;
-const IcoPin = () => <Svg size={13}><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z" /><circle cx="12" cy="10" r="2.5" /></Svg>;
 const IcoWarn = () => <Svg size={13}><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0zM12 9v4M12 17h.01" /></Svg>;
 const IcoPlus = () => <Svg size={14}><path d="M12 5v14M5 12h14" /></Svg>;
 const IcoWA = () => (
@@ -449,7 +448,7 @@ const INDIA_CSS = `
 .dx-tablewrap::-webkit-scrollbar-thumb,.dx-topscroll::-webkit-scrollbar-thumb{background:#b6c0cf;border-radius:8px;border:2px solid #eef2f7}
 .dx-tablewrap::-webkit-scrollbar-thumb:hover,.dx-topscroll::-webkit-scrollbar-thumb:hover{background:#94a3b8}
 .dx-topscroll{overflow-x:scroll;overflow-y:hidden;position:sticky;top:0;z-index:6;background:#eef2f7;border-radius:16px 16px 0 0;border-bottom:1px solid var(--line);height:14px;scrollbar-width:auto}
-.dx-table{width:100%;border-collapse:collapse;min-width:820px;font-size:12.5px}
+.dx-table{width:100%;border-collapse:collapse;min-width:900px;font-size:12.5px}
 .dx-table thead th{background:#f8fafc;text-align:left;font-size:10.5px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.08em;padding:10px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
 .dx-day td{background:var(--acbg2);padding:8px 14px;border-top:1px solid var(--acline);border-bottom:1px solid var(--acline)}
 .dx-day-in{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
@@ -574,8 +573,15 @@ const INDIA_CSS = `
 .dx-st.delivered{background:#dcfce7;color:#15803d}
 .dx-st-sub{margin-top:3px;font-size:11px;color:#64748b;font-weight:600;white-space:nowrap}
 .dx-btns{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}
-.dx-table tbody tr.dx-r td{padding:10px 10px}
-.dx-table thead th{padding:10px 10px}
+.dx-table tbody tr.dx-r td{padding:6px 8px}
+.dx-table thead th{padding:9px 8px}
+.dx-c{text-align:center}
+.dx-sq{width:30px;height:30px;padding:0!important;justify-content:center;border-radius:9px!important}
+.dx-addrtxt{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-align:left;border:none;background:none;padding:0;font:inherit;font-size:11.5px;line-height:1.35;color:#475569;cursor:pointer;max-width:100%}
+.dx-addrtxt:hover{color:var(--actext);text-decoration:underline}
+.dx-cust{font-size:12.5px;letter-spacing:.01em}
+.dx-ship{padding:2px 20px 2px 7px;font-size:11px}
+.dx-trk{padding:2px 5px}
 .dx-del{border:none;background:none;color:#cbd5e1;cursor:pointer;font-size:15px;padding:2px 4px}
 .dx-del:hover{color:#dc2626}
 .dx-empty{padding:46px 20px;text-align:center;color:#94a3b8;font-size:13.5px}
@@ -1706,39 +1712,21 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     const collisionOthers = linkedSaleForRow ? phoneCollisionFor(linkedSaleForRow) : null;
     const fullAddress = liveAddressFor(e);
     const addrOneLine = fullAddress.replace(/\s*\n\s*/g, ", ");
-    const addrPin = (fullAddress.match(/\b\d{6}\b/) || [""])[0];
     const phone = livePhoneFor(e);
-    const isRowToday = e.dispatchDate === todayISO();
     const trackUrl = canNotify ? staffTrackingURL(e.shipper, e.trackingNo) : null;
     const st = rowTrackState(e);
     const stLabel = st === "delivered" ? "Delivered" : st === "transit" ? "In transit" : "Awaiting tracking";
     return (
       <tr key={e.uuid} className={"dx-r" + (e.delivered ? " deliv" : "") + (!fullAddress.trim() ? " noaddr" : "")}>
-        {/* Customer + phone + address (+ link / duplicate warnings, unchanged logic) */}
-        <td style={{ minWidth: 190 }}>
+        {/* 1 · Customer name + phone (capitals) (+ link / duplicate warnings, unchanged logic) */}
+        <td style={{ minWidth: 150 }}>
           <div className="dx-cust-row">
-            <span className="dx-cust">{titleCase(e.customer) || "—"}</span>
+            <span className="dx-cust">{(e.customer || "—").toUpperCase()}</span>
             <button className={"dx-iconbtn note" + (e.remarks ? " on" : "")} onClick={() => { setRemarkDraft(e.remarks || ""); setDxPopup({ type: "remark", uuid: e.uuid }); }}
               title={e.remarks ? `Remarks: ${e.remarks}` : "Add remarks"}><IcoNote /></button>
             {canDeleteRow(e) && <button className="dx-del" onClick={() => removeEntry(e.uuid)} title={isAdmin ? "Remove row" : "Remove this entry (only possible before tracking is added)"}>✕</button>}
           </div>
           <div className="dx-phone mono"><IcoPhone />{phone || "—"}</div>
-          {/* Address — one small button so every row stays the same height.
-              Green "View" opens the full address in a pop-up; a red "Add address"
-              flags a missing one and opens the address editor directly. */}
-          <div style={{ marginTop: 5 }}>
-            {fullAddress.trim() ? (
-              <button className="dx-addrbtn" onClick={() => setDxPopup({ type: "addr", uuid: e.uuid })} title={addrOneLine}>
-                <IcoPin /> View{addrPin ? <span className="mono">{addrPin}</span> : null}
-              </button>
-            ) : (
-              <button className="dx-addrmiss"
-                onClick={() => e.saleId ? setAddressModalUuid(e.uuid) : showAlert("This row isn't linked to a sale, so there's nowhere to save the address.")}
-                title="No address on file — click to add one">
-                <IcoWarn /> Add address
-              </button>
-            )}
-          </div>
           {rowGroupCount > 1 && (
             <span className="dx-badge" title="This row covers several linked sale transactions (e.g. Advance + Final) for one parcel — entering tracking here fulfils all of them."
               style={{ color: "#4338ca", background: "#e0e7ff" }}>🔗 {rowGroupCount} linked</span>
@@ -1769,15 +1757,30 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
             </div>
           )}
         </td>
-        {/* Courier (shipper) over tracking number (editable) + copy */}
-        <td style={{ minWidth: 190 }}>
+        {/* 2 · Address — a short two-line preview; click opens the full address pop-up.
+            A red "Add address" flags a missing one and opens the address editor directly. */}
+        <td style={{ width: 210, maxWidth: 230 }}>
+          {fullAddress.trim() ? (
+            <button className="dx-addrtxt" onClick={() => setDxPopup({ type: "addr", uuid: e.uuid })} title={"Click to view the full address\n\n" + fullAddress}>
+              {addrOneLine}
+            </button>
+          ) : (
+            <button className="dx-addrmiss"
+              onClick={() => e.saleId ? setAddressModalUuid(e.uuid) : showAlert("This row isn't linked to a sale, so there's nowhere to save the address.")}
+              title="No address on file — click to add one">
+              <IcoWarn /> Add address
+            </button>
+          )}
+        </td>
+        {/* 3 · Shipper over tracking number (editable) + copy */}
+        <td style={{ minWidth: 176 }}>
           <select className="dx-ship" value={e.shipper}
             onChange={ev => saveEntry(e.uuid, { shipper: ev.target.value })}
             style={{ color: e.shipper ? shipperColor.color : "#94a3b8", backgroundColor: e.shipper ? shipperColor.bg : "#f8fafc", borderColor: e.shipper ? "transparent" : "#e2e8f0" }}>
             <option value="">Select…</option>
             {SHIPPERS.map(s => <option key={s} value={s}>{shipperLabel(s)}</option>)}
           </select>
-          <div className="dx-trk-wrap" style={{ marginTop: 3 }}>
+          <div className="dx-trk-wrap" style={{ marginTop: 2 }}>
             <input className={"dx-trk mono" + (isDup ? " dup" : "")} value={e.trackingNo} placeholder="Tracking no."
               onChange={ev => updateEntry(e.uuid, { trackingNo: ev.target.value.toUpperCase() })}
               onBlur={ev => saveEntry(e.uuid, { trackingNo: ev.target.value.toUpperCase() })} />
@@ -1789,58 +1792,51 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
           </div>
           {isDup && <div className="dx-warn">⚠ used on another row</div>}
         </td>
-        {/* Status pill (delivered date shown inside the pill) */}
-        <td style={{ width: 150 }}>
-          <span className={"dx-st " + st}>{stLabel}</span>
-          {e.delivered && <div className="dx-st-sub mono">{shortDateMaybeY(e.deliveredDate || todayISO())}</div>}
-          {e.notified && <div className="dx-st-sub">💬 Customer informed</div>}
+        {/* 4 · Status pill */}
+        <td style={{ width: 128 }}>
+          <span className={"dx-st " + st} title={e.delivered ? `Delivered ${shortDateMaybeY(e.deliveredDate || todayISO())}` : undefined}>{stLabel}</span>
         </td>
-        {/* Despatched date */}
-        <td style={{ width: 84 }}>
-          <div className={"dx-date" + (isRowToday ? " today" : "")}>{shortDate(e.dispatchDate)}
-            <small>{weekdayShort(e.dispatchDate)}{isRowToday ? " · Today" : ""}</small>
-          </div>
-        </td>
-        {/* Row actions: Track · Delivery · Inform customer */}
-        <td>
-          <div className="dx-btns">
-            {canNotify && trackUrl && (
-              <button className="dx-track" onClick={() => trackClick(e, trackUrl)}
-                title={MANUAL_ENTRY_SHIPPERS.has((e.shipper || "").toUpperCase()) ? "Opens the tracking page and copies the tracking number so you can paste it in" : "Opens this parcel's tracking page directly"}>
-                Track <IcoExt />
-              </button>
-            )}
-            {canNotify && !trackUrl && <span className="dx-hint">Check {shipperLabel(e.shipper)} directly</span>}
-            {/* Delivery — "Mark Delivered" opens the browser's calendar pop-up;
-                picking a date marks the parcel delivered on that date. The
-                delivered badge re-opens the same pop-up to correct the date. */}
-            {canNotify && (
-              <span className="dx-pickwrap">
-                {e.delivered ? (
-                  <span className="dx-dl">
-                    <button className="dx-deliv" onClick={() => openDatePicker(e.uuid)} title="Click to correct the delivery date">
-                      <IcoCheck /> Delivered <span className="mono">{shortDateMaybeY(e.deliveredDate || todayISO())}</span>
-                    </button>
-                    <button className="dx-link" onClick={() => undoDelivered(e)} title="Undo — not actually delivered">Undo</button>
-                  </span>
-                ) : (
-                  <button className="dx-mark" onClick={() => openDatePicker(e.uuid)} title="Pick the date this parcel was delivered">
-                    <IcoCheck /> Mark Delivered
-                  </button>
-                )}
-                <input type="date" className="dx-pickhid" tabIndex={-1} aria-hidden="true"
-                  ref={el => { datePickRefs.current[e.uuid] = el; }}
-                  value={e.deliveredDate || ""} max={todayISO()}
-                  onChange={ev => { if (ev.target.value) markDelivered(e, ev.target.value); }} />
-              </span>
-            )}
-            {/* Inform customer (WhatsApp) */}
-            <button className={"dx-inform " + (!canNotify ? "off" : e.notified ? "done" : "send")}
-              onClick={() => canNotify && notify(e)} disabled={!canNotify}
-              title={canNotify ? (e.notified ? "Notified — click to resend" : "Send tracking to customer") : "Add tracking number + shipper first"}>
-              {e.notified ? <><IcoCheck /> Informed</> : <><IcoWA /> Send Details</>}
+        {/* 5 · Track (icon) */}
+        <td className="dx-c" style={{ width: 48 }}>
+          {!canNotify ? <span className="dx-muted">—</span> : trackUrl ? (
+            <button className="dx-track dx-sq" onClick={() => trackClick(e, trackUrl)} aria-label="Track parcel"
+              title={MANUAL_ENTRY_SHIPPERS.has((e.shipper || "").toUpperCase()) ? "Track — opens the tracking page and copies the tracking number so you can paste it in" : "Track — opens this parcel's tracking page directly"}>
+              <IcoExt />
             </button>
-          </div>
+          ) : <span className="dx-hint" title={`Check ${shipperLabel(e.shipper)} directly`}>—</span>}
+        </td>
+        {/* 6 · Delivery — "Mark Delivered" opens the browser's calendar pop-up;
+            picking a date marks the parcel delivered on that date. The
+            delivered badge re-opens the same pop-up to correct the date. */}
+        <td style={{ width: 150 }}>
+          {!canNotify ? <span className="dx-muted">—</span> : (
+            <span className="dx-pickwrap">
+              {e.delivered ? (
+                <span className="dx-dl">
+                  <button className="dx-deliv" onClick={() => openDatePicker(e.uuid)} title="Click to correct the delivery date">
+                    <IcoCheck /> <span className="mono">{shortDateMaybeY(e.deliveredDate || todayISO())}</span>
+                  </button>
+                  <button className="dx-link" onClick={() => undoDelivered(e)} title="Undo — not actually delivered">Undo</button>
+                </span>
+              ) : (
+                <button className="dx-mark" onClick={() => openDatePicker(e.uuid)} title="Pick the date this parcel was delivered">
+                  <IcoCheck /> Mark Delivered
+                </button>
+              )}
+              <input type="date" className="dx-pickhid" tabIndex={-1} aria-hidden="true"
+                ref={el => { datePickRefs.current[e.uuid] = el; }}
+                value={e.deliveredDate || ""} max={todayISO()}
+                onChange={ev => { if (ev.target.value) markDelivered(e, ev.target.value); }} />
+            </span>
+          )}
+        </td>
+        {/* 7 · Inform customer (WhatsApp icon) */}
+        <td className="dx-c" style={{ width: 48 }}>
+          <button className={"dx-inform dx-sq " + (!canNotify ? "off" : e.notified ? "done" : "send")}
+            onClick={() => canNotify && notify(e)} disabled={!canNotify} aria-label={e.notified ? "Customer informed" : "Send details to customer"}
+            title={canNotify ? (e.notified ? "Informed — click to resend" : "Send tracking details to customer on WhatsApp") : "Add tracking number + shipper first"}>
+            {e.notified ? <IcoCheck /> : <IcoWA />}
+          </button>
         </td>
       </tr>
     );
@@ -2191,7 +2187,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                     <table className="dx-table">
                       <thead>
                         <tr>
-                          {["Customer", "Courier / Tracking", "Status", "Despatched", ""].map((h, i) => <th key={i} style={i === 4 ? { textAlign: "right" } : undefined}>{h}</th>)}
+                          {["Customer", "Address", "Shipper / Tracking", "Status", "Track", "Delivery", "Inform"].map((h, i) => <th key={i} style={i === 4 || i === 6 ? { textAlign: "center" } : undefined}>{h}</th>)}
                         </tr>
                       </thead>
                       <tbody>
@@ -2201,7 +2197,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                           const nNo = g.rows.filter(r => rowTrackState(r) === "notrack").length;
                           return (
                             <Fragment key={g.date}>
-                              <tr className="dx-day"><td colSpan={5}>
+                              <tr className="dx-day"><td colSpan={7}>
                                 <div className="dx-day-in">
                                   <span className="dx-day-title">{g.date === todayISO() ? "Today · " : g.date === yesterdayISO() ? "Yesterday · " : ""}{weekdayName(g.date)}, {Number(g.date.slice(8))} {monthLabel(g.date.slice(0, 7))}</span>
                                   {nTransit > 0 && <span className="dx-pill amber">{nTransit} in transit</span>}
@@ -2220,7 +2216,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                   </>
                 )}
                 {!loading && shownEntries.length > 0 && (
-                  <div className="dx-foot"><span>{shownEntries.length} despatch{shownEntries.length !== 1 ? "es" : ""} · {ixMonthTitle}</span><span>Click View to see the full address · tracking numbers are editable in place</span></div>
+                  <div className="dx-foot"><span>{shownEntries.length} despatch{shownEntries.length !== 1 ? "es" : ""} · {ixMonthTitle}</span><span>Click an address to see it in full · tracking numbers are editable in place</span></div>
                 )}
               </div>
             </>
