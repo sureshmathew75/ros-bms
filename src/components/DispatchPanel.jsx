@@ -623,6 +623,7 @@ const INDIA_CSS = `
 .dx-table tbody tr.dx-r:last-child td{border-bottom:2px solid #cbd5e1}
 .dx-table thead th{padding:9px 8px}
 .dx-c{text-align:center}
+.dx-daycard .dx-table th:first-child,.dx-daycard .dx-table tbody tr.dx-r td:first-child{padding-left:18px}
 .dx-sq{width:30px;height:30px;padding:0!important;justify-content:center;border-radius:9px!important}
 .dx-addrtxt{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-align:left;border:none;background:none;padding:0;font:inherit;font-size:11.5px;line-height:1.35;color:#475569;cursor:pointer;max-width:100%}
 .dx-addrtxt:hover{color:var(--actext);text-decoration:underline}
@@ -2166,8 +2167,12 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
             </div>
             <div className="dx-acts-top">
               <div className="dx-seg">
-                <button className={viewMode === "log" ? "on" : ""} onClick={() => setViewMode("log")}>📋 Log</button>
+                <button className={viewMode === "log" && statusFilter !== "lost" ? "on" : ""} onClick={() => { setViewMode("log"); if (statusFilter === "lost") setStatusFilter("open"); }}>📋 Log</button>
                 <button className={viewMode === "calendar" ? "on" : ""} onClick={() => setViewMode("calendar")}>📅 Calendar</button>
+                <button className={viewMode === "log" && statusFilter === "lost" ? "on" : ""} title="Show every despatch marked as lost"
+                  onClick={() => { setViewMode("log"); setStatusFilter("lost"); setMonthFilter("all"); setDayFilter("all"); setCourierFilter("ALL"); setAddrFilter("ALL"); setListSearch(""); }}>
+                  ❌ Lost{allEntriesIndia.filter(x => x.lost).length ? ` · ${allEntriesIndia.filter(x => x.lost).length}` : ""}
+                </button>
               </div>
               {viewMode === "log" && (
                 <>
@@ -2248,7 +2253,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                     <button className={statusFilter === "transit" ? "on t" : ""} onClick={() => setStatusFilter(statusFilter === "transit" ? "open" : "transit")}>🚚 In Transit · {ixStatusCounts.transit}</button>
                     <button className={statusFilter === "notrack" ? "on n" : ""} onClick={() => setStatusFilter(statusFilter === "notrack" ? "open" : "notrack")}>Awaiting tracking · {ixStatusCounts.notrack}</button>
                     <button className={statusFilter === "delivered" ? "on d" : ""} onClick={() => setStatusFilter(statusFilter === "delivered" ? "open" : "delivered")}>✅ Delivered · {ixStatusCounts.delivered}</button>
-                    {(ixStatusCounts.lost > 0 || statusFilter === "lost") && <button className={statusFilter === "lost" ? "on l" : ""} onClick={() => setStatusFilter(statusFilter === "lost" ? "open" : "lost")}>❌ Lost · {ixStatusCounts.lost}</button>}
+                    {<button className={statusFilter === "lost" ? "on l" : ""} onClick={() => setStatusFilter(statusFilter === "lost" ? "open" : "lost")}>❌ Lost · {ixStatusCounts.lost}</button>}
                     <button className={statusFilter === "ALL" ? "on n" : ""} onClick={() => setStatusFilter("ALL")}>All · {ixStatusTotal}</button>
                   </div>
                   <div className="dx-count">
