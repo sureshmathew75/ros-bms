@@ -371,6 +371,24 @@ const postcodeOf = (addr) => {
   const pin = t.match(/\b\d{6}\b/);
   return pin ? pin[0] : "";
 };
+// Destination country for the Address column: a country named in the address wins, otherwise it is inferred from the postcode format.
+const COUNTRY_WORDS = [
+  [/\b(united kingdom|u\.k\.|uk|great britain|england|scotland|wales|northern ireland)\b/i, "United Kingdom"],
+  [/\b(india|bharat)\b/i, "India"],
+  [/\b(united states|u\.s\.a\.?|usa|america)\b/i, "USA"],
+  [/\b(united arab emirates|u\.a\.e\.?|uae)\b/i, "UAE"],
+  [/\b(republic of ireland|ireland|eire)\b/i, "Ireland"],
+  [/\bcanada\b/i, "Canada"], [/\baustralia\b/i, "Australia"], [/\bnew zealand\b/i, "New Zealand"],
+  [/\bgermany\b/i, "Germany"], [/\bfrance\b/i, "France"], [/\bsingapore\b/i, "Singapore"],
+  [/\bqatar\b/i, "Qatar"], [/\bsaudi\b/i, "Saudi Arabia"], [/\boman\b/i, "Oman"], [/\bkuwait\b/i, "Kuwait"], [/\bbahrain\b/i, "Bahrain"],
+];
+const countryOf = (addr) => {
+  const t = String(addr || "");
+  for (const [re, name] of COUNTRY_WORDS) if (re.test(t)) return name;
+  if (/\b[A-Za-z]{1,2}\d[A-Za-z\d]?\s*\d[A-Za-z]{2}\b/.test(t)) return "United Kingdom";
+  if (/\b\d{6}\b/.test(t)) return "India";
+  return "";
+};
 const IcoPhone = () => <Svg size={12}><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" /></Svg>;
 const IcoCopy = () => <Svg size={13}><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></Svg>;
 const IcoCheck = ({ size = 13 }) => <Svg size={size}><path d="M20 6 9 17l-5-5" /></Svg>;
@@ -595,6 +613,7 @@ const INDIA_CSS = `
 .dx-addrtxt:hover{color:var(--actext);text-decoration:underline}
 .dx-addrpc{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:9px;border:1px solid #bbf7d0;background:#f0fdf4;color:#15803d;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap}
 .dx-addrpc:hover{background:#dcfce7}
+.dx-country{font-size:10px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.07em;margin-bottom:2px;white-space:nowrap}
 .dx-cust{font-size:12.5px;letter-spacing:.01em}
 .dx-ship{padding:2px 20px 2px 7px;font-size:11px}
 .dx-trk{padding:2px 5px}
@@ -1736,16 +1755,12 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
         {/* 1 · Customer name + phone (capitals) (+ link / duplicate warnings, unchanged logic) */}
         <td style={{ minWidth: 150 }}>
           <div className="dx-cust-row">
-            <span className="dx-cust">{(e.customer || "—").toUpperCase()}</span>
+            <span className="dx-cust" title={rowGroupCount > 1 ? `Linked: this row covers ${rowGroupCount} sale transactions (e.g. Advance + Final) for one parcel — entering tracking here fulfils all of them.` : undefined}>{(e.customer || "—").toUpperCase()}</span>
             <button className={"dx-iconbtn note" + (e.remarks ? " on" : "")} onClick={() => { setRemarkDraft(e.remarks || ""); setDxPopup({ type: "remark", uuid: e.uuid }); }}
               title={e.remarks ? `Remarks: ${e.remarks}` : "Add remarks"}><IcoNote /></button>
             {canDeleteRow(e) && <button className="dx-del" onClick={() => removeEntry(e.uuid)} title={isAdmin ? "Remove row" : "Remove this entry (only possible before tracking is added)"}>✕</button>}
           </div>
           <div className="dx-phone mono"><IcoPhone />{phone || "—"}</div>
-          {rowGroupCount > 1 && (
-            <span className="dx-badge" title="This row covers several linked sale transactions (e.g. Advance + Final) for one parcel — entering tracking here fulfils all of them."
-              style={{ color: "#4338ca", background: "#e0e7ff" }}>🔗 {rowGroupCount} linked</span>
-          )}
           {isSameCustomerDup && (
             <div><span className="dx-badge" title="Another despatch row exists for this same customer/phone but isn't linked to this one — check whether this is really a separate order."
               style={{ color: "#b45309", background: "#fef3c7" }}>⚠ check duplicate</span></div>
@@ -1776,9 +1791,12 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
             A red "Add address" flags a missing one and opens the address editor directly. */}
         <td style={{ width: 210, maxWidth: 230 }}>
           {fullAddress.trim() ? (
+            <>
+            {countryOf(fullAddress) && <div className="dx-country">{countryOf(fullAddress)}</div>}
             <button className="dx-addrpc" onClick={() => setDxPopup({ type: "addr", uuid: e.uuid })} title={"Click to view the full address\n\n" + fullAddress}>
               <IcoPin /> <span className="mono">{postcodeOf(fullAddress) || "View"}</span>
             </button>
+            </>
           ) : (
             <button className="dx-addrmiss"
               onClick={() => e.saleId ? setAddressModalUuid(e.uuid) : showAlert("This row isn't linked to a sale, so there's nowhere to save the address.")}
