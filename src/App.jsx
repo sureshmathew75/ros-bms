@@ -18603,7 +18603,8 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
 
 /* ── SelectionsPurchaseForm: simplified New / Edit Purchase for ROS Selections UK ──
    Date · Purchase ID · supplier invoice no. + date · supplier · qty · amount paid · transfer charges · other charges
-   · total paid (£) · equivalent ₹ · unit cost · payment by · Remitly receipt + supplier invoice · remarks. */
+   · total paid (£) · equivalent ₹ · unit cost · payment by · inward tracking no. + shipper + received date
+   · Remitly receipt + supplier invoice · remarks. */
 const PURCHASE_ATTACH=[{kind:"remitly",label:"Remitly receipt"},{kind:"invoice",label:"Supplier invoice"}];
 const SelectionsPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,initialValues=null})=>{
   const nextNum=(lastPurchNum||700)+1;
@@ -18625,6 +18626,9 @@ const SelectionsPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,initialVa
     otherCharges:num0(iv.otherCharges),
     inrEquivalent:num0(iv.inrEquivalent),
     payBy:iv.payBy||"Remitly UK",
+    logisticBy:iv.logisticBy||"",
+    logisticRef:iv.logisticRef||"",
+    receivedDate:iv.receivedDate||"",
     remarks:iv.remarks||"",
   });
   const [files,setFiles]=useState({remitly:null,invoice:null});
@@ -18808,6 +18812,26 @@ const SelectionsPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,initialVa
           )}
         </div>
 
+        <Divider title="Inward Shipping"/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:6}}>
+          <div style={{gridColumn:"1 / -1"}}>
+            <label style={lbl}>Inward Tracking Number(s)</label>
+            <input value={form.logisticRef} onChange={e=>set("logisticRef",e.target.value)} placeholder="Tracking / AWB number — separate several with commas" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/>
+          </div>
+          <div>
+            <label style={lbl}>Shipper</label>
+            <input list="inward-shippers" value={form.logisticBy} onChange={e=>set("logisticBy",e.target.value)} placeholder="DHL, FedEx, DTDC…" style={inp} onFocus={fo} onBlur={bl}/>
+            <datalist id="inward-shippers">
+              {["DHL","FedEx","UPS","DTDC","India Post","Aramex","Royal Mail","Parcelforce","Other"].map(o=><option key={o} value={o}/>)}
+            </datalist>
+          </div>
+          <div>
+            <label style={lbl}>Received Date</label>
+            <input type="date" value={form.receivedDate} max={localTodayISO()} onChange={e=>set("receivedDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
+          </div>
+        </div>
+        <p style={{margin:"0 0 16px",fontSize:10.5,color:"#94a3b8"}}>Entering a received date marks this purchase as Delivered.</p>
+
         <Divider title="Attachments"/>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
           {PURCHASE_ATTACH.map(a=><Attach key={a.kind} kind={a.kind} label={a.label}/>)}
@@ -18828,7 +18852,11 @@ const SelectionsPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,initialVa
           if(!form.supplier){setSaveErr("Please select a supplier.");return;}
           if(!(amt>0)){setSaveErr("Please enter the amount we paid.");return;}
           if(form.date&&form.date>localTodayISO()){setSaveErr("Purchase date can't be in the future.");return;}
+          if(form.receivedDate&&form.receivedDate>localTodayISO()){setSaveErr("Received date can't be in the future.");return;}
           setSaving(true);
+          // A received date means the goods have arrived; clearing it puts a Delivered purchase back to Pending (Cancelled stays).
+          const _st=String(iv.status||"PENDING").toUpperCase();
+          const _status=form.receivedDate?(_st==="CANCELLED"?"CANCELLED":"RECEIVED"):(_st==="RECEIVED"?"PENDING":(iv.status||"PENDING"));
           onSave({
             ...iv,
             id:form.purchaseId||form.id, purchaseId:form.purchaseId,
@@ -18839,8 +18867,9 @@ const SelectionsPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,initialVa
             amountPaid:amt, transferCharges:tr, otherCharges:oth, inrEquivalent:inr,
             payBy:form.payBy||"Remitly UK",
             payDate:iv.payDate||form.date,
+            logisticBy:form.logisticBy, logisticRef:form.logisticRef, receivedDate:form.receivedDate,
             remarks:form.remarks,
-            status:iv.status||"PENDING",
+            status:_status,
             _files:files,
           });
         }}
