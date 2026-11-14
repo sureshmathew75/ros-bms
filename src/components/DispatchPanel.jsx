@@ -450,9 +450,10 @@ const INDIA_CSS = `
 .dx-topscroll{overflow-x:scroll;overflow-y:hidden;position:sticky;top:0;z-index:6;background:#eef2f7;border-radius:16px 16px 0 0;border-bottom:1px solid var(--line);height:14px;scrollbar-width:auto}
 .dx-table{width:100%;border-collapse:collapse;min-width:900px;font-size:12.5px}
 .dx-table thead th{background:#f8fafc;text-align:left;font-size:10.5px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.08em;padding:10px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
-.dx-day td{background:var(--acbg2);padding:8px 14px;border-top:1px solid var(--acline);border-bottom:1px solid var(--acline)}
+.dx-day td{background:#eef1f5;padding:9px 14px;border-top:2px solid #94a3b8;border-bottom:1px solid #cbd5e1}
+.dx-gap td{height:18px;padding:0;background:#f8fafc;border:none}
 .dx-day-in{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
-.dx-day-title{font-weight:800;color:var(--actext);font-size:11.5px;text-transform:uppercase;letter-spacing:.07em}
+.dx-day-title{font-weight:800;color:#334155;font-size:11.5px;text-transform:uppercase;letter-spacing:.07em}
 .dx-day-c{font-weight:600;color:var(--mut);font-size:11.5px}
 .dx-pill{font-size:10.5px;font-weight:800;padding:2px 9px;border-radius:999px}
 .dx-pill.amber{background:#fef3c7;color:#b45309}.dx-pill.green{background:#dcfce7;color:#15803d}.dx-pill.grey{background:#f1f5f9;color:#64748b}
@@ -2192,12 +2193,13 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                         </tr>
                       </thead>
                       <tbody>
-                        {ixGroups.map(g => {
+                        {ixGroups.map((g, gi) => {
                           const nTransit = g.rows.filter(r => rowTrackState(r) === "transit").length;
                           const nDeliv = g.rows.filter(r => r.delivered).length;
                           const nNo = g.rows.filter(r => rowTrackState(r) === "notrack").length;
                           return (
                             <Fragment key={g.date}>
+                              {gi > 0 && <tr className="dx-gap" aria-hidden="true"><td colSpan={7} /></tr>}
                               <tr className="dx-day"><td colSpan={7}>
                                 <div className="dx-day-in">
                                   <span className="dx-day-title">{g.date === todayISO() ? "Today · " : g.date === yesterdayISO() ? "Yesterday · " : ""}{weekdayName(g.date)}, {Number(g.date.slice(8))} {monthLabel(g.date.slice(0, 7))}</span>
