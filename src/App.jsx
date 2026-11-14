@@ -18602,7 +18602,7 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
 
 
 /* ── SelectionsPurchaseForm: simplified New / Edit Purchase for ROS Selections UK ──
-   Date · Purchase ID · supplier invoice no. + date · supplier · qty · amount paid · transfer charges · other charges
+   Date · Purchase ID · supplier invoice no. + date · supplier · item · qty · amount paid · transfer charges · other charges
    · total paid (£) · equivalent ₹ · unit cost · payment by · inward tracking no. + shipper + received date
    · Remitly receipt + supplier invoice · remarks. */
 const PURCHASE_ATTACH=[{kind:"remitly",label:"Remitly receipt"},{kind:"invoice",label:"Supplier invoice"}];
@@ -18618,6 +18618,7 @@ const SelectionsPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,initialVa
     id:iv.id||autoId, purchaseId:iv.id||autoId, idEditing:false,
     date:iv.date||new Date().toISOString().slice(0,10),
     supplier:iv.supplier||"",
+    item:iv.item||"",
     invoiceNo:iv.invoiceNo||"",
     supplierInvDate:iv.supplierInvDate||"",
     qty:num0(iv.qty),
@@ -18762,6 +18763,14 @@ const SelectionsPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,initialVa
           </div>
         </div>
 
+        <div style={{marginBottom:16}}>
+          <label style={lbl}>Item</label>
+          <input list="sel-purchase-items" value={form.item} onChange={e=>set("item",e.target.value)} placeholder="Select or type the item name" style={inp} onFocus={fo} onBlur={bl}/>
+          <datalist id="sel-purchase-items">
+            {PRODUCTS.map(pr=><option key={pr.id} value={pr.name}/>)}
+          </datalist>
+        </div>
+
         <Divider title="Amount"/>
         <div style={{border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 14px 12px",background:"#fafbfc",marginBottom:16}}>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
@@ -18850,6 +18859,7 @@ const SelectionsPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,initialVa
         <button disabled={saving} onClick={()=>{
           setSaveErr("");
           if(!form.supplier){setSaveErr("Please select a supplier.");return;}
+          if(!form.item.trim()){setSaveErr("Please select or enter an item.");return;}
           if(!(amt>0)){setSaveErr("Please enter the amount we paid.");return;}
           if(form.date&&form.date>localTodayISO()){setSaveErr("Purchase date can't be in the future.");return;}
           if(form.receivedDate&&form.receivedDate>localTodayISO()){setSaveErr("Received date can't be in the future.");return;}
@@ -18861,6 +18871,7 @@ const SelectionsPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,initialVa
             ...iv,
             id:form.purchaseId||form.id, purchaseId:form.purchaseId,
             date:form.date, supplier:form.supplier,
+            item:form.item.trim(), itemCustom:"",
             invoiceNo:form.invoiceNo, supplierInvDate:form.supplierInvDate,
             qty:form.qty,
             total:totalPaid, gst:0,
