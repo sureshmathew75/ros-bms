@@ -4991,6 +4991,7 @@ const DocUploadSection=({bucket,recordUuid,docs=[],onDocsChange,accent="#059669"
                 <a href={doc.url} target="_blank" rel="noreferrer"
                   style={{fontSize:12,fontWeight:700,color:accent,textDecoration:"none",display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}
                   title={doc.name}>{doc.name}</a>
+                {doc.label&&<span style={{fontSize:9,fontWeight:800,color:"#64748b",background:"#e2e8f0",borderRadius:999,padding:"1px 7px",marginRight:6,textTransform:"uppercase",letterSpacing:"0.04em"}}>{doc.label}</span>}
                 {doc.size&&<span style={{fontSize:10,color:"#94a3b8"}}>{fmtSize(doc.size)}</span>}
               </div>
               <a href={doc.url} download={doc.name} target="_blank" rel="noreferrer"
@@ -10353,7 +10354,8 @@ return(
       {/* ── NEW PURCHASE MODAL ── */}
       {modal==="new-purchase"&&(
         <Modal title="📦 New Purchase" onClose={()=>setModal(null)} accent={shop.accent}>
-          <NewPurchaseForm shopId={shopId} shop={shop} lastPurchNum={(()=>{
+          {(()=>{
+            const _lastNum=(()=>{
                   // Find highest number from purchase_ref fields (e.g. PI-0701 → 701)
                   const nums=purch.map(p=>{
                     const ref=p.purchase_ref||p.id||"";
@@ -10361,20 +10363,28 @@ return(
                     return m?parseInt(m[1],10):0;
                   });
                   return nums.length>0?Math.max(...nums):700;
-                })()}
-            onSave={async(form)=>{
-              const {id, purchaseId, idEditing, ...rest} = form;
+                })();
+            const _save=async(form)=>{
+              const {id, purchaseId, idEditing, _files, ...rest} = form;
               const payload = {...rest, purchase_ref: id || purchaseId || ""};
               const result = await dbSavePurchase(shopId, payload);
               if(result && result.error){
                 showAlert("Save failed: " + result.error + "\n\nPlease check the browser console for details.");
                 return;
               }
+              if(_files&&result&&result.uuid){
+                const up=await uploadPurchaseAttachments(result.uuid,[],_files);
+                if(up.failed.length) showAlert("The purchase was saved, but an attachment could not be uploaded:\n"+up.failed.join("\n")+"\n\nYou can add it again from the purchase's View screen.");
+              }
+              if(result&&result.warning) showAlert(result.warning);
               const fresh = await dbLoadPurchases(shopId);
               if(fresh) setPurchData(fresh);
               setModal(null);
-            }}
-            onClose={()=>setModal(null)}/>
+            };
+            return shopId==="ros-selections"
+              ? <SelectionsPurchaseForm shopId={shopId} shop={shop} lastPurchNum={_lastNum} onSave={_save} onClose={()=>setModal(null)}/>
+              : <NewPurchaseForm shopId={shopId} shop={shop} lastPurchNum={_lastNum} onSave={_save} onClose={()=>setModal(null)}/>;
+          })()}
         </Modal>
       )}
 
@@ -10402,6 +10412,16 @@ return(
                   {l:"Amount",v:fmt(shopId,Number(viewPurchRow.total)||0)},
                   {l:"GST / VAT",v:fmt(shopId,Number(viewPurchRow.gst)||0)},
                   {l:"Net Total",v:fmt(shopId,(Number(viewPurchRow.total)||0)+(Number(viewPurchRow.gst)||0))},
+                  ...(viewPurchRow.supplierInvDate?[{l:"Supplier Inv. Date",v:viewPurchRow.supplierInvDate}]:[]),
+                  ...(Number(viewPurchRow.transferCharges)>0||Number(viewPurchRow.otherCharges)>0?[
+                    {l:"Amount Paid",v:fmt(shopId,Number(viewPurchRow.amountPaid)||0)},
+                    {l:"Transfer Charges",v:fmt(shopId,Number(viewPurchRow.transferCharges)||0)},
+                    {l:"Other Charges",v:fmt(shopId,Number(viewPurchRow.otherCharges)||0)},
+                  ]:[]),
+                  ...(Number(viewPurchRow.inrEquivalent)>0?[
+                    {l:"Equivalent (₹)",v:"₹"+Number(viewPurchRow.inrEquivalent).toLocaleString(undefined,{maximumFractionDigits:2})},
+                    {l:"Exchange Rate",v:(Number(viewPurchRow.total)>0?"₹"+(Number(viewPurchRow.inrEquivalent)/((Number(viewPurchRow.total)||0)+(Number(viewPurchRow.gst)||0))).toFixed(2)+" per "+shop.symbol+"1":"—")},
+                  ]:[]),
                   {l:"Unit Cost",v:viewPurchRow.qty&&viewPurchRow.total?fmt(shopId,((Number(viewPurchRow.total)||0)+(Number(viewPurchRow.gst)||0))/Number(viewPurchRow.qty)):"—"},
                   {l:"Payment By",v:viewPurchRow.payBy||viewPurchRow.pay_by||"—"},
                   {l:"Payment Date",v:viewPurchRow.payDate||viewPurchRow.pay_date||"—"},
@@ -10457,14 +10477,16 @@ return(
       {/* ── EDIT PURCHASE MODAL ── */}
       {editPurchRow&&(
         <Modal title="✏️ Edit Purchase" onClose={()=>setEditPurchRow(null)} accent={shop.accent}>
-          <NewPurchaseForm
+          {(()=>{
+            const _Form=shopId==="ros-selections"?SelectionsPurchaseForm:NewPurchaseForm;
+            return (<_Form
             shopId={shopId}
             shop={shop}
             lastPurchNum={0}
             initialValues={editPurchRow}
             onSave={async(form)=>{
               const uuid=editPurchRow.uuid||editPurchRow.id;
-              const {id, purchaseId, idEditing, ...rest} = form;
+              const {id, purchaseId, idEditing, _files, ...rest} = form;
               const payload = {
                 ...rest,
                 purchase_ref: editPurchRow.id || id || purchaseId || "",
@@ -10477,11 +10499,17 @@ return(
                 showAlert("Update failed: " + result.error);
                 return;
               }
+              if(_files&&editPurchRow.uuid){
+                const up=await uploadPurchaseAttachments(editPurchRow.uuid,editPurchRow.documents||[],_files);
+                if(up.failed.length) showAlert("The purchase was updated, but an attachment could not be uploaded:\n"+up.failed.join("\n"));
+              }
+              if(result&&result.warning) showAlert(result.warning);
               const fresh = await dbLoadPurchases(shopId);
               if(fresh) setPurchData(fresh);
               setEditPurchRow(null);
             }}
-            onClose={()=>setEditPurchRow(null)}/>
+            onClose={()=>setEditPurchRow(null)}/>);
+          })()}
         </Modal>
       )}
 
@@ -18572,6 +18600,274 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
   );
 };
 
+
+/* ── SelectionsPurchaseForm: simplified New / Edit Purchase for ROS Selections UK ──
+   Date · Purchase ID · supplier invoice no. + date · supplier · qty · amount paid · transfer charges · other charges
+   · total paid (£) · equivalent ₹ · unit cost · payment by · Remitly receipt + supplier invoice · remarks. */
+const PURCHASE_ATTACH=[{kind:"remitly",label:"Remitly receipt"},{kind:"invoice",label:"Supplier invoice"}];
+const SelectionsPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,initialValues=null})=>{
+  const nextNum=(lastPurchNum||700)+1;
+  const autoId=`PO-${String(nextNum).padStart(4,"0")}`;
+  const iv=initialValues||{};
+  const PAY_OPTS=["Remitly UK","Bank Transfer"];
+  const num0=v=>(v===undefined||v===null||v==="")?"":String(v);
+  // Older purchases only have a single Total — show it as the amount paid, with no extra charges.
+  const hasNew=iv.amountPaid!==undefined&&iv.amountPaid!==null&&iv.amountPaid!=="";
+  const [form,setForm]=useState({
+    id:iv.id||autoId, purchaseId:iv.id||autoId, idEditing:false,
+    date:iv.date||new Date().toISOString().slice(0,10),
+    supplier:iv.supplier||"",
+    invoiceNo:iv.invoiceNo||"",
+    supplierInvDate:iv.supplierInvDate||"",
+    qty:num0(iv.qty),
+    amountPaid:hasNew?num0(iv.amountPaid):(initialValues?num0((Number(iv.total)||0)+(Number(iv.gst)||0)||""):""),
+    transferCharges:num0(iv.transferCharges),
+    otherCharges:num0(iv.otherCharges),
+    inrEquivalent:num0(iv.inrEquivalent),
+    payBy:iv.payBy||"Remitly UK",
+    remarks:iv.remarks||"",
+  });
+  const [files,setFiles]=useState({remitly:null,invoice:null});
+  const [saveErr,setSaveErr]=useState("");
+  const [saving,setSaving]=useState(false);
+  const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  const [supplierList,setSupplierList]=useState([...SUPPLIERS]);
+  const [showNewSup,setShowNewSup]=useState(false);
+  React.useEffect(()=>{ dbLoadSuppliers(shopId).then(data=>{if(data&&data.length>0)setSupplierList(data);}).catch(()=>{}); },[]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const r2=n=>parseFloat(Number(n).toFixed(2));
+  const amt=parseFloat(form.amountPaid)||0, tr=parseFloat(form.transferCharges)||0, oth=parseFloat(form.otherCharges)||0;
+  const totalPaid=r2(amt+tr+oth);
+  const inr=parseFloat(form.inrEquivalent)||0;
+  const qty=parseFloat(form.qty)||0;
+  const rate=(inr>0&&totalPaid>0)?inr/totalPaid:0;
+  const unitGBP=(qty>0&&totalPaid>0)?totalPaid/qty:0;
+  const unitINR=(qty>0&&inr>0)?inr/qty:0;
+  const isOtherPay=!PAY_OPTS.includes(form.payBy);
+  const payChoice=isOtherPay?"Other":form.payBy;
+
+  const inp={width:"100%",border:"1px solid #e2e8f0",borderRadius:9,padding:"9px 13px",fontSize:13,outline:"none",fontFamily:"DM Sans,sans-serif",boxSizing:"border-box",color:"#374151",background:"white",transition:"border-color 0.15s"};
+  const inpGray={...inp,background:"#f1f5f9",color:"#334155",cursor:"default",fontWeight:700};
+  const fo=e=>e.target.style.borderColor=shop.accent;
+  const bl=e=>e.target.style.borderColor="#e2e8f0";
+  const lbl={fontSize:11,fontWeight:700,color:"#64748b",display:"block",marginBottom:5,textTransform:"uppercase",letterSpacing:"0.05em"};
+  const Divider=({title})=>(
+    <div style={{display:"flex",alignItems:"center",gap:8,margin:"6px 0 12px"}}>
+      <div style={{height:1,flex:1,background:"#f1f5f9"}}/>
+      <span style={{fontSize:10,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:"0.08em",whiteSpace:"nowrap"}}>{title}</span>
+      <div style={{height:1,flex:1,background:"#f1f5f9"}}/>
+    </div>
+  );
+  const money=(n,sym)=>sym+Number(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+
+  const pickFile=(kind,f)=>{
+    if(!f) return;
+    if(f.size>20*1024*1024){setSaveErr("That file is larger than 20MB — please choose a smaller one.");return;}
+    setSaveErr("");
+    setFiles(x=>({...x,[kind]:f}));
+  };
+  const existingDocs=Array.isArray(iv.documents)?iv.documents:[];
+
+  const Attach=({kind,label})=>{
+    const f=files[kind];
+    const had=existingDocs.filter(d=>d.kind===kind);
+    return(
+      <div style={{border:"1.5px dashed "+(f?shop.accent:"#cbd5e1"),borderRadius:12,padding:"12px 14px",background:f?shop.accent+"08":"#f8fafc"}}>
+        <p style={{margin:"0 0 6px",fontSize:11,fontWeight:800,color:"#475569",textTransform:"uppercase",letterSpacing:"0.05em"}}>📎 {label}</p>
+        {had.map((d,i)=>(
+          <a key={i} href={d.url} target="_blank" rel="noreferrer" style={{display:"block",fontSize:12,fontWeight:700,color:shop.accent,textDecoration:"none",marginBottom:4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>✓ {d.name}</a>
+        ))}
+        {f?(
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:700,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{f.name}</span>
+            <button type="button" onClick={()=>setFiles(x=>({...x,[kind]:null}))} title="Remove"
+              style={{width:24,height:24,borderRadius:6,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,lineHeight:1,padding:0,fontFamily:"inherit"}}>×</button>
+          </div>
+        ):(
+          <label style={{display:"inline-block",padding:"6px 14px",borderRadius:8,border:"1px solid "+shop.accent,background:"white",color:shop.accent,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+            {had.length?"Attach another":"Choose file"}
+            <input type="file" accept="image/*,.pdf" style={{display:"none"}} onChange={e=>{pickFile(kind,e.target.files&&e.target.files[0]);e.target.value="";}}/>
+          </label>
+        )}
+        {!f&&!had.length&&<p style={{margin:"6px 0 0",fontSize:10.5,color:"#94a3b8"}}>PDF or image · max 20MB</p>}
+      </div>
+    );
+  };
+
+  const handleAddSupplier=async(newSup)=>{
+    await dbSaveSupplier(shopId,newSup).catch(e=>console.error("Supplier save error:",e));
+    setSupplierList(l=>[newSup,...l]);
+    set("supplier",newSup.name);
+    setShowNewSup(false);
+  };
+
+  return(
+    <>
+    {showNewSup&&(
+      <div style={{position:"fixed",inset:0,zIndex:80,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+        <div style={{position:"absolute",inset:0,background:"rgba(0,0,0,0.50)",backdropFilter:"blur(4px)"}} onClick={()=>setShowNewSup(false)}/>
+        <div style={{position:"relative",background:"white",borderRadius:20,boxShadow:"0 32px 64px rgba(0,0,0,0.25)",width:"100%",maxWidth:500,maxHeight:"90vh",overflowY:"auto",zIndex:81}} onClick={e=>e.stopPropagation()}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"16px 22px",borderBottom:"1px solid #f1f5f9",background:shop.accent+"12",borderRadius:"20px 20px 0 0"}}>
+            <h3 style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>➕ New Supplier</h3>
+            <button onClick={()=>setShowNewSup(false)} style={{width:30,height:30,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:18,color:"#64748b"}}>×</button>
+          </div>
+          <div style={{padding:22}}>
+            <NewSupplierForm shop={shop} onSave={handleAddSupplier} onClose={()=>setShowNewSup(false)}/>
+          </div>
+        </div>
+      </div>
+    )}
+
+    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",padding:"4px 20px 20px"}}>
+      <div style={{padding:"0 20px"}}>
+        <Divider title="Purchase"/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+          <div>
+            <label style={lbl}>Date</label>
+            <input type="date" value={form.date} max={localTodayISO()} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
+          </div>
+          <div>
+            <label style={lbl}>Purchase ID</label>
+            <div style={{display:"flex",gap:6}}>
+              <input value={form.purchaseId} readOnly={!form.idEditing} onChange={e=>{set("purchaseId",e.target.value);set("id",e.target.value);}}
+                style={{...inp,flex:1,background:form.idEditing?"white":"#f8fafc",fontFamily:"DM Mono,monospace",fontWeight:700,fontSize:12,color:shop.accent,border:"1px solid "+(form.idEditing?shop.accent:"#e2e8f0")}} onFocus={fo} onBlur={bl}/>
+              <button type="button" onClick={()=>set("idEditing",!form.idEditing)}
+                style={{flexShrink:0,width:34,height:34,borderRadius:8,cursor:"pointer",border:"1px solid "+(form.idEditing?shop.accent:"#e2e8f0"),background:form.idEditing?shop.accent:"#f8fafc",color:form.idEditing?"white":"#64748b",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                {form.idEditing?"✓":"✏️"}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label style={lbl}>Supplier Invoice Number</label>
+            <input value={form.invoiceNo} onChange={e=>set("invoiceNo",e.target.value)} placeholder="ELT-7821" style={{...inp,fontFamily:"DM Mono,monospace"}} onFocus={fo} onBlur={bl}/>
+          </div>
+          <div>
+            <label style={lbl}>Inv. Date</label>
+            <input type="date" value={form.supplierInvDate} onChange={e=>set("supplierInvDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/>
+          </div>
+        </div>
+        <div style={{marginBottom:16}}>
+          <label style={lbl}>Supplier</label>
+          <div style={{display:"flex",gap:6}}>
+            <select value={form.supplier} onChange={e=>set("supplier",e.target.value)} style={{...inp,flex:1}}>
+              <option value="">Select supplier…</option>
+              {supplierList.map(s=><option key={s.id} value={s.name}>{s.name}{s.place?" · "+s.place:""}</option>)}
+            </select>
+            <button type="button" onClick={()=>setShowNewSup(true)} title="Add new supplier"
+              style={{flexShrink:0,width:34,height:34,borderRadius:8,cursor:"pointer",border:"1px solid "+shop.accent,background:shop.accent,color:"white",fontSize:18,fontWeight:900,display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+          </div>
+        </div>
+
+        <Divider title="Amount"/>
+        <div style={{border:"1px solid #e2e8f0",borderRadius:14,padding:"14px 14px 12px",background:"#fafbfc",marginBottom:16}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+            <div>
+              <label style={lbl}>Total Qty</label>
+              <input type="number" onWheel={e=>e.target.blur()} min="1" value={form.qty} onChange={e=>set("qty",e.target.value)} placeholder="0" style={inp} onFocus={fo} onBlur={bl}/>
+            </div>
+            <div>
+              <label style={lbl}>Amount we paid ({shop.symbol})</label>
+              <input type="number" onWheel={e=>e.target.blur()} value={form.amountPaid} onChange={e=>set("amountPaid",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+            </div>
+            <div>
+              <label style={lbl}>Transfer charges ({shop.symbol})</label>
+              <input type="number" onWheel={e=>e.target.blur()} value={form.transferCharges} onChange={e=>set("transferCharges",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+            </div>
+            <div>
+              <label style={lbl}>Other charges ({shop.symbol})</label>
+              <input type="number" onWheel={e=>e.target.blur()} value={form.otherCharges} onChange={e=>set("otherCharges",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+            </div>
+          </div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,background:shop.accentBg,border:"1px solid "+shop.accent+"44",borderRadius:11,padding:"10px 14px",marginBottom:12}}>
+            <span style={{fontSize:12,fontWeight:800,color:shop.accentText,textTransform:"uppercase",letterSpacing:"0.05em"}}>Total we paid ({shop.symbol})</span>
+            <span style={{fontSize:20,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace"}}>{money(totalPaid,shop.symbol)}</span>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <div>
+              <label style={lbl}>Equivalent Indian money (₹)</label>
+              <input type="number" onWheel={e=>e.target.blur()} value={form.inrEquivalent} onChange={e=>set("inrEquivalent",e.target.value)} placeholder="Amount in ₹" style={inp} onFocus={fo} onBlur={bl}/>
+              {rate>0&&<p style={{margin:"4px 0 0",fontSize:10.5,color:"#94a3b8"}}>Rate: ₹{rate.toFixed(2)} per {shop.symbol}1</p>}
+            </div>
+            <div>
+              <label style={{...lbl,color:"#94a3b8"}}>Unit Cost <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0}}>— auto</span></label>
+              <input readOnly value={unitGBP>0?(shop.symbol+unitGBP.toFixed(2)+(unitINR>0?"  ·  ₹"+unitINR.toFixed(2):"")):""} placeholder="Enter qty and amount" style={inpGray}/>
+            </div>
+          </div>
+        </div>
+
+        <Divider title="Payment"/>
+        <div style={{marginBottom:16}}>
+          <label style={lbl}>Payment By</label>
+          <select value={payChoice} onChange={e=>set("payBy",e.target.value==="Other"?"Other":e.target.value)} style={{...inp,fontWeight:600}}>
+            {PAY_OPTS.map(o=><option key={o}>{o}</option>)}
+            <option value="Other">Other</option>
+          </select>
+          {isOtherPay&&(
+            <input value={form.payBy==="Other"?"":form.payBy} onChange={e=>set("payBy",e.target.value||"Other")} placeholder="Enter payment method…"
+              style={{...inp,marginTop:8,border:"1px solid "+shop.accent,fontWeight:600}} onFocus={fo} onBlur={bl}/>
+          )}
+        </div>
+
+        <Divider title="Attachments"/>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
+          {PURCHASE_ATTACH.map(a=><Attach key={a.kind} kind={a.kind} label={a.label}/>)}
+        </div>
+
+        <div style={{marginBottom:16}}>
+          <label style={lbl}>Remarks</label>
+          <textarea value={form.remarks} onChange={e=>set("remarks",e.target.value)} rows={2} placeholder="Notes about this purchase…" style={{...inp,resize:"vertical"}} onFocus={fo} onBlur={bl}/>
+        </div>
+      </div>
+
+      {saveErr&&(
+        <div style={{margin:"0 20px 8px",padding:"8px 14px",background:"#fef2f2",border:"1px solid #fca5a5",borderRadius:9,fontSize:12,color:"#dc2626",fontWeight:600}}>⚠️ {saveErr}</div>
+      )}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
+        <button disabled={saving} onClick={()=>{
+          setSaveErr("");
+          if(!form.supplier){setSaveErr("Please select a supplier.");return;}
+          if(!(amt>0)){setSaveErr("Please enter the amount we paid.");return;}
+          if(form.date&&form.date>localTodayISO()){setSaveErr("Purchase date can't be in the future.");return;}
+          setSaving(true);
+          onSave({
+            ...iv,
+            id:form.purchaseId||form.id, purchaseId:form.purchaseId,
+            date:form.date, supplier:form.supplier,
+            invoiceNo:form.invoiceNo, supplierInvDate:form.supplierInvDate,
+            qty:form.qty,
+            total:totalPaid, gst:0,
+            amountPaid:amt, transferCharges:tr, otherCharges:oth, inrEquivalent:inr,
+            payBy:form.payBy||"Remitly UK",
+            payDate:iv.payDate||form.date,
+            remarks:form.remarks,
+            status:iv.status||"PENDING",
+            _files:files,
+          });
+        }}
+          style={{padding:"12px 0",borderRadius:11,border:"none",background:saving?"#94a3b8":shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:saving?"default":"pointer",fontFamily:"inherit",boxShadow:saving?"none":"0 4px 14px "+shop.accent+"44"}}>
+          {saving?"Saving…":"💾 Save Purchase"}
+        </button>
+        <button onClick={onClose}
+          style={{padding:"12px 0",borderRadius:11,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
+      </div>
+    </div>
+    </>
+  );
+};
+/* ── End SelectionsPurchaseForm ─────────────────────────────────────────── */
+
+/* Uploads the Remitly receipt / supplier invoice picked in the purchase form and adds them to the purchase's documents. */
+const uploadPurchaseAttachments=async(uuid,existingDocs,files)=>{
+  const docs=[...(existingDocs||[])]; const failed=[];
+  for(const a of PURCHASE_ATTACH){
+    const f=files&&files[a.kind]; if(!f) continue;
+    const r=await dbUploadDoc("purchase-docs",uuid,f);
+    if(r.error){failed.push(a.label+" — "+r.error);continue;}
+    docs.push({name:f.name,url:r.url,path:r.path,size:f.size,uploadedAt:new Date().toISOString(),label:a.label,kind:a.kind});
+  }
+  if(docs.length>(existingDocs||[]).length) await dbSavePurchaseDocs(uuid,docs);
+  return {docs,failed};
+};
 
 const NewCustomerForm=({shop,onSave,onClose,customers=[]})=>{
   const [cf,setCf]=useState({

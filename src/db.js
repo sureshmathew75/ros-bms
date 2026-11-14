@@ -279,21 +279,37 @@ export const dbSavePurchase = async (shopId, p) => {
     status:        p.status || 'PENDING',
   };
 
-  // If _uuid provided, this is an update of an existing row
-  if (p._uuid) {
-    const { error: updErr } = await sb.from('purchases').update(payload).eq('id', p._uuid).eq('shop_id', shopId);
-    if (updErr) { console.error('❌ Purchase update error:', updErr); return { error: updErr.message }; }
-    console.log('✅ Purchase updated:', p._uuid);
-    return { error: null };
-  }
+  // ROS Selections' simplified purchase form also sends these (columns: purchases_selections_fields.sql).
+  // They are only included when the form supplied them, so the other shops are unaffected.
+  const extra = (p.amountPaid !== undefined) ? {
+    supplier_inv_date: p.supplierInvDate || null,
+    amount_paid:       Number(p.amountPaid) || 0,
+    transfer_charges:  Number(p.transferCharges) || 0,
+    other_charges:     Number(p.otherCharges) || 0,
+    inr_equivalent:    Number(p.inrEquivalent) || 0,
+  } : null;
 
-  const { data, error } = await sb.from('purchases').insert(payload).select('id').single();
-  if (error) {
-    console.error('❌ Purchase insert error:', error);
-    return { error: error.message };
+  const write = async (pl) => {
+    if (p._uuid) {
+      const { error } = await sb.from('purchases').update(pl).eq('id', p._uuid).eq('shop_id', shopId);
+      return { error, uuid: p._uuid };
+    }
+    const { data, error } = await sb.from('purchases').insert(pl).select('id').single();
+    return { error, uuid: data?.id };
+  };
+
+  let res = await write(extra ? { ...payload, ...extra } : payload);
+  let warning = null;
+  if (res.error && extra) {
+    // The new columns haven't been added yet: save the core purchase (Total already includes the charges)
+    // rather than losing it, and tell the user what is missing.
+    console.warn('⚠️ Purchase save with extra columns failed, retrying without them:', res.error.message);
+    res = await write(payload);
+    if (!res.error) warning = 'The purchase was saved, but the invoice date, charges breakdown and ₹ equivalent were NOT stored — the database needs purchases_selections_fields.sql run once in Supabase.';
   }
-  console.log('✅ Purchase saved, uuid:', data?.id);
-  return { error: null, uuid: data?.id };
+  if (res.error) { console.error('❌ Purchase save error:', res.error); return { error: res.error.message }; }
+  console.log('✅ Purchase saved:', res.uuid);
+  return { error: null, uuid: res.uuid, warning };
 };
 
 export const dbLoadPurchases = async (shopId) => {
@@ -323,6 +339,11 @@ export const dbLoadPurchases = async (shopId) => {
     receivedDate: r.received_date || '',
     remarks:      r.remarks || '',
     status:       r.status || 'PENDING',
+    supplierInvDate: r.supplier_inv_date || '',
+    amountPaid:      r.amount_paid === null || r.amount_paid === undefined ? undefined : Number(r.amount_paid),
+    transferCharges: Number(r.transfer_charges) || 0,
+    otherCharges:    Number(r.other_charges) || 0,
+    inrEquivalent:   Number(r.inr_equivalent) || 0,
     documents:    Array.isArray(r.documents) ? r.documents : [],
   }));
 };
