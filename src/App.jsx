@@ -10478,8 +10478,8 @@ return(
       {editPurchRow&&(
         <Modal title="✏️ Edit Purchase" onClose={()=>setEditPurchRow(null)} accent={shop.accent}>
           {(()=>{
-            const _Form=shopId==="ros-selections"?SelectionsPurchaseForm:NewPurchaseForm;
-            return (<_Form
+            const PurchaseFormComp=shopId==="ros-selections"?SelectionsPurchaseForm:NewPurchaseForm;
+            return (<PurchaseFormComp
             shopId={shopId}
             shop={shop}
             lastPurchNum={0}
