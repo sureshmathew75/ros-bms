@@ -450,8 +450,11 @@ const INDIA_CSS = `
 .dx-topscroll{overflow-x:scroll;overflow-y:hidden;position:sticky;top:0;z-index:6;background:#eef2f7;border-radius:16px 16px 0 0;border-bottom:1px solid var(--line);height:14px;scrollbar-width:auto}
 .dx-table{width:100%;border-collapse:collapse;min-width:900px;font-size:12.5px}
 .dx-table thead th{background:#f8fafc;text-align:left;font-size:10.5px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.08em;padding:10px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
-.dx-day td{background:#eef1f5;padding:9px 14px;border-top:2px solid #94a3b8;border-bottom:1px solid #cbd5e1}
-.dx-gap td{height:18px;padding:0;background:#f8fafc;border:none}
+.dx-cards{min-width:1060px;padding:18px;background:#e6eaf0;display:flex;flex-direction:column;gap:26px}
+.dx-daycard{background:#fff;border:1px solid #d3dae4;border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,.10),0 6px 14px rgba(15,23,42,.12),0 16px 32px rgba(15,23,42,.10)}
+.dx-daybar{background:#eef1f5;padding:10px 16px;border-bottom:2px solid #cbd5e1}
+.dx-daycard .dx-table{table-layout:fixed;min-width:0}
+.dx-daycard .dx-table tbody tr.dx-r:last-child td{border-bottom:none}
 .dx-day-in{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .dx-day-title{font-weight:800;color:#334155;font-size:11.5px;text-transform:uppercase;letter-spacing:.07em}
 .dx-day-c{font-weight:600;color:var(--mut);font-size:11.5px}
@@ -2186,35 +2189,39 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                   </div>
                   <div className="dx-tablewrap" ref={tableBodyRef}
                     onScroll={ev => { if (tableTopRef.current && tableTopRef.current.scrollLeft !== ev.target.scrollLeft) tableTopRef.current.scrollLeft = ev.target.scrollLeft; }}>
-                    <table className="dx-table">
-                      <thead>
-                        <tr>
-                          {["Customer", "Address", "Shipper / Tracking", "Status", "Track", "Delivery", "Inform"].map((h, i) => <th key={i} style={i === 4 || i === 6 ? { textAlign: "center" } : undefined}>{h}</th>)}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {ixGroups.map((g, gi) => {
-                          const nTransit = g.rows.filter(r => rowTrackState(r) === "transit").length;
-                          const nDeliv = g.rows.filter(r => r.delivered).length;
-                          const nNo = g.rows.filter(r => rowTrackState(r) === "notrack").length;
-                          return (
-                            <Fragment key={g.date}>
-                              {gi > 0 && <tr className="dx-gap" aria-hidden="true"><td colSpan={7} /></tr>}
-                              <tr className="dx-day"><td colSpan={7}>
-                                <div className="dx-day-in">
-                                  <span className="dx-day-title">{g.date === todayISO() ? "Today · " : g.date === yesterdayISO() ? "Yesterday · " : ""}{weekdayName(g.date)}, {Number(g.date.slice(8))} {monthLabel(g.date.slice(0, 7))}</span>
-                                  {nTransit > 0 && <span className="dx-pill amber">{nTransit} in transit</span>}
-                                  {nDeliv > 0 && <span className="dx-pill green">{nDeliv} delivered</span>}
-                                  {nNo > 0 && <span className="dx-pill grey">{nNo} awaiting tracking</span>}
-                                  <span className="dx-day-c" style={{ marginLeft: "auto" }}>{g.rows.length} parcel{g.rows.length !== 1 ? "s" : ""}</span>
-                                </div>
-                              </td></tr>
-                              {g.rows.map(renderIndiaRow)}
-                            </Fragment>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                    <div className="dx-cards">
+                      {ixGroups.map(g => {
+                        const nTransit = g.rows.filter(r => rowTrackState(r) === "transit").length;
+                        const nDeliv = g.rows.filter(r => r.delivered).length;
+                        const nNo = g.rows.filter(r => rowTrackState(r) === "notrack").length;
+                        return (
+                          <div key={g.date} className="dx-daycard">
+                            <div className="dx-daybar">
+                              <div className="dx-day-in">
+                                <span className="dx-day-title">{g.date === todayISO() ? "Today · " : g.date === yesterdayISO() ? "Yesterday · " : ""}{weekdayName(g.date)}, {Number(g.date.slice(8))} {monthLabel(g.date.slice(0, 7))}</span>
+                                {nTransit > 0 && <span className="dx-pill amber">{nTransit} in transit</span>}
+                                {nDeliv > 0 && <span className="dx-pill green">{nDeliv} delivered</span>}
+                                {nNo > 0 && <span className="dx-pill grey">{nNo} awaiting tracking</span>}
+                                <span className="dx-day-c" style={{ marginLeft: "auto" }}>{g.rows.length} parcel{g.rows.length !== 1 ? "s" : ""}</span>
+                              </div>
+                            </div>
+                            <table className="dx-table">
+                              <colgroup>
+                                <col style={{ width: 250 }} /><col /><col style={{ width: 200 }} /><col style={{ width: 158 }} /><col style={{ width: 66 }} /><col style={{ width: 164 }} /><col style={{ width: 72 }} />
+                              </colgroup>
+                              <thead>
+                                <tr>
+                                  {["Customer", "Address", "Shipper / Tracking", "Status", "Track", "Delivery", "Inform"].map((h, i) => <th key={i} style={i === 4 || i === 6 ? { textAlign: "center" } : undefined}>{h}</th>)}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {g.rows.map(renderIndiaRow)}
+                              </tbody>
+                            </table>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                   </>
                 )}
