@@ -362,6 +362,15 @@ const Svg = ({ size = 14, fill = "none", children }) => (
   <svg width={size} height={size} viewBox="0 0 24 24" fill={fill} stroke={fill === "none" ? "currentColor" : "none"}
     strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>{children}</svg>
 );
+const IcoPin = () => <Svg size={12}><path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z" /><circle cx="12" cy="10" r="2.5" /></Svg>;
+// Short label for the Address column: the postcode (UK format) or 6-digit PIN code found in the address.
+const postcodeOf = (addr) => {
+  const t = String(addr || "");
+  const uk = t.match(/\b[A-Za-z]{1,2}\d[A-Za-z\d]?\s*\d[A-Za-z]{2}\b/);
+  if (uk) return uk[0].toUpperCase().replace(/\s+/g, "").replace(/(.{3})$/, " $1");
+  const pin = t.match(/\b\d{6}\b/);
+  return pin ? pin[0] : "";
+};
 const IcoPhone = () => <Svg size={12}><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8.1 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z" /></Svg>;
 const IcoCopy = () => <Svg size={13}><rect x="9" y="9" width="13" height="13" rx="2" /><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" /></Svg>;
 const IcoCheck = ({ size = 13 }) => <Svg size={size}><path d="M20 6 9 17l-5-5" /></Svg>;
@@ -584,6 +593,8 @@ const INDIA_CSS = `
 .dx-sq{width:30px;height:30px;padding:0!important;justify-content:center;border-radius:9px!important}
 .dx-addrtxt{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;text-align:left;border:none;background:none;padding:0;font:inherit;font-size:11.5px;line-height:1.35;color:#475569;cursor:pointer;max-width:100%}
 .dx-addrtxt:hover{color:var(--actext);text-decoration:underline}
+.dx-addrpc{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:9px;border:1px solid #bbf7d0;background:#f0fdf4;color:#15803d;font-weight:800;font-size:12px;cursor:pointer;white-space:nowrap}
+.dx-addrpc:hover{background:#dcfce7}
 .dx-cust{font-size:12.5px;letter-spacing:.01em}
 .dx-ship{padding:2px 20px 2px 7px;font-size:11px}
 .dx-trk{padding:2px 5px}
@@ -1716,7 +1727,6 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     const isSameCustomerDup = dupCustomerGroupKeys.has(rowGroupKey);
     const collisionOthers = linkedSaleForRow ? phoneCollisionFor(linkedSaleForRow) : null;
     const fullAddress = liveAddressFor(e);
-    const addrOneLine = fullAddress.replace(/\s*\n\s*/g, ", ");
     const phone = livePhoneFor(e);
     const trackUrl = canNotify ? staffTrackingURL(e.shipper, e.trackingNo) : null;
     const st = rowTrackState(e);
@@ -1766,8 +1776,8 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
             A red "Add address" flags a missing one and opens the address editor directly. */}
         <td style={{ width: 210, maxWidth: 230 }}>
           {fullAddress.trim() ? (
-            <button className="dx-addrtxt" onClick={() => setDxPopup({ type: "addr", uuid: e.uuid })} title={"Click to view the full address\n\n" + fullAddress}>
-              {addrOneLine}
+            <button className="dx-addrpc" onClick={() => setDxPopup({ type: "addr", uuid: e.uuid })} title={"Click to view the full address\n\n" + fullAddress}>
+              <IcoPin /> <span className="mono">{postcodeOf(fullAddress) || "View"}</span>
             </button>
           ) : (
             <button className="dx-addrmiss"
@@ -2226,7 +2236,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                   </>
                 )}
                 {!loading && shownEntries.length > 0 && (
-                  <div className="dx-foot"><span>{shownEntries.length} despatch{shownEntries.length !== 1 ? "es" : ""} · {ixMonthTitle}</span><span>Click an address to see it in full · tracking numbers are editable in place</span></div>
+                  <div className="dx-foot"><span>{shownEntries.length} despatch{shownEntries.length !== 1 ? "es" : ""} · {ixMonthTitle}</span><span>Click a postcode to see the full address · tracking numbers are editable in place</span></div>
                 )}
               </div>
             </>
