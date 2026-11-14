@@ -573,7 +573,8 @@ const INDIA_CSS = `
 .dx-st.delivered{background:#dcfce7;color:#15803d}
 .dx-st-sub{margin-top:3px;font-size:11px;color:#64748b;font-weight:600;white-space:nowrap}
 .dx-btns{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}
-.dx-table tbody tr.dx-r td{padding:6px 8px}
+.dx-table tbody tr.dx-r td{padding:6px 8px;border-bottom:2px solid #cbd5e1}
+.dx-table tbody tr.dx-r:last-child td{border-bottom:2px solid #cbd5e1}
 .dx-table thead th{padding:9px 8px}
 .dx-c{text-align:center}
 .dx-sq{width:30px;height:30px;padding:0!important;justify-content:center;border-radius:9px!important}
