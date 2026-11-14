@@ -354,7 +354,10 @@ const daysBetween = (a, b) => {
 };
 // Delivery state used by the Status filter: delivered / in transit (has
 // tracking, not yet delivered) / awaiting tracking (nothing to track yet).
-const rowTrackState = (e) => e.delivered ? "delivered" : (e.trackingNo ? "transit" : "notrack");
+const rowTrackState = (e) => e.lost ? "lost" : e.delivered ? "delivered" : (e.trackingNo ? "transit" : "notrack");
+// ROS India: a parcel still open this many days after despatch is marked delivered automatically, unless staff marked it Lost.
+const AUTO_DELIVER_DAYS = 45;
+const addDaysISO = (iso, n) => { const [y, m, d] = iso.split("-").map(Number); return localISO(new Date(y, m - 1, d + n)); };
 const courierLabel = (k) => k === "NONE" ? "No courier" : k === "SPEEDPOST" ? "Speed Post" : k === "FEDEX" ? "FedEx" : k === "OTHERS" ? "Others" : k;
 const courierKey = (e) => (e.shipper || "").trim().toUpperCase() || "NONE";
 
@@ -461,6 +464,7 @@ const INDIA_CSS = `
 .dx-segf{display:inline-flex;background:#f1f5f9;border:1px solid var(--line);border-radius:10px;padding:2px;flex-wrap:wrap}
 .dx-segf button{padding:6px 13px;border-radius:8px;border:none;background:transparent;font-weight:700;font-size:12.5px;color:#64748b;cursor:pointer;white-space:nowrap}
 .dx-segf button.on{background:#fff;box-shadow:0 1px 3px rgba(15,23,42,.14);color:var(--ink)}
+.dx-segf button.on.l{color:#b91c1c}
 .dx-segf button.on.t{color:#b45309}.dx-segf button.on.d{color:#15803d}.dx-segf button.on.n{color:#475569}
 .dx-count{margin-left:auto;color:#94a3b8;font-size:12.5px;display:flex;align-items:center;gap:12px}
 .dx-count b{color:#334155}
@@ -477,7 +481,7 @@ const INDIA_CSS = `
 .dx-topscroll{overflow-x:scroll;overflow-y:hidden;position:sticky;top:0;z-index:6;background:#eef2f7;border-radius:16px 16px 0 0;border-bottom:1px solid var(--line);height:14px;scrollbar-width:auto}
 .dx-table{width:100%;border-collapse:collapse;min-width:900px;font-size:12.5px}
 .dx-table thead th{background:#f8fafc;text-align:left;font-size:10.5px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.08em;padding:10px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
-.dx-cards{min-width:1060px;padding:18px;background:#e6eaf0;display:flex;flex-direction:column;gap:26px}
+.dx-cards{min-width:1110px;padding:18px;background:#e6eaf0;display:flex;flex-direction:column;gap:26px}
 .dx-daycard{background:#fff;border:1px solid #d3dae4;border-radius:14px;overflow:hidden;box-shadow:0 1px 2px rgba(15,23,42,.10),0 6px 14px rgba(15,23,42,.12),0 16px 32px rgba(15,23,42,.10)}
 .dx-daybar{background:#eef1f5;padding:10px 16px;border-bottom:2px solid #cbd5e1}
 .dx-daycard .dx-table{table-layout:fixed;min-width:0}
@@ -602,6 +606,11 @@ const INDIA_CSS = `
 .dx-st.transit{background:#e0e7ff;color:#3730a3}
 .dx-st.notrack{background:#f1f5f9;color:#475569}
 .dx-st.delivered{background:#dcfce7;color:#15803d}
+.dx-st.lost{background:#fee2e2;color:#b91c1c}
+.dx-table tbody tr.dx-r.lostrow td{background:#fffafa}
+.dx-lostbtn{display:inline-flex;align-items:center;padding:5px 8px;border-radius:9px;border:1px solid #fecaca;background:#fff;color:#b91c1c;font-weight:800;font-size:11.5px;cursor:pointer;white-space:nowrap}
+.dx-lostbtn:hover{background:#fef2f2}
+.dx-lostbadge{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:9px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;font-weight:800;font-size:12px;white-space:nowrap}
 .dx-st-sub{margin-top:3px;font-size:11px;color:#64748b;font-weight:600;white-space:nowrap}
 .dx-btns{display:flex;align-items:center;justify-content:flex-end;gap:6px;flex-wrap:wrap}
 .dx-table tbody tr.dx-r td{padding:6px 8px;border-bottom:2px solid #cbd5e1}
@@ -715,6 +724,30 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     setDismissedSaleIds(loadDismissed(shopId));
     return () => { cancelled = true; };
   }, [shopId]);
+
+  // ROS India: after AUTO_DELIVER_DAYS (45) days a parcel that is neither delivered nor marked Lost is
+  // marked delivered automatically (deemed delivery date = despatch date + 45 days). Runs once per load.
+  const autoDeliverDoneRef = useRef(false);
+  useEffect(() => {
+    if (loading || !isIndiaShop || autoDeliverDoneRef.current) return;
+    autoDeliverDoneRef.current = true;
+    const cutoff = addDaysISO(todayISO(), -AUTO_DELIVER_DAYS);
+    const due = entries.filter(e => !e.delivered && !e.lost && e.dispatchDate && e.dispatchDate <= cutoff);
+    if (!due.length) return;
+    (async () => {
+      for (const e of due) {
+        const patch = { delivered: true, deliveredDate: addDaysISO(e.dispatchDate, AUTO_DELIVER_DAYS), autoDelivered: true };
+        const merged = { ...e, ...patch };
+        const res = await persist(e.uuid, merged);
+        if (res?.error) continue;
+        updateEntry(e.uuid, patch);
+        if (merged.saleId && onSaleUpdate) {
+          const failures = await pushToLinkedSales(merged, { deliveryDate: merged.deliveredDate }, "delivery");
+          if (failures.length) await setLinkWarning(e.uuid, `Couldn't update the linked sale (${failures.map(f => f.id).join(", ")}) with delivery status: ${failures[0].message}`);
+        }
+      }
+    })();
+  }, [loading]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Keep the top slider as wide as the table so both scroll together.
   useEffect(() => {
@@ -1156,7 +1189,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
       || (e.trackingNo || "").replace(/\s+/g, "").toLowerCase().includes(ixQTrack);
   }));
   const ixMatchCourier = (e) => courierFilter === "ALL" || courierKey(e) === courierFilter;
-  const ixMatchStatus = (e) => statusFilter === "ALL" || (statusFilter === "open" ? rowTrackState(e) !== "delivered" : rowTrackState(e) === statusFilter);
+  const ixMatchStatus = (e) => statusFilter === "ALL" || (statusFilter === "open" ? (rowTrackState(e) !== "delivered" && rowTrackState(e) !== "lost") : rowTrackState(e) === statusFilter);
   const ixMatchAddr = (e) => addrFilter === "ALL" || !(liveAddressFor(e) || "").trim();
   const ixScope = ixBase.filter(e => ixMatchCourier(e) && ixMatchStatus(e) && ixMatchAddr(e));   // before the day filter
   const shownEntries = !isIndiaShop ? filteredEntries : (dayFilter === "all" ? ixScope : ixScope.filter(e => e.dispatchDate === dayFilter));
@@ -1166,9 +1199,9 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   ixBase.filter(e => ixMatchStatus(e) && ixMatchAddr(e)).forEach(e => { const k = courierKey(e); ixCourierCounts[k] = (ixCourierCounts[k] || 0) + 1; });
   const ixCourierKeys = Array.from(new Set([...Object.keys(ixCourierCounts), ...(courierFilter !== "ALL" ? [courierFilter] : [])]))
     .sort((a, b) => (ixCourierCounts[b] || 0) - (ixCourierCounts[a] || 0));
-  const ixStatusCounts = { transit: 0, delivered: 0, notrack: 0 };
+  const ixStatusCounts = { transit: 0, delivered: 0, notrack: 0, lost: 0 };
   ixBase.filter(e => ixMatchCourier(e) && ixMatchAddr(e)).forEach(e => { ixStatusCounts[rowTrackState(e)]++; });
-  const ixStatusTotal = ixStatusCounts.transit + ixStatusCounts.delivered + ixStatusCounts.notrack;
+  const ixStatusTotal = ixStatusCounts.transit + ixStatusCounts.delivered + ixStatusCounts.notrack + ixStatusCounts.lost;
   const ixOpenTotal = ixStatusCounts.transit + ixStatusCounts.notrack;   // not yet delivered
   const ixCourierTotal = ixBase.filter(e => ixMatchStatus(e) && ixMatchAddr(e)).length;
 
@@ -1518,7 +1551,30 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     setOpenDeliveryUuid(null);
   };
   const undoDelivered = (entry) => {
-    saveEntry(entry.uuid, { delivered: false, deliveredDate: "" });
+    if (isIndiaShop && entry.dispatchDate && daysBetween(entry.dispatchDate, todayISO()) >= AUTO_DELIVER_DAYS) {
+      showAlert(`This parcel was despatched ${AUTO_DELIVER_DAYS}+ days ago, so it is marked delivered automatically.\n\nIf it never arrived, use the Lost button instead.`);
+      return;
+    }
+    saveEntry(entry.uuid, { delivered: false, deliveredDate: "", autoDelivered: false });
+  };
+  // Staff-marked "Lost": the parcel is never auto-delivered and drops out of Pending Delivery.
+  const markLost = async (entry) => {
+    if (!(await showConfirm(`Mark ${titleCase(entry.customer) || "this"} parcel${entry.trackingNo ? " (" + entry.trackingNo + ")" : ""} as LOST?\n\nIt will not be marked delivered automatically.`))) return;
+    const patch = { lost: true, lostDate: todayISO(), delivered: false, deliveredDate: "", autoDelivered: false };
+    const merged = { ...entry, ...patch };
+    updateEntry(entry.uuid, patch);
+    const res = await persist(entry.uuid, merged);
+    if (res?.error) { showAlert("Could not save change: " + res.error); return; }
+    if (res?.warning) showAlert(res.warning);
+    if (entry.delivered && merged.saleId && onSaleUpdate) await pushToLinkedSales(merged, { deliveryDate: "" }, "delivery");
+  };
+  const undoLost = async (entry) => {
+    const old = entry.dispatchDate && daysBetween(entry.dispatchDate, todayISO()) >= AUTO_DELIVER_DAYS;
+    if (!(await showConfirm("Remove the Lost mark from this parcel?" + (old ? `\n\nIt was despatched ${AUTO_DELIVER_DAYS}+ days ago, so it will be marked delivered automatically the next time the log is opened.` : "")))) return;
+    const patch = { lost: false, lostDate: "" };
+    updateEntry(entry.uuid, patch);
+    const res = await persist(entry.uuid, { ...entry, ...patch });
+    if (res?.error) showAlert("Could not save change: " + res.error);
   };
 
   // Copies just the tracking number to the clipboard — the 📋 button next
@@ -1623,7 +1679,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   const exportRangeLabel = isIndiaShop
     ? (dayFilter !== "all" ? ddmmyyyy(dayFilter) : (monthFilter === "all" ? "All Dates" : monthLabel(monthFilter)))
         + (courierFilter !== "ALL" ? ` · ${courierLabel(courierFilter)}` : "")
-        + (statusFilter !== "ALL" ? ` · ${statusFilter === "open" ? "Not yet delivered" : statusFilter === "transit" ? "In transit" : statusFilter === "delivered" ? "Delivered" : "Awaiting tracking"}` : "")
+        + (statusFilter !== "ALL" ? ` · ${statusFilter === "open" ? "Not yet delivered" : statusFilter === "transit" ? "In transit" : statusFilter === "delivered" ? "Delivered" : statusFilter === "lost" ? "Lost" : "Awaiting tracking"}` : "")
     : (dateFilter === "all"
         ? (exportDates.length ? `${ddmmyyyy(exportDates[0])} – ${ddmmyyyy(exportDates[exportDates.length - 1])}` : "No despatches yet")
         : ddmmyyyy(dateFilter));
@@ -1657,7 +1713,8 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
         lines.push(liveAddressFor(e) || "No address on file");
         lines.push(`Phone: ${livePhoneFor(e) || "—"}`);
         lines.push(`Tracking: ${e.trackingNo || "—"} (${e.shipper || "no shipper"})`);
-        if (e.delivered) lines.push(`✅ Delivered: ${ddmmyyyy(e.deliveredDate || "")}`);
+        if (e.lost) lines.push("❌ Lost");
+        else if (e.delivered) lines.push(`✅ Delivered: ${ddmmyyyy(e.deliveredDate || "")}`);
         if (e.remarks) lines.push(`Remarks: ${e.remarks}`);
         lines.push("");
       });
@@ -1682,7 +1739,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
           <td>${livePhoneFor(e) || "—"}</td>
           <td>${e.trackingNo || "—"}</td>
           <td>${e.shipper || "—"}</td>
-          <td>${e.delivered ? ("✅ " + ddmmyyyy(e.deliveredDate || "")) : "—"}</td>
+          <td>${e.lost ? "❌ Lost" : e.delivered ? ("✅ " + ddmmyyyy(e.deliveredDate || "")) : "—"}</td>
           <td>${e.remarks || "—"}</td>
         </tr>`).join("");
       return `
@@ -1749,9 +1806,9 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     const phone = livePhoneFor(e);
     const trackUrl = canNotify ? staffTrackingURL(e.shipper, e.trackingNo) : null;
     const st = rowTrackState(e);
-    const stLabel = st === "delivered" ? "Delivered" : st === "transit" ? "In transit" : "Awaiting tracking";
+    const stLabel = st === "lost" ? "Lost" : st === "delivered" ? (e.autoDelivered ? "Delivered · auto" : "Delivered") : st === "transit" ? "In transit" : "Awaiting tracking";
     return (
-      <tr key={e.uuid} className={"dx-r" + (e.delivered ? " deliv" : "") + (!fullAddress.trim() ? " noaddr" : "")}>
+      <tr key={e.uuid} className={"dx-r" + (e.delivered ? " deliv" : "") + (e.lost ? " lostrow" : "") + (!fullAddress.trim() ? " noaddr" : "")}>
         {/* 1 · Customer name + phone (capitals) (+ link / duplicate warnings, unchanged logic) */}
         <td style={{ minWidth: 150 }}>
           <div className="dx-cust-row">
@@ -1827,7 +1884,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
         </td>
         {/* 4 · Status pill */}
         <td style={{ width: 128 }}>
-          <span className={"dx-st " + st} title={e.delivered ? `Delivered ${shortDateMaybeY(e.deliveredDate || todayISO())}` : undefined}>{stLabel}</span>
+          <span className={"dx-st " + st} title={e.lost ? `Marked lost ${shortDateMaybeY(e.lostDate || todayISO())}` : e.delivered ? (e.autoDelivered ? `Marked delivered automatically ${AUTO_DELIVER_DAYS} days after despatch (${shortDateMaybeY(e.deliveredDate || todayISO())})` : `Delivered ${shortDateMaybeY(e.deliveredDate || todayISO())}`) : undefined}>{stLabel}</span>
         </td>
         {/* 5 · Track (icon) */}
         <td className="dx-c" style={{ width: 48 }}>
@@ -1841,7 +1898,14 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
         {/* 6 · Delivery — "Mark Delivered" opens the browser's calendar pop-up;
             picking a date marks the parcel delivered on that date. The
             delivered badge re-opens the same pop-up to correct the date. */}
-        <td style={{ width: 150 }}>
+        <td style={{ width: 196 }}>
+          {e.lost ? (
+            <span className="dx-dl">
+              <span className="dx-lostbadge" title={`Marked lost ${shortDateMaybeY(e.lostDate || todayISO())}`}>❌ Lost <span className="mono">{shortDateMaybeY(e.lostDate || todayISO())}</span></span>
+              <button className="dx-link" onClick={() => undoLost(e)} title="Remove the Lost mark">Undo</button>
+            </span>
+          ) : (
+          <span className="dx-dl">
           {!canNotify ? <span className="dx-muted">—</span> : (
             <span className="dx-pickwrap">
               {e.delivered ? (
@@ -1861,6 +1925,9 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                 value={e.deliveredDate || ""} max={todayISO()}
                 onChange={ev => { if (ev.target.value) markDelivered(e, ev.target.value); }} />
             </span>
+          )}
+          <button className="dx-lostbtn" onClick={() => markLost(e)} title="Mark this parcel as lost (stops it being marked delivered automatically)">Lost</button>
+          </span>
           )}
         </td>
         {/* 7 · Inform customer (WhatsApp icon) */}
@@ -2171,6 +2238,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                     <button className={statusFilter === "transit" ? "on t" : ""} onClick={() => setStatusFilter(statusFilter === "transit" ? "open" : "transit")}>🚚 In Transit · {ixStatusCounts.transit}</button>
                     <button className={statusFilter === "notrack" ? "on n" : ""} onClick={() => setStatusFilter(statusFilter === "notrack" ? "open" : "notrack")}>Awaiting tracking · {ixStatusCounts.notrack}</button>
                     <button className={statusFilter === "delivered" ? "on d" : ""} onClick={() => setStatusFilter(statusFilter === "delivered" ? "open" : "delivered")}>✅ Delivered · {ixStatusCounts.delivered}</button>
+                    {(ixStatusCounts.lost > 0 || statusFilter === "lost") && <button className={statusFilter === "lost" ? "on l" : ""} onClick={() => setStatusFilter(statusFilter === "lost" ? "open" : "lost")}>❌ Lost · {ixStatusCounts.lost}</button>}
                     <button className={statusFilter === "ALL" ? "on n" : ""} onClick={() => setStatusFilter("ALL")}>All · {ixStatusTotal}</button>
                   </div>
                   <div className="dx-count">
@@ -2235,7 +2303,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                             </div>
                             <table className="dx-table">
                               <colgroup>
-                                <col style={{ width: 250 }} /><col /><col style={{ width: 200 }} /><col style={{ width: 158 }} /><col style={{ width: 66 }} /><col style={{ width: 164 }} /><col style={{ width: 72 }} />
+                                <col style={{ width: 250 }} /><col /><col style={{ width: 200 }} /><col style={{ width: 158 }} /><col style={{ width: 66 }} /><col style={{ width: 210 }} /><col style={{ width: 72 }} />
                               </colgroup>
                               <thead>
                                 <tr>

@@ -2015,16 +2015,30 @@ export const dbSaveDispatchEntry = async (shopId, e) => {
     link_warning:   e.linkWarning || '',
   };
 
-  if (e._uuid) {
-    const { error } = await sb.from('dispatch_log').update(payload).eq('id', e._uuid).eq('shop_id', shopId);
-    if (error) { console.error('❌ Update dispatch entry error:', error); return { error: error.message }; }
-    return { error: null, uuid: e._uuid };
-  }
+  // Lost / auto-delivered flags (columns: dispatch_lost_autodeliver.sql). If the columns haven't been
+  // added yet the entry is still saved without them; a warning is returned only when a flag was actually set.
+  const extra = { lost: !!e.lost, lost_date: e.lostDate || '', auto_delivered: !!e.autoDelivered };
+  const flagged = !!(e.lost || e.autoDelivered);
+  const warn = 'Saved, but the Lost / auto-delivered mark was NOT stored — run dispatch_lost_autodeliver.sql once in Supabase.';
 
-  const { data, error } = await sb.from('dispatch_log').insert(payload).select('id').single();
-  if (error) { console.error('❌ Insert dispatch entry error:', error); return { error: error.message }; }
-  console.log('✅ Dispatch entry saved, uuid:', data?.id);
-  return { error: null, uuid: data?.id };
+  const write = async (pl) => {
+    if (e._uuid) {
+      const { error } = await sb.from('dispatch_log').update(pl).eq('id', e._uuid).eq('shop_id', shopId);
+      return { error, uuid: e._uuid };
+    }
+    const { data, error } = await sb.from('dispatch_log').insert(pl).select('id').single();
+    return { error, uuid: data?.id };
+  };
+
+  let res = await write({ ...payload, ...extra });
+  let warning = null;
+  if (res.error) {
+    console.warn('⚠️ Dispatch save with lost/auto flags failed, retrying without them:', res.error.message);
+    res = await write(payload);
+    if (!res.error && flagged) warning = warn;
+  }
+  if (res.error) { console.error('❌ Save dispatch entry error:', res.error); return { error: res.error.message }; }
+  return { error: null, uuid: res.uuid, warning };
 };
 
 export const dbLoadDispatchLog = async (shopId) => {
@@ -2047,6 +2061,9 @@ export const dbLoadDispatchLog = async (shopId) => {
     remarks:      r.remarks || '',
     delivered:    !!r.delivered,
     deliveredDate: r.delivered_date || '',
+    lost:         !!r.lost,
+    lostDate:     r.lost_date || '',
+    autoDelivered: !!r.auto_delivered,
     linkWarning:  r.link_warning || '',
     createdAt:    r.created_at || '',
   }));
