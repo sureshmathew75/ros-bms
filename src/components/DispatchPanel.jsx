@@ -463,6 +463,13 @@ const INDIA_CSS = `
 .dx-day-cell.on .bar i{background:var(--ac)}
 .dx-day-cell.z{cursor:default}.dx-day-cell.z .n{color:#cbd5e1}
 .dx-divider{height:1px;background:#f1f5f9}
+.dx-fbar{padding:10px 14px;gap:8px}
+.dx-fsel{display:flex;flex-direction:column;gap:3px;min-width:160px}
+.dx-fsel span{font-size:10px;font-weight:800;color:#94a3b8;text-transform:uppercase;letter-spacing:.09em}
+.dx-fsel select{appearance:none;-webkit-appearance:none;border:1px solid var(--line);background:#f8fafc;color:#0f172a;font-family:inherit;font-weight:700;font-size:12.5px;border-radius:10px;padding:8px 30px 8px 12px;cursor:pointer;outline:none;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%2394a3b8' stroke-width='1.6' stroke-linecap='round'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 11px center}
+.dx-fsel select:hover{border-color:#cbd5e1}
+.dx-fsel select:focus{border-color:var(--ac);background-color:#fff}
+.dx-count-row{margin-left:0;justify-content:flex-end;flex-wrap:wrap;gap:12px;font-size:12px}
 .dx-segf{display:inline-flex;background:#f1f5f9;border:1px solid var(--line);border-radius:10px;padding:2px;flex-wrap:wrap}
 .dx-segf button{padding:6px 13px;border-radius:8px;border:none;background:transparent;font-weight:700;font-size:12.5px;color:#64748b;cursor:pointer;white-space:nowrap}
 .dx-segf button.on{background:#fff;box-shadow:0 1px 3px rgba(15,23,42,.14);color:var(--ink)}
@@ -2210,53 +2217,45 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                 </div>
               </div>
 
-              {/* ── Filters ── */}
-              <div className="dx-card dx-filters">
+              {/* ── Filters (drop-downs to save space) ── */}
+              <div className="dx-card dx-filters dx-fbar">
                 <div className="dx-frow">
-                  <div className="dx-flabel">Month</div>
-                  <div className="dx-chips">
-                    <button className={"dx-chip" + (monthFilter === "all" ? " on" : "")} onClick={() => { setMonthFilter("all"); setDayFilter("all"); setStatusFilter("open"); setMonthPop(null); }}
-                      title="Back to the default view — every parcel not yet delivered">
-                      All months <b>{allEntriesIndia.length}</b>
-                    </button>
-                    {monthTagsIndia.map(mk => (
-                      <button key={mk} className={"dx-chip" + (monthFilter === mk ? " on" : "")} title="Open this month's calendar"
-                        onClick={() => { setMonthFilter(mk); setDayFilter("all"); setStatusFilter("ALL"); setMonthPop(mk); }}>
-                        📅 {monthLabel(mk)} <b>{entriesByMonthIndia[mk].length}</b>
-                      </button>
-                    ))}
-                  </div>
+                  <label className="dx-fsel">
+                    <span>Month</span>
+                    <select value={monthFilter}
+                      onChange={ev => {
+                        const v = ev.target.value;
+                        if (v === "all") { setMonthFilter("all"); setDayFilter("all"); setStatusFilter("open"); setMonthPop(null); }
+                        else { setMonthFilter(v); setDayFilter("all"); setStatusFilter("ALL"); setMonthPop(v); }
+                      }}>
+                      <option value="all">All months ({allEntriesIndia.length})</option>
+                      {monthTagsIndia.map(mk => <option key={mk} value={mk}>{monthLabel(mk)} ({entriesByMonthIndia[mk].length})</option>)}
+                    </select>
+                  </label>
+                  <label className="dx-fsel">
+                    <span>Courier</span>
+                    <select value={courierFilter} onChange={ev => setCourierFilter(ev.target.value)}>
+                      <option value="ALL">All couriers ({ixCourierTotal})</option>
+                      {ixCourierKeys.map(k => <option key={k} value={k}>{courierLabel(k)} ({ixCourierCounts[k] || 0})</option>)}
+                    </select>
+                  </label>
+                  <label className="dx-fsel">
+                    <span>Status</span>
+                    <select value={statusFilter} onChange={ev => setStatusFilter(ev.target.value)}>
+                      <option value="open">Pending Delivery ({ixOpenTotal})</option>
+                      <option value="transit">In Transit ({ixStatusCounts.transit})</option>
+                      <option value="notrack">Awaiting tracking ({ixStatusCounts.notrack})</option>
+                      <option value="delivered">Delivered ({ixStatusCounts.delivered})</option>
+                      <option value="lost">Lost ({ixStatusCounts.lost})</option>
+                      <option value="ALL">All ({ixStatusTotal})</option>
+                    </select>
+                  </label>
                   {dayFilter !== "all" && (
-                    <button className="dx-chip on" onClick={() => setDayFilter("all")} title="Show the whole month again" style={{ flex: "0 0 auto" }}>
+                    <button className="dx-chip on" onClick={() => setDayFilter("all")} title="Show the whole month again" style={{ flex: "0 0 auto", alignSelf: "flex-end" }}>
                       {weekdayShort(dayFilter)} {Number(dayFilter.slice(8))} {monthLabel(dayFilter.slice(0, 7))} ✕
                     </button>
                   )}
-                  <label className="dx-search">
-                    <IcoSearch />
-                    <input value={listSearch} onChange={e => setListSearch(e.target.value)} placeholder="Search name, phone or tracking no." />
-                  </label>
-                </div>
-                <div className="dx-divider" />
-                <div className="dx-frow">
-                  <div className="dx-flabel">Courier</div>
-                  <div className="dx-chips" style={{ flex: "0 1 auto" }}>
-                    <button className={"dx-chip" + (courierFilter === "ALL" ? " on" : "")} onClick={() => setCourierFilter("ALL")}>All <b>{ixCourierTotal}</b></button>
-                    {ixCourierKeys.map(k => (
-                      <button key={k} className={"dx-chip" + (courierFilter === k ? " on" : "")} onClick={() => setCourierFilter(courierFilter === k ? "ALL" : k)}>
-                        {courierLabel(k)} <b>{ixCourierCounts[k] || 0}</b>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="dx-flabel" style={{ width: "auto", marginLeft: 18 }}>Status</div>
-                  <div className="dx-segf">
-                    <button className={statusFilter === "open" ? "on t" : ""} onClick={() => setStatusFilter("open")}>📦 Pending Delivery · {ixOpenTotal}</button>
-                    <button className={statusFilter === "transit" ? "on t" : ""} onClick={() => setStatusFilter(statusFilter === "transit" ? "open" : "transit")}>🚚 In Transit · {ixStatusCounts.transit}</button>
-                    <button className={statusFilter === "notrack" ? "on n" : ""} onClick={() => setStatusFilter(statusFilter === "notrack" ? "open" : "notrack")}>Awaiting tracking · {ixStatusCounts.notrack}</button>
-                    <button className={statusFilter === "delivered" ? "on d" : ""} onClick={() => setStatusFilter(statusFilter === "delivered" ? "open" : "delivered")}>✅ Delivered · {ixStatusCounts.delivered}</button>
-                    {<button className={statusFilter === "lost" ? "on l" : ""} onClick={() => setStatusFilter(statusFilter === "lost" ? "open" : "lost")}>❌ Lost · {ixStatusCounts.lost}</button>}
-                    <button className={statusFilter === "ALL" ? "on n" : ""} onClick={() => setStatusFilter("ALL")}>All · {ixStatusTotal}</button>
-                  </div>
-                  <div className="dx-count">
+                  <div className="dx-count dx-count-row" style={{ flex: "1 1 auto", alignSelf: "flex-end", paddingBottom: 9 }}>
                     {ixMissingAddr > 0 && (
                       <button className={"dx-warnchip" + (addrFilter === "missing" ? " on" : "")} onClick={() => setAddrFilter(addrFilter === "missing" ? "ALL" : "missing")}
                         title="Show only despatches that have no address on file">⚠ {ixMissingAddr} missing address</button>
@@ -2265,6 +2264,10 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                     <span>Showing <b>{shownEntries.length}</b> of {filteredEntries.length}</span>
                     {ixFiltersActive && <button className="dx-clear" onClick={ixClearFilters}>Clear filters</button>}
                   </div>
+                  <label className="dx-search" style={{ alignSelf: "flex-end", width: 270 }}>
+                    <IcoSearch />
+                    <input value={listSearch} onChange={e => setListSearch(e.target.value)} placeholder="Search name, phone or tracking no." />
+                  </label>
                 </div>
               </div>
 
