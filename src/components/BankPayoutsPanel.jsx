@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef, useEffect, Fragment } from "react";
-import { dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveExpenseCategory } from "../db";
+import { dbSaveExpense, dbSaveExpenseDocs, dbLoadExpenses, dbDeleteExpense, dbSaveExpenseCategory, dbUploadDoc, dbDeleteDoc } from "../db";
 import { showAlert, showConfirm } from "./PopupHost";
 import { BankIcon } from "./BankLogos";
 
@@ -100,6 +100,7 @@ const CSS = `
 
 export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId, setExpData, expCats = [], setExpCats, pushDeleted }) {
   const banks = BANKS[shopId] || BANKS.default;
+  const isIN = shopId === "ros-india" || shopId === "ros-india-staff";   // ROS India: Amount + GST = Total paid, and receipts
   // Petty Cash spends are mirrored into `expenses` by the Petty Cash page (category "Petty Cash").
   // They are cash, not bank payouts, so this page leaves them out (nothing is deleted — they stay
   // on the Petty Cash page and in the shop's overall expense totals).
@@ -124,9 +125,11 @@ export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId
   const [confirmDelete, setConfirmDelete] = useState(null);
   const [openCat, setOpenCat] = useState({});
   const [showMore, setShowMore] = useState(false);
+  const [qFiles, setQFiles] = useState([]);                 // receipts picked in the quick-entry row (uploaded when the line is added)
+  const [receiptView, setReceiptView] = useState(null);     // expense whose receipts pop-up is open
   const payToRef = useRef(null);
 
-  const blank = () => ({ payTo: "", desc: "", cat: "", amount: "", ref: "", invoiceNo: "", notes: "", review: false });
+  const blank = () => ({ payTo: "", desc: "", cat: "", amount: "", base: "", gst: "", ref: "", invoiceNo: "", notes: "", review: false });
   const [qf, setQf] = useState(() => ({
     date: todayISO(),
     bank: banks.includes(lsGet("ros_exp_bank_" + shopId)) ? lsGet("ros_exp_bank_" + shopId) : banks[0],
@@ -134,6 +137,23 @@ export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId
     ...blank(),
   }));
   const setQ = (k, v) => setQf(p => ({ ...p, [k]: v }));
+  // ROS India: typing Amount or GST works out the Total paid; typing the Total works out the Amount (Total − GST).
+  const r2 = (n) => Math.round((Number(n) || 0) * 100) / 100;
+  const txt = (n) => (n === 0 || !Number.isFinite(n)) ? "" : String(n);
+  const bindMoney = (set) => ({
+    base: (v) => set(p => ({ ...p, base: v, amount: (v === "" && !p.gst) ? "" : txt(r2((Number(v) || 0) + (Number(p.gst) || 0))) })),
+    gst: (v) => set(p => ({ ...p, gst: v, amount: (p.base === "" && v === "") ? "" : txt(r2((Number(p.base) || 0) + (Number(v) || 0))) })),
+    total: (v) => set(p => ({ ...p, amount: v, base: v === "" ? "" : String(r2((Number(v) || 0) - (Number(p.gst) || 0))) })),
+  });
+  const qMoney = bindMoney(setQf);
+  const pickReceipts = (list, setFiles) => {
+    const ok = [];
+    for (const file of Array.from(list || [])) {
+      if (file.size > 20 * 1024 * 1024) { showAlert(file.name + " is larger than 20MB — please choose a smaller file."); continue; }
+      ok.push(file);
+    }
+    if (ok.length) setFiles(x => [...x, ...ok]);
+  };
 
   // Reset per-shop bits when the shop is switched.
   useEffect(() => {
@@ -147,6 +167,7 @@ export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId
   const acctKey = (e) => (e.bankAccount || "").trim() || "NONE";
   const acctLabel = (k) => k === "NONE" ? "Not specified" : k;
   const inMonth = useMemo(() => exps.filter(e => month === "ALL" || (e.date || "").slice(0, 7) === month), [exps, month]);
+  const gstMonth = inMonth.filter(e => !isNonExpense(e)).reduce((a, e) => a + (Number(e.gst) || 0), 0);   // GST on business expenses this month
   const monthTotal = inMonth.reduce((a, e) => a + (Number(e.amount) || 0), 0);                          // every debit (matches the bank statements)
   const expenseTotal = inMonth.filter(e => !isNonExpense(e)).reduce((a, e) => a + (Number(e.amount) || 0), 0);   // business expenses only
   const drawTotal = inMonth.filter(e => (e.cat || "").trim() === DRAWINGS).reduce((a, e) => a + (Number(e.amount) || 0), 0);
@@ -199,6 +220,7 @@ export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId
     return out;
   }, [inMonth, acctFilter, catFilter, reviewOnly, search, newestFirst]);
   const listTotal = list.reduce((a, e) => a + (Number(e.amount) || 0), 0);
+  const listGst = list.reduce((a, e) => a + (Number(e.gst) || 0), 0);
 
   const usedCats = useMemo(() => Array.from(new Set(inMonth.map(e => e.cat).filter(Boolean))).sort(), [inMonth]);
 
@@ -212,7 +234,7 @@ export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId
   const stmtDiff = Number.isFinite(stmtNum) ? Math.round((stmtNum - entered) * 100) / 100 : null;
 
   /* ── saving ─────────────────────────────────────────────────── */
-  const persist = async (payload, uuid) => {
+  const persist = async (payload, uuid, rc) => {
     setSaving(true);
     const res = await dbSaveExpense(shopId, uuid ? { ...payload, _uuid: uuid } : payload);
     if (res && res.error) {
@@ -221,6 +243,27 @@ export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId
       setSaving(false);
       return false;
     }
+    const msgs = [];
+    if (res && res.warning) msgs.push(res.warning);
+    // Receipts (ROS India): upload newly attached files, drop any the user removed, store the list on the expense.
+    const rid = (res && res.uuid) || uuid;
+    if (isIN && rc && rid) {
+      const kept = rc.docs || [], files = rc.files || [];
+      const removed = (rc.had || []).filter(d => !kept.some(k => k.path === d.path));
+      const docs = [...kept]; const failed = [];
+      for (const f of files) {
+        const r = await dbUploadDoc("expense-docs", rid, f);
+        if (r.error) { failed.push(f.name + " — " + r.error); continue; }
+        docs.push({ name: f.name, url: r.url, path: r.path, size: f.size, uploadedAt: new Date().toISOString() });
+      }
+      if (files.length || removed.length) {
+        const sv = await dbSaveExpenseDocs(rid, docs);
+        if (sv && sv.error) msgs.push("The receipts could not be saved to the expense: " + sv.error + " (run expenses_gst_receipts.sql once in Supabase).");
+        for (const d of removed) { if (d.path) await dbDeleteDoc("expense-docs", d.path); }
+      }
+      if (failed.length) msgs.push("These receipts could not be uploaded:\n" + failed.join("\n") + "\n\nThe expense itself was saved — open it again to re-attach them.");
+    }
+    if (msgs.length) showAlert(msgs.join("\n\n"));
     const fresh = await dbLoadExpenses(shopId).catch(() => null);
     if (fresh) setExpData(fresh);
     setSaving(false);
@@ -231,6 +274,7 @@ export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId
     date: f.date, cat: f.cat || "", desc: (f.desc || "").trim(), amount: f.amount, method: f.method || "Bank Transfer",
     notes: f.notes || "", payTo: (f.payTo || "").trim(), invoiceNo: f.invoiceNo || "", invoiceDate: f.invoiceDate || "",
     bankAccount: f.bank, bankRef: (f.ref || "").trim(), needsReview: !!f.review,
+    ...(isIN ? { baseAmount: Number(f.base) || 0, gst: Number(f.gst) || 0 } : {}),
   });
 
   const findDuplicate = (f, ignoreId) => exps.find(e => (e.uuid || e.id) !== ignoreId && e.date === f.date && acctKey(e) === f.bank
@@ -240,6 +284,7 @@ export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId
     if (!f.date) return "Please pick the date.";
     if (!f.bank) return "Please choose the bank account the money left from.";
     if (!(Number(f.amount) > 0)) return "Please enter the amount.";
+    if (isIN && ((Number(f.gst) || 0) < 0 || (Number(f.base) || 0) < 0)) return "The total paid can't be less than the GST.";
     if (!(f.payTo || "").trim() && !(f.desc || "").trim()) return "Please enter who it was paid to (or what it was for).";
     return "";
   };
@@ -252,8 +297,9 @@ export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId
     if (findDuplicate(qf)) {
       if (!(await showConfirm(`An entry for ${qf.payTo.trim() || "this payee"} — ${fmt(shopId, Number(qf.amount))} on ${fmtDY(qf.date)} from ${qf.bank} already exists.\n\nAdd it again anyway?`))) return;
     }
-    const ok = await persist(toPayload(qf));
+    const ok = await persist(toPayload(qf), undefined, isIN ? { files: qFiles, docs: [], had: [] } : undefined);
     if (!ok) return;
+    setQFiles([]);
     lsSet("ros_exp_bank_" + shopId, qf.bank);
     const wasReview = qf.review || !qf.cat || !(qf.desc || "").trim();
     setNote(`✓ Added ${qf.payTo.trim() || qf.desc.trim()} — ${fmt(shopId, Number(qf.amount))}` + (wasReview ? " · listed under Needs review (add category / purpose later)" : ""));
@@ -329,8 +375,8 @@ export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId
 
   const exportCSV = () => {
     const rows = [[`${shop?.name || shopId} — Bank payouts — ${monthLabel(month)}`], [],
-      ["Date", "Bank Account", "Paid To", "Purpose", "Category", "Type", "Method", "Bank Ref / UTR", "Invoice No.", "Invoice Date", "Amount", "Notes", "Needs Review"]];
-    sortedForExport().forEach(e => rows.push([fmtDY(e.date), acctLabel(acctKey(e)), e.payTo || "", e.desc || "", e.cat || "(uncategorised)", typeLabel(e), e.method || "", e.bankRef || "", e.invoiceNo || "", fmtDY(e.invoiceDate), Number(e.amount) || 0, e.notes || "", isReview(e) ? "YES — " + reviewReason(e) : ""]));
+      ["Date", "Bank Account", "Paid To", "Purpose", "Category", "Type", "Method", "Bank Ref / UTR", "Invoice No.", "Invoice Date", "Amount", "Notes", "Needs Review", ...(isIN ? ["Amount before GST", "GST"] : [])]];
+    sortedForExport().forEach(e => rows.push([fmtDY(e.date), acctLabel(acctKey(e)), e.payTo || "", e.desc || "", e.cat || "(uncategorised)", typeLabel(e), e.method || "", e.bankRef || "", e.invoiceNo || "", fmtDY(e.invoiceDate), Number(e.amount) || 0, e.notes || "", isReview(e) ? "YES — " + reviewReason(e) : "", ...(isIN ? [e.baseAmount !== undefined ? e.baseAmount : (Number(e.amount) || 0) - (Number(e.gst) || 0), Number(e.gst) || 0] : [])]));
     rows.push([], ["TOTAL DEBITS (all payouts — matches the bank statements)", "", "", "", "", "", "", "", "", "", monthTotal], [], ["SUMMARY BY CATEGORY"]);
     const cols = acctKeys;
     rows.push(["Category", ...cols.map(acctLabel), "Total", "No. of payouts"]);
@@ -421,15 +467,43 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
       date: e.date || todayISO(), bank: (e.bankAccount || "").trim(), method: e.method || "Bank Transfer",
       payTo: e.payTo || "", desc: e.desc || "", cat: e.cat || "", amount: String(e.amount ?? ""), ref: e.bankRef || "",
       invoiceNo: e.invoiceNo || "", invoiceDate: e.invoiceDate || "", notes: e.notes || "", review: !!e.needsReview,
+      base: (e.baseAmount !== undefined && e.baseAmount !== null) ? String(e.baseAmount) : String(e.amount ?? ""),
+      gst: Number(e.gst) ? String(e.gst) : "",
+      files: [], docs: Array.isArray(e.documents) ? e.documents : [],
     });
   };
+  const eMoney = bindMoney(setEf);
   const closeEdit = () => { setEditExp(null); setEf(null); };
   const saveEdit = async () => {
     const bad = validate({ ...ef, bank: ef.bank || "—" });
     if (bad) { showAlert(bad); return; }
-    const ok = await persist(toPayload(ef), editExp.uuid || editExp.id);
+    const ok = await persist(toPayload(ef), editExp.uuid || editExp.id, isIN ? { files: ef.files || [], docs: ef.docs || [], had: editExp.documents || [] } : undefined);
     if (ok) closeEdit();
   };
+  // Receipts list + attach button (ROS India). Used by the quick-entry row and the edit pop-up.
+  const receiptBlock = ({ docs = [], files = [], onRemoveDoc, onRemoveFile, onAdd }) => (
+    <div>
+      {docs.map((d, i) => (
+        <div key={d.path || i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", border: "1px solid #e2e8f0", borderRadius: 9, marginBottom: 6, background: "#f8fafc" }}>
+          <span style={{ fontSize: 15 }}>📎</span>
+          <a href={d.url} target="_blank" rel="noreferrer" style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 700, color: ac, textDecoration: "none", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={d.name}>{d.name}</a>
+          <button type="button" title="Remove this receipt" onClick={() => onRemoveDoc(i)} style={{ width: 24, height: 24, borderRadius: 6, border: "1px solid #fecaca", background: "#fff5f5", color: "#dc2626", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>
+        </div>
+      ))}
+      {files.map((fl, i) => (
+        <div key={fl.name + i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", border: "1px dashed " + ac, borderRadius: 9, marginBottom: 6, background: ac + "0d" }}>
+          <span style={{ fontSize: 15 }}>🆕</span>
+          <span style={{ flex: 1, minWidth: 0, fontSize: 12, fontWeight: 700, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={fl.name}>{fl.name}</span>
+          <button type="button" title="Remove" onClick={() => onRemoveFile(i)} style={{ width: 24, height: 24, borderRadius: 6, border: "1px solid #fecaca", background: "#fff5f5", color: "#dc2626", cursor: "pointer", fontSize: 14, lineHeight: 1, padding: 0 }}>×</button>
+        </div>
+      ))}
+      <label style={{ display: "inline-block", padding: "7px 14px", borderRadius: 9, border: "1px solid " + ac, background: "#fff", color: ac, fontSize: 12, fontWeight: 700, cursor: "pointer" }}>
+        ➕ {docs.length + files.length ? "Add another receipt" : "Attach receipts"}
+        <input type="file" multiple accept="image/*,.pdf" style={{ display: "none" }} onChange={e => { onAdd(e.target.files); e.target.value = ""; }} />
+      </label>
+      <span style={{ marginLeft: 10, fontSize: 10.5, color: "#94a3b8" }}>PDF or image · max 20MB each · add several if one payment has more than one</span>
+    </div>
+  );
   const editModal = () => {
     const methods = METHODS.includes(ef.method) ? METHODS : [...METHODS, ef.method];
     return (
@@ -453,8 +527,18 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
             <div><label className="exq-lb">What was it for?</label><input className="exq-in" value={ef.desc} onChange={e => sE("desc", e.target.value)} placeholder="Purpose of this payout" /></div>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div><label className="exq-lb">Category</label>{categorySelect(ef.cat, v => sE("cat", v))}</div>
-              <div><label className="exq-lb">Amount ({shop?.symbol})</label><input className="exq-in" type="number" step="0.01" value={ef.amount} onChange={e => sE("amount", e.target.value)} /></div>
+              {!isIN && <div><label className="exq-lb">Amount ({shop?.symbol})</label><input className="exq-in" type="number" step="0.01" value={ef.amount} onChange={e => sE("amount", e.target.value)} /></div>}
             </div>
+            {isIN && (
+              <div style={{ border: "1px solid #e2e8f0", borderRadius: 12, padding: "12px 12px 10px", background: "#fafbfc" }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10 }}>
+                  <div><label className="exq-lb">Amount ({shop?.symbol})</label><input className="exq-in" type="number" step="0.01" onWheel={e => e.target.blur()} value={ef.base} onChange={e => eMoney.base(e.target.value)} placeholder="Before GST" /></div>
+                  <div><label className="exq-lb">GST ({shop?.symbol})</label><input className="exq-in" type="number" step="0.01" onWheel={e => e.target.blur()} value={ef.gst} onChange={e => eMoney.gst(e.target.value)} placeholder="0.00" /></div>
+                  <div><label className="exq-lb">Total paid ({shop?.symbol})</label><input className="exq-in" type="number" step="0.01" onWheel={e => e.target.blur()} value={ef.amount} onChange={e => eMoney.total(e.target.value)} placeholder="0.00" style={{ fontWeight: 800, background: "#f1f5f9" }} /></div>
+                </div>
+                <p style={{ margin: "8px 0 0", fontSize: 10.5, color: "#94a3b8" }}>Total = Amount + GST</p>
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div><label className="exq-lb">Payment method</label>
                 <select className="exq-in" value={ef.method} onChange={e => sE("method", e.target.value)}>{methods.map(m => <option key={m}>{m}</option>)}</select></div>
@@ -464,6 +548,16 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
               <div><label className="exq-lb">Invoice No.</label><input className="exq-in" value={ef.invoiceNo} onChange={e => sE("invoiceNo", e.target.value)} placeholder="e.g. INV-0042" /></div>
               <div><label className="exq-lb">Invoice Date</label><input className="exq-in" type="date" value={ef.invoiceDate} onChange={e => sE("invoiceDate", e.target.value)} /></div>
             </div>
+            {isIN && (
+              <div><label className="exq-lb">Receipts</label>
+                {receiptBlock({
+                  docs: ef.docs || [], files: ef.files || [],
+                  onRemoveDoc: i => setEf(p => ({ ...p, docs: p.docs.filter((_, j) => j !== i) })),
+                  onRemoveFile: i => setEf(p => ({ ...p, files: p.files.filter((_, j) => j !== i) })),
+                  onAdd: list => pickReceipts(list, fn => setEf(p => ({ ...p, files: fn(p.files || []) }))),
+                })}
+              </div>
+            )}
             <div><label className="exq-lb">Notes</label><textarea className="exq-in" rows={2} value={ef.notes} onChange={e => sE("notes", e.target.value)} placeholder="Optional notes…" style={{ resize: "vertical" }} /></div>
             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, fontWeight: 700, color: "#b45309", cursor: "pointer" }}>
               <input type="checkbox" checked={ef.review} onChange={e => sE("review", e.target.checked)} /> ❓ Not sure what this payout was — keep it under Needs review
@@ -531,6 +625,7 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
         <div className="exq-kpi"><div className="exq-lb" style={{ margin: 0 }}>💳 Business expenses · {monthLabel(month)}</div><div style={{ fontSize: 20, fontWeight: 900, color: "#dc2626" }}>{fmt(shopId, expenseTotal)}</div>
           {nonExpTotal > 0 && <div style={{ fontSize: 11, color: "#64748b", marginTop: 2 }}>+ {fmt(shopId, nonExpTotal)} personal / transfers (not an expense) · total debits {fmt(shopId, monthTotal)}</div>}</div>
         <div className="exq-kpi"><div className="exq-lb" style={{ margin: 0 }}>🧾 Entries</div><div style={{ fontSize: 20, fontWeight: 900, color: ac }}>{inMonth.length}</div></div>
+        {isIN && <div className="exq-kpi"><div className="exq-lb" style={{ margin: 0 }}>🧾 GST paid · {monthLabel(month)}</div><div style={{ fontSize: 20, fontWeight: 900, color: "#7c3aed" }}>{fmt(shopId, gstMonth)}</div></div>}
         <div className={"exq-kpi" + (reviewList.length ? " click" : "")} style={reviewList.length ? { borderColor: "#fca5a5", background: "#fef2f2" } : undefined}
           onClick={() => { if (reviewList.length) { setView("entries"); setReviewOnly(true); setAcctFilter("ALL"); setCatFilter("ALL"); } }}>
           <div className="exq-lb" style={{ margin: 0, color: reviewList.length ? "#b91c1c" : "#64748b" }}>{reviewList.length ? "⚠" : "✅"} Needs review</div>
@@ -556,12 +651,31 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
                 <div><label className="exq-lb">What was it for?</label>
                   <input className="exq-in" value={qf.desc} onChange={e => setQ("desc", e.target.value)} placeholder="Purpose (can add later)" /></div>
                 <div><label className="exq-lb">Category</label>{categorySelect(qf.cat, v => setQ("cat", v))}</div>
-                <div><label className="exq-lb">Amount ({sym})</label>
-                  <input className="exq-in" type="number" step="0.01" min="0" inputMode="decimal" value={qf.amount} onChange={e => setQ("amount", e.target.value)} placeholder="0.00" style={{ fontWeight: 800 }} /></div>
+                {isIN ? (
+                  <>
+                    <div><label className="exq-lb">Amount ({sym})</label>
+                      <input className="exq-in" type="number" step="0.01" min="0" inputMode="decimal" value={qf.base} onChange={e => qMoney.base(e.target.value)} placeholder="Before GST" /></div>
+                    <div><label className="exq-lb">GST ({sym})</label>
+                      <input className="exq-in" type="number" step="0.01" min="0" inputMode="decimal" value={qf.gst} onChange={e => qMoney.gst(e.target.value)} placeholder="0.00" /></div>
+                    <div><label className="exq-lb">Total paid ({sym})</label>
+                      <input className="exq-in" type="number" step="0.01" min="0" inputMode="decimal" value={qf.amount} onChange={e => qMoney.total(e.target.value)} placeholder="0.00" style={{ fontWeight: 800 }} /></div>
+                  </>
+                ) : (
+                  <div><label className="exq-lb">Amount ({sym})</label>
+                    <input className="exq-in" type="number" step="0.01" min="0" inputMode="decimal" value={qf.amount} onChange={e => setQ("amount", e.target.value)} placeholder="0.00" style={{ fontWeight: 800 }} /></div>
+                )}
                 <div><button type="submit" className="exq-btn exq-pri" style={{ width: "100%", padding: "10px 14px", fontSize: 13.5 }} disabled={saving}>{saving ? "Saving…" : "＋ Add"}</button></div>
               </div>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginTop: 10 }}>
-                <button type="button" className="exq-chip" onClick={() => setShowMore(v => !v)}>{showMore ? "▾" : "▸"} More details (method, bank ref / UTR, invoice, notes)</button>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                  <button type="button" className="exq-chip" onClick={() => setShowMore(v => !v)}>{showMore ? "▾" : "▸"} More details (method, bank ref / UTR, invoice, notes)</button>
+                  {isIN && (
+                    <label className="exq-chip" style={{ cursor: "pointer" }} title="Attach one or more receipts for this payout">
+                      📎 Receipts{qFiles.length ? ` (${qFiles.length})` : ""}
+                      <input type="file" multiple accept="image/*,.pdf" style={{ display: "none" }} onChange={e => { pickReceipts(e.target.files, setQFiles); e.target.value = ""; }} />
+                    </label>
+                  )}
+                </div>
                 <label style={{ display: "inline-flex", alignItems: "center", gap: 7, fontSize: 12.5, fontWeight: 700, color: "#b45309", cursor: "pointer" }}>
                   <input type="checkbox" checked={qf.review} onChange={e => setQ("review", e.target.checked)} /> ❓ Not sure what this was — review later
                 </label>
@@ -573,6 +687,16 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
                   <div><label className="exq-lb">Bank ref / UTR</label><input className="exq-in" value={qf.ref} onChange={e => setQ("ref", e.target.value)} placeholder="From the statement" /></div>
                   <div><label className="exq-lb">Invoice No.</label><input className="exq-in" value={qf.invoiceNo} onChange={e => setQ("invoiceNo", e.target.value)} placeholder="e.g. INV-0042" /></div>
                   <div style={{ gridColumn: "span 2" }}><label className="exq-lb">Notes</label><input className="exq-in" value={qf.notes} onChange={e => setQ("notes", e.target.value)} placeholder="Optional notes…" /></div>
+                </div>
+              )}
+              {isIN && qFiles.length > 0 && (
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 10 }}>
+                  {qFiles.map((fl, i) => (
+                    <span key={fl.name + i} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "3px 4px 3px 10px", border: "1px dashed " + ac, borderRadius: 999, background: ac + "0d", fontSize: 11.5, fontWeight: 700, maxWidth: 260 }}>
+                      <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={fl.name}>🆕 {fl.name}</span>
+                      <button type="button" title="Remove" onClick={() => setQFiles(x => x.filter((_, j) => j !== i))} style={{ width: 20, height: 20, borderRadius: "50%", border: "none", background: "#fee2e2", color: "#dc2626", cursor: "pointer", fontSize: 12, lineHeight: 1, padding: 0 }}>×</button>
+                    </span>
+                  ))}
                 </div>
               )}
               {note && <div style={{ marginTop: 10, fontSize: 12.5, fontWeight: 700, color: "#15803d" }}>{note}</div>}
@@ -634,12 +758,15 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
                     <tr>
                       <th className="exq-th">Date</th><th className="exq-th">Bank</th><th className="exq-th">Paid to / Purpose</th>
                       <th className="exq-th">Category</th><th className="exq-th exq-hide-sm">Method · Ref</th>
-                      <th className="exq-th" style={{ textAlign: "right" }}>Amount</th><th className="exq-th"></th>
+                      {isIN && <><th className="exq-th" style={{ textAlign: "right" }}>Amount</th><th className="exq-th" style={{ textAlign: "right" }}>GST</th></>}
+                      <th className="exq-th" style={{ textAlign: "right" }}>{isIN ? "Total paid" : "Amount"}</th>
+                      {isIN && <th className="exq-th" style={{ textAlign: "center" }}>Receipts</th>}
+                      <th className="exq-th"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {list.length === 0 ? (
-                      <tr><td colSpan={7} style={{ padding: "50px 20px", textAlign: "center", color: "#94a3b8" }}>
+                      <tr><td colSpan={isIN ? 10 : 7} style={{ padding: "50px 20px", textAlign: "center", color: "#94a3b8" }}>
                         <div style={{ fontSize: 34, marginBottom: 8 }}>{reviewOnly ? "✅" : "💳"}</div>
                         <div style={{ fontSize: 14, fontWeight: 700 }}>{reviewOnly ? "Nothing needs review — all payouts are explained." : inMonth.length ? "No payouts match these filters." : `No payouts entered for ${monthLabel(month)} yet.`}</div>
                       </td></tr>
@@ -668,7 +795,18 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
                             {e.method || "—"}{e.bankRef ? <div className="mono" style={{ fontFamily: "ui-monospace,Consolas,monospace", fontSize: 11, color: "#94a3b8" }}>{e.bankRef}</div> : null}
                             {e.invoiceNo ? <div style={{ fontSize: 11, color: "#94a3b8" }}>Inv {e.invoiceNo}</div> : null}
                           </td>
+                          {isIN && <>
+                            <td className="exq-td" style={{ textAlign: "right", color: "#374151", whiteSpace: "nowrap" }}>{fmt(shopId, e.baseAmount !== undefined ? e.baseAmount : (Number(e.amount) || 0) - (Number(e.gst) || 0))}</td>
+                            <td className="exq-td" style={{ textAlign: "right", whiteSpace: "nowrap", color: (Number(e.gst) || 0) > 0 ? "#7c3aed" : "#cbd5e1", fontWeight: (Number(e.gst) || 0) > 0 ? 700 : 400 }}>{(Number(e.gst) || 0) > 0 ? fmt(shopId, Number(e.gst)) : "—"}</td>
+                          </>}
                           <td className="exq-td" style={{ textAlign: "right", fontWeight: 800, color: isNonExpense(e) ? "#64748b" : "#dc2626", whiteSpace: "nowrap" }}>{fmt(shopId, Number(e.amount) || 0)}</td>
+                          {isIN && (
+                            <td className="exq-td" style={{ textAlign: "center" }}>
+                              {(e.documents || []).length > 0
+                                ? <button onClick={() => setReceiptView(e)} title="View receipts" style={{ padding: "3px 10px", borderRadius: 999, border: "1px solid #c7d2fe", background: "#eef2ff", color: "#4338ca", fontSize: 11, fontWeight: 800, cursor: "pointer", whiteSpace: "nowrap" }}>📎 {(e.documents || []).length}</button>
+                                : <span style={{ color: "#cbd5e1" }}>—</span>}
+                            </td>
+                          )}
                           <td className="exq-td" style={{ whiteSpace: "nowrap" }}>
                             <button onClick={() => openEdit(e)} title="Edit" style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid " + ac, background: ac + "12", color: ac, fontSize: 11, fontWeight: 700, cursor: "pointer", marginRight: 6 }}>✏️</button>
                             <button onClick={() => setConfirmDelete(e)} title="Delete" style={{ padding: "5px 9px", borderRadius: 7, border: "1px solid #fca5a5", background: "#fff5f5", color: "#dc2626", fontSize: 11, cursor: "pointer" }}>🗑️</button>
@@ -682,7 +820,7 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
               {list.length > 0 && (
                 <div style={{ padding: "10px 16px", borderTop: "1px solid #f1f5f9", display: "flex", justifyContent: "space-between", fontSize: 12, color: "#64748b", background: "#f8fafc", flexWrap: "wrap", gap: 6 }}>
                   <span>{list.length} payout{list.length !== 1 ? "s" : ""}{list.length !== inMonth.length ? ` of ${inMonth.length}` : ""} · {monthLabel(month)}</span>
-                  <span style={{ fontWeight: 800, color: "#dc2626" }}>Total: {fmt(shopId, listTotal)}</span>
+                  <span style={{ fontWeight: 800, color: "#dc2626" }}>{isIN && listGst > 0 ? <span style={{ color: "#7c3aed", marginRight: 16 }}>GST: {fmt(shopId, listGst)}</span> : null}Total: {fmt(shopId, listTotal)}</span>
                 </div>
               )}
             </div>
@@ -751,6 +889,28 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
       )}
 
       {editExp && ef && editModal()}
+      {isIN && receiptView && (
+        <div style={{ position: "fixed", inset: 0, zIndex: 85, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div style={{ position: "absolute", inset: 0, background: "rgba(15,23,42,.45)", backdropFilter: "blur(3px)" }} onClick={() => setReceiptView(null)} />
+          <div style={{ position: "relative", background: "#fff", borderRadius: 16, boxShadow: "0 24px 60px rgba(0,0,0,.25)", width: "100%", maxWidth: 420, padding: "18px 20px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 800 }}>🧾 Receipts</div>
+                <div style={{ fontSize: 12, color: "#64748b", marginTop: 2 }}>{receiptView.payTo || receiptView.desc || "—"} · {fmt(shopId, Number(receiptView.amount) || 0)}</div>
+              </div>
+              <button onClick={() => setReceiptView(null)} style={{ width: 28, height: 28, borderRadius: "50%", border: "none", background: "#f1f5f9", cursor: "pointer", fontSize: 16, color: "#64748b" }}>×</button>
+            </div>
+            {(receiptView.documents || []).map((d, i) => (
+              <a key={d.path || i} href={d.url} target="_blank" rel="noreferrer"
+                style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", border: "1px solid #e2e8f0", borderRadius: 10, marginBottom: 6, textDecoration: "none", background: "#f8fafc" }}>
+                <span style={{ fontSize: 18 }}>{/\.pdf$/i.test(d.name || "") ? "📄" : "🖼️"}</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13, fontWeight: 700, color: ac, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{d.name}</span>
+                <span style={{ fontSize: 11, color: "#94a3b8" }}>Open ↗</span>
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
 
       {confirmDelete && (
         <div style={{ position: "fixed", inset: 0, zIndex: 90, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
