@@ -380,9 +380,13 @@ export const dbSaveExpense = async (shopId, e) => {
   if (e.bankRef     !== undefined) payload.bank_ref     = e.bankRef || '';
   if (e.needsReview !== undefined) payload.needs_review = !!e.needsReview;
 
-  // ROS India: amount before GST + GST (columns: expenses_gst_receipts.sql). `amount` above stays the TOTAL paid,
-  // so every report/total that reads it is unaffected. Only sent when the caller supplies them.
+  // ROS India extras. `amount` above stays the TOTAL paid, so every report/total that reads it is unaffected.
+  //  • amount before GST + GST            (columns: expenses_gst_receipts.sql)
+  //  • job name + payment stage           (columns: expenses_jobs.sql)
+  // Each group is only sent when the caller supplies it, and if a group's columns don't exist yet the save
+  // is retried without it so the expense itself is never lost (a warning is returned instead).
   const gstExtra = (e.gst !== undefined) ? { base_amount: Number(e.baseAmount) || 0, gst: Number(e.gst) || 0 } : null;
+  const jobExtra = (e.jobName !== undefined) ? { job_name: (e.jobName || '').trim(), pay_stage: e.payStage || '' } : null;
 
   const write = async (pl) => {
     if (e._uuid) {
@@ -393,13 +397,23 @@ export const dbSaveExpense = async (shopId, e) => {
     return { error, uuid: data?.id };
   };
 
-  let res = await write(gstExtra ? { ...payload, ...gstExtra } : payload);
+  const attempts = [{ ...payload, ...(gstExtra || {}), ...(jobExtra || {}) }];
+  if (gstExtra && jobExtra) attempts.push({ ...payload, ...gstExtra });          // jobs columns missing → keep the GST split
+  if (gstExtra || jobExtra) attempts.push(payload);                               // nothing extra exists yet
+  let res = null, used = 0;
+  for (let i = 0; i < attempts.length; i++) {
+    res = await write(attempts[i]); used = i;
+    if (!res.error) break;
+    if (i < attempts.length - 1) console.warn('⚠️ Expense save with extra columns failed, retrying with fewer:', res.error.message);
+  }
   let warning = null;
-  if (res.error && gstExtra) {
-    // GST columns not added yet: still save the expense (total included) rather than losing it.
-    console.warn('⚠️ Expense save with GST columns failed, retrying without them:', res.error.message);
-    res = await write(payload);
-    if (!res.error && gstExtra.gst > 0) warning = 'The expense was saved, but the amount / GST split was NOT stored — run expenses_gst_receipts.sql once in Supabase.';
+  if (res && !res.error && used > 0) {
+    const lostGst = gstExtra && !('gst' in attempts[used]) && gstExtra.gst > 0;
+    const lostJob = jobExtra && !('job_name' in attempts[used]) && jobExtra.job_name;
+    const parts = [];
+    if (lostGst) parts.push('the amount / GST split (run expenses_gst_receipts.sql)');
+    if (lostJob) parts.push('the job name / stage (run expenses_jobs.sql)');
+    if (parts.length) warning = 'The expense was saved, but ' + parts.join(' and ') + ' was NOT stored — run the SQL file once in Supabase.';
   }
   if (res.error) { console.error('Save expense error:', res.error); return { error: res.error.message }; }
   console.log('✅ Expense saved:', res.uuid);
@@ -437,6 +451,8 @@ export const dbLoadExpenses = async (shopId) => {
     gst:         Number(r.gst) || 0,
     baseAmount:  (r.base_amount === null || r.base_amount === undefined) ? undefined : Number(r.base_amount),
     documents:   Array.isArray(r.documents) ? r.documents : [],
+    jobName:     r.job_name || '',
+    payStage:    r.pay_stage || '',
   }));
 };
 

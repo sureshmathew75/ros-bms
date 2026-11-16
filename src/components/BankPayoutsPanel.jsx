@@ -36,6 +36,7 @@ const TRANSFER = "Transfer";
 const NON_EXPENSE_CATS = [DRAWINGS, TRANSFER];
 const isNonExpense = (e) => NON_EXPENSE_CATS.includes((e.cat || "").trim());
 const typeLabel = (e) => { const c = (e.cat || "").trim(); return c === DRAWINGS ? "Personal / drawings" : c === TRANSFER ? "Transfer between accounts" : "Business expense"; };
+const STAGES = ["Advance", "Part payment", "Final"];   // ROS India: stage of a payment inside a job
 const METHODS = ["Bank Transfer", "UPI", "PayPal", "Card", "Cash", "Cheque", "Other"];
 const BANK_ICON_KEYS = ["SIB", "HDFC", "FEDERAL BANK", "PAYPAL INDIA", "CASH"];
 const ACC_COLORS = { "SIB": "#2563eb", "HDFC": "#1d4ed8", "FEDERAL BANK": "#c2410c", "PAYPAL INDIA": "#4338ca", "CASH": "#15803d", "STARLING BANK": "#7c3aed", "LLOYDS BANK": "#15803d", "BANK": "#0369a1", "PAYPAL": "#4338ca", "OTHER": "#64748b" };
@@ -129,7 +130,7 @@ export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId
   const [receiptView, setReceiptView] = useState(null);     // expense whose receipts pop-up is open
   const payToRef = useRef(null);
 
-  const blank = () => ({ payTo: "", desc: "", cat: "", amount: "", base: "", gst: "", ref: "", invoiceNo: "", notes: "", review: false });
+  const blank = () => ({ payTo: "", desc: "", cat: "", amount: "", base: "", gst: "", job: "", stage: "", ref: "", invoiceNo: "", notes: "", review: false });
   const [qf, setQf] = useState(() => ({
     date: todayISO(),
     bank: banks.includes(lsGet("ros_exp_bank_" + shopId)) ? lsGet("ros_exp_bank_" + shopId) : banks[0],
@@ -203,6 +204,31 @@ export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId
     return latest;
   }, [exps]);
 
+  // ROS India: payments grouped under a job name (e.g. stitching: advance → part → final). All-time, not just this month.
+  const jobs = useMemo(() => {
+    if (!isIN) return [];
+    const m = {};
+    exps.forEach(e => {
+      const nm = (e.jobName || "").trim(); if (!nm) return;
+      const k = nm.toLowerCase();
+      const j = m[k] || (m[k] = { key: k, name: nm, payees: new Set(), lines: [], total: 0, gst: 0, final: false, last: "" });
+      j.lines.push(e); j.total += Number(e.amount) || 0; j.gst += Number(e.gst) || 0;
+      if ((e.payTo || "").trim()) j.payees.add(e.payTo.trim());
+      if (e.payStage === "Final") j.final = true;
+      if ((e.date || "") >= j.last) { j.last = e.date || ""; j.name = nm; }
+    });
+    return Object.values(m).sort((a, b) => b.last.localeCompare(a.last));
+  }, [exps, isIN]);
+  // Suggestions for the Job box: that payee's jobs first when the payee already has some, otherwise every job.
+  const jobNamesFor = (payTo) => {
+    const k = (payTo || "").trim().toLowerCase();
+    const mine = k ? jobs.filter(j => Array.from(j.payees).some(p => p.toLowerCase() === k)) : [];
+    return (mine.length ? mine : jobs).map(j => j.name);
+  };
+  const [jobSearch, setJobSearch] = useState("");
+  const [jobStatus, setJobStatus] = useState("ALL");       // "ALL" | "open" | "done"
+  const [openJob, setOpenJob] = useState({});
+
   const list = useMemo(() => {
     const q = search.trim().toLowerCase();
     const out = inMonth.filter(e => {
@@ -210,7 +236,7 @@ export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId
       if (catFilter !== "ALL" && (e.cat || "") !== (catFilter === "NONE" ? "" : catFilter)) return false;
       if (reviewOnly && !isReview(e)) return false;
       if (q && !((e.payTo || "").toLowerCase().includes(q) || (e.desc || "").toLowerCase().includes(q) || (e.cat || "").toLowerCase().includes(q)
-        || (e.bankRef || "").toLowerCase().includes(q) || (e.invoiceNo || "").toLowerCase().includes(q) || String(e.amount).includes(q))) return false;
+        || (e.bankRef || "").toLowerCase().includes(q) || (e.invoiceNo || "").toLowerCase().includes(q) || (e.jobName || "").toLowerCase().includes(q) || String(e.amount).includes(q))) return false;
       return true;
     });
     out.sort((a, b) => {
@@ -274,7 +300,7 @@ export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId
     date: f.date, cat: f.cat || "", desc: (f.desc || "").trim(), amount: f.amount, method: f.method || "Bank Transfer",
     notes: f.notes || "", payTo: (f.payTo || "").trim(), invoiceNo: f.invoiceNo || "", invoiceDate: f.invoiceDate || "",
     bankAccount: f.bank, bankRef: (f.ref || "").trim(), needsReview: !!f.review,
-    ...(isIN ? { baseAmount: Number(f.base) || 0, gst: Number(f.gst) || 0 } : {}),
+    ...(isIN ? { baseAmount: Number(f.base) || 0, gst: Number(f.gst) || 0, jobName: (f.job || "").trim(), payStage: (f.job || "").trim() ? (f.stage || "") : "" } : {}),
   });
 
   const findDuplicate = (f, ignoreId) => exps.find(e => (e.uuid || e.id) !== ignoreId && e.date === f.date && acctKey(e) === f.bank
@@ -375,8 +401,8 @@ export default function BankPayoutsPanel({ exps: allExps = [], fmt, shop, shopId
 
   const exportCSV = () => {
     const rows = [[`${shop?.name || shopId} — Bank payouts — ${monthLabel(month)}`], [],
-      ["Date", "Bank Account", "Paid To", "Purpose", "Category", "Type", "Method", "Bank Ref / UTR", "Invoice No.", "Invoice Date", "Amount", "Notes", "Needs Review", ...(isIN ? ["Amount before GST", "GST"] : [])]];
-    sortedForExport().forEach(e => rows.push([fmtDY(e.date), acctLabel(acctKey(e)), e.payTo || "", e.desc || "", e.cat || "(uncategorised)", typeLabel(e), e.method || "", e.bankRef || "", e.invoiceNo || "", fmtDY(e.invoiceDate), Number(e.amount) || 0, e.notes || "", isReview(e) ? "YES — " + reviewReason(e) : "", ...(isIN ? [e.baseAmount !== undefined ? e.baseAmount : (Number(e.amount) || 0) - (Number(e.gst) || 0), Number(e.gst) || 0] : [])]));
+      ["Date", "Bank Account", "Paid To", "Purpose", "Category", "Type", "Method", "Bank Ref / UTR", "Invoice No.", "Invoice Date", "Amount", "Notes", "Needs Review", ...(isIN ? ["Amount before GST", "GST", "Job", "Stage"] : [])]];
+    sortedForExport().forEach(e => rows.push([fmtDY(e.date), acctLabel(acctKey(e)), e.payTo || "", e.desc || "", e.cat || "(uncategorised)", typeLabel(e), e.method || "", e.bankRef || "", e.invoiceNo || "", fmtDY(e.invoiceDate), Number(e.amount) || 0, e.notes || "", isReview(e) ? "YES — " + reviewReason(e) : "", ...(isIN ? [e.baseAmount !== undefined ? e.baseAmount : (Number(e.amount) || 0) - (Number(e.gst) || 0), Number(e.gst) || 0, e.jobName || "", e.payStage || ""] : [])]));
     rows.push([], ["TOTAL DEBITS (all payouts — matches the bank statements)", "", "", "", "", "", "", "", "", "", monthTotal], [], ["SUMMARY BY CATEGORY"]);
     const cols = acctKeys;
     rows.push(["Category", ...cols.map(acctLabel), "Total", "No. of payouts"]);
@@ -469,6 +495,7 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
       invoiceNo: e.invoiceNo || "", invoiceDate: e.invoiceDate || "", notes: e.notes || "", review: !!e.needsReview,
       base: (e.baseAmount !== undefined && e.baseAmount !== null) ? String(e.baseAmount) : String(e.amount ?? ""),
       gst: Number(e.gst) ? String(e.gst) : "",
+      job: e.jobName || "", stage: e.payStage || "",
       files: [], docs: Array.isArray(e.documents) ? e.documents : [],
     });
   };
@@ -525,6 +552,17 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
             </div>
             <div><label className="exq-lb">Paid to</label><input className="exq-in" list="exq-payees" value={ef.payTo} onChange={e => sE("payTo", e.target.value)} placeholder="Person or company name" /></div>
             <div><label className="exq-lb">What was it for?</label><input className="exq-in" value={ef.desc} onChange={e => sE("desc", e.target.value)} placeholder="Purpose of this payout" /></div>
+            {isIN && (
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 10 }}>
+                <div><label className="exq-lb">Job (optional)</label>
+                  <input className="exq-in" list="exq-jobs-e" value={ef.job} onChange={e => sE("job", e.target.value)} placeholder="e.g. Mary Sheen — sheen designs" autoComplete="off" />
+                  <datalist id="exq-jobs-e">{jobNamesFor(ef.payTo).map(n => <option key={n} value={n} />)}</datalist></div>
+                <div><label className="exq-lb">Stage</label>
+                  <select className="exq-in" value={ef.stage} onChange={e => sE("stage", e.target.value)} disabled={!(ef.job || "").trim()}>
+                    <option value="">—</option>{STAGES.map(st => <option key={st} value={st}>{st}</option>)}
+                  </select></div>
+              </div>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
               <div><label className="exq-lb">Category</label>{categorySelect(ef.cat, v => sE("cat", v))}</div>
               {!isIN && <div><label className="exq-lb">Amount ({shop?.symbol})</label><input className="exq-in" type="number" step="0.01" value={ef.amount} onChange={e => sE("amount", e.target.value)} /></div>}
@@ -615,6 +653,7 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
           {monthBar()}
           <div className="exq-seg">
             <button className={view === "entries" ? "on" : ""} onClick={() => setView("entries")}>✍️ Entries</button>
+            {isIN && <button className={view === "jobs" ? "on" : ""} onClick={() => setView("jobs")}>📁 Jobs{jobs.length ? ` · ${jobs.length}` : ""}</button>}
             <button className={view === "report" ? "on" : ""} onClick={() => setView("report")}>📊 Month Report</button>
           </div>
         </div>
@@ -666,6 +705,17 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
                 )}
                 <div><button type="submit" className="exq-btn exq-pri" style={{ width: "100%", padding: "10px 14px", fontSize: 13.5 }} disabled={saving}>{saving ? "Saving…" : "＋ Add"}</button></div>
               </div>
+              {isIN && (
+                <div style={{ display: "grid", gridTemplateColumns: "minmax(220px,2fr) minmax(150px,1fr)", gap: 10, marginTop: 10, maxWidth: 640 }}>
+                  <div><label className="exq-lb">Job <span style={{ fontWeight: 500, textTransform: "none", letterSpacing: 0, color: "#94a3b8" }}>— optional, groups advance / part / final payments</span></label>
+                    <input className="exq-in" list="exq-jobs-q" value={qf.job} onChange={e => setQ("job", e.target.value)} placeholder="e.g. Mary Sheen — sheen designs" autoComplete="off" />
+                    <datalist id="exq-jobs-q">{jobNamesFor(qf.payTo).map(n => <option key={n} value={n} />)}</datalist></div>
+                  <div><label className="exq-lb">Stage</label>
+                    <select className="exq-in" value={qf.stage} onChange={e => setQ("stage", e.target.value)} disabled={!qf.job.trim()}>
+                      <option value="">—</option>{STAGES.map(st => <option key={st} value={st}>{st}</option>)}
+                    </select></div>
+                </div>
+              )}
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap", marginTop: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                   <button type="button" className="exq-chip" onClick={() => setShowMore(v => !v)}>{showMore ? "▾" : "▸"} More details (method, bank ref / UTR, invoice, notes)</button>
@@ -780,6 +830,12 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
                           <td className="exq-td" style={{ minWidth: 200 }}>
                             <div style={{ fontWeight: 700 }}>{e.payTo || <span style={{ color: "#94a3b8", fontWeight: 600 }}>—</span>}</div>
                             <div style={{ fontSize: 12, color: e.desc ? "#64748b" : "#dc2626", marginTop: 1 }}>{e.desc || "No purpose written"}</div>
+                            {isIN && (e.jobName || "").trim() && (
+                              <button onClick={() => { setView("jobs"); setOpenJob(p => ({ ...p, [e.jobName.trim().toLowerCase()]: true })); setJobSearch(""); }} title="Open this job — see all its payments"
+                                style={{ marginTop: 4, padding: "1px 9px", borderRadius: 999, border: "1px solid #c7d2fe", background: "#eef2ff", color: "#4338ca", fontSize: 10.5, fontWeight: 800, cursor: "pointer", fontFamily: "inherit", maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                📁 {e.jobName}{e.payStage ? " · " + e.payStage : ""}
+                              </button>
+                            )}
                             {rv && <div style={{ fontSize: 10.5, fontWeight: 800, color: "#c2410c", marginTop: 3 }}>⚠ NEEDS REVIEW · {reviewReason(e)}</div>}
                           </td>
                           <td className="exq-td" style={{ minWidth: 150 }}>
@@ -827,6 +883,89 @@ td{padding:6px 8px;border-bottom:1px solid #e2e8f0;vertical-align:top}.n{text-al
           </div>
         </>
       )}
+
+      {view === "jobs" && isIN && (() => {
+        const q = jobSearch.trim().toLowerCase();
+        const shown = jobs.filter(j => (jobStatus === "ALL" || (jobStatus === "done" ? j.final : !j.final))
+          && (!q || j.name.toLowerCase().includes(q) || Array.from(j.payees).some(p => p.toLowerCase().includes(q))));
+        const shownTotal = shown.reduce((a, j) => a + j.total, 0);
+        return (
+          <div style={{ padding: "0 20px 24px" }}>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 10 }}>
+              <input className="exq-in" style={{ width: 260 }} value={jobSearch} onChange={e => setJobSearch(e.target.value)} placeholder="Search job or paid-to name…" />
+              <select className="exq-in" style={{ width: 170 }} value={jobStatus} onChange={e => setJobStatus(e.target.value)}>
+                <option value="ALL">All jobs ({jobs.length})</option>
+                <option value="open">In progress ({jobs.filter(j => !j.final).length})</option>
+                <option value="done">Completed — final paid ({jobs.filter(j => j.final).length})</option>
+              </select>
+              <span style={{ flex: 1 }} />
+              <span style={{ fontSize: 12, color: "#64748b" }}>{shown.length} job{shown.length !== 1 ? "s" : ""} · paid so far <b style={{ color: "#dc2626" }}>{fmt(shopId, shownTotal)}</b></span>
+            </div>
+            <div className="exq-card" style={{ overflow: "hidden" }}>
+              {shown.length === 0 ? (
+                <div style={{ padding: "50px 20px", textAlign: "center", color: "#94a3b8" }}>
+                  <div style={{ fontSize: 34, marginBottom: 8 }}>📁</div>
+                  <div style={{ fontSize: 14, fontWeight: 700 }}>{jobs.length ? "No jobs match." : "No jobs yet — type a job name on the Quick entry line to group payments (advance, part payment, final)."}</div>
+                </div>
+              ) : shown.map(j => {
+                const open = !!openJob[j.key];
+                const lines = j.lines.slice().sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+                return (
+                  <div key={j.key} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                    <div onClick={() => setOpenJob(p => ({ ...p, [j.key]: !p[j.key] }))} style={{ display: "flex", alignItems: "center", gap: 14, padding: "12px 16px", cursor: "pointer", flexWrap: "wrap" }}>
+                      <span style={{ fontSize: 12, color: "#94a3b8", width: 14 }}>{open ? "▾" : "▸"}</span>
+                      <div style={{ flex: "1 1 260px", minWidth: 200 }}>
+                        <div style={{ fontWeight: 800, fontSize: 14 }}>📁 {j.name}</div>
+                        <div style={{ fontSize: 12, color: "#64748b", marginTop: 1 }}>{Array.from(j.payees).join(", ") || "—"} · last payment {fmtD(j.last)}</div>
+                      </div>
+                      <div style={{ display: "flex", gap: 5, flexWrap: "wrap", flex: "1 1 220px" }}>
+                        {lines.map(e => (
+                          <span key={e.uuid || e.id} style={{ padding: "2px 9px", borderRadius: 999, border: "1px solid #e2e8f0", background: "#f8fafc", fontSize: 11, fontWeight: 700, color: "#475569" }}>
+                            {e.payStage || "Payment"} · {fmt(shopId, Number(e.amount) || 0)}
+                          </span>
+                        ))}
+                      </div>
+                      <span style={{ padding: "2px 10px", borderRadius: 999, fontSize: 11, fontWeight: 800, background: j.final ? "#dcfce7" : "#fef3c7", color: j.final ? "#15803d" : "#b45309" }}>{j.final ? "✓ Final paid" : "In progress"}</span>
+                      <div style={{ textAlign: "right", minWidth: 120 }}>
+                        <div style={{ fontWeight: 900, color: "#dc2626", fontSize: 15 }}>{fmt(shopId, j.total)}</div>
+                        <div style={{ fontSize: 11, color: "#64748b" }}>{j.lines.length} payment{j.lines.length !== 1 ? "s" : ""}{j.gst > 0 ? <span style={{ color: "#7c3aed" }}> · GST {fmt(shopId, j.gst)}</span> : null}</div>
+                      </div>
+                    </div>
+                    {open && (
+                      <div style={{ background: "#fafbfc", padding: "4px 16px 12px 44px", overflowX: "auto" }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                          <thead><tr>
+                            <th className="exq-th">Date</th><th className="exq-th">Stage</th><th className="exq-th">Bank</th><th className="exq-th">Purpose</th>
+                            <th className="exq-th" style={{ textAlign: "right" }}>GST</th><th className="exq-th" style={{ textAlign: "right" }}>Total paid</th><th className="exq-th" style={{ textAlign: "center" }}>Receipts</th><th className="exq-th"></th>
+                          </tr></thead>
+                          <tbody>
+                            {lines.map(e => (
+                              <tr key={e.uuid || e.id} className="exq-row">
+                                <td className="exq-td" style={{ whiteSpace: "nowrap", fontWeight: 700, fontSize: 12.5 }}>{fmtD(e.date)}</td>
+                                <td className="exq-td" style={{ fontWeight: 700 }}>{e.payStage || <span style={{ color: "#cbd5e1" }}>—</span>}</td>
+                                <td className="exq-td">{acctPill(acctKey(e))}</td>
+                                <td className="exq-td" style={{ fontSize: 12, color: "#64748b" }}>{e.desc || "—"}</td>
+                                <td className="exq-td" style={{ textAlign: "right", color: (Number(e.gst) || 0) > 0 ? "#7c3aed" : "#cbd5e1" }}>{(Number(e.gst) || 0) > 0 ? fmt(shopId, Number(e.gst)) : "—"}</td>
+                                <td className="exq-td" style={{ textAlign: "right", fontWeight: 800, color: "#dc2626", whiteSpace: "nowrap" }}>{fmt(shopId, Number(e.amount) || 0)}</td>
+                                <td className="exq-td" style={{ textAlign: "center" }}>
+                                  {(e.documents || []).length > 0
+                                    ? <button onClick={() => setReceiptView(e)} style={{ padding: "3px 10px", borderRadius: 999, border: "1px solid #c7d2fe", background: "#eef2ff", color: "#4338ca", fontSize: 11, fontWeight: 800, cursor: "pointer" }}>📎 {(e.documents || []).length}</button>
+                                    : <span style={{ color: "#cbd5e1" }}>—</span>}
+                                </td>
+                                <td className="exq-td"><button onClick={() => openEdit(e)} title="Edit" style={{ padding: "5px 10px", borderRadius: 7, border: "1px solid " + ac, background: ac + "12", color: ac, fontSize: 11, fontWeight: 700, cursor: "pointer" }}>✏️</button></td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
 
       {view === "report" && (
         <div style={{ padding: "0 20px 24px" }}>
