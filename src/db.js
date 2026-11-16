@@ -380,18 +380,37 @@ export const dbSaveExpense = async (shopId, e) => {
   if (e.bankRef     !== undefined) payload.bank_ref     = e.bankRef || '';
   if (e.needsReview !== undefined) payload.needs_review = !!e.needsReview;
 
-  // Update existing row by UUID
-  if (e._uuid) {
-    const { error } = await sb.from('expenses').update(payload).eq('id', e._uuid).eq('shop_id', shopId);
-    if (error) { console.error('Update expense error:', error); return { error: error.message }; }
-    return { error: null };
-  }
+  // ROS India: amount before GST + GST (columns: expenses_gst_receipts.sql). `amount` above stays the TOTAL paid,
+  // so every report/total that reads it is unaffected. Only sent when the caller supplies them.
+  const gstExtra = (e.gst !== undefined) ? { base_amount: Number(e.baseAmount) || 0, gst: Number(e.gst) || 0 } : null;
 
-  // Insert new — let Supabase generate UUID
-  const { data, error } = await sb.from('expenses').insert(payload).select('id').single();
-  if (error) { console.error('Insert expense error:', error); return { error: error.message }; }
-  console.log('✅ Expense saved:', data?.id);
-  return { error: null, uuid: data?.id };
+  const write = async (pl) => {
+    if (e._uuid) {
+      const { error } = await sb.from('expenses').update(pl).eq('id', e._uuid).eq('shop_id', shopId);
+      return { error, uuid: e._uuid };
+    }
+    const { data, error } = await sb.from('expenses').insert(pl).select('id').single();
+    return { error, uuid: data?.id };
+  };
+
+  let res = await write(gstExtra ? { ...payload, ...gstExtra } : payload);
+  let warning = null;
+  if (res.error && gstExtra) {
+    // GST columns not added yet: still save the expense (total included) rather than losing it.
+    console.warn('⚠️ Expense save with GST columns failed, retrying without them:', res.error.message);
+    res = await write(payload);
+    if (!res.error && gstExtra.gst > 0) warning = 'The expense was saved, but the amount / GST split was NOT stored — run expenses_gst_receipts.sql once in Supabase.';
+  }
+  if (res.error) { console.error('Save expense error:', res.error); return { error: res.error.message }; }
+  console.log('✅ Expense saved:', res.uuid);
+  return { error: null, uuid: res.uuid, warning };
+};
+
+export const dbSaveExpenseDocs = async (uuid, docs) => {
+  if (!sb) return { error: 'No client' };
+  const { error } = await sb.from('expenses').update({ documents: docs }).eq('id', uuid);
+  if (error) { console.error('Save expense docs error:', error); return { error: error.message }; }
+  return { error: null };
 };
 
 export const dbLoadExpenses = async (shopId) => {
@@ -415,6 +434,9 @@ export const dbLoadExpenses = async (shopId) => {
     bankAccount: r.bank_account || '',
     bankRef:     r.bank_ref || '',
     needsReview: !!r.needs_review,
+    gst:         Number(r.gst) || 0,
+    baseAmount:  (r.base_amount === null || r.base_amount === undefined) ? undefined : Number(r.base_amount),
+    documents:   Array.isArray(r.documents) ? r.documents : [],
   }));
 };
 

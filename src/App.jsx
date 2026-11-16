@@ -35,7 +35,7 @@ import {
   STAGE_THEME
 } from "./constants";
 import { formatCurrency, formatDate, formatNumber } from "./utils";
-import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser, dbLoadShopItems, dbAddShopItem, dbDeleteShopItem, dbSaveDelivery, dbLoadMessages, dbAddMessage, dbMarkMessageSent, dbCancelMessage, dbMessageExists, dbLoadReturns, dbSaveReturn, dbNextReturnId, dbDeleteReturn, dbDeleteMessage, dbDeleteMessages, dbSaveSupplier, dbLoadSuppliers, dbDeleteSupplier,
+import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers, dbDeleteCustomer, dbSavePurchase, dbLoadPurchases, dbDeletePurchase, dbSaveExpense, dbSaveExpenseDocs, dbLoadExpenses, dbDeleteExpense, dbSaveLogistic, dbLoadLogistics, dbDeleteLogistic, dbLoadUsers, dbSaveUser, dbDeleteUser, dbLoadShopItems, dbAddShopItem, dbDeleteShopItem, dbSaveDelivery, dbLoadMessages, dbAddMessage, dbMarkMessageSent, dbCancelMessage, dbMessageExists, dbLoadReturns, dbSaveReturn, dbNextReturnId, dbDeleteReturn, dbDeleteMessage, dbDeleteMessages, dbSaveSupplier, dbLoadSuppliers, dbDeleteSupplier,
   dbUploadDoc, dbDeleteDoc, dbSavePurchaseDocs, dbSaveLogisticDocs,
   dbSaveAgent, dbLoadAgents, dbDeleteAgent,
   dbLoadExpenseCategories, dbSaveExpenseCategory, dbDeleteExpenseCategory,
@@ -6012,6 +6012,8 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
   const [catFilter,setCatFilter]=React.useState("ALL");
   const [saving,setSaving]=React.useState(false);
   const [confirmDelete,setConfirmDelete]=React.useState(null);
+  const [receiptView,setReceiptView]=React.useState(null); // expense whose receipts pop-up is open
+  const isIN=shopId==="ros-india"||shopId==="ros-india-staff"; // ROS India: amount / GST / total + receipts
 
   const BUILTIN_CATEGORIES=["Rent","Utilities","Salaries","Packaging","Shipping","Marketing","Software","Equipment","Travel","Professional Expenses","Agents Expenses","Other"];
   const CATEGORIES=[...BUILTIN_CATEGORIES,...expCats.filter(c=>!BUILTIN_CATEGORIES.includes(c))];
@@ -6026,6 +6028,7 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
   });
 
   const total=filtered.reduce((a,e)=>a+(Number(e.amount)||0),0);
+  const gstTotal=filtered.reduce((a,e)=>a+(Number(e.gst)||0),0);
   const thisMonth=exps.filter(e=>{
     if(!e.date)return false;
     const d=new Date(e.date);
@@ -6035,12 +6038,38 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
 
   const fmtD=d=>{if(!d)return"—";try{const p=d.split("-");return p.length===3?`${p[2]}/${p[1]}/${p[0].slice(2)}`:d;}catch{return d;}};
 
-  const handleSave=async(form)=>{
+  const handleSave=async(form,extra={})=>{
     setSaving(true);
     const payload={...form,payTo:form.payTo||''};
+    if(isIN){
+      payload.baseAmount=Number(form.baseAmount)||0;
+      payload.gst=Number(form.gst)||0;
+    }
     if(editExp) payload._uuid=editExp.uuid||editExp.id;
     const result=await dbSaveExpense(shopId,payload);
     if(result&&result.error){showAlert("Save failed: "+result.error);setSaving(false);return;}
+    const msgs=[];
+    if(result&&result.warning) msgs.push(result.warning);
+    // Receipts (ROS India): upload newly attached files and drop any the user removed.
+    const uuid=(result&&result.uuid)||payload._uuid;
+    if(isIN&&uuid&&extra.docs){
+      const kept=extra.docs, files=extra.files||[];
+      const had=(editExp&&editExp.documents)||[];
+      const removed=had.filter(d=>!kept.some(k=>k.path===d.path));
+      const docs=[...kept]; const failed=[];
+      for(const f of files){
+        const r=await dbUploadDoc("expense-docs",uuid,f);
+        if(r.error){failed.push(f.name+" — "+r.error);continue;}
+        docs.push({name:f.name,url:r.url,path:r.path,size:f.size,uploadedAt:new Date().toISOString()});
+      }
+      if(files.length||removed.length){
+        const sv=await dbSaveExpenseDocs(uuid,docs);
+        if(sv&&sv.error) msgs.push("The receipts could not be saved to the expense: "+sv.error+" (run expenses_gst_receipts.sql once in Supabase).");
+        for(const d of removed){ if(d.path) await dbDeleteDoc("expense-docs",d.path); }
+      }
+      if(failed.length) msgs.push("These receipts could not be uploaded:\n"+failed.join("\n")+"\n\nThe expense itself was saved — open it again to re-attach them.");
+    }
+    if(msgs.length) showAlert(msgs.join("\n\n"));
     const fresh=await dbLoadExpenses(shopId).catch(()=>null);
     if(fresh) setExpData(fresh);
     setSaving(false);setShowForm(false);setEditExp(null);
@@ -6061,9 +6090,28 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
   const ExpenseForm=({initial={},onSave,onClose})=>{
     const [f,setF]=React.useState({
       date:new Date().toISOString().slice(0,10),
-      cat:"",desc:"",amount:"",method:"Bank Transfer",notes:"",payTo:"",invoiceNo:"",invoiceDate:"",...initial
+      cat:"",desc:"",amount:"",method:"Bank Transfer",notes:"",payTo:"",invoiceNo:"",invoiceDate:"",...initial,
+      // ROS India: Amount (before GST) + GST = Total paid. Older expenses have no split, so their total is the amount and GST is 0.
+      baseAmount:(initial.baseAmount!==undefined&&initial.baseAmount!==null)?String(initial.baseAmount):((initial.amount!==undefined&&initial.amount!=="")?String(initial.amount):""),
+      gst:(initial.gst!==undefined&&initial.gst!==null&&Number(initial.gst)!==0)?String(initial.gst):"",
     });
+    const [rFiles,setRFiles]=React.useState([]);                                   // receipts chosen but not uploaded yet
+    const [rDocs,setRDocs]=React.useState(Array.isArray(initial.documents)?initial.documents:[]); // receipts already stored
     const s=(k,v)=>setF(p=>({...p,[k]:v}));
+    const r2=n=>Math.round((Number(n)||0)*100)/100;
+    const txt=n=>(n===0||!Number.isFinite(n))?"":String(n);
+    // Typing Amount or GST recalculates the Total; typing the Total recalculates the Amount (Total − GST).
+    const setBase=v=>setF(p=>({...p,baseAmount:v,amount:(v===""&&!p.gst)?"":txt(r2((Number(v)||0)+(Number(p.gst)||0)))}));
+    const setGst=v=>setF(p=>({...p,gst:v,amount:(p.baseAmount===""&&v==="")?"":txt(r2((Number(p.baseAmount)||0)+(Number(v)||0)))}));
+    const setTotal=v=>setF(p=>({...p,amount:v,baseAmount:v===""?"":String(r2((Number(v)||0)-(Number(p.gst)||0)))}));
+    const addReceipts=list=>{
+      const ok=[];
+      for(const file of Array.from(list||[])){
+        if(file.size>20*1024*1024){showAlert(file.name+" is larger than 20MB — please choose a smaller file.");continue;}
+        ok.push(file);
+      }
+      if(ok.length) setRFiles(x=>[...x,...ok]);
+    };
     return(
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -6100,9 +6148,22 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
           <input value={f.desc} onChange={e=>s("desc",e.target.value)} placeholder="What was this expense for?" style={inp}/></div>
         <div><label style={lbl}>Payment To</label>
           <input value={f.payTo||""} onChange={e=>s("payTo",e.target.value)} placeholder="Person or company name" style={inp}/></div>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-          <div><label style={lbl}>Amount ({shop.symbol})</label>
-            <input type="number" value={f.amount} onChange={e=>s("amount",e.target.value)} placeholder="0.00" style={inp}/></div>
+        {isIN&&(
+          <div style={{border:"1px solid #e2e8f0",borderRadius:12,padding:"12px 12px 10px",background:"#fafbfc"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
+              <div><label style={lbl}>Amount ({shop.symbol})</label>
+                <input type="number" onWheel={e=>e.target.blur()} value={f.baseAmount} onChange={e=>setBase(e.target.value)} placeholder="Before GST" style={inp}/></div>
+              <div><label style={lbl}>GST ({shop.symbol})</label>
+                <input type="number" onWheel={e=>e.target.blur()} value={f.gst} onChange={e=>setGst(e.target.value)} placeholder="0.00" style={inp}/></div>
+              <div><label style={lbl}>Total Paid ({shop.symbol})</label>
+                <input type="number" onWheel={e=>e.target.blur()} value={f.amount} onChange={e=>setTotal(e.target.value)} placeholder="0.00" style={{...inp,fontWeight:800,background:"#f1f5f9"}}/></div>
+            </div>
+            <p style={{margin:"8px 0 0",fontSize:10.5,color:"#94a3b8"}}>Total = Amount + GST</p>
+          </div>
+        )}
+        <div style={{display:"grid",gridTemplateColumns:isIN?"1fr":"1fr 1fr",gap:10}}>
+          {!isIN&&<div><label style={lbl}>Amount ({shop.symbol})</label>
+            <input type="number" value={f.amount} onChange={e=>s("amount",e.target.value)} placeholder="0.00" style={inp}/></div>}
           <div><label style={lbl}>Payment Method</label>
             <select value={f.method} onChange={e=>s("method",e.target.value)} style={inp}>
               {METHODS.map(m=><option key={m}>{m}</option>)}
@@ -6115,13 +6176,41 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
           <div><label style={lbl}>Invoice Date</label>
             <input type="date" value={f.invoiceDate||""} onChange={e=>s("invoiceDate",e.target.value)} style={inp}/></div>
         </div>
+        {isIN&&(
+          <div>
+            <label style={lbl}>Receipts <span style={{fontWeight:500,textTransform:"none",letterSpacing:0,color:"#94a3b8"}}>— add as many as this payment has</span></label>
+            {rDocs.map((d,i)=>(
+              <div key={d.path||i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",border:"1px solid #e2e8f0",borderRadius:9,marginBottom:6,background:"#f8fafc"}}>
+                <span style={{fontSize:15}}>📎</span>
+                <a href={d.url} target="_blank" rel="noreferrer" style={{flex:1,minWidth:0,fontSize:12,fontWeight:700,color:shop.accent,textDecoration:"none",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={d.name}>{d.name}</a>
+                <button type="button" title="Remove this receipt" onClick={()=>setRDocs(x=>x.filter((_,j)=>j!==i))}
+                  style={{width:24,height:24,borderRadius:6,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,lineHeight:1,padding:0,fontFamily:"inherit"}}>×</button>
+              </div>
+            ))}
+            {rFiles.map((fl,i)=>(
+              <div key={fl.name+i} style={{display:"flex",alignItems:"center",gap:8,padding:"6px 10px",border:"1px dashed "+shop.accent,borderRadius:9,marginBottom:6,background:shop.accent+"08"}}>
+                <span style={{fontSize:15}}>🆕</span>
+                <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:700,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}} title={fl.name}>{fl.name}</span>
+                <button type="button" title="Remove" onClick={()=>setRFiles(x=>x.filter((_,j)=>j!==i))}
+                  style={{width:24,height:24,borderRadius:6,border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",cursor:"pointer",fontSize:14,lineHeight:1,padding:0,fontFamily:"inherit"}}>×</button>
+              </div>
+            ))}
+            <label style={{display:"inline-block",padding:"7px 14px",borderRadius:9,border:"1px solid "+shop.accent,background:"white",color:shop.accent,fontSize:12,fontWeight:700,cursor:"pointer"}}>
+              ➕ {rDocs.length+rFiles.length?"Add another receipt":"Attach receipts"}
+              <input type="file" multiple accept="image/*,.pdf" style={{display:"none"}} onChange={e=>{addReceipts(e.target.files);e.target.value="";}}/>
+            </label>
+            <span style={{marginLeft:10,fontSize:10.5,color:"#94a3b8"}}>PDF or image · max 20MB each</span>
+          </div>
+        )}
         <div><label style={lbl}>Notes</label>
           <textarea value={f.notes} onChange={e=>s("notes",e.target.value)} rows={2}
             placeholder="Optional notes…" style={{...inp,resize:"vertical"}}/></div>
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,paddingTop:4}}>
           <button disabled={saving} onClick={()=>{
             if(!f.desc.trim()||!f.amount){showAlert("Description and amount are required.");return;}
-            onSave(f);
+            if(isIN&&(Number(f.gst)||0)<0){showAlert("GST cannot be negative.");return;}
+            if(isIN&&(Number(f.baseAmount)||0)<0){showAlert("The total paid can't be less than the GST.");return;}
+            onSave(f,isIN?{files:rFiles,docs:rDocs}:{});
           }} style={{padding:"11px 0",borderRadius:10,border:"none",
             background:saving?"#94a3b8":shop.accent,color:"white",fontWeight:800,
             fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>
@@ -6158,10 +6247,11 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
         </div>
 
         {/* KPI row */}
-        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:14}}>
+        <div style={{display:"grid",gridTemplateColumns:isIN?"repeat(4,1fr)":"repeat(3,1fr)",gap:12,marginBottom:14}}>
           {[
             {l:"Total",v:fmt(shopId,total),ic:"💳",c:"#ef4444"},
             {l:"This Month",v:fmt(shopId,thisMonth),ic:"📅",c:"#f59e0b"},
+            ...(isIN?[{l:"GST Paid",v:fmt(shopId,gstTotal),ic:"🧾",c:"#7c3aed"}]:[]),
             {l:"Categories",v:[...new Set(exps.map(e=>e.cat).filter(Boolean))].length,ic:"🏷️",c:shop.accent},
           ].map(k=>(
             <div key={k.l} style={{background:"white",borderRadius:12,padding:"12px 16px",
@@ -6209,17 +6299,17 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead>
             <tr>
-              {["Date","Category","Description","Pay To","Invoice No.","Amount","Method","Notes","Actions"].map(h=>(
+              {(isIN?["Date","Category","Description","Pay To","Invoice No.","Amount","GST","Total Paid","Receipts","Method","Notes","Actions"]:["Date","Category","Description","Pay To","Invoice No.","Amount","Method","Notes","Actions"]).map(h=>(
                 <th key={h} style={{padding:"10px 16px",fontSize:11,fontWeight:800,color:"#64748b",
                   textTransform:"uppercase",letterSpacing:"0.05em",background:"#f8fafc",
                   borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap",
-                  textAlign:h==="Amount"?"right":"left"}}>{h}</th>
+                  textAlign:(h==="Amount"||h==="GST"||h==="Total Paid")?"right":(h==="Receipts"?"center":"left")}}>{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {filtered.length===0?(
-              <tr><td colSpan={7} style={{padding:"60px 20px",textAlign:"center",color:"#94a3b8"}}>
+              <tr><td colSpan={isIN?12:9} style={{padding:"60px 20px",textAlign:"center",color:"#94a3b8"}}>
                 <div style={{fontSize:36,marginBottom:10}}>💳</div>
                 <p style={{margin:0,fontSize:14,fontWeight:600}}>No expenses found</p>
               </td></tr>
@@ -6236,7 +6326,21 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
                 <td style={{padding:"12px 16px",color:"#374151",maxWidth:200,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.desc||"—"}</td>
                 <td style={{padding:"12px 16px",color:"#374151",maxWidth:140,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.payTo||"—"}</td>
                 <td style={{padding:"12px 16px",color:"#64748b",fontFamily:"DM Mono,monospace",fontSize:11,whiteSpace:"nowrap"}}>{e.invoiceNo||"—"}</td>
-                <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,color:"#dc2626",whiteSpace:"nowrap"}}>{fmt(shopId,Number(e.amount)||0)}</td>
+                {isIN?(
+                  <>
+                    <td style={{padding:"12px 16px",textAlign:"right",color:"#374151",whiteSpace:"nowrap"}}>{fmt(shopId,(e.baseAmount!==undefined?e.baseAmount:(Number(e.amount)||0)-(Number(e.gst)||0)))}</td>
+                    <td style={{padding:"12px 16px",textAlign:"right",color:(Number(e.gst)||0)>0?"#7c3aed":"#cbd5e1",fontWeight:(Number(e.gst)||0)>0?700:400,whiteSpace:"nowrap"}}>{(Number(e.gst)||0)>0?fmt(shopId,Number(e.gst)):"—"}</td>
+                    <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,color:"#dc2626",whiteSpace:"nowrap"}}>{fmt(shopId,Number(e.amount)||0)}</td>
+                    <td style={{padding:"12px 16px",textAlign:"center"}}>
+                      {(e.documents||[]).length>0?(
+                        <button onClick={()=>setReceiptView(e)} title="View receipts"
+                          style={{padding:"3px 10px",borderRadius:999,border:"1px solid #c7d2fe",background:"#eef2ff",color:"#4338ca",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>📎 {(e.documents||[]).length}</button>
+                      ):<span style={{color:"#cbd5e1"}}>—</span>}
+                    </td>
+                  </>
+                ):(
+                  <td style={{padding:"12px 16px",textAlign:"right",fontWeight:800,color:"#dc2626",whiteSpace:"nowrap"}}>{fmt(shopId,Number(e.amount)||0)}</td>
+                )}
                 <td style={{padding:"12px 16px",color:"#64748b",fontSize:12}}>{e.method||"—"}</td>
                 <td style={{padding:"12px 16px",color:"#94a3b8",fontSize:12,maxWidth:160,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.notes||"—"}</td>
                 <td style={{padding:"12px 16px"}}>
@@ -6264,7 +6368,31 @@ const ExpensesTabPanel=({exps=[],fmt,shop,shopId,setExpData,expCats=[],setExpCat
         <div style={{padding:"10px 20px",borderTop:"1px solid #f1f5f9",display:"flex",
           justifyContent:"space-between",fontSize:12,color:"#64748b",background:"#f8fafc"}}>
           <span>{filtered.length} expense{filtered.length!==1?"s":""}</span>
-          <span style={{fontWeight:800,color:"#dc2626"}}>Total: {fmt(shopId,total)}</span>
+          <span style={{fontWeight:800,color:"#dc2626"}}>{(isIN&&gstTotal>0)?<span style={{color:"#7c3aed",marginRight:16}}>GST: {fmt(shopId,gstTotal)}</span>:null}Total: {fmt(shopId,total)}</span>
+        </div>
+      )}
+
+      {/* Receipts pop-up (ROS India) */}
+      {receiptView&&(
+        <div style={{position:"fixed",inset:0,zIndex:85,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div style={{position:"absolute",inset:0,background:"rgba(15,23,42,0.45)",backdropFilter:"blur(3px)"}} onClick={()=>setReceiptView(null)}/>
+          <div style={{position:"relative",background:"white",borderRadius:16,boxShadow:"0 24px 60px rgba(0,0,0,0.25)",width:"100%",maxWidth:420,padding:"18px 20px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
+              <div>
+                <p style={{margin:0,fontSize:15,fontWeight:800,color:"#0f172a"}}>🧾 Receipts</p>
+                <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>{receiptView.desc||"—"} · {fmt(shopId,Number(receiptView.amount)||0)}</p>
+              </div>
+              <button onClick={()=>setReceiptView(null)} style={{width:28,height:28,borderRadius:"50%",border:"none",background:"#f1f5f9",cursor:"pointer",fontSize:16,color:"#64748b"}}>×</button>
+            </div>
+            {(receiptView.documents||[]).map((d,i)=>(
+              <a key={d.path||i} href={d.url} target="_blank" rel="noreferrer"
+                style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",border:"1px solid #e2e8f0",borderRadius:10,marginBottom:6,textDecoration:"none",background:"#f8fafc"}}>
+                <span style={{fontSize:18}}>{/\.pdf$/i.test(d.name||"")?"📄":"🖼️"}</span>
+                <span style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:shop.accent,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{d.name}</span>
+                <span style={{fontSize:11,color:"#94a3b8"}}>Open ↗</span>
+              </a>
+            ))}
+          </div>
         </div>
       )}
 
