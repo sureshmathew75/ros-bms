@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
-  PRICE_PRODUCTS, PRICE_GROUPS, PRICE_LIST_EFFECTIVE, PRICE_LIST_GST, UK_DELIVERY, REFUND_TIERS,
+  PRICE_PRODUCTS, PRICE_GROUPS, PRICE_LIST_EFFECTIVE, PRICE_LIST_GST, UK_DELIVERY, UK_DELIVERY_LOW, UK_DELIVERY_THRESHOLD, REFUND_TIERS,
   priceFor, priceSymbol, searchPriceList, isPriceShop, matchEntry,
 } from "../priceList";
 
@@ -260,7 +260,7 @@ export default function PriceListPanel({ shop, shopId }) {
   const messageFor = (e) => {
     const price = priceFor(e, shopId);
     if (isIndia) return `${e.label} — ${money(shopId, e.gross)} (incl. ${PRICE_LIST_GST}% GST). Free delivery across India.`;
-    return `${e.label} — ${money(shopId, price)}. Delivery ${money(shopId, UK_DELIVERY)} per order.`;
+    return `${e.label} — ${money(shopId, price)}. Delivery ${money(shopId, UK_DELIVERY_LOW)} per order under ${money(shopId, UK_DELIVERY_THRESHOLD)}, ${money(shopId, UK_DELIVERY)} from ${money(shopId, UK_DELIVERY_THRESHOLD)}.`;
   };
   const copy = async (e) => {
     const text = messageFor(e);
@@ -353,7 +353,7 @@ export default function PriceListPanel({ shop, shopId }) {
       <div style={{ ...card, marginTop: 18, maxWidth: 560 }}>
         <div style={{ padding: "11px 14px", borderBottom: "1px solid #d3deeb", backgroundColor: "#eaf0f7", backgroundImage: "linear-gradient(180deg,#ffffff,#e3eaf3)", fontSize: 13, fontWeight: 800, color: "#0f172a", textTransform: "uppercase", letterSpacing: "0.03em" }}>Delivery &amp; refund policy</div>
         <div style={{ padding: "10px 14px", fontSize: 12.5, color: "#334155", lineHeight: 1.7 }}>
-          <div><b>Delivery:</b> {isIndia ? "FREE delivery on India orders" : `${money(shopId, UK_DELIVERY)} per order`}</div>
+          <div><b>Delivery:</b> {isIndia ? "FREE delivery on India orders" : `${money(shopId, UK_DELIVERY_LOW)} per order under ${money(shopId, UK_DELIVERY_THRESHOLD)} · ${money(shopId, UK_DELIVERY)} from ${money(shopId, UK_DELIVERY_THRESHOLD)}`}</div>
           <div style={{ marginTop: 6, fontWeight: 700 }}>A service charge is deducted from refunds, based on the item value:</div>
           {(REFUND_TIERS[shopId] || []).map(([below, fee], i, arr) => {
             const lo = i === 0 ? 0 : arr[i - 1][0];

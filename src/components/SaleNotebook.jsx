@@ -1,6 +1,6 @@
 import React from "react";
 import { ItemSuggestInput, PriceHint } from "./PriceListPanel";
-import { UK_DELIVERY, isPriceShop, matchEntry, priceFor } from "../priceList";
+import { UK_DELIVERY, UK_DELIVERY_LOW, ukDeliveryFor, isPriceShop, matchEntry, priceFor } from "../priceList";
 
 /* ── "Notebook" style items + totals block for the New Sale form (ROS India / ROS Hairlines UK) ──
    Rows:   Item · Qty · Price (price-list price — read-only for staff when the item is on the list) · Received
@@ -124,9 +124,9 @@ export default function SaleNotebook({
               <Line label="+ Shipping">
                 <span style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>
                   {!(parseFloat(other) > 0)
-                    ? <button type="button" onClick={() => onOther(String(UK_DELIVERY))}
-                        style={{ fontSize: 10.5, fontWeight: 800, color: "#475569", background: "white", border: "1px solid #cbd5e1", borderRadius: 999, padding: "2px 9px", cursor: "pointer", fontFamily: "inherit" }}>Add {sym}{UK_DELIVERY} shipping</button>
-                    : parseFloat(other) === UK_DELIVERY
+                    ? <button type="button" onClick={() => onOther(String(ukDeliveryFor(calc.itemsTotal)))}
+                        style={{ fontSize: 10.5, fontWeight: 800, color: "#475569", background: "white", border: "1px solid #cbd5e1", borderRadius: 999, padding: "2px 9px", cursor: "pointer", fontFamily: "inherit" }}>Add {sym}{ukDeliveryFor(calc.itemsTotal)} shipping</button>
+                    : (parseFloat(other) === UK_DELIVERY || parseFloat(other) === UK_DELIVERY_LOW)
                       ? <button type="button" onClick={() => onOther("0")} title="Waive the shipping charge"
                           style={{ fontSize: 10.5, fontWeight: 800, color: "#b45309", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 999, padding: "2px 9px", cursor: "pointer", fontFamily: "inherit" }}>Waive</button>
                       : null}

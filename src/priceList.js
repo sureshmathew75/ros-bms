@@ -5,13 +5,17 @@
 
    India prices:  Net + GST 18% = Gross  (the Gross price is what a customer pays and
    what staff enter in a sale).   UK prices are in £ (null = not available in the UK).
-   Delivery: India free · UK £7 per order.   Refund service charge: see REFUND_TIERS.
+   Delivery: India free · UK £5 per order under £150, £7 per order of £150 or more.   Refund service charge: see REFUND_TIERS.
    Pure data + helpers — nothing here touches the database or any sale.
    ───────────────────────────────────────────────────────────────────────────── */
 
 export const PRICE_LIST_EFFECTIVE = "10.11.2026";
 export const PRICE_LIST_GST = 18;
-export const UK_DELIVERY = 7;            // £ per UK order
+export const UK_DELIVERY = 7;            // £ per UK order of £150 or more (standard rate)
+export const UK_DELIVERY_LOW = 5;        // £ per UK order under UK_DELIVERY_THRESHOLD
+export const UK_DELIVERY_THRESHOLD = 150;
+/* UK shipping for an order whose items come to `itemsTotal` (£): £5 under £150, £7 at £150 and over. */
+export const ukDeliveryFor = (itemsTotal) => (Number(itemsTotal) || 0) < UK_DELIVERY_THRESHOLD ? UK_DELIVERY_LOW : UK_DELIVERY;
 export const PRICE_SHOPS = ["ros-india", "ros-hairlines"];   // shops this list applies to
 
 // [group, product, description, [[length″ | null, net ₹, GST ₹, gross ₹, UK £ | null], ...]]
@@ -169,16 +173,16 @@ export const listPriceOf = (sale, shopId) => {
   let total = 0, hit = 0;
   lines.forEach(l => { const v = listPriceOfLine(l, shopId); if (v != null) { total += v; hit++; } });
   if (!hit) return null;
-  // ROS Hairlines UK prices exclude delivery: £7 unless the sale's own Shipping charge says otherwise (waived / international).
+  // ROS Hairlines UK prices exclude delivery: £5 (order under £150) / £7 (£150 or more) unless the sale's own Shipping charge says otherwise (waived / international).
   let delivery = 0;
   if (shopId === "ros-hairlines") {
     const pt = sale.paymentType;
     const full = !pt || pt === "FULL";
-    delivery = (full && sale.otherChargesLabel === "Shipping") ? (Number(sale.otherCharges) || 0) : UK_DELIVERY;
+    delivery = (full && sale.otherChargesLabel === "Shipping") ? (Number(sale.otherCharges) || 0) : ukDeliveryFor(total);
   }
   return { total: Math.round(total * 100) / 100, hit, count: lines.length, delivery };
 };
-/* "£175 + £7 dlvry" — f formats one amount (e.g. n => "£" + n.toLocaleString()). A trailing * means some items weren't on the list. */
+/* "£175 + £5 dlvry" — f formats one amount (e.g. n => "£" + n.toLocaleString()). A trailing * means some items weren't on the list. */
 export const listPriceAmounts = (r, f) =>
   f(r.total) + (r.hit < r.count ? "*" : "") + (r.delivery > 0 ? " + " + f(r.delivery) + " dlvry" : "");
 
@@ -201,7 +205,7 @@ export const priceMismatches = (lines, shopId) => {
    • Sales with a GST % set are skipped (their amount is built from net prices).
    • Matched lines count at list price, unmatched lines at their entered price (so a custom item can never
      create a shortfall); a line the staff already explained with a "Price note —" counts at its entered price.
-   • Hairlines UK adds the £7 delivery once per order.
+   • Hairlines UK adds the delivery once per order (£5 under £150, £7 at £150 or more).
    Returns null when there is nothing to check. */
 export const shortfallForSales = (members, shopId) => {
   if (!isPriceShop(shopId) || !members || members.length !== 1) return null;
@@ -217,10 +221,10 @@ export const shortfallForSales = (members, shopId) => {
     if (p != null && explained) matched++;
   });
   if (!matched) return null;
-  // Hairlines: use the shipping actually charged on the sale (£7 UK, a different amount abroad, or 0 if waived);
-  // older sales without a "Shipping" line fall back to the standard £7.
+  // Hairlines: use the shipping actually charged on the sale (£5 / £7 UK, a different amount abroad, or 0 if waived);
+  // older sales without a "Shipping" line fall back to the standard tier for the order value.
   const delivery = shopId === "ros-hairlines"
-    ? (String(s.otherChargesLabel || "") === "Shipping" ? (Number(s.otherCharges) || 0) : UK_DELIVERY)
+    ? (String(s.otherChargesLabel || "") === "Shipping" ? (Number(s.otherCharges) || 0) : ukDeliveryFor(listTotal))
     : 0;
   listTotal += delivery;
   const received = Number(s.amount) || 0;
@@ -228,7 +232,7 @@ export const shortfallForSales = (members, shopId) => {
 };
 
 /* What the price list says a set of sale lines should come to: lines that match the list at list price,
-   other (custom) lines at their entered price, plus the £7 delivery once for Hairlines UK.
+   other (custom) lines at their entered price, plus the delivery (£5 under £150, £7 at £150 or more) once for Hairlines UK.
    Returns null when no line matches the list (nothing to compare with). */
 export const listTotalForLines = (lines, shopId) => {
   if (!isPriceShop(shopId)) return null;
@@ -240,7 +244,7 @@ export const listTotalForLines = (lines, shopId) => {
     if (p != null) { total += p * q; matched++; } else total += (parseFloat(l.price) || 0) * q;
   });
   if (!matched) return null;
-  const delivery = shopId === "ros-hairlines" ? UK_DELIVERY : 0;
+  const delivery = shopId === "ros-hairlines" ? ukDeliveryFor(total) : 0;
   return { total: total + delivery, delivery };
 };
 

@@ -12,7 +12,7 @@ import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
 import PriceListPanel, { ItemSuggestInput, PriceDiffModal, PriceHint, priceNoteText, FinalShortModal, PartPaidModal } from "./components/PriceListPanel";
 import SaleNotebook from "./components/SaleNotebook";
-import { isPriceShop, priceFor, matchEntry, priceMismatches, listTotalForLines, UK_DELIVERY, listPriceOf, listPriceOfLine, listPriceAmounts } from "./priceList";
+import { isPriceShop, priceFor, matchEntry, priceMismatches, listTotalForLines, ukDeliveryFor, listPriceOf, listPriceOfLine, listPriceAmounts } from "./priceList";
 import PurchasesPanel from "./components/PurchasesPanel";
 import ReportsPanel from "./components/ReportsPanel";
 import SalesPanel from "./components/SalesPanel";
@@ -19311,9 +19311,10 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     taxInclusive: false,
     taxRate:     0,
     discount:    "",
-    // ROS Hairlines UK: the price list excludes delivery, so £7 UK shipping is added to every sale (staff can waive it
-    // or type the international amount). It is stored in Other Charges, labelled "Shipping".
-    otherCharges:shopId==="ros-hairlines"?String(UK_DELIVERY):"",
+    // ROS Hairlines UK: the price list excludes delivery, so UK shipping (£5 under £150, £7 from £150 — kept in step with
+    // the items by an effect below) is added to every sale (staff can waive it or type the international amount).
+    // It is stored in Other Charges, labelled "Shipping".
+    otherCharges:shopId==="ros-hairlines"?String(ukDeliveryFor(0)):"",
     otherChargesLabel:shopId==="ros-hairlines"?"Shipping":"Other Charges",
     payBy:       defaultPay,
     shopInvoiceNo: "",
@@ -19403,6 +19404,10 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     :_openDeal?((_openDeal.expected-_openDeal.prior-receivedTotal)<=0.5?"FINAL":"PART")
     :((grandTotal-receivedTotal)<=0.5?"FULL":"ADVANCE");
   useEffect(()=>{ if(_suggest&&!typeManual) setForm(f=>f.paymentType===_suggest?f:{...f,paymentType:_suggest}); },[_suggest,typeManual]);
+  // Hairlines UK: keep the standard shipping (£5 / £7) in step with the items until staff change the shipping box themselves.
+  const [shipDirty,setShipDirty]=useState(false);
+  const _shipStd=shopId==="ros-hairlines"?String(ukDeliveryFor(itemsSubtotal)):null;
+  useEffect(()=>{ if(_shipStd!=null&&!shipDirty) setForm(f=>f.otherCharges===_shipStd?f:{...f,otherCharges:_shipStd}); },[_shipStd,shipDirty]);
   const _calc=_deal
     ?{mode:"deal",expected:_deal.expected,priorReceived:_deal.prior,receivedNow:receivedTotal,balance:parseFloat((_deal.expected-_deal.prior-receivedTotal).toFixed(2)),advLabel:_deal.advanceId}
     :{mode:"normal",itemsTotal:itemsSubtotal,gstAmt,saleTotal:grandTotal,receivedNow:receivedTotal,balance:parseFloat((grandTotal-receivedTotal).toFixed(2))};
@@ -19674,7 +19679,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               onQty={(id,v)=>updateLine(id,"qty",v)} onPrice={(id,v)=>updateLine(id,"price",v)} onRecv={(id,v)=>updateLine(id,"recv",v)}
               onFillRecv={()=>setLines(ls=>{const _ix=ls.map((l,i)=>(l.name.trim()||parseFloat(l.price)>0)?i:-1).filter(i=>i>=0);const _last=_ix.length?_ix[_ix.length-1]:-1;return ls.map((l,i)=>{const _a=(parseFloat(l.qty)||0)*(parseFloat(l.price)||0);const _v=i===_last?_a+(grandTotal-itemsSubtotal):_a;return {...l,recv:_v?String(parseFloat(_v.toFixed(2))):""};});})}
               onRemove={removeLine} onAdd={addLine}
-              calc={_calc} other={form.otherCharges} discount={form.discount} onOther={v=>set("otherCharges",v)} onDiscount={v=>set("discount",v)}
+              calc={_calc} other={form.otherCharges} discount={form.discount} onOther={v=>{setShipDirty(true);set("otherCharges",v);}} onDiscount={v=>set("discount",v)}
               taxRate={form.taxRate} onTax={r=>set("taxRate",r)}/>)}
             {_ps&&(<div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               {suggestBanner}
