@@ -10541,7 +10541,11 @@ return(
                   {l:"GST / VAT",v:fmt(shopId,Number(viewPurchRow.gst)||0)},
                   {l:"Net Total",v:fmt(shopId,(Number(viewPurchRow.total)||0)+(Number(viewPurchRow.gst)||0))},
                   ...(viewPurchRow.supplierInvDate?[{l:"Supplier Inv. Date",v:viewPurchRow.supplierInvDate}]:[]),
-                  ...(Number(viewPurchRow.transferCharges)>0||Number(viewPurchRow.otherCharges)>0?[
+                  ...(shopId==="ros-india"?[
+                    ...(Number(viewPurchRow.usdAmount)>0?[{l:"Amount ($)",v:"$"+Number(viewPurchRow.usdAmount).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}]:[]),
+                    ...(Number(viewPurchRow.transferCharges)>0?[{l:"Bank Transfer Charges",v:fmt(shopId,Number(viewPurchRow.transferCharges)||0)}]:[]),
+                  ]:[]),
+                  ...(shopId!=="ros-india"&&(Number(viewPurchRow.transferCharges)>0||Number(viewPurchRow.otherCharges)>0)?[
                     {l:"Amount Paid",v:fmt(shopId,Number(viewPurchRow.amountPaid)||0)},
                     {l:"Transfer Charges",v:fmt(shopId,Number(viewPurchRow.transferCharges)||0)},
                     {l:"Other Charges",v:fmt(shopId,Number(viewPurchRow.otherCharges)||0)},
@@ -18449,7 +18453,11 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
   const pfx={["ros-selections"]:"PO",["ros-hairlines"]:"PH",["ros-india"]:"PI"}[shopId]||"PO";
   const autoId=`${pfx}-${String(nextNum).padStart(4,"0")}`;
 
-  const [form,setForm]=useState(initialValues?{...initialValues,id:initialValues.id||autoId,purchaseId:initialValues.id||autoId,idEditing:false}:{
+  // ROS India buys from abroad: extra "Amount ($)" + "Bank transfer charges" fields and a bank-only Payment By list.
+  const isIN=shopId==="ros-india";
+  const IN_BANKS=["South Indian Bank","Federal Bank"];
+  const numStr=v=>(v===undefined||v===null||v===""||Number(v)===0)?"":String(v);
+  const [form,setForm]=useState(initialValues?{...initialValues,id:initialValues.id||autoId,purchaseId:initialValues.id||autoId,idEditing:false,usdAmount:numStr(initialValues.usdAmount),transferCharges:numStr(initialValues.transferCharges)}:{
     id:          autoId,
     purchaseId:  autoId,
     idEditing:   false,
@@ -18462,7 +18470,9 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
     qty:         "",
     total:       "",
     gst:         "",
-    payBy:       "HDFC SURESH",
+    usdAmount:   "",
+    transferCharges:"",
+    payBy:       shopId==="ros-india"?"South Indian Bank":"HDFC SURESH",
     payDate:     new Date().toISOString().slice(0,10),
     logisticBy:  "",
     logisticRef: "",
@@ -18624,7 +18634,22 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
           <input readOnly value={(parseFloat(form.total)||0)+(parseFloat(form.gst)||0)>0?((parseFloat(form.total)||0)+(parseFloat(form.gst)||0)).toFixed(2):""} placeholder="Auto" style={inpGray}/>
         </div>
       </div>
-      {/* Row 2: Unit Cost auto */}
+      {/* Row 2: ROS India only — amount paid in dollars + bank transfer charges */}
+      {isIN&&(
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
+          <div>
+            <label style={lbl}>Amount ($) <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0,color:"#94a3b8"}}>in dollars</span></label>
+            <input type="number" onWheel={e=>e.target.blur()} min="0" value={form.usdAmount}
+              onChange={e=>set("usdAmount",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+          </div>
+          <div>
+            <label style={lbl}>Bank Transfer Charges ({shop.symbol})</label>
+            <input type="number" onWheel={e=>e.target.blur()} min="0" value={form.transferCharges}
+              onChange={e=>set("transferCharges",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
+          </div>
+        </div>
+      )}
+      {/* Row 3: Unit Cost auto */}
       <div style={{marginBottom:16}}>
         <label style={{...lbl,color:"#94a3b8"}}>Unit Cost ({shop.symbol}) <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0}}>— auto calculated</span></label>
         <input readOnly value={unitCost} placeholder="Enter quantity and amount above" style={inpGray}/>
@@ -18635,11 +18660,13 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
       <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16}}>
         <div>
           <label style={lbl}>Payment By</label>
-          <select value={form.payBy==="OTHER"||!["REMITLY SURESH","REMITLY BINITHA","HDFC SURESH","HDFC BINITHA","ROS INDIA","OTHER"].includes(form.payBy)?"OTHER":form.payBy}
+          <select value={isIN?(IN_BANKS.includes(form.payBy)?form.payBy:"OTHER"):(form.payBy==="OTHER"||!["REMITLY SURESH","REMITLY BINITHA","HDFC SURESH","HDFC BINITHA","ROS INDIA","OTHER"].includes(form.payBy)?"OTHER":form.payBy)}
             onChange={e=>set("payBy",e.target.value)} style={{...inp,fontWeight:600}}>
-            {["REMITLY SURESH","REMITLY BINITHA","HDFC SURESH","HDFC BINITHA","ROS INDIA","OTHER"].map(o=><option key={o}>{o}</option>)}
+            {isIN
+              ?<>{IN_BANKS.map(o=><option key={o} value={o}>{o}</option>)}<option value="OTHER">Other</option></>
+              :["REMITLY SURESH","REMITLY BINITHA","HDFC SURESH","HDFC BINITHA","ROS INDIA","OTHER"].map(o=><option key={o}>{o}</option>)}
           </select>
-          {(form.payBy==="OTHER"||!["REMITLY SURESH","REMITLY BINITHA","HDFC SURESH","HDFC BINITHA","ROS INDIA"].includes(form.payBy))&&(
+          {(isIN?!IN_BANKS.includes(form.payBy):(form.payBy==="OTHER"||!["REMITLY SURESH","REMITLY BINITHA","HDFC SURESH","HDFC BINITHA","ROS INDIA"].includes(form.payBy)))&&(
             <input
               value={form.payBy==="OTHER"?"":form.payBy}
               onChange={e=>set("payBy",e.target.value||"OTHER")}
@@ -18705,6 +18732,7 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
             qty: form.qty,
             total: form.total,
             gst: form.gst,
+            ...(isIN?{usdAmount:form.usdAmount,transferCharges:form.transferCharges}:{}),
             payBy: form.payBy,
             payDate: form.payDate,
             logisticBy: form.logisticBy,
