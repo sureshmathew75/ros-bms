@@ -14,6 +14,7 @@ import PriceListPanel, { ItemSuggestInput, PriceDiffModal, PriceHint, priceNoteT
 import SaleNotebook from "./components/SaleNotebook";
 import { isPriceShop, priceFor, matchEntry, priceMismatches, listTotalForLines, ukDeliveryFor, listPriceOf, listPriceOfLine, listPriceAmounts } from "./priceList";
 import PurchasesPanel from "./components/PurchasesPanel";
+import PurchaseNotebook from "./components/PurchaseNotebook";
 import ReportsPanel from "./components/ReportsPanel";
 import SalesPanel from "./components/SalesPanel";
 import SuppliersPanel from "./components/SuppliersPanel";
@@ -5622,6 +5623,9 @@ const LogisticsTabPanel=({logs=[],shopId,shop,onNewShipment,onView,onEdit,onDele
 /* ═══════════════════════════════════════════════════════════
    PURCHASES TAB PANEL
    ═══════════════════════════════════════════════════════════ */
+/* ROS India: what a purchase really cost = items (₹) + GST/VAT + bank transfer fee + other charges ("Total charges").
+   Other shops keep Total + GST (ROS Selections' Total already includes its own charges). */
+const purchTotalCharges=(p,shopId)=>(Number(p.total)||0)+(Number(p.gst)||0)+(shopId==="ros-india"?(Number(p.transferCharges)||0)+(Number(p.otherCharges)||0):0);
 const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExport,onImport,onView,onEdit,onDelete,onSetDelivery,canSetStatus=false,setTab,setViewLogRow})=>{
   const [search,setSearch]=React.useState("");
   const [delivRow,setDelivRow]=React.useState(null);      // purchase whose delivery is being marked / changed
@@ -5672,7 +5676,7 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
   });
 
   const totalSpend=filtered.reduce((a,p)=>{
-    return a+(Number(p.total)||0)+(Number(p.gst)||0);
+    return a+purchTotalCharges(p,shopId);
   },0);
 
   const fmtD=d=>{if(!d)return"—";try{const p=d.split("-");return p.length===3?`${p[2]}/${p[1]}/${p[0].slice(2)}`:d;}catch{return d;}};
@@ -5737,11 +5741,11 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
         <table style={{width:"100%",borderCollapse:"collapse",fontSize:13}}>
           <thead>
             <tr>
-              {["PO ID","Date","Supplier","Item","Qty","Total","Pay By","Delivery","Docs","Shipments","Actions"].map(h=>(
+              {["PO ID","Date","Supplier","Item","Qty",shopId==="ros-india"?"Total Charges":"Total","Pay By","Delivery","Docs","Shipments","Actions"].map(h=>(
                 <th key={h} style={{padding:"10px 16px",fontSize:11,fontWeight:800,color:"#64748b",
                   textTransform:"uppercase",letterSpacing:"0.05em",background:"#f8fafc",
                   borderBottom:"1px solid #e2e8f0",whiteSpace:"nowrap",
-                  textAlign:(h==="Total"||h==="Qty")?"right":"left"}}>{h}</th>
+                  textAlign:(h==="Total"||h==="Total Charges"||h==="Qty")?"right":"left"}}>{h}</th>
               ))}
             </tr>
           </thead>
@@ -5754,7 +5758,7 @@ const PurchasesTabPanel=({purch=[],logs=[],shopId,shop,fmt,onNewPurchase,onExpor
             ):filtered.map((p,i)=>{
               const hasDocs=(p.documents||[]).length>0;
               const linkedShipments=shipmentsByPurch[p.id]||shipmentsByPurch[p.purchase_ref]||[];
-              const netTotal=(Number(p.total)||0)+(Number(p.gst)||0);
+              const netTotal=purchTotalCharges(p,shopId);
 
               return(
                 <tr key={p.uuid||p.id}
@@ -10539,11 +10543,15 @@ return(
                   {l:"Quantity",v:viewPurchRow.qty||"—"},
                   {l:"Amount",v:fmt(shopId,Number(viewPurchRow.total)||0)},
                   {l:"GST / VAT",v:fmt(shopId,Number(viewPurchRow.gst)||0)},
-                  {l:"Net Total",v:fmt(shopId,(Number(viewPurchRow.total)||0)+(Number(viewPurchRow.gst)||0))},
+                  ...(shopId==="ros-india"&&Array.isArray(viewPurchRow.lines)&&viewPurchRow.lines.length>1?[{l:"Items",full:true,v:<>{viewPurchRow.lines.map((l,i)=>(
+                    <span key={i} style={{display:"block",textTransform:"uppercase"}}>{l.item||"—"}{l.qty?" × "+l.qty:""}{" — "}{Number(l.usd)>0?"$"+Number(l.usd).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})+" / ":""}{fmt(shopId,Number(l.inr)||0)}</span>
+                  ))}</>}]:[]),
+                  {l:shopId==="ros-india"?"Total Charges":"Net Total",v:fmt(shopId,purchTotalCharges(viewPurchRow,shopId))},
                   ...(viewPurchRow.supplierInvDate?[{l:"Supplier Inv. Date",v:viewPurchRow.supplierInvDate}]:[]),
                   ...(shopId==="ros-india"?[
                     ...(Number(viewPurchRow.usdAmount)>0?[{l:"Amount ($)",v:"$"+Number(viewPurchRow.usdAmount).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}]:[]),
                     ...(Number(viewPurchRow.transferCharges)>0?[{l:"Bank Transfer Charges",v:fmt(shopId,Number(viewPurchRow.transferCharges)||0)}]:[]),
+                    ...(Number(viewPurchRow.otherCharges)>0?[{l:"Other Charges",v:fmt(shopId,Number(viewPurchRow.otherCharges)||0)}]:[]),
                   ]:[]),
                   ...(shopId!=="ros-india"&&(Number(viewPurchRow.transferCharges)>0||Number(viewPurchRow.otherCharges)>0)?[
                     {l:"Amount Paid",v:fmt(shopId,Number(viewPurchRow.amountPaid)||0)},
@@ -10571,9 +10579,9 @@ return(
               </div>
               {/* Net Total highlight */}
               <div style={{background:shop.accentBg,border:"1px solid "+shop.accent+"44",borderRadius:12,padding:"12px 16px",display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
-                <span style={{fontSize:13,fontWeight:700,color:shop.accentText}}>Net Total (incl. GST)</span>
+                <span style={{fontSize:13,fontWeight:700,color:shop.accentText}}>{shopId==="ros-india"?"Total Charges (incl. GST, bank fee & other charges)":"Net Total (incl. GST)"}</span>
                 <span style={{fontSize:20,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace"}}>
-                  {fmt(shopId,(Number(viewPurchRow.total)||0)+(Number(viewPurchRow.gst)||0))}
+                  {fmt(shopId,purchTotalCharges(viewPurchRow,shopId))}
                 </span>
               </div>
 
@@ -18457,7 +18465,12 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
   const isIN=shopId==="ros-india";
   const IN_BANKS=["South Indian Bank","Federal Bank"];
   const numStr=v=>(v===undefined||v===null||v===""||Number(v)===0)?"":String(v);
-  const [form,setForm]=useState(initialValues?{...initialValues,id:initialValues.id||autoId,purchaseId:initialValues.id||autoId,idEditing:false,usdAmount:numStr(initialValues.usdAmount),transferCharges:numStr(initialValues.transferCharges)}:{
+  // Notebook rows (ROS India): Item · Qty · Amount ($) · Amount (₹). Older purchases (single item) open as one row.
+  const mkLine=(o={})=>({id:Math.random().toString(36).slice(2),item:"",qty:"",usd:"",inr:"",...o});
+  const initLines=iv=>Array.isArray(iv.lines)&&iv.lines.length
+    ?iv.lines.map(l=>mkLine({item:l.item||"",qty:numStr(l.qty),usd:numStr(l.usd),inr:numStr(l.inr)}))
+    :[mkLine({item:iv.item==="__custom__"?(iv.itemCustom||""):(iv.item||""),qty:numStr(iv.qty),usd:numStr(iv.usdAmount),inr:numStr(iv.total)})];
+  const [form,setForm]=useState(initialValues?{...initialValues,id:initialValues.id||autoId,purchaseId:initialValues.id||autoId,idEditing:false,usdAmount:numStr(initialValues.usdAmount),transferCharges:numStr(initialValues.transferCharges),otherCharges:numStr(initialValues.otherCharges),...(isIN?{gst:numStr(initialValues.gst)}:{}),lines:initLines(initialValues)}:{
     id:          autoId,
     purchaseId:  autoId,
     idEditing:   false,
@@ -18472,6 +18485,8 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
     gst:         "",
     usdAmount:   "",
     transferCharges:"",
+    otherCharges:"",
+    lines:       [mkLine()],
     payBy:       shopId==="ros-india"?"South Indian Bank":"HDFC SURESH",
     payDate:     new Date().toISOString().slice(0,10),
     logisticBy:  "",
@@ -18490,6 +18505,19 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
     const t=parseFloat(form.total);
     if(q>0&&t>0) return (t/q).toFixed(2);
     return "";
+  })();
+
+  // ROS India notebook: row editing + totals (items ₹ + GST/VAT + bank transfer fee + other charges = total charges)
+  const setLine=(id,k,v)=>setForm(f=>({...f,lines:f.lines.map(l=>l.id===id?{...l,[k]:v}:l)}));
+  const addLine=()=>setForm(f=>({...f,lines:[...f.lines,mkLine()]}));
+  const removeLine=id=>setForm(f=>f.lines.length<2?f:{...f,lines:f.lines.filter(l=>l.id!==id)});
+  const r2n=n=>parseFloat(Number(n).toFixed(2));
+  const nbCalc=(()=>{
+    const ls=form.lines||[];
+    const qty=r2n(ls.reduce((a,l)=>a+(parseFloat(l.qty)||0),0));
+    const usd=r2n(ls.reduce((a,l)=>a+(parseFloat(l.usd)||0),0));
+    const inr=r2n(ls.reduce((a,l)=>a+(parseFloat(l.inr)||0),0));
+    return {qty,usd,inr,total:r2n(inr+(parseFloat(form.gst)||0)+(parseFloat(form.transferCharges)||0)+(parseFloat(form.otherCharges)||0))};
   })();
 
   const [supplierList,setSupplierList]=useState([...SUPPLIERS]);
@@ -18602,6 +18630,12 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
 
       {/* ITEM */}
       <Divider title="Item / Product"/>
+      {isIN?(
+        <PurchaseNotebook shop={shop} lines={form.lines} calc={nbCalc}
+          gst={form.gst} fee={form.transferCharges} other={form.otherCharges} productNames={PRODUCTS.map(p=>p.name)}
+          onLine={setLine} onAdd={addLine} onRemove={removeLine}
+          onGst={v=>set("gst",v)} onFee={v=>set("transferCharges",v)} onOther={v=>set("otherCharges",v)}/>
+      ):(<>
       {/* Item name — full width */}
       <div style={{marginBottom:12}}>
         <label style={lbl}>Item</label>
@@ -18634,26 +18668,12 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
           <input readOnly value={(parseFloat(form.total)||0)+(parseFloat(form.gst)||0)>0?((parseFloat(form.total)||0)+(parseFloat(form.gst)||0)).toFixed(2):""} placeholder="Auto" style={inpGray}/>
         </div>
       </div>
-      {/* Row 2: ROS India only — amount paid in dollars + bank transfer charges */}
-      {isIN&&(
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}}>
-          <div>
-            <label style={lbl}>Amount ($) <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0,color:"#94a3b8"}}>in dollars</span></label>
-            <input type="number" onWheel={e=>e.target.blur()} min="0" value={form.usdAmount}
-              onChange={e=>set("usdAmount",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
-          </div>
-          <div>
-            <label style={lbl}>Bank Transfer Charges ({shop.symbol})</label>
-            <input type="number" onWheel={e=>e.target.blur()} min="0" value={form.transferCharges}
-              onChange={e=>set("transferCharges",e.target.value)} placeholder="0.00" style={inp} onFocus={fo} onBlur={bl}/>
-          </div>
-        </div>
-      )}
       {/* Row 3: Unit Cost auto */}
       <div style={{marginBottom:16}}>
         <label style={{...lbl,color:"#94a3b8"}}>Unit Cost ({shop.symbol}) <span style={{fontSize:10,fontWeight:500,textTransform:"none",letterSpacing:0}}>— auto calculated</span></label>
         <input readOnly value={unitCost} placeholder="Enter quantity and amount above" style={inpGray}/>
       </div>
+      </>)}
 
       {/* PAYMENT */}
       <Divider title="Payment"/>
@@ -18716,8 +18736,9 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
         <button disabled={saving} onClick={()=>{
           setSaveErr("");
           if(!form.supplier){setSaveErr("Please select a supplier.");return;}
-          if(!(form.item||form.itemCustom)){setSaveErr("Please select or enter an item.");return;}
-          if(!form.total){setSaveErr("Please enter the amount.");return;}
+          const _nbLines=isIN?(form.lines||[]).filter(l=>String(l.item||"").trim()||parseFloat(l.qty)>0||parseFloat(l.usd)>0||parseFloat(l.inr)>0):[];
+          if(isIN?!_nbLines.some(l=>String(l.item||"").trim()):!(form.item||form.itemCustom)){setSaveErr("Please select or enter an item.");return;}
+          if(isIN?!(nbCalc.inr>0):!form.total){setSaveErr("Please enter the amount.");return;}
           if(form.date&&form.date>localTodayISO()){setSaveErr("Purchase date can't be in the future.");return;}
           setSaving(true);
           const payload={
@@ -18727,12 +18748,12 @@ const NewPurchaseForm=({shopId,shop,onSave,onClose,lastPurchNum,isStaff=false,in
             supplier: form.supplier,
             invoiceNo: form.invoiceNo,
             batch: form.batch,
-            item: form.item==="__custom__"?form.itemCustom:form.item,
-            itemCustom: form.itemCustom,
-            qty: form.qty,
-            total: form.total,
+            item: isIN?_nbLines.map(l=>String(l.item||"").trim()).filter(Boolean).join(", "):(form.item==="__custom__"?form.itemCustom:form.item),
+            itemCustom: isIN?"":form.itemCustom,
+            qty: isIN?(nbCalc.qty>0?String(nbCalc.qty):""):form.qty,
+            total: isIN?String(nbCalc.inr):form.total,
             gst: form.gst,
-            ...(isIN?{usdAmount:form.usdAmount,transferCharges:form.transferCharges}:{}),
+            ...(isIN?{usdAmount:String(nbCalc.usd),transferCharges:form.transferCharges,otherCharges:form.otherCharges,lines:_nbLines.map(l=>({item:String(l.item||"").trim(),qty:l.qty,usd:l.usd,inr:l.inr}))}:{}),
             payBy: form.payBy,
             payDate: form.payDate,
             logisticBy: form.logisticBy,

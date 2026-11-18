@@ -290,9 +290,11 @@ export const dbSavePurchase = async (shopId, p) => {
   } : null;
 
   // ROS India's purchase form also sends the dollar amount and bank transfer charges (columns: purchases_india_foreign.sql).
-  const extraIN = (p.usdAmount !== undefined) ? {
+  const extraIN = (p.usdAmount !== undefined || Array.isArray(p.lines)) ? {
     usd_amount:       Number(p.usdAmount) || 0,
     transfer_charges: Number(p.transferCharges) || 0,
+    other_charges:    Number(p.otherCharges) || 0,
+    lines:            Array.isArray(p.lines) ? p.lines : null,
   } : null;
 
   const write = async (pl) => {
@@ -309,7 +311,7 @@ export const dbSavePurchase = async (shopId, p) => {
   if (res.error && extraIN && !extra) {
     console.warn('⚠️ Purchase save with $ / transfer-charge columns failed, retrying without them:', res.error.message);
     res = await write(payload);
-    if (!res.error) warning = 'The purchase was saved, but the dollar amount and bank transfer charges were NOT stored — the database needs purchases_india_foreign.sql run once in Supabase.';
+    if (!res.error) warning = 'The purchase was saved, but the item lines, dollar amount, bank transfer fee and other charges were NOT stored — the database needs purchases_india_foreign.sql run once in Supabase.';
   } else if (res.error && extra) {
     // The new columns haven't been added yet: save the core purchase (Total already includes the charges)
     // rather than losing it, and tell the user what is missing.
@@ -354,6 +356,7 @@ export const dbLoadPurchases = async (shopId) => {
     transferCharges: Number(r.transfer_charges) || 0,
     otherCharges:    Number(r.other_charges) || 0,
     inrEquivalent:   Number(r.inr_equivalent) || 0,
+    lines:           Array.isArray(r.lines) ? r.lines : undefined,
     usdAmount:       r.usd_amount === null || r.usd_amount === undefined ? undefined : Number(r.usd_amount),
     documents:    Array.isArray(r.documents) ? r.documents : [],
   }));
