@@ -56,3 +56,21 @@ This is why we strongly recommend checking the address label carefully **before 
 
 `;
 export const addressCheckSection = (shopId) => (normShop(shopId) === "ros-india" ? "" : ADDRESS_CHECK);
+
+/* Sits right under the tracking details in the "ready to despatch" message (all shops) so the customer sees the
+   inspect-on-arrival / 2-day return notice at the top, before the long policy text. Replaces the old single
+   "keep an eye on the tracking updates" line. No separator — the one after the tracking block follows it. */
+export const inspectionNoticeSection = () => `We kindly recommend monitoring the tracking updates until your parcel has been successfully delivered.
+
+*⚠️ IMPORTANT – UPON RECEIPT OF YOUR PARCEL*
+
+We kindly request that you inspect your item carefully upon arrival, checking the following:
+
+• Size and fitting
+• Colour and overall appearance
+• Fabric quality and condition
+• Any damage, defects or discrepancies
+
+If you wish to return the item for any reason, please inform us **within 2 days** of receiving your parcel so that we can advise you on the next steps.
+
+Your prompt inspection and notification will help us ensure that any concerns are addressed efficiently.`;

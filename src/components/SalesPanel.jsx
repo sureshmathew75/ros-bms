@@ -4,7 +4,7 @@ import { showAlert, showConfirm } from "./PopupHost";
 import { dbLoadDispatchLog, dbSaveDispatchEntry } from "../db";
 import { BankBadge, BankIcon, BankMenu } from "./BankLogos";
 import { shortfallForSales, shortfallMessage, listPriceOf, listPriceAmounts } from "../priceList";
-import { returnPolicySection, addressCheckSection } from "../despatchMessage";
+import { returnPolicySection, addressCheckSection, inspectionNoticeSection } from "../despatchMessage";
 /* ─────────────────────────────────────────────────────────────────────────
    SALES PANEL
    Period definitions:
@@ -894,7 +894,7 @@ ${trackLine}
 
 Your parcel is expected to arrive within **1–3 working days**.
 
-We kindly recommend keeping an eye on the tracking updates until your parcel has been successfully delivered.
+${inspectionNoticeSection()}
 
 ━━━━━━━━━━━━━━━━━━
 

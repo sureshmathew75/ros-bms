@@ -3,7 +3,7 @@ import { dbSaveDispatchEntry, dbLoadDispatchLog, dbDeleteDispatchEntry } from ".
 import { showAlert, showConfirm } from "./PopupHost";
 import AddressEntryModal from "./AddressEntryModal";
 import { shortfallForSales, shortfallMessage } from "../priceList";
-import { returnPolicySection, addressCheckSection } from "../despatchMessage";
+import { returnPolicySection, addressCheckSection, inspectionNoticeSection } from "../despatchMessage";
 
 /* ─────────────────────────────────────────────────────────────────────────
    DISPATCH PANEL  (all three shops — daily despatch log)
@@ -157,7 +157,7 @@ ${trackLine}
 
 Your parcel is expected to arrive within **1–3 working days**.
 
-We kindly recommend keeping an eye on the tracking updates until your parcel has been successfully delivered.
+${inspectionNoticeSection()}
 
 ━━━━━━━━━━━━━━━━━━
 
