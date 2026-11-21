@@ -157,7 +157,7 @@ ${trackLine}
 
 Your parcel is expected to arrive within **1–3 working days**.
 
-${inspectionNoticeSection()}
+${inspectionNoticeSection(shop?.id)}
 
 ━━━━━━━━━━━━━━━━━━
 

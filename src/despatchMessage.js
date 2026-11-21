@@ -18,9 +18,9 @@ const POLICIES = {
 
   "ros-hairlines": `${COMMON_TOP("**+44 77 47 814 888** / **+91 889 1757 889**")}
 • All other returns are refundable after deducting a service charge, based on the item value:
-   – Under £100: **£5** deduction
-   – £100 to £200: **£10** deduction
-   – Over £200: **£20** deduction
+   – Under £100: five pound deduction
+   – £100 to £200: ten pound deduction
+   – Over £200: twenty pound deduction
 • If you prefer an **exchange**, no deductions will be made and we will credit your account with the original item cost towards the exchange item. The customer bears the **shipping cost of the exchanged item**.`,
 
   "ros-india": `${COMMON_TOP("**+91 889 1757 889** (or call **+91 77 47 814 888**)")}
@@ -35,9 +35,12 @@ const POLICIES = {
 /* The whole section, including the separator line that follows it. Returns "" for an unknown shop. */
 const normShop = (id) => (String(id || "").startsWith("ros-india") ? "ros-india" : id);   // staff see India as "ros-india-staff"
 
+// ROS Hairlines' approved wording has no blank line between the last bullet and the separator.
+const POLICY_GAP = { "ros-hairlines": "\n" };
 export const returnPolicySection = (shopId) => {
-  const body = POLICIES[normShop(shopId)];
-  return body ? `${body}\n\n${RULE}\n\n` : "";
+  const key = normShop(shopId);
+  const body = POLICIES[key];
+  return body ? `${body}${POLICY_GAP[key] || "\n\n"}${RULE}\n\n` : "";
 };
 
 /* "Please check your delivery address" section (text + the separator line after it).
@@ -59,7 +62,17 @@ export const addressCheckSection = (shopId) => (normShop(shopId) === "ros-india"
 /* Sits right under the tracking details in the "ready to despatch" message (all shops) so the customer sees the
    inspect-on-arrival / 2-day notification notice near the top, before the long policy text. Starts with the
    "monitor the tracking" line and ends with the closing sentence; the separator after the tracking block follows it. */
-export const inspectionNoticeSection = () => `We kindly recommend monitoring the tracking updates until your parcel has been successfully delivered.
+const INSPECT_LIST = {
+  default: `• Size and fitting
+• Colour and overall appearance
+• Fabric quality and condition
+• Any damage, defects or discrepancies`,
+  "ros-hairlines": `• Size and fitting
+• Colour and overall appearance
+• Quality and condition
+• Any damage or defects`,
+};
+export const inspectionNoticeSection = (shopId) => `We kindly recommend monitoring the tracking updates until your parcel has been successfully delivered.
 
 ${RULE}
 
@@ -67,10 +80,7 @@ ${RULE}
 
 We kindly request that you inspect your item carefully upon arrival, checking the following:
 
-• Size and fitting
-• Colour and overall appearance
-• Fabric quality and condition
-• Any damage, defects or discrepancies
+${INSPECT_LIST[normShop(shopId)] || INSPECT_LIST.default}
 
 *⚠️ Please note* that it is essential to notify us **within 2 days** of receiving your parcel if you have any concerns or wish to initiate a return. This 2-day notification period is very important, and requests received after this period may not be accepted, even though returns policy allows you 14 days from the date of delivery to return the item.
 
