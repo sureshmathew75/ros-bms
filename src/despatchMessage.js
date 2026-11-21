@@ -16,12 +16,20 @@ const POLICIES = {
 • All other returns are refundable after deducting a small charge of **£2.99**, as we deliver the item free of charge.
 • If you prefer an **exchange**, no deductions will be made and we will deliver the exchange item **free of charge** too. Exchange items are not returnable.`,
 
-  "ros-hairlines": `${COMMON_TOP("**+44 77 47 814 888** / **+91 889 1757 889**")}
-• All other returns are refundable after deducting a service charge, based on the item value:
-   – Under £100: five pound deduction
-   – £100 to £200: ten pound deduction
-   – Over £200: twenty pound deduction
-• If you prefer an **exchange**, no deductions will be made and we will credit your account with the original item cost towards the exchange item. The customer bears the **shipping cost of the exchanged item**.`,
+  // ROS Hairlines has its own approved returns wording (plain lines, no bullets) — it does not use COMMON_TOP.
+  "ros-hairlines": `*↩️ RETURNS & EXCHANGES*
+Please inform us within 2 days of receiving your parcel if you wish to return the item. Requests made after this period may be difficult to approve.
+All return requests must be submitted via our official WhatsApp numbers: +44 77 47 814 888 / +91 889 1757 889. Requests made through any other channel may not be accepted.
+Return shipping costs and any associated charges are the responsibility of the buyer.
+Original shipping charges are non-refundable, regardless of the reason for return, except where otherwise required by applicable law.
+You are eligible for a full refund of the item cost if the item arrives damaged or an incorrect item has been sent.
+For all other returns, a service charge will be deducted from the original item cost before the refund is processed, as follows:
+Item value under £100: Five pound deduction.
+Item value between £100 and £200: Ten pound deduction.
+Item value over £200: Twenty pound deduction.
+
+Exchanges: If you prefer an exchange, no service charge will be deducted. The full original item cost will be credited towards your exchange item. However, the customer is responsible for the shipping cost of the exchanged item.
+Thank you for your understanding and cooperation.`,
 
   "ros-india": `${COMMON_TOP("**+91 889 1757 889** (or call **+91 77 47 814 888**)")}
 • All other returns are refundable after deducting a service charge, based on the item value:
@@ -35,12 +43,9 @@ const POLICIES = {
 /* The whole section, including the separator line that follows it. Returns "" for an unknown shop. */
 const normShop = (id) => (String(id || "").startsWith("ros-india") ? "ros-india" : id);   // staff see India as "ros-india-staff"
 
-// ROS Hairlines' approved wording has no blank line between the last bullet and the separator.
-const POLICY_GAP = { "ros-hairlines": "\n" };
 export const returnPolicySection = (shopId) => {
-  const key = normShop(shopId);
-  const body = POLICIES[key];
-  return body ? `${body}${POLICY_GAP[key] || "\n\n"}${RULE}\n\n` : "";
+  const body = POLICIES[normShop(shopId)];
+  return body ? `${body}\n\n${RULE}\n\n` : "";
 };
 
 /* "Please check your delivery address" section (text + the separator line after it).
