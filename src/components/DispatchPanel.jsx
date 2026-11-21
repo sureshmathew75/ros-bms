@@ -3,7 +3,7 @@ import { dbSaveDispatchEntry, dbLoadDispatchLog, dbDeleteDispatchEntry } from ".
 import { showAlert, showConfirm } from "./PopupHost";
 import AddressEntryModal from "./AddressEntryModal";
 import { shortfallForSales, shortfallMessage } from "../priceList";
-import { returnPolicySection, addressCheckSection, inspectionNoticeSection } from "../despatchMessage";
+import { returnPolicySection, addressCheckSection, inspectionNoticeSection, arrivalLine } from "../despatchMessage";
 
 /* ─────────────────────────────────────────────────────────────────────────
    DISPATCH PANEL  (all three shops — daily despatch log)
@@ -132,7 +132,7 @@ const trackClick = (entry, url) => {
 
 /* Mirrors buildTrackingMsg() in SalesPanel.jsx — same customer-facing
    wording, adapted to read from a dispatch-log entry instead of a sale. */
-const buildDispatchTrackingMsg = (entry, shop) => {
+const buildDispatchTrackingMsg = (entry, shop, address = "") => {
   const url = trackingURL(entry.shipper, entry.trackingNo);
   const shipperName = (entry.shipper || "our courier").toUpperCase();
   const isDtdc = (entry.shipper || "").toUpperCase() === "DTDC";
@@ -155,7 +155,7 @@ Your order is now **ready to despatch!** 📦💜
 
 ${trackLine}
 
-Your parcel is expected to arrive within **1–3 working days**.
+${arrivalLine(shop?.id, address)}
 
 ${inspectionNoticeSection(shop?.id)}
 
@@ -1650,7 +1650,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   const notify = (entry) => {
     const phone = livePhoneFor(entry).replace(/[^0-9]/g, "");
     if (!phone) { showAlert("No phone number on this row."); return; }
-    const message = buildDispatchTrackingMsg(entry, shop);
+    const message = buildDispatchTrackingMsg(entry, shop, liveAddressFor(entry));
     setWaModal({
       phone, customerName: entry.customer, message,
       onSent: () => {

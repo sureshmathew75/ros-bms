@@ -4,7 +4,7 @@ import { showAlert, showConfirm } from "./PopupHost";
 import { dbLoadDispatchLog, dbSaveDispatchEntry } from "../db";
 import { BankBadge, BankIcon, BankMenu } from "./BankLogos";
 import { shortfallForSales, shortfallMessage, listPriceOf, listPriceAmounts } from "../priceList";
-import { returnPolicySection, addressCheckSection, inspectionNoticeSection } from "../despatchMessage";
+import { returnPolicySection, addressCheckSection, inspectionNoticeSection, arrivalLine } from "../despatchMessage";
 /* ─────────────────────────────────────────────────────────────────────────
    SALES PANEL
    Period definitions:
@@ -892,7 +892,7 @@ Your order is now **ready to despatch!** 📦💜
 
 ${trackLine}
 
-Your parcel is expected to arrive within **1–3 working days**.
+${arrivalLine(shop?.id, sale.address)}
 
 ${inspectionNoticeSection(shop?.id)}
 

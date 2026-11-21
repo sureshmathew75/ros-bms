@@ -37,6 +37,7 @@ Thank you for your understanding and cooperation.`,
    – ₹10,000 to ₹20,000: **₹500** deduction
    – ₹20,000 to ₹30,000: **₹1,000** deduction
    – Over ₹30,000: **₹1,500** deduction
+
 • If you prefer an **exchange**, no deductions will be made and we will credit your account with the original item cost towards the exchange item.`,
 };
 
@@ -76,6 +77,10 @@ const INSPECT_LIST = {
 • Colour and overall appearance
 • Quality and condition
 • Any damage or defects`,
+  "ros-india": `• Size and fitting
+• Colour and overall appearance
+• Quality and condition
+• Any damage, defects or discrepancies`,
 };
 export const inspectionNoticeSection = (shopId) => `We kindly recommend monitoring the tracking updates until your parcel has been successfully delivered.
 
@@ -92,3 +97,11 @@ ${INSPECT_LIST[normShop(shopId)] || INSPECT_LIST.default}
 We therefore strongly recommend inspecting your item upon arrival and notifying us promptly if you have any concerns or wish to arrange a return.
 
 Your prompt inspection and notification will help us ensure that any concerns are addressed efficiently.`;
+
+/* "Your parcel is expected to arrive within …" line. ROS India parcels going to Kerala (the address says Kerala, or the
+   6-digit PIN is in the Kerala range 670xxx–695xxx) take 1–2 working days; every other destination keeps 1–3. */
+const inKerala = (address) => /kerala/i.test(String(address || "")) || /\b(6[78]\d|69[0-5])\d{3}\b/.test(String(address || ""));
+export const arrivalLine = (shopId, address) =>
+  normShop(shopId) === "ros-india" && inKerala(address)
+    ? "Your parcel is expected to arrive within **1–2 working days** in Kerala."
+    : "Your parcel is expected to arrive within **1–3 working days**.";
