@@ -74,3 +74,9 @@ We kindly request that you inspect your item carefully upon arrival, checking th
 If you wish to return the item for any reason, please inform us **within 2 days** of receiving your parcel so that we can advise you on the next steps.
 
 Your prompt inspection and notification will help us ensure that any concerns are addressed efficiently.`;
+
+/* Top of the "ready to despatch" message (all shops), straight after the greeting: the 2-day notification rule,
+   so it is the first thing the customer reads before the long tracking / policy text. */
+export const twoDayNoticeSection = () => `*⚠️ Please note* that it is essential to notify us **within 2 days** of receiving your parcel if you have any concerns or wish to initiate a return. This 2-day notification period is very important, and requests received after this period may not be accepted, even though our standard returns policy allows you 14 days from the date of delivery to return the item.
+
+We therefore strongly recommend inspecting your item upon arrival and notifying us promptly if you have any concerns or wish to arrange a return.`;

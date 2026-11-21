@@ -3,7 +3,7 @@ import { dbSaveDispatchEntry, dbLoadDispatchLog, dbDeleteDispatchEntry } from ".
 import { showAlert, showConfirm } from "./PopupHost";
 import AddressEntryModal from "./AddressEntryModal";
 import { shortfallForSales, shortfallMessage } from "../priceList";
-import { returnPolicySection, addressCheckSection, inspectionNoticeSection } from "../despatchMessage";
+import { returnPolicySection, addressCheckSection, inspectionNoticeSection, twoDayNoticeSection } from "../despatchMessage";
 
 /* ─────────────────────────────────────────────────────────────────────────
    DISPATCH PANEL  (all three shops — daily despatch log)
@@ -145,6 +145,8 @@ const buildDispatchTrackingMsg = (entry, shop) => {
   return `Dear *${(entry.customer || "Customer").toUpperCase()}*,
 
 Your order is now **ready to despatch!** 📦💜
+
+${twoDayNoticeSection()}
 
 ━━━━━━━━━━━━━━━━━━
 

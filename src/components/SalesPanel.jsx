@@ -4,7 +4,7 @@ import { showAlert, showConfirm } from "./PopupHost";
 import { dbLoadDispatchLog, dbSaveDispatchEntry } from "../db";
 import { BankBadge, BankIcon, BankMenu } from "./BankLogos";
 import { shortfallForSales, shortfallMessage, listPriceOf, listPriceAmounts } from "../priceList";
-import { returnPolicySection, addressCheckSection, inspectionNoticeSection } from "../despatchMessage";
+import { returnPolicySection, addressCheckSection, inspectionNoticeSection, twoDayNoticeSection } from "../despatchMessage";
 /* ─────────────────────────────────────────────────────────────────────────
    SALES PANEL
    Period definitions:
@@ -882,6 +882,8 @@ export default function SalesPanel({
     return `Dear *${(sale.customer||"Customer").toUpperCase()}*,
 
 Your order is now **ready to despatch!** 📦💜
+
+${twoDayNoticeSection()}
 
 ━━━━━━━━━━━━━━━━━━
 
