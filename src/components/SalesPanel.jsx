@@ -4,7 +4,7 @@ import { showAlert, showConfirm } from "./PopupHost";
 import { dbLoadDispatchLog, dbSaveDispatchEntry } from "../db";
 import { BankBadge, BankIcon, BankMenu } from "./BankLogos";
 import { shortfallForSales, shortfallMessage, listPriceOf, listPriceAmounts } from "../priceList";
-import { returnPolicySection, addressCheckSection, inspectionNoticeSection, twoDayNoticeSection } from "../despatchMessage";
+import { returnPolicySection, addressCheckSection, inspectionNoticeSection } from "../despatchMessage";
 /* ─────────────────────────────────────────────────────────────────────────
    SALES PANEL
    Period definitions:
@@ -883,8 +883,6 @@ export default function SalesPanel({
 
 Your order is now **ready to despatch!** 📦💜
 
-${twoDayNoticeSection()}
-
 ━━━━━━━━━━━━━━━━━━
 
 *📦 DELIVERY & TRACKING*
@@ -902,13 +900,10 @@ ${inspectionNoticeSection()}
 
 ${addressCheckSection(shop?.id)}*🚚 YOUR DELIVERY*
 
-Once your parcel has been dispatched, it is our responsibility to ensure that it is handed over to the carrier correctly and sent securely to your delivery address.
-
-However, we kindly ask you to **monitor the tracking regularly** and let us know immediately if you notice anything unusual, such as:
+Kindly ask you to **monitor the tracking regularly** and let us know immediately if you notice anything unusual, such as:
 
 • An unexpected delivery delay
 • An incorrect or unusual tracking update
-• A delivery attempt you were not expecting
 • Any other issue with the movement of your parcel
 
 Early notification allows us to contact the carrier promptly and take the necessary steps to assist you.
@@ -924,25 +919,6 @@ This is extremely important because reporting the issue promptly gives us the be
 If you notify us **on the same day that the parcel is marked as delivered**, we will take full responsibility for raising the matter with the carrier and will do everything reasonably possible to resolve it.
 
 If the issue is reported later, it may become more difficult for us to investigate or recover the parcel. Any loss arising from a delayed notification may therefore become the responsibility of the recipient, particularly where the carrier's investigation or recovery options have become limited.
-
-━━━━━━━━━━━━━━━━━━
-
-*🔍 PLEASE CHECK YOUR ORDER PROMPTLY*
-
-When your parcel arrives, please check the contents as soon as possible.
-
-If you receive:
-
-• A damaged item
-• An incorrect item
-• A missing item
-• Or there is any other genuine concern with your order
-
-please contact us via **WhatsApp within 2 days of delivery**.
-
-We will always do our best to review genuine concerns promptly and find a fair solution.
-
-Please note that concerns reported after this notification period may be more difficult to investigate and, where applicable, return or handling charges may apply in accordance with our return policy.
 
 ━━━━━━━━━━━━━━━━━━
 
@@ -988,7 +964,6 @@ Our aim is to make sure your parcel reaches you **safely and securely**. Your co
 Thank you for your trust and continued support.
 
 We hope you enjoy your purchase! 💜
-
 *${signOff}*`;
   };
 

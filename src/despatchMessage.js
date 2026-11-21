@@ -44,11 +44,10 @@ export const returnPolicySection = (shopId) => {
    Left out for ROS India — pass any other shop id to get it. */
 const ADDRESS_CHECK = `*🔎 IMPORTANT — PLEASE CHECK YOUR DELIVERY ADDRESS*
 
-**Before every dispatch, we provide the recipient with the tracking details and a photo of the address label attached to the parcel.**
-
 Please **carefully check the address shown on the label** and contact us as soon as possible if you notice any incorrect or missing information.
 
-⚠️ **Once the address details have been checked and confirmed, any subsequent delivery issue resulting from incorrect or incomplete information in the confirmed address will be the responsibility of the recipient.**
+Delivery issue resulting from incorrect or incomplete information in the confirmed address will be the responsibility of the recipient.
+
 
 This is why we strongly recommend checking the address label carefully **before or immediately after dispatch notification**, so that any genuine error can be brought to our attention at the earliest opportunity.
 
@@ -58,9 +57,11 @@ This is why we strongly recommend checking the address label carefully **before 
 export const addressCheckSection = (shopId) => (normShop(shopId) === "ros-india" ? "" : ADDRESS_CHECK);
 
 /* Sits right under the tracking details in the "ready to despatch" message (all shops) so the customer sees the
-   inspect-on-arrival / 2-day return notice at the top, before the long policy text. Replaces the old single
-   "keep an eye on the tracking updates" line. No separator — the one after the tracking block follows it. */
+   inspect-on-arrival / 2-day notification notice near the top, before the long policy text. Starts with the
+   "monitor the tracking" line and ends with the closing sentence; the separator after the tracking block follows it. */
 export const inspectionNoticeSection = () => `We kindly recommend monitoring the tracking updates until your parcel has been successfully delivered.
+
+${RULE}
 
 *⚠️ IMPORTANT – UPON RECEIPT OF YOUR PARCEL*
 
@@ -71,12 +72,8 @@ We kindly request that you inspect your item carefully upon arrival, checking th
 • Fabric quality and condition
 • Any damage, defects or discrepancies
 
-If you wish to return the item for any reason, please inform us **within 2 days** of receiving your parcel so that we can advise you on the next steps.
+*⚠️ Please note* that it is essential to notify us **within 2 days** of receiving your parcel if you have any concerns or wish to initiate a return. This 2-day notification period is very important, and requests received after this period may not be accepted, even though returns policy allows you 14 days from the date of delivery to return the item.
+
+We therefore strongly recommend inspecting your item upon arrival and notifying us promptly if you have any concerns or wish to arrange a return.
 
 Your prompt inspection and notification will help us ensure that any concerns are addressed efficiently.`;
-
-/* Top of the "ready to despatch" message (all shops), straight after the greeting: the 2-day notification rule,
-   so it is the first thing the customer reads before the long tracking / policy text. */
-export const twoDayNoticeSection = () => `*⚠️ Please note* that it is essential to notify us **within 2 days** of receiving your parcel if you have any concerns or wish to initiate a return. This 2-day notification period is very important, and requests received after this period may not be accepted, even though our standard returns policy allows you 14 days from the date of delivery to return the item.
-
-We therefore strongly recommend inspecting your item upon arrival and notifying us promptly if you have any concerns or wish to arrange a return.`;
