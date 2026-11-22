@@ -1347,6 +1347,30 @@ We hope you enjoy your purchase! 💜
     sortedSales.forEach(x => { c[kindOf(x)]++; });
     return c;
   }, [sortedSales, instalmentGroups]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Horizontal scrollbar that stays at the bottom of the screen: a mirror bar that sticks to the bottom edge and scrolls the table
+  // (otherwise the table's own bar is only reachable after scrolling right to the end of a long list).
+  const tblWrapRef = useRef(null);
+  const tblBarRef = useRef(null);
+  const tblBarInnerRef = useRef(null);
+  useEff(() => {
+    const w = tblWrapRef.current, b = tblBarRef.current, inner = tblBarInnerRef.current;
+    if (!w || !b || !inner) return undefined;
+    const tbl = w.querySelector("table");
+    const sync = () => {
+      inner.style.width = w.scrollWidth + "px";
+      b.style.display = w.scrollWidth > w.clientWidth + 1 ? "block" : "none";
+      if (b.scrollLeft !== w.scrollLeft) b.scrollLeft = w.scrollLeft;
+    };
+    const onW = () => { if (b.scrollLeft !== w.scrollLeft) b.scrollLeft = w.scrollLeft; };
+    const onB = () => { if (w.scrollLeft !== b.scrollLeft) w.scrollLeft = b.scrollLeft; };
+    w.addEventListener("scroll", onW, { passive: true });
+    b.addEventListener("scroll", onB, { passive: true });
+    let ro = null;
+    if (typeof ResizeObserver !== "undefined") { ro = new ResizeObserver(sync); ro.observe(w); if (tbl) ro.observe(tbl); }
+    window.addEventListener("resize", sync);
+    sync();
+    return () => { w.removeEventListener("scroll", onW); b.removeEventListener("scroll", onB); window.removeEventListener("resize", sync); if (ro) ro.disconnect(); };
+  }, []);
   const awaitDetailsCount = useMemo(() => sortedSales.filter(isAwaitingDetails).length, [sortedSales]);
   const kindSales = useMemo(
     () => (awaitFilter ? sortedSales.filter(isAwaitingDetails) : (kindFilter === "ALL" ? sortedSales : sortedSales.filter(x => kindOf(x) === kindFilter))),
@@ -2129,8 +2153,9 @@ We hope you enjoy your purchase! 💜
         background: "white", borderRadius: 16, border: "1px solid #f1f5f9",
         overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.04)",
       }}>
-        <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div ref={tblWrapRef} className="ros-tbl-wrap" style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
           <style>{`
+            .ros-tbl-wrap::-webkit-scrollbar { display: none; }
             .ros-sales-row td {
               background: var(--row-bg, ${CREAM_ROW_BG});
               /* A crisp 1px hairline (0-blur shadow, not a real border — so it
@@ -2467,9 +2492,12 @@ We hope you enjoy your purchase! 💜
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ fontWeight: 700, fontSize: 13, color: "#0f172a", textTransform: "uppercase" }}>{s.customer}</div>
                       {isAwaitingDetails(s) && (
-                        <div style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 800, padding: "2px 9px", borderRadius: 999, background: "#f5f3ff", color: "#6d28d9", border: "1px solid #c4b5fd", whiteSpace: "nowrap", marginTop: s.customer ? 3 : 0 }}>
-                          💳 Awaiting details
-                        </div>
+                        <button
+                          onClick={e => { e.stopPropagation(); setEditRow(s); setModal("complete-sale"); }}
+                          title="This bank payment is waiting for the customer and items — click to add them"
+                          style={{ display: "inline-flex", alignItems: "center", gap: 5, height: 28, padding: "0 12px", borderRadius: 8, border: "none", background: "#8b5cf6", color: "white", cursor: "pointer", fontSize: 11.5, fontWeight: 800, fontFamily: "inherit", whiteSpace: "nowrap", marginTop: s.customer ? 4 : 0, boxShadow: "0 2px 6px #8b5cf655" }}>
+                          ➕ Add details
+                        </button>
                       )}
                       {s.phone && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>{s.phone}</div>}
                       {s.paidBy && String(s.paidBy).trim() !== "" && (
@@ -3206,14 +3234,6 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                     {/* Actions */}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
-                        {isAwaitingDetails(s) && (
-                          <button
-                            onClick={e => { e.stopPropagation(); setEditRow(s); setModal("complete-sale"); }}
-                            title="Add the customer and items for this bank payment"
-                            style={{ height: 30, padding: "0 10px", borderRadius: 8, border: "none", background: "#8b5cf6", color: "white", cursor: "pointer", fontSize: 11.5, fontWeight: 800, fontFamily: "inherit", whiteSpace: "nowrap" }}>
-                            ➕ Add details
-                          </button>
-                        )}
                         <button
                           onClick={e => { e.stopPropagation(); setInvoiceRow(s); }}
                           title="View Invoice"
@@ -3262,6 +3282,13 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
 
           </div>
         )}
+      </div>
+
+      {/* Left/right scroll bar that stays at the bottom of the screen while the table is in view */}
+      <div ref={tblBarRef} title="Scroll the table left / right"
+        style={{ position: "sticky", bottom: 0, zIndex: 30, overflowX: "scroll", overflowY: "hidden", height: 18, marginTop: 4, display: "none",
+          background: "rgba(255,255,255,0.96)", borderRadius: 9, border: "1px solid #e2e8f0", boxShadow: "0 -2px 10px rgba(15,23,42,0.08)" }}>
+        <div ref={tblBarInnerRef} style={{ height: 1 }} />
       </div>
 
       {/* Guide for new staff: what the card colours mean */}
