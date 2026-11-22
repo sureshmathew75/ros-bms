@@ -439,6 +439,13 @@ const WaModal = ({ data, onClose }) => {
 /* Base row tone — warm cream instead of flat white, used for any status
    not called out below (and as the default fallback). */
 const CREAM_ROW_BG = "#fdfbf3";
+/* Card-edge colour = this row's own payment type. */
+const PAY_KIND = {
+  FULL:    { color: "#16a34a", label: "Full" },
+  ADVANCE: { color: "#2563eb", label: "First" },
+  PART:    { color: "#f97316", label: "Part" },
+  FINAL:   { color: "#ec4899", label: "Final" },
+};
 /* Fulfilled uses a sage/desaturated green — deliberately a different green
    family from the vivid Shopify payment-channel badge (#059669/#d1fae5),
    so "fulfilled" and "paid via Shopify" read as distinct signals even
@@ -503,6 +510,8 @@ export default function SalesPanel({
 }) {
   const [showCleanup, setShowCleanup] = useState(false);
   const [hovR,    setHovR]    = useState(null);
+  const [hovKey,  setHovKey]  = useState(null);      // instalment-group key of the hovered row (lights up the whole deal)
+  const [kindFilter, setKindFilter] = useState("ALL"); // legend filter: ALL | FULL | ADVANCE | PART | FINAL
   // Manually marking a sale Fulfilled straight from Pending is now an
   // admin-only override (normal despatches auto-fulfil from the Despatch
   // Log once tracking + shipper are entered) — reserved for edge cases
@@ -1116,18 +1125,6 @@ We hope you enjoy your purchase! 💜
     return null;
   };
 
-  /* A group's colour follows whichever tagged role appears first within
-     it (advance leads, then part, then final), so every row in the deal —
-     tagged or not — shares one consistent colour. */
-  const groupColor = (group) => {
-    const order = ["advance","part","final"];
-    for (const want of order) {
-      const hit = (group||[]).find(x => instalmentTagType(x) === want);
-      if (hit) return want === "advance" ? "#f59e0b" : want === "part" ? "#7c3aed" : "#059669";
-    }
-    return "#0891b2";
-  };
-
   /* Outstanding balance for an instalment group, based on the Expected
      Total set on its Advance sale. Returns null if no Expected Total is
      set (nothing to check against). */
@@ -1321,9 +1318,19 @@ We hope you enjoy your purchase! 💜
   // Only show month separator when viewing year, lifetime, or FY (not day/week/single month)
   const showFYSep   = effectivePeriod === "year" || effectivePeriod === "lifetime";
   const showMonSep  = showFYSep; // month separators only useful alongside FY view
+  const kindOf = (sale) => { const t = inferPaymentType(sale); return PAY_KIND[t] ? t : "FULL"; };
+  const kindCounts = useMemo(() => {
+    const c = { FULL: 0, ADVANCE: 0, PART: 0, FINAL: 0 };
+    sortedSales.forEach(x => { c[kindOf(x)]++; });
+    return c;
+  }, [sortedSales]); // eslint-disable-line react-hooks/exhaustive-deps
+  const kindSales = useMemo(
+    () => (kindFilter === "ALL" ? sortedSales : sortedSales.filter(x => kindOf(x) === kindFilter)),
+    [sortedSales, kindFilter] // eslint-disable-line react-hooks/exhaustive-deps
+  );
   const rowsWithSeparators = useMemo(
-    () => buildRowsWithSeparators(sortedSales, showFYSep, showMonSep),
-    [sortedSales, showFYSep, showMonSep]
+    () => buildRowsWithSeparators(kindSales, showFYSep, showMonSep),
+    [kindSales, showFYSep, showMonSep]
   );
 
   /* ── FY sale counter: "MAY 01/031" (monthly/yearly, resets 1 April) ──
@@ -2059,6 +2066,27 @@ We hope you enjoy your purchase! 💜
         </div>
       )}
 
+      {/* Colour legend — also filters the table by payment type */}
+      <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginBottom: 10 }}>
+        <span style={{ fontSize: 10, fontWeight: 800, color: "#94a3b8", textTransform: "uppercase", letterSpacing: "0.07em", marginRight: 2 }}>Card colour</span>
+        {[["ALL", "All", "#64748b"], ...Object.entries(PAY_KIND).map(([k, v]) => [k, v.label === "First" ? "First (Advance)" : v.label, v.color])].map(([k, label, col]) => {
+          const on = kindFilter === k;
+          const n = k === "ALL" ? sortedSales.length : kindCounts[k];
+          return (
+            <button key={k} onClick={() => setKindFilter(on && k !== "ALL" ? "ALL" : k)}
+              title={k === "ALL" ? "Show every payment type" : "Show only " + label + " rows (click again for all)"}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 11px", borderRadius: 999, fontSize: 11, fontWeight: 700,
+                cursor: "pointer", fontFamily: "inherit",
+                border: "1px solid " + (on ? col : "#e2e8f0"), background: on ? col : "white", color: on ? "white" : "#475569",
+              }}>
+              {k !== "ALL" && <span style={{ width: 9, height: 9, borderRadius: "50%", background: on ? "white" : col, flexShrink: 0 }} />}
+              {label} <span style={{ opacity: on ? 0.85 : 0.55, fontWeight: 600 }}>{n}</span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* ══════════════════════════════════════════════════════════
           SALES TABLE
          ══════════════════════════════════════════════════════════ */}
@@ -2080,6 +2108,13 @@ We hope you enjoy your purchase! 💜
             .ros-sales-row:hover td {
               box-shadow: 0 0 0 1px rgba(15,23,42,0.12), 0 10px 22px rgba(15,23,42,0.16), 0 3px 6px rgba(15,23,42,0.09);
               transform: translateY(-2px);
+            }
+            /* Progress edge: the coloured part of the edge shows how much of the deal's expected total was paid up to this payment */
+            .ros-sales-row td:first-child { position: relative; }
+            .ros-sales-row td:first-child::before {
+              content: ""; position: absolute; left: -5px; bottom: 0; width: 5px;
+              height: var(--row-prog, 0%); background: var(--row-prog-color, transparent);
+              border-bottom-left-radius: 10px; pointer-events: none;
             }
             .ros-sales-row td:first-child {
               border-top-left-radius: 10px;
@@ -2250,7 +2285,10 @@ We hope you enjoy your purchase! 💜
                 const instType  = instalmentTagType(s); // this row's own tag, if any (for the small type badge)
                 const isInstalment = !!instKey; // true if this row is part of a recognised deal, tagged or not
                 // Colour is shared across the whole group, not just this row's own tag
-                const instColor = isInstalment ? groupColor(instGroup) : "transparent";
+                // Card edge / badges use THIS row's own payment-type colour (Full green · First blue · Part orange · Final pink)
+                const rowKind   = kindOf(s);
+                const kindColor = PAY_KIND[rowKind].color;
+                const instColor = isInstalment ? kindColor : "transparent";
                 const instBg    = isInstalment ? instColor + "0d" : "transparent";
                 // Show instalment summary row only on the advance sale
                 const showInstalmentSummary = instType === "advance" && instGroup.length >= 1;
@@ -2277,10 +2315,19 @@ We hope you enjoy your purchase! 💜
                    don't render reliably on table rows — only on <td>. The
                    .ros-sales-row stylesheet below reads these vars on each
                    cell instead. */
+                // Same deal as the hovered row → soft ring in that row's colour
+                const isDealMate = !!hovKey && !!instKey && instKey === hovKey && !isH;
                 const cardShadow = isDragOver
                   ? `0 0 0 2px ${accent}, 0 4px 10px rgba(15,23,42,0.12)`
-                  : null;
-                const cardLeftBorder = s.flagged ? "3px solid #dc2626" : (isInstalment ? `5px solid ${instColor}` : null);
+                  : (isDealMate ? `0 0 0 2px ${kindColor}77, 0 6px 14px ${kindColor}33` : null);
+                // Progress edge: paid so far (in date order, up to and including this payment) ÷ the deal's expected total
+                const dealOrdered = isInstalment ? [...instGroup].sort((a,b) => (a.date||"").localeCompare(b.date||"") || tagPriority(a) - tagPriority(b) || String(a.invoiceNo||a.id||"").localeCompare(String(b.invoiceNo||b.id||""))) : [];
+                const dealIdx = dealOrdered.findIndex(x => x.id === s.id);
+                const dealPaidTo = dealIdx >= 0 ? dealOrdered.slice(0, dealIdx + 1).reduce((a,x) => a + (Number(x.amount)||0), 0) : 0;
+                const edgePct = (isInstalment && rowKind !== "FULL" && expectedTotal > 0 && dealIdx >= 0)
+                  ? Math.max(4, Math.min(100, Math.round(dealPaidTo / expectedTotal * 100))) : 100;
+                const partNo = rowKind === "PART" ? dealOrdered.filter(x => kindOf(x) === "PART").findIndex(x => x.id === s.id) + 1 : 0;
+                const cardLeftBorder = s.flagged ? "3px solid #dc2626" : `5px solid ${edgePct < 100 ? kindColor + "38" : kindColor}`;
 
                 return (
                   <tr key={s.id}
@@ -2292,14 +2339,15 @@ We hope you enjoy your purchase! 💜
                     onDrop={(e) => { if (!reorderEnabled) return; e.preventDefault(); handleReorderDrop(s.id); }}
                     onDragEnd={() => { setDragId(null); setDragOverId(null); }}
                     onClick={() => setSelRow(s)}
-                    onMouseEnter={() => setHovR(s.id)}
-                    onMouseLeave={() => setHovR(null)}
+                    onMouseEnter={() => { setHovR(s.id); setHovKey(instKey || null); }}
+                    onMouseLeave={() => { setHovR(null); setHovKey(null); }}
                     style={{
                       cursor: reorderEnabled ? "grab" : "pointer",
                       opacity: isDragging ? 0.4 : 1,
                       "--row-bg": rowBg,
                       ...(cardShadow ? { "--row-shadow": cardShadow } : {}),
                       ...(cardLeftBorder ? { "--row-left-border": cardLeftBorder } : {}),
+                      ...(!s.flagged && edgePct < 100 ? { "--row-prog": edgePct + "%", "--row-prog-color": kindColor } : {}),
                     }}>
                     {/* Invoice */}
                     {showCol("Invoice") && (
@@ -2357,14 +2405,15 @@ We hope you enjoy your purchase! 💜
                       })()}
                       {(() => {
                         const pt = inferPaymentType(s);
-                        const badgeColor = pt === "ADVANCE" ? "#f59e0b" : pt === "PART" ? "#7c3aed" : pt === "FINAL" ? "#2563eb" : "#059669";
-                        const badgeLabel = pt === "ADVANCE" ? "💰 Advance" : pt === "PART" ? "🔄 Part" : pt === "FINAL" ? "🏁 Final" : "✅ Full";
+                        // Same colour as the card edge: Full green · First (Advance) blue · Part orange · Final pink
+                        const badgeColor = kindColor;
+                        const badgeLabel = pt === "ADVANCE" ? "💰 1st · Advance" : pt === "PART" ? "🔄 Part" + (partNo > 0 ? " " + partNo : "") : pt === "FINAL" ? "🏁 Final" : "✅ Full";
                         return (
                           <div style={{ marginTop: 2 }}>
                             <span style={{
                               fontSize: 9, fontWeight: 800, padding: "1px 6px", borderRadius: 999,
                               background: badgeColor + "20", color: badgeColor,
-                              border: `1px solid ${badgeColor}44`, textTransform: "uppercase", letterSpacing: "0.05em"
+                              border: `1px solid ${badgeColor}44`, textTransform: "uppercase", letterSpacing: "0.05em", whiteSpace: "nowrap"
                             }}>
                               {badgeLabel}
                             </span>
