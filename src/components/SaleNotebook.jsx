@@ -36,7 +36,11 @@ export default function SaleNotebook({
   shopId, shop, lines, rowAmts, recvAmts, showHint, rosieRefs, topSlot,
   onName, onPick, onQty, onPrice, onRecv, onFillRecv, onRemove, onAdd,
   calc, other, discount, onOther, onDiscount, taxRate, onTax, lockPrice,
+  strictList, onChangeItem,
 }) {
+  // "Change item" on a saved line: pick another list item; only the name changes, the price / qty / amount paid stay.
+  const [changing, setChanging] = React.useState(null);
+  const [changeText, setChangeText] = React.useState("");
   const accent = shop.accent, sym = shop.symbol;
   const cols = "minmax(0,1fr) 46px 84px 92px 22px";
   const field = (extra) => ({
@@ -82,11 +86,26 @@ export default function SaleNotebook({
         const short = recvAmts[idx] > 0 && recvAmts[idx] + 0.5 < rowAmts[idx];
         // Price-list items: the price is guidance only — staff can't change it (they enter what was received instead).
         const locked = !!lockPrice && isPriceShop(shopId) && priceFor(matchEntry(line.name), shopId) != null;
+        const saved = !!line._saved && !!onChangeItem;                       // a line that already exists on the saved sale
+        const nameLocked = saved && !!lockPrice;                              // staff change a saved item only through "Change item"
+        const nameEdited = !saved || line.name !== line._origName;
+        const notOnList = !!strictList && String(line.name || "").trim() && !matchEntry(line.name) && nameEdited;
         return (
           <div key={line.id} style={{ display: "grid", gridTemplateColumns: cols, gap: 4, alignItems: "center", borderBottom: "1px solid " + RULE, padding: "1px 0" }}>
-            <ItemSuggestInput inputRef={(el) => { if (idx === 0) rosieRefs.current.item = el; }} value={line.name} shopId={shopId}
-              onChange={(v) => onName(line.id, v)} onPick={(en) => onPick(line.id, en)} placeholder={"Item " + (idx + 1)}
-              style={field({ fontWeight: 700 })} onFocus={fo} onBlur={bl} />
+            <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: 0 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                {nameLocked
+                  ? <div title="Use ⇄ to change the item" style={field({ fontWeight: 700, cursor: "default", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" })}>{line.name || "—"}</div>
+                  : <ItemSuggestInput inputRef={(el) => { if (idx === 0) rosieRefs.current.item = el; }} value={line.name} shopId={shopId}
+                      onChange={(v) => onName(line.id, v)} onPick={(en) => onPick(line.id, en)} placeholder={"Item " + (idx + 1)}
+                      style={field({ fontWeight: 700 })} onFocus={fo} onBlur={bl} />}
+              </div>
+              {saved && (
+                <button type="button" onClick={() => { setChangeText(""); setChanging(changing === line.id ? null : line.id); }}
+                  title="Change item — the amount paid stays as it is"
+                  style={{ flexShrink: 0, width: 24, height: 24, borderRadius: 6, border: "1px solid " + (changing === line.id ? accent : "#cbd5e1"), background: changing === line.id ? accent : "white", color: changing === line.id ? "white" : "#64748b", cursor: "pointer", fontSize: 12, lineHeight: 1, padding: 0, fontFamily: "inherit" }}>⇄</button>
+              )}
+            </div>
             <input type="number" onWheel={(e) => e.target.blur()} value={line.qty} onChange={(e) => onQty(line.id, e.target.value)}
               style={field({ textAlign: "center", fontFamily: MONO })} onFocus={fo} onBlur={bl} />
             <input ref={(el) => { if (idx === 0) rosieRefs.current.price = el; }} type="number" onWheel={(e) => e.target.blur()} value={line.price}
@@ -102,6 +121,23 @@ export default function SaleNotebook({
             <button type="button" onClick={() => onRemove(line.id)} title="Remove item"
               style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: "#cbd5e1", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 0 }}
               onMouseEnter={(e) => (e.currentTarget.style.color = "#dc2626")} onMouseLeave={(e) => (e.currentTarget.style.color = "#cbd5e1")}>×</button>
+            {changing === line.id && (
+              <div style={{ gridColumn: "1 / -1", display: "flex", alignItems: "center", gap: 8, background: "#eff6ff", border: "1px solid #bfdbfe", borderRadius: 8, padding: "6px 8px", marginBottom: 3 }}>
+                <span style={{ fontSize: 11, fontWeight: 800, color: "#1d4ed8", whiteSpace: "nowrap" }}>Change to</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <ItemSuggestInput value={changeText} shopId={shopId} onChange={setChangeText}
+                    onPick={(en) => { onChangeItem(line.id, en); setChanging(null); setChangeText(""); }}
+                    placeholder="Search the price list…" style={field({ background: "white", border: "1px solid #cbd5e1", borderRadius: 6 })} onFocus={fo} onBlur={bl} />
+                </div>
+                <span style={{ fontSize: 10.5, color: "#64748b" }}>amount paid stays</span>
+              </div>
+            )}
+            {line.changedFrom && (
+              <div style={{ gridColumn: "1 / -1", fontSize: 10.5, fontWeight: 700, color: "#1d4ed8", background: "#eff6ff", borderRadius: 6, padding: "2px 8px", marginBottom: 2 }}>
+                ⇄ Changed from {line.changedFrom} · amount paid kept
+              </div>
+            )}
+            {notOnList && <div style={{ gridColumn: "1 / -1", fontSize: 11, fontWeight: 700, color: "#b91c1c", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 7, padding: "3px 8px", marginBottom: 2 }}>⚠ Not on the price list — please pick the item from the suggestions.</div>}
             {showHint && <div style={{ gridColumn: "1 / -1" }}><PriceHint shopId={shopId} name={line.name} price={line.price} /></div>}
           </div>
         );

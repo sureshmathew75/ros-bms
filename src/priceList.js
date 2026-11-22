@@ -256,3 +256,48 @@ export const shortfallMessage = (shopId, sf, customer) => {
     "Short by: " + m(sf.short) + "\n\n" +
     "Dispatch anyway?";
 };
+
+/* ── Exchange after despatch (ROS India) ──────────────────────────────────────────────────────────────────
+   The customer returned an item and we send a different list item instead. Returns what to save on the sale:
+   • the item name changes (the old name is kept on the line as `changedFrom`) — the amount paid is NOT touched;
+   • if the new item is dearer, the sale becomes an Advance: amount paid stays, expectedTotal = what the sale should
+     now come to, so the balance shows as awaited until a Part / Final payment is entered;
+   • a "Price note —" remark records it (this also keeps the dispatch short-payment check quiet).
+   `lineIdx` = which sale line is being exchanged (0 for single-item sales). Pure — nothing is saved here. */
+export const exchangeSaleUpdate = (sale, lineIdx, entry, shopId, opts = {}) => {
+  const newUnit = priceFor(entry, shopId);
+  if (!sale || !entry || newUnit == null) return null;
+  const today = opts.today || new Date().toISOString().slice(0, 10);
+  const allowAdvance = opts.allowAdvance !== false;
+  const qtyN = (q) => (q === undefined || q === null || q === "" ? 1 : (parseFloat(q) || 0));
+  const lines = Array.isArray(sale.saleLines) && sale.saleLines.length > 0 ? sale.saleLines : null;
+  const paid = Number(sale.amount) || 0;
+  let oldName, qty, linePaid, outLines = null, itemText;
+  if (lines) {
+    const i = Math.min(Math.max(lineIdx || 0, 0), lines.length - 1);
+    const l = lines[i];
+    oldName = l.name; qty = qtyN(l.qty); linePaid = qty * (parseFloat(l.price) || 0);
+    outLines = lines.map((x, j) => j !== i ? x : { ...x, name: entry.label, changedFrom: x.changedFrom || x.name, changedOn: today, exchangedOn: today });
+    itemText = outLines.map(x => `${x.name}(x${qtyN(x.qty)})`).join(", ");
+  } else {
+    oldName = String(sale.item || "").replace(/\s*\(x\d+\)\s*$/i, ""); qty = qtyN(sale.qty); linePaid = paid; itemText = entry.label;
+  }
+  const newLineTotal = Math.round(newUnit * qty * 100) / 100;
+  const expected = Math.round((paid - linePaid + newLineTotal) * 100) / 100;   // what the sale should now come to
+  const extra = Math.round((expected - paid) * 100) / 100;                      // > 0 → customer still owes this
+  const m = (n) => priceSymbol(shopId) + Number(n).toLocaleString(shopId === "ros-india" ? "en-IN" : "en-GB");
+  const advance = allowAdvance && extra > 0.5;
+  let note = `Price note — exchange: ${oldName} → ${entry.label} (amount paid ${m(paid)} kept`;
+  const updates = { item: itemText };
+  if (outLines) updates.saleLines = outLines;
+  if (advance) {
+    note += `; new item ${m(newLineTotal)} — balance ${m(extra)} awaited, expected total ${m(expected)}`;
+    updates.paymentType = "ADVANCE";
+    updates.expectedTotal = String(expected);
+    const tags = String(sale.tag || "").split(",").map(t => t.trim()).filter(t => t && !["Advance Sale", "Part Payment", "Final Payment Sale"].includes(t));
+    updates.tag = [...tags, "Advance Sale"].join(", ");
+  }
+  note += ")";
+  updates.rem = [sale.rem || sale.remarks, note].filter(x => x && String(x).trim()).join(" | ");
+  return { updates, oldName, newName: entry.label, paid, newLineTotal, expected, extra, advance, note };
+};
