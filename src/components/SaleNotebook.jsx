@@ -1,5 +1,6 @@
 import React from "react";
 import { ItemSuggestInput, PriceHint } from "./PriceListPanel";
+import { showAlert } from "./PopupHost";
 import { UK_DELIVERY, UK_DELIVERY_LOW, ukDeliveryFor, isPriceShop, matchEntry, priceFor } from "../priceList";
 
 /* ── "Notebook" style items + totals block for the New Sale form (ROS India / ROS Hairlines UK) ──
@@ -108,7 +109,10 @@ export default function SaleNotebook({
                       onBlur={(e) => {
                         bl(e);
                         const typed = String(line.name || "").trim();
-                        if (needsPick && typed) { setRejected((r) => ({ ...r, [line.id]: typed })); onName(line.id, ""); }
+                        if (needsPick && typed) {
+                          setRejected((r) => ({ ...r, [line.id]: typed })); onName(line.id, "");
+                          showAlert("⚠️ “" + typed + "” is NOT on the price list.\n\nYou can only sell items from the price list. Please type a few letters and PICK the item from the list that appears.\n\nIf this is a special / custom item, please ask an admin to add it.");
+                        }
                       }} />}
               </div>
               {saved && (
