@@ -94,31 +94,31 @@ export const ItemSuggestInput = ({ value, onChange, onPick, shopId, placeholder,
           boxShadow: "0 24px 60px rgba(15,23,42,0.35), 0 4px 14px rgba(15,23,42,0.18)", display: "flex", flexDirection: "column", maxHeight: pos.maxH,
         }}>
           <div style={{ padding: "9px 14px", background: "#f1f5f9", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
-            <span style={{ fontSize: 13 }}>🔎</span>
-            <span style={{ fontSize: 12.5, fontWeight: 800, color: "#0f172a" }}>Pick the item</span>
-            <span style={{ fontSize: 11.5, color: "#64748b" }}>· {list.length} match{list.length === 1 ? "" : "es"}{String(value || "").trim() ? <> for “<b style={{ color: "#0f172a" }}>{String(value).trim()}</b>”</> : ""}</span>
-            <span style={{ marginLeft: "auto", fontSize: 10.5, color: "#94a3b8", whiteSpace: "nowrap" }}>Price list {PRICE_LIST_EFFECTIVE}</span>
+            <span style={{ fontSize: 12 }}>🔎</span>
+            <span style={{ fontSize: 11.5, fontWeight: 800, color: "#0f172a" }}>Pick the item</span>
+            <span style={{ fontSize: 10.5, color: "#64748b" }}>· {list.length} match{list.length === 1 ? "" : "es"}{String(value || "").trim() ? <> for “<b style={{ color: "#0f172a" }}>{String(value).trim()}</b>”</> : ""}</span>
+            <span style={{ marginLeft: "auto", fontSize: 9.5, color: "#94a3b8", whiteSpace: "nowrap" }}>Price list {PRICE_LIST_EFFECTIVE}</span>
           </div>
           <div ref={scrollRef} style={{ overflowY: "auto", overscrollBehavior: "contain", flex: 1, minHeight: 0 }}>
           {list.map((e, i) => (
             <div key={e.id} onMouseDown={(ev) => { ev.preventDefault(); pick(e); }} onMouseEnter={() => setHi(i)}
               style={{
-                display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, padding: "11px 14px 11px 12px", cursor: "pointer",
+                display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, padding: "8px 12px 8px 10px", cursor: "pointer",
                 background: i === hi ? "#eff6ff" : "white", borderLeft: "4px solid " + (i === hi ? "#2563eb" : "transparent"),
                 borderBottom: i < list.length - 1 ? "1px solid #f1f5f9" : "none",
               }}>
               <span style={{ minWidth: 0 }}>
-                <span style={{ display: "block", fontSize: 14.5, fontWeight: 700, color: "#0f172a", lineHeight: 1.3 }}>{hilite(e.label, value)}</span>
+                <span style={{ display: "block", fontSize: 13, fontWeight: 700, color: "#0f172a", lineHeight: 1.3 }}>{hilite(e.label, value)}</span>
                 <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 3 }}>
-                  {e.group && <span style={{ fontSize: 10, fontWeight: 800, color: "#475569", background: "#e2e8f0", borderRadius: 999, padding: "1px 8px", textTransform: "uppercase", letterSpacing: "0.04em" }}>{e.group}</span>}
-                  {e.spec && <span style={{ fontSize: 12, color: "#64748b", lineHeight: 1.35 }}>{e.spec}</span>}
+                  {e.group && <span style={{ fontSize: 9, fontWeight: 800, color: "#475569", background: "#e2e8f0", borderRadius: 999, padding: "1px 8px", textTransform: "uppercase", letterSpacing: "0.04em" }}>{e.group}</span>}
+                  {e.spec && <span style={{ fontSize: 11, color: "#64748b", lineHeight: 1.35 }}>{e.spec}</span>}
                 </span>
               </span>
-              <span style={{ fontSize: 16, fontWeight: 900, color: "#166534", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 9, padding: "5px 11px", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money(shopId, priceFor(e, shopId))}</span>
+              <span style={{ fontSize: 14, fontWeight: 900, color: "#166534", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 9, padding: "4px 9px", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money(shopId, priceFor(e, shopId))}</span>
             </div>
           ))}
           </div>
-          <div style={{ padding: "7px 14px", fontSize: 11, color: "#64748b", background: "#f8fafc", borderTop: "1px solid #e2e8f0", flexShrink: 0 }}>↑ ↓ to move · <b>Enter</b> to pick · <b>Esc</b> to close · or just click an item</div>
+          <div style={{ padding: "6px 14px", fontSize: 10, color: "#64748b", background: "#f8fafc", borderTop: "1px solid #e2e8f0", flexShrink: 0 }}>↑ ↓ to move · <b>Enter</b> to pick · <b>Esc</b> to close · or just click an item</div>
         </div>,
         document.body
       )}
