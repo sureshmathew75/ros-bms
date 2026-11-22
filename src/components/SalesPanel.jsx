@@ -463,6 +463,19 @@ const STATUS_ROW_BG = {
 /* ═══════════════════════════════════════════════════════════════════════════
    COMPONENT
    ═══════════════════════════════════════════════════════════════════════════ */
+/* Discount noted in a sale's remarks: "− ₹500 discount" (payment breakdown) or "Admin discount ₹136 to match price list". 0 if none. */
+const remarkDiscount = (sale) => {
+  const t = String(sale?.rem || "");
+  let best = 0;
+  const num = (x) => parseFloat(String(x).replace(/,/g, "")) || 0;
+  let m;
+  const r1 = /[−-]\s*[₹£$]?\s*([\d,]+(?:\.\d+)?)\s*discount/gi;
+  while ((m = r1.exec(t))) best = Math.max(best, num(m[1]));
+  const r2 = /admin discount\s*[₹£$]?\s*([\d,]+(?:\.\d+)?)/gi;
+  while ((m = r2.exec(t))) best = Math.max(best, num(m[1]));
+  return best;
+};
+
 /* Price-list price of a sale's items (ROS India / Hairlines UK), shown pale under the item name so it can be
    compared with the amount received. Items not on the list are left out ("+" marks that some are missing). */
 const listPriceNote = (sale, shop) => {
@@ -2593,6 +2606,38 @@ We hope you enjoy your purchase! 💜
                               );
                             }
 
+                            // Discount given on a fully paid sale / deal: what was typed as a discount, else noted in the remarks,
+                            // else the gap between the price-list price and what was actually paid.
+                            let discNode = null;
+                              const grpFull = isInstalment && isActuallyFullyPaid && isLatestInGroup;
+                              const singleFull = !isInstalment;
+                              if (grpFull || singleFull) {
+                                const members = isInstalment ? instGroup : [s];
+                                const fieldDisc = members.reduce((a, x) => a + (Number(x.discount) || 0), 0);
+                                const noteDisc = members.reduce((a, x) => Math.max(a, remarkDiscount(x)), 0);
+                                let gapDisc = 0, listTxt = "";
+                                const src = isInstalment ? (advanceSaleInGroup || s) : s;
+                                const lr = listPriceOf(src, shop?.id);
+                                if (lr && lr.hit === lr.count && !(Number(s.taxRate) > 0)) {
+                                  const paidItems = isInstalment ? totalPaid : (Number(s.amount) || 0) - (Number(s.otherCharges) || 0);
+                                  const listAll = lr.total + (isInstalment ? (lr.delivery || 0) : 0);
+                                  gapDisc = Math.round((listAll - paidItems) * 100) / 100;
+                                  listTxt = fmtVal(listAll) + " − " + fmtVal(paidItems);
+                                }
+                                const disc = fieldDisc > 0.5 ? fieldDisc : (noteDisc > 0.5 ? noteDisc : (gapDisc > 0.5 ? gapDisc : 0));
+                                if (disc > 0.5) {
+                                  discNode = (
+                                    <>
+                                      {singleFull && <div style={{marginTop:2,fontSize:10,fontWeight:800,color:"#059669",whiteSpace:"nowrap"}}>✅ Fully Paid</div>}
+                                      <div title={listTxt ? "Price list " + listTxt : "Discount given on this sale"}
+                                        style={{marginTop:2,fontSize:10,fontWeight:800,color:"#b45309",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:999,padding:"0 7px",whiteSpace:"nowrap"}}>
+                                        🏷 Discount {fmtVal(disc)}
+                                      </div>
+                                    </>
+                                  );
+                                }
+                              }
+
                             return (<>
                               {(() => {
                                 // ROS India: admin-verified sale → staff cannot change the amount
@@ -2611,6 +2656,7 @@ We hope you enjoy your purchase! 💜
                                 <div style={{ fontSize: 10, color: "#d97706", whiteSpace: "nowrap" }}>was {fmtVal(orig)}</div>
                               )}
                               {balanceBlock}
+                              {discNode}
                               {prevPays.length > 0 && (
                                 <div className="ros-prevpays" style={{ marginTop: 3, textAlign: "right", lineHeight: 1.35, opacity: 0.5, transition: "opacity .15s" }}
                                   onMouseEnter={e => (e.currentTarget.style.opacity = 1)} onMouseLeave={e => (e.currentTarget.style.opacity = 0.5)}
