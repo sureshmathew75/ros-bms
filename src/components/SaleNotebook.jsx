@@ -41,6 +41,8 @@ export default function SaleNotebook({
   // "Change item" on a saved line: pick another list item; only the name changes, the price / qty / amount paid stay.
   const [changing, setChanging] = React.useState(null);
   const [changeText, setChangeText] = React.useState("");
+  // Staff (strictList): a typed name that is not a price-list item is cleared when they leave the box; the rejected text is shown once.
+  const [rejected, setRejected] = React.useState({});
   const accent = shop.accent, sym = shop.symbol;
   const cols = "minmax(0,1fr) 46px 84px 92px 22px";
   const field = (extra) => ({
@@ -90,6 +92,9 @@ export default function SaleNotebook({
         const nameLocked = saved && !!lockPrice;                              // staff change a saved item only through "Change item"
         const nameEdited = !saved || line.name !== line._origName;
         const notOnList = !!strictList && String(line.name || "").trim() && !matchEntry(line.name) && nameEdited;
+        // Staff cannot enter a price or an amount until a price-list item has been picked on this (new / changed) line.
+        const needsPick = !!strictList && !saved && !matchEntry(line.name);
+        const rejectedText = rejected[line.id];
         return (
           <div key={line.id} style={{ display: "grid", gridTemplateColumns: cols, gap: 4, alignItems: "center", borderBottom: "1px solid " + RULE, padding: "1px 0" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 2, minWidth: 0 }}>
@@ -97,8 +102,14 @@ export default function SaleNotebook({
                 {nameLocked
                   ? <div title="Use ⇄ to change the item" style={field({ fontWeight: 700, cursor: "default", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" })}>{line.name || "—"}</div>
                   : <ItemSuggestInput inputRef={(el) => { if (idx === 0) rosieRefs.current.item = el; }} value={line.name} shopId={shopId}
-                      onChange={(v) => onName(line.id, v)} onPick={(en) => onPick(line.id, en)} placeholder={"Item " + (idx + 1)}
-                      style={field({ fontWeight: 700 })} onFocus={fo} onBlur={bl} />}
+                      onChange={(v) => { if (rejected[line.id]) setRejected((r) => ({ ...r, [line.id]: "" })); onName(line.id, v); }}
+                      onPick={(en) => { setRejected((r) => ({ ...r, [line.id]: "" })); onPick(line.id, en); }} placeholder={"Item " + (idx + 1)}
+                      style={field({ fontWeight: 700 })} onFocus={fo}
+                      onBlur={(e) => {
+                        bl(e);
+                        const typed = String(line.name || "").trim();
+                        if (needsPick && typed) { setRejected((r) => ({ ...r, [line.id]: typed })); onName(line.id, ""); }
+                      }} />}
               </div>
               {saved && (
                 <button type="button" onClick={() => { setChangeText(""); setChanging(changing === line.id ? null : line.id); }}
@@ -110,14 +121,15 @@ export default function SaleNotebook({
               style={field({ textAlign: "center", fontFamily: MONO })} onFocus={fo} onBlur={bl} />
             <input ref={(el) => { if (idx === 0) rosieRefs.current.price = el; }} type="number" onWheel={(e) => e.target.blur()} value={line.price}
               onChange={(e) => onPrice(line.id, e.target.value)} placeholder="0"
-              readOnly={locked} tabIndex={locked ? -1 : undefined}
-              title={locked ? "Price list price — cannot be changed. Enter what the customer paid in Received." : undefined}
-              style={field({ textAlign: "right", fontFamily: MONO, fontWeight: 700, ...(locked ? { color: "#64748b", cursor: "default", background: "#f1f5f9" } : null) })}
-              onFocus={locked ? undefined : fo} onBlur={locked ? undefined : bl} />
+              readOnly={locked || needsPick} tabIndex={(locked || needsPick) ? -1 : undefined}
+              title={needsPick ? "Pick an item from the price list first" : locked ? "Price list price — cannot be changed. Enter what the customer paid in Received." : undefined}
+              style={field({ textAlign: "right", fontFamily: MONO, fontWeight: 700, ...((locked || needsPick) ? { color: "#64748b", cursor: "default", background: "#f1f5f9" } : null) })}
+              onFocus={(locked || needsPick) ? undefined : fo} onBlur={(locked || needsPick) ? undefined : bl} />
             <input type="number" onWheel={(e) => e.target.blur()} value={line.recv === undefined ? "" : line.recv}
               onChange={(e) => onRecv(line.id, e.target.value)} placeholder=""
-              title="Type the amount actually received for this item"
-              style={field({ textAlign: "right", fontFamily: MONO, fontWeight: 800, color: short ? "#b45309" : INK, background: "#fffbea", borderBottom: "1.5px solid #e9d98a" })} onFocus={fo} onBlur={blR} />
+              readOnly={needsPick} tabIndex={needsPick ? -1 : undefined}
+              title={needsPick ? "Pick an item from the price list first" : "Type the amount actually received for this item"}
+              style={field({ textAlign: "right", fontFamily: MONO, fontWeight: 800, color: short ? "#b45309" : INK, background: needsPick ? "#f1f5f9" : "#fffbea", borderBottom: "1.5px solid " + (needsPick ? "transparent" : "#e9d98a"), ...(needsPick ? { cursor: "default" } : null) })} onFocus={needsPick ? undefined : fo} onBlur={needsPick ? undefined : blR} />
             <button type="button" onClick={() => onRemove(line.id)} title="Remove item"
               style={{ width: 22, height: 22, borderRadius: 6, border: "none", background: "transparent", color: "#cbd5e1", cursor: "pointer", fontSize: 16, lineHeight: 1, padding: 0 }}
               onMouseEnter={(e) => (e.currentTarget.style.color = "#dc2626")} onMouseLeave={(e) => (e.currentTarget.style.color = "#cbd5e1")}>×</button>
@@ -137,6 +149,7 @@ export default function SaleNotebook({
                 ⇄ Changed from {line.changedFrom} · amount paid kept
               </div>
             )}
+            {rejectedText && needsPick && <div style={{ gridColumn: "1 / -1", fontSize: 11, fontWeight: 700, color: "#b91c1c", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 7, padding: "3px 8px", marginBottom: 2 }}>⚠ “{rejectedText}” is not on the price list — please pick the item from the suggestions.</div>}
             {notOnList && <div style={{ gridColumn: "1 / -1", fontSize: 11, fontWeight: 700, color: "#b91c1c", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: 7, padding: "3px 8px", marginBottom: 2 }}>⚠ Not on the price list — please pick the item from the suggestions.</div>}
             {showHint && <div style={{ gridColumn: "1 / -1" }}><PriceHint shopId={shopId} name={line.name} price={line.price} /></div>}
           </div>

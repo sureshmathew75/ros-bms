@@ -87,7 +87,7 @@ export const ItemSuggestInput = ({ value, onChange, onPick, shopId, placeholder,
         }}
       />
       {show && pos && createPortal(
-        <div ref={panelRef} onClick={(e) => e.stopPropagation()} style={{
+        <div ref={panelRef} onClick={(e) => e.stopPropagation()} onMouseDown={(e) => e.preventDefault()} style={{
           position: "fixed", left: pos.left, width: pos.width, zIndex: 100000,
           ...(pos.above ? { bottom: pos.edge } : { top: pos.edge }),
           fontFamily: "Arial, Helvetica, sans-serif", background: "white", border: "1.5px solid #94a3b8", borderRadius: 14, overflow: "hidden",
