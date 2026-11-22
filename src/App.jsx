@@ -17549,7 +17549,15 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
     const _li=_fi.length?_fi[_fi.length-1]:-1;
     setEditLines(prev=>prev.map((l,i)=>{const v=_rowAmt(l)+(i===_li?(Number(sale.amount)||0)-_items:0);return {...l,recv:v?String(parseFloat(v.toFixed(2))):""};}));
   },[]); // eslint-disable-line react-hooks/exhaustive-deps
-  const setLineK=(k,patch)=>{setMoneyDirty(true);setEditLines(prev=>prev.map(l=>l._k===k?{...l,...patch}:l));};
+  // Changing the item, qty or price of a line that is already on the saved sale must NEVER change the amount the customer
+  // paid: the Received figures are frozen at what they are now (the sale then shows a balance / can be made an Advance).
+  const freezeRecv=(k)=>{
+    const ln=editLines.find(l=>l._k===k);
+    if(!recvAuto||!ln||!ln._saved) return;
+    setRecvAuto(false);
+    setEditLines(prev=>prev.map((l,i)=>({...l,recv:autoRecv(i)?String(autoRecv(i)):""})));
+  };
+  const setLineK=(k,patch)=>{if("name" in patch||"price" in patch||"qty" in patch) freezeRecv(k);setMoneyDirty(true);setEditLines(prev=>prev.map(l=>l._k===k?{...l,...patch}:l));};
   const addLine=()=>{setMoneyDirty(true);setEditLines(prev=>[...prev,{_k:_mkKey(),name:"",qty:1,price:"",recv:""}]);};
   const removeLine=(k)=>{setMoneyDirty(true);setEditLines(prev=>prev.length>1?prev.filter(l=>l._k!==k):prev);};
 
@@ -17830,8 +17838,8 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
           showHint={form.paymentType==="FULL"&&!(Number(form.taxRate)>0)} rosieRefs={rosieFieldRefs}
           lockPrice={isStaff}
           strictList={isStaff&&shopId==="ros-india"}
-          onChangeItem={isPriceShop(shopId)?((k,en)=>setEditLines(prev=>prev.map(l=>l._k!==k?l:{...l,name:en.label,changedFrom:l.changedFrom||l._origName||l.name,changedOn:localTodayISO(),_swap:true}))):undefined}
-          onName={(k,v)=>{const _en=(isStaff&&isPriceShop(shopId))?matchEntry(v):null;const _p=_en?priceFor(_en,shopId):null;if(_p!=null) setMoneyDirty(true);setEditLines(prev=>prev.map(l=>l._k!==k?l:(_p!=null?{...l,name:v,price:String(_p)}:{...l,name:v})));}}
+          onChangeItem={isPriceShop(shopId)?((k,en)=>{freezeRecv(k);setEditLines(prev=>prev.map(l=>l._k!==k?l:{...l,name:en.label,changedFrom:l.changedFrom||l._origName||l.name,changedOn:localTodayISO(),_swap:true}));}):undefined}
+          onName={(k,v)=>{const _en=(isStaff&&isPriceShop(shopId))?matchEntry(v):null;const _p=_en?priceFor(_en,shopId):null;if(_p!=null){freezeRecv(k);setMoneyDirty(true);}setEditLines(prev=>prev.map(l=>l._k!==k?l:(_p!=null?{...l,name:v,price:String(_p)}:{...l,name:v})));}}
           onPick={(k,en)=>setLineK(k,{name:en.label,price:String(priceFor(en,shopId))})}
           onQty={(k,v)=>setLineK(k,{qty:v})} onPrice={(k,v)=>setLineK(k,{price:v})}
           onRecv={(k,v)=>{
