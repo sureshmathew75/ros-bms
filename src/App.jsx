@@ -10,6 +10,8 @@ import ROS_INDIA_LOGO from "./ros-india-logo.png";   // registered-brand ROS IND
 import InvoicesPanel from "./components/InvoicesPanel";
 import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
+import Rosie, { rosieOutfitFor, OUTFITS, OUTFIT_LABELS } from "./components/Rosie";
+import { answerRosie, buildDayWrapUp, coachNotes, ROSIE_HINTS } from "./components/rosieBrain";
 import PriceListPanel, { ItemSuggestInput, PriceDiffModal, PriceHint, priceNoteText, FinalShortModal, PartPaidModal } from "./components/PriceListPanel";
 import SaleNotebook from "./components/SaleNotebook";
 import { isPriceShop, priceFor, matchEntry, priceMismatches, listTotalForLines, ukDeliveryFor, exchangeSaleUpdate, findListEntry, listPriceOf, listPriceOfLine, listPriceAmounts } from "./priceList";
@@ -11705,6 +11707,7 @@ return(
       )}
 
       <PetWidget
+        shopId={shopId}
         sales={sales}
         onOpenSales={()=>setTab("sales")}
         shopAccent={shop.accent}
@@ -16806,154 +16809,6 @@ const Auditor = ({ size = 64, mood = "neutral" }) => {
   );
 };
 
-const Rosie = ({ mood = "happy", size = 56, pose = "idle" }) => {
-  const skinColor    = "#ffdfc0";
-  const hairColor    = "#3b2a20";
-  const dressColor   = "#f472b6";
-  const dressShade   = "#ec4899";
-  const shirtColor   = "#ffffff";
-  const shoeColor    = "#f472b6";
-  const bowColor     = "#ec4899";
-  const cheekColor   = "#fecdd3";
-  const walking = pose === "walk";
-  const pointing = pose === "point";
-  const flying = pose === "fly";
-  const sitting = pose === "sit";
-  const lying = pose === "lie";
-  const crying = mood === "crying";
-  const sleepy = sitting || lying;
-  return (
-    <svg width={size} height={size * 1.5} viewBox="0 0 100 150" style={{
-      animation: (walking||flying||lying) ? "none" : "petBob 2.2s ease-in-out infinite",
-      overflow: "visible",
-      transform: lying ? "rotate(90deg)" : "none",
-      transformOrigin: "50px 90px",
-    }}>
-      <ellipse cx="50" cy="140" rx="18" ry="4" fill={(flying||lying) ? "transparent" : "#00000015"} />
-
-      {lying && (
-        <text x="78" y="20" fontSize="16" fill="#94a3b8" style={{ transform: "rotate(-90deg)", transformOrigin: "78px 20px" }}>Zzz</text>
-      )}
-
-      {/* Wings - only while flying (not part of her normal look) */}
-      {flying && (<>
-        <g style={{ transformOrigin: "24px 82px", animation: "petWingFlap 0.35s ease-in-out infinite" }}>
-          <ellipse cx="6" cy="78" rx="17" ry="10" fill="white" opacity="0.9" transform="rotate(-22 6 78)" />
-        </g>
-        <g style={{ transformOrigin: "76px 82px", animation: "petWingFlap 0.35s ease-in-out infinite reverse" }}>
-          <ellipse cx="94" cy="78" rx="17" ry="10" fill="white" opacity="0.9" transform="rotate(22 94 78)" />
-        </g>
-      </>)}
-
-      {/* Legs - white socks + pink sneakers. Bent when sitting. */}
-      <g style={{ transformOrigin: "42px 116px", animation: walking ? "petLegSwingL 0.45s ease-in-out infinite" : "none", opacity: flying?0.6:1 }}>
-        <line x1="42" y1="116" x2={sitting?30:(flying?43:40)} y2={sitting?122:(flying?130:130)} stroke={skinColor} strokeWidth="7" strokeLinecap="round" />
-        <line x1={sitting?30:(flying?43:40)} y1={sitting?116:(flying?122:122)} x2={sitting?30:(flying?43:40)} y2={sitting?126:(flying?132:132)} stroke="white" strokeWidth="8" strokeLinecap="round" />
-        <ellipse cx={sitting?28:(flying?44:41)} cy={sitting?128:(flying?134:135)} rx="7" ry="4" fill={shoeColor} />
-      </g>
-      <g style={{ transformOrigin: "58px 116px", animation: walking ? "petLegSwingR 0.45s ease-in-out infinite" : "none", opacity: flying?0.6:1 }}>
-        <line x1="58" y1="116" x2={sitting?70:(flying?57:60)} y2={sitting?122:(flying?130:130)} stroke={skinColor} strokeWidth="7" strokeLinecap="round" />
-        <line x1={sitting?70:(flying?57:60)} y1={sitting?116:(flying?122:122)} x2={sitting?70:(flying?57:60)} y2={sitting?126:(flying?132:132)} stroke="white" strokeWidth="8" strokeLinecap="round" />
-        <ellipse cx={sitting?72:(flying?56:59)} cy={sitting?128:(flying?134:135)} rx="7" ry="4" fill={shoeColor} />
-      </g>
-
-      {/* White t-shirt (shoulders peeking above dress) */}
-      <ellipse cx="50" cy="66" rx="22" ry="14" fill={shirtColor} />
-
-      {/* Pinafore dress - straight skirt with front pocket */}
-      <path d="M34 62 L66 62 L72 118 Q50 128 28 118 Z" fill={dressColor} />
-      <path d="M34 62 L66 62 L69 88 Q50 94 31 88 Z" fill={dressShade} opacity="0.4" />
-      {/* shoulder straps */}
-      <path d="M38 60 L42 76 L36 78 L33 61 Z" fill={dressColor} />
-      <path d="M62 60 L58 76 L64 78 L67 61 Z" fill={dressColor} />
-      {/* front pocket */}
-      <rect x="42" y="92" width="16" height="14" rx="2" fill={dressShade} opacity="0.55" />
-
-      {/* Arms - short white sleeve peeking, skin below */}
-      {!flying && (
-      <g style={{ transformOrigin: "32px 68px", animation: walking ? "petArmSwing 0.45s ease-in-out infinite" : "none" }}>
-        <circle cx="32" cy="68" r="7" fill={shirtColor} />
-        <line x1="32" y1="70" x2="19" y2="92" stroke={skinColor} strokeWidth="6" strokeLinecap="round" />
-        <circle cx="19" cy="92" r="4.5" fill={skinColor} />
-      </g>
-      )}
-      {!flying && (pointing ? (<>
-        <circle cx="68" cy="68" r="7" fill={shirtColor} />
-        <line x1="68" y1="68" x2="90" y2="46" stroke={skinColor} strokeWidth="6" strokeLinecap="round" />
-        <circle cx="90" cy="46" r="4.5" fill={skinColor} />
-      </>) : (
-        <g style={{ transformOrigin: "68px 68px", animation: walking ? "petArmSwing 0.45s ease-in-out infinite reverse" : "none" }}>
-          <circle cx="68" cy="68" r="7" fill={shirtColor} />
-          <line x1="68" y1="70" x2="81" y2="92" stroke={skinColor} strokeWidth="6" strokeLinecap="round" />
-          <circle cx="81" cy="92" r="4.5" fill={skinColor} />
-        </g>
-      ))}
-
-      {/* Hair - back of ponytail (behind head), wavy and voluminous */}
-      <path d="M54 8 Q70 6 74 22 Q78 36 68 46 Q72 34 66 24 Q74 30 70 42 Q62 30 60 14 Q58 10 54 8 Z" fill={hairColor} />
-      {/* bow at the base of the ponytail */}
-      <path d="M56 10 Q49 4 44 9 Q49 12 52 11 Q49 12 44 17 Q51 16 56 10 Z" fill={bowColor} />
-      <path d="M56 10 Q63 4 68 9 Q63 12 60 11 Q63 12 68 17 Q61 16 56 10 Z" fill={bowColor} opacity="0.9" />
-      <circle cx="56" cy="11" r="2.4" fill="white" opacity="0.75" />
-
-      {/* Head */}
-      <circle cx="50" cy="38" r="26" fill={skinColor} />
-      <circle cx="33" cy="46" r="6.5" fill={cheekColor} opacity="0.85" />
-      <circle cx="67" cy="46" r="6.5" fill={cheekColor} opacity="0.85" />
-
-      {/* Hair - bangs swept diagonally to one side, plus loose face-framing strands */}
-      <path d="M23 36 Q19 14 44 9 Q68 7 77 24 Q79 30 76 36 Q70 18 52 15 Q34 14 26 30 Q24 33 23 36 Z" fill={hairColor} />
-      <path d="M23 36 Q18 28 22 19 Q17 29 21 39 Z" fill={hairColor} />
-      <path d="M77 30 Q81 24 77 16 Q74 25 74 33 Z" fill={hairColor} />
-      <path d="M70 20 Q60 17 50 18 Q62 15 72 22 Z" fill={hairColor} opacity="0.9" />
-
-      {/* Eyes - big and sparkly, with lashes. Closed/sleepy when sitting/lying. */}
-      {sleepy ? (
-        <g>
-          <path d="M32 37 Q38 40 44 37" stroke="#3b2a20" strokeWidth="2" fill="none" strokeLinecap="round" />
-          <path d="M56 37 Q62 40 68 37" stroke="#3b2a20" strokeWidth="2" fill="none" strokeLinecap="round" />
-        </g>
-      ) : (
-        <g style={{ transformOrigin: "50px 36px", animation: "petBlink 4.2s ease-in-out infinite" }}>
-          <ellipse cx="38" cy="37" rx="5.5" ry="6.5" fill="#3b2a20" />
-          <ellipse cx="62" cy="37" rx="5.5" ry="6.5" fill="#3b2a20" />
-          <circle cx="40.5" cy="33.5" r="2.1" fill="white" />
-          <circle cx="64.5" cy="33.5" r="2.1" fill="white" />
-          <circle cx="36" cy="40" r="1" fill="white" opacity="0.8" />
-          <circle cx="60" cy="40" r="1" fill="white" opacity="0.8" />
-          <path d="M32 31 L27 27" stroke="#3b2a20" strokeWidth="1.6" strokeLinecap="round" />
-          <path d="M68 31 L73 27" stroke="#3b2a20" strokeWidth="1.6" strokeLinecap="round" />
-        </g>
-      )}
-
-      {/* Tears - only when crying */}
-      {crying && !sleepy && (
-        <g style={{ animation: "petBob 1s ease-in-out infinite" }}>
-          <path d="M36 44 Q33 52 36 58 Q39 52 36 44 Z" fill="#60a5fa" opacity="0.85" />
-          <path d="M64 44 Q61 52 64 58 Q67 52 64 44 Z" fill="#60a5fa" opacity="0.85" />
-        </g>
-      )}
-
-      {/* Mouth - shape follows mood (or sleepy calm line) */}
-      {sleepy
-        ? <path d="M44 56 Q50 58 56 56" stroke="#c2410c" strokeWidth="2" fill="none" strokeLinecap="round" />
-        : crying
-          ? <path d="M40 58 Q50 50 60 58" stroke="#c2410c" strokeWidth="2.2" fill="none" strokeLinecap="round" />
-          : mood === "worried"
-            ? <path d="M42 56 Q50 52 58 56" stroke="#c2410c" strokeWidth="2.2" fill="none" strokeLinecap="round" />
-            : mood === "neutral"
-              ? <path d="M43 55 Q50 57 57 55" stroke="#c2410c" strokeWidth="2.2" fill="none" strokeLinecap="round" />
-              : <path d="M41 53 Q50 61 59 53" stroke="#c2410c" strokeWidth="2.2" fill="none" strokeLinecap="round" />
-      }
-
-      {/* Bow in hair */}
-      <path d="M14 26 Q9 21 14 17 Q17 21 14 21 Q17 21 14 26 Z" fill={bowColor} />
-      <path d="M14 26 Q19 21 14 17 Q11 21 14 21 Q11 21 14 26 Z" fill={bowColor} opacity="0.85" />
-      <circle cx="14" cy="21" r="1.6" fill="white" opacity="0.7" />
-    </svg>
-  );
-};
-
 /* ── FlyingRosie: flies to and lands on a specific target element.
    getTargets() returns the current list of DOM elements to visit — called
    fresh each time so it's safe even if targets mount/shift. In loop mode
@@ -17033,10 +16888,35 @@ const FlyingRosie = ({ getTargets, activeIndex = 0, loop = false, mood = "happy"
   );
 };
 
-const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMarkTaskDone, isAdmin=false, onManageTasks, nagDays=14, cutoffDate="", onTalkToRosie, showGreeting=false, timeGreeting="Hello", userName="", onDismissGreeting }) => {
+const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMarkTaskDone, isAdmin=false, onManageTasks, nagDays=14, cutoffDate="", onTalkToRosie, showGreeting=false, timeGreeting="Hello", userName="", onDismissGreeting, shopId }) => {
   const [open, setOpen] = React.useState(false);
+  // Outfit: automatic by date / shop (festivals), or one an admin picked to preview.
+  const [outfitPref, setOutfitPref] = React.useState(() => { try { return localStorage.getItem("rosie_outfit") || "auto"; } catch { return "auto"; } });
+  const outfit = outfitPref === "auto" ? rosieOutfitFor(new Date(), shopId) : outfitPref;
   const [idleState, setIdleState] = React.useState("active"); // "active" | "sitting" | "lying"
   const lastActivityRef = React.useRef(Date.now());
+  // Ask Rosie + end-of-day wrap-up (read-only: only reads the sales already loaded)
+  const [askText, setAskText] = React.useState("");
+  const [askAnswer, setAskAnswer] = React.useState(null);
+  const [wrapText, setWrapText] = React.useState(null);
+  const [wrapCopied, setWrapCopied] = React.useState(false);
+  const brainCtx = () => {
+    const d = new Date();
+    return {
+      sales: sales || [],
+      shopName: SHOP_LABELS[shopId] || "Shop",
+      today: d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"),
+      fmt: (n) => fmt(shopId, n),
+      helpers: { inferPaymentType, groupIdsFor: findInstalmentGroupIds, balanceOf: getGroupBalanceInfo },
+    };
+  };
+  const doAsk = (q) => {
+    const text = (q !== undefined ? q : askText).trim();
+    if (!text) return;
+    setAskText(text);
+    try { setAskAnswer({ q: text, ...answerRosie(text, brainCtx()) }); }
+    catch (e) { setAskAnswer({ q: text, text: "Sorry, I couldn't work that out.", rows: [] }); }
+  };
 
   React.useEffect(() => {
     if (showGreeting) setOpen(true);
@@ -17085,6 +16965,28 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
   return (
     <div style={{position:"fixed",bottom:20,right:20,zIndex:250,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:8}}>
       <style>{PET_CSS}</style>
+      {wrapText!==null && (
+        <div onClick={()=>setWrapText(null)} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.45)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
+          <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:14,width:"100%",maxWidth:420,maxHeight:"85vh",overflowY:"auto",padding:"16px 18px",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
+            <div style={{fontWeight:800,fontSize:15,color:"#0f172a",marginBottom:8}}>🌙 Day wrap-up</div>
+            <pre style={{margin:0,whiteSpace:"pre-wrap",wordBreak:"break-word",fontFamily:"inherit",fontSize:13,lineHeight:1.5,color:"#1f2937",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"10px 12px"}}>{wrapText}</pre>
+            <div style={{display:"flex",gap:8,marginTop:12}}>
+              <button onClick={()=>{ try{ navigator.clipboard.writeText(wrapText).then(()=>setWrapCopied(true)); }catch{ setWrapCopied(false); } }}
+                style={{flex:1,padding:"9px 0",borderRadius:8,border:"none",background:shopAccent||"#059669",color:"white",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>
+                {wrapCopied?"✓ Copied":"📋 Copy"}
+              </button>
+              <button onClick={()=>window.open("https://wa.me/?text="+encodeURIComponent(wrapText),"_blank","noopener")}
+                style={{flex:1,padding:"9px 0",borderRadius:8,border:"none",background:"#25d366",color:"white",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>
+                WhatsApp
+              </button>
+              <button onClick={()=>setWrapText(null)}
+                style={{padding:"9px 14px",borderRadius:8,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:12.5,cursor:"pointer",fontFamily:"inherit"}}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {open && (
         <div style={{background:"white",borderRadius:14,boxShadow:"0 12px 40px rgba(0,0,0,0.2)",padding:"14px 16px",width:300,marginBottom:4,maxHeight:440,overflowY:"auto"}}>
           {showGreeting && (
@@ -17137,6 +17039,46 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
               })}
             </div>
           )}
+          <div style={{marginTop:12,paddingTop:10,borderTop:"1px solid #f1f5f9"}}>
+            <div style={{fontWeight:800,fontSize:13,color:"#0f172a",marginBottom:6}}>💬 Ask Rosie</div>
+            <form onSubmit={e=>{e.preventDefault(); doAsk();}} style={{display:"flex",gap:6}}>
+              <input value={askText} onChange={e=>setAskText(e.target.value)} placeholder="e.g. Who owes balance?"
+                style={{flex:1,minWidth:0,padding:"7px 9px",borderRadius:8,border:"1px solid #e2e8f0",fontSize:12,fontFamily:"inherit"}}/>
+              <button type="submit" style={{padding:"7px 11px",borderRadius:8,border:"none",background:shopAccent||"#059669",color:"white",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>Ask</button>
+            </form>
+            {!askAnswer && (
+              <div style={{display:"flex",flexWrap:"wrap",gap:5,marginTop:7}}>
+                {ROSIE_HINTS.slice(0,4).map(h=>(
+                  <button key={h} type="button" onClick={()=>doAsk(h)}
+                    style={{fontSize:10.5,fontWeight:700,padding:"3px 8px",borderRadius:999,border:"1px solid #e2e8f0",background:"#f8fafc",color:"#475569",cursor:"pointer",fontFamily:"inherit"}}>{h}</button>
+                ))}
+              </div>
+            )}
+            {askAnswer && (
+              <div style={{marginTop:8,padding:"9px 10px",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:10}}>
+                <div style={{fontSize:12,color:"#14532d",lineHeight:1.45,whiteSpace:"pre-wrap"}}>{askAnswer.text}</div>
+                {askAnswer.rows && askAnswer.rows.length>0 && (
+                  <div style={{marginTop:6,display:"flex",flexDirection:"column",gap:4}}>
+                    {askAnswer.rows.map((r,i)=>(
+                      <div key={i} style={{fontSize:11.5,padding:"5px 7px",background:"white",borderRadius:7,display:"flex",justifyContent:"space-between",gap:8,alignItems:"flex-start"}}>
+                        <span style={{minWidth:0}}>
+                          <span style={{display:"block",fontWeight:700,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.title}</span>
+                          {r.sub && <span style={{display:"block",color:"#64748b",fontSize:10.5}}>{r.sub}</span>}
+                        </span>
+                        <span style={{fontWeight:800,color:"#0f172a",flexShrink:0}}>{r.right}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <button type="button" onClick={()=>{setAskAnswer(null); setAskText("");}}
+                  style={{marginTop:6,fontSize:10.5,fontWeight:700,color:"#15803d",background:"transparent",border:"none",cursor:"pointer",padding:0,fontFamily:"inherit"}}>Ask something else</button>
+              </div>
+            )}
+            <button type="button" onClick={()=>{ setWrapCopied(false); try{ setWrapText(buildDayWrapUp(brainCtx()).text); }catch(e){ setWrapText("Sorry, I couldn't build the summary."); } }}
+              style={{marginTop:8,width:"100%",padding:"8px 0",borderRadius:8,border:"1px solid #c7d2fe",background:"#eef2ff",color:"#3730a3",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+              🌙 Day wrap-up
+            </button>
+          </div>
           <button onClick={()=>{setOpen(false); if(onOpenSales) onOpenSales();}}
             style={{marginTop:10,width:"100%",padding:"8px 0",borderRadius:8,border:"none",background:shopAccent||"#059669",color:"white",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
             Go to Sales
@@ -17148,6 +17090,15 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
             </button>
           )}
           {isAdmin && (
+            <label style={{marginTop:6,display:"flex",alignItems:"center",gap:6,fontSize:11,fontWeight:700,color:"#64748b"}}>
+              👗 Outfit
+              <select value={outfitPref} onChange={e=>{ const v=e.target.value; setOutfitPref(v); try{ localStorage.setItem("rosie_outfit", v); }catch{} }}
+                style={{flex:1,padding:"5px 6px",borderRadius:7,border:"1px solid #e2e8f0",fontSize:11.5,fontFamily:"inherit",background:"white"}}>
+                {["auto", ...OUTFITS].map(o=><option key={o} value={o}>{OUTFIT_LABELS[o]}</option>)}
+              </select>
+            </label>
+          )}
+          {isAdmin && (
             <button onClick={()=>{setOpen(false); if(onTalkToRosie) onTalkToRosie();}}
               style={{marginTop:6,width:"100%",padding:"8px 0",borderRadius:8,border:"1px solid #e2e8f0",background:"white",color:"#374151",fontWeight:700,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
               💬 Talk to Rosie
@@ -17157,7 +17108,7 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
       )}
       <div style={{ animation: (open || idleState!=="active") ? "none" : "petRoam 16s ease-in-out infinite" }}>
         <button onClick={()=>setOpen(o=>!o)} title="Rosie" style={{position:"relative",border:"none",background:"transparent",cursor:"pointer",padding:0,lineHeight:0}}>
-          <Rosie mood={mood} pose={idleState==="lying" ? "lie" : idleState==="sitting" ? "sit" : (open?"idle":"walk")} />
+          <Rosie mood={mood} outfit={outfit} shopId={shopId} pose={idleState==="lying" ? "lie" : idleState==="sitting" ? "sit" : (open?"idle":"walk")} />
           {totalBadge>0 && (
             <span style={{position:"absolute",top:-2,right:-2,background:"#dc2626",color:"white",fontSize:10,fontWeight:800,borderRadius:999,minWidth:18,height:18,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px",animation:"petPop 0.3s ease"}}>
               {totalBadge}
@@ -19416,6 +19367,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const [partPaidAsk,setPartPaidAsk]=useState(null); // received < sale total: "Is this an Advance?"
   const [finalShort,setFinalShort]=useState(null); // Final payment leaves the deal short of the Expected total / price list
   const [paymentTypeAcked,setPaymentTypeAcked]=useState(false);
+  const [contactTouched,setContactTouched]=useState(false);   // Rosie checks the phone number once the box has been left
   const [showAddressModal,setShowAddressModal]=useState(false);
   const defaultPay = shopId === "ros-india" ? "SIB" : "SHOP";
   const PAY_OPTIONS = shopId === "ros-india" ? ["SIB","HDFC","FEDERAL BANK","PAYPAL INDIA","SHOP"] : ["BANK","SHOP","EXCHANGE","GIFT","PROMOTION","SHOPIFY"];
@@ -19672,6 +19624,8 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   const rosieActiveIdx = rosieSteps.findIndex(s=>!s.done);
   const rosieAllDone = rosieActiveIdx===-1;
   const rosieNudge = rosieAllDone ? "All set! Review and hit Save Sale when ready. ✅" : rosieSteps[rosieActiveIdx].label;
+  // Live coach: friendly heads-ups (never blocks saving)
+  const rosieNotes = coachNotes({shopId,customer:form.customer,contact:form.contact,date:form.date,itemNames:rosieFilledLines.map(l=>l.name),amount:entryAmount,altAmount:grandTotal,sales,openDeal:_openDeal,paymentType:form.paymentType,received:receivedTotal,contactTouched,fmt:n=>shop.symbol+Number(n).toLocaleString()});
 
   // Quick-pick item tabs (pinned + earlier item names) — ROS Selections UK only; India / Hairlines UK use price-list suggestions.
   const quickPickUI=isPriceShop(shopId)?null:(()=>{
@@ -19751,7 +19705,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <div style={{flex:1,overflowY:"auto",padding:"12px 16px",WebkitOverflowScrolling:"touch"}}>
         <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",margin:"0 0 12px",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,position:"sticky",top:0,zIndex:20,boxShadow:"0 4px 12px rgba(0,0,0,0.08)"}}>
-          <div style={{flexShrink:0,lineHeight:0}}><Rosie mood="happy" size={42} pose={rosieAllDone?"idle":"point"}/></div>
+          <div style={{flexShrink:0,lineHeight:0}}><Rosie mood={rosieNotes.length>0?"worried":"happy"} size={42} pose={rosieAllDone?"idle":"point"}/></div>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:13.5,color:"#166534",fontWeight:700,lineHeight:1.4}}>{rosieNudge}</div>
             <div style={{display:"flex",gap:4,marginTop:6}}>
@@ -19759,6 +19713,9 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 <div key={i} style={{width:20,height:5,borderRadius:3,background:s.done?"#4ade80":(i===rosieActiveIdx?"#fbbf24":"#e2e8f0")}}/>
               ))}
             </div>
+            {rosieNotes.map(n=>(
+              <div key={n.key} style={{marginTop:6,padding:"5px 8px",borderRadius:8,background:"#fffbeb",border:"1px solid #fde68a",fontSize:11.5,fontWeight:700,color:"#92400e",lineHeight:1.35}}>{n.icon} {n.text}</div>
+            ))}
           </div>
           {rosieActiveIdx===5 && (
             <button onClick={()=>setPaymentTypeAcked(true)}
@@ -19818,7 +19775,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 </div>)}
               </div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
-                <div><label style={lbl}>Contact</label><input ref={el=>{rosieFieldRefs.current.contact=el;}} value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={bl}/></div>
+                <div><label style={lbl}>Contact</label><input ref={el=>{rosieFieldRefs.current.contact=el;}} value={form.contact} onChange={e=>set("contact",e.target.value)} placeholder="+44 7700 000000" style={inp} onFocus={fo} onBlur={e=>{bl(e);setContactTouched(true);}}/></div>
                 <div>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                     <label style={lbl}>Address</label>
