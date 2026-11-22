@@ -12,7 +12,7 @@ import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
 import PriceListPanel, { ItemSuggestInput, PriceDiffModal, PriceHint, priceNoteText, FinalShortModal, PartPaidModal } from "./components/PriceListPanel";
 import SaleNotebook from "./components/SaleNotebook";
-import { isPriceShop, priceFor, matchEntry, priceMismatches, listTotalForLines, ukDeliveryFor, listPriceOf, listPriceOfLine, listPriceAmounts } from "./priceList";
+import { isPriceShop, priceFor, matchEntry, priceMismatches, listTotalForLines, ukDeliveryFor, exchangeSaleUpdate, listPriceOf, listPriceOfLine, listPriceAmounts } from "./priceList";
 import PurchasesPanel from "./components/PurchasesPanel";
 import PurchaseNotebook from "./components/PurchaseNotebook";
 import ReportsPanel from "./components/ReportsPanel";
@@ -3876,6 +3876,7 @@ const IssueVoucherModal = ({ shopId, shop, allSales, allReturns, presetLink, onC
 
 const ReturnsPanel=({shopId,shop,returns,setReturns,user,messages,setMessages,onSyncSaleStatus,salesData={},pushDeleted})=>{
   const [filter,setFilter]=React.useState("ACTIVE");
+  const [exPick,setExPick]=React.useState({}); // ROS India exchange item per return: {[retId]:{text,entry,line}}
   const [waModal,setWaModal]=React.useState(null); // {phone,customerName,message} | null
   const [manualReturnModal,setManualReturnModal]=React.useState(false);
   const [upfrontRefunds,setUpfrontRefunds]=React.useState([]);
@@ -4249,7 +4250,8 @@ Thank you for your cooperation.`,
 
               const handleQuickAction=async(newStatus,extraUpdates={})=>{
                 const today=new Date().toISOString().slice(0,10);
-                const updates={status:newStatus,...extraUpdates};
+                const {saleUpdates,...retExtra}=extraUpdates;   // saleUpdates = item change for the linked sale (exchange), not part of the return record
+                const updates={status:newStatus,...retExtra};
                 if(newStatus==="MSG_SENT") updates.instructionsSentAt=today;
                 // Marking an item received resets the resolution back to
                 // "undecided" even if the customer stated a preference (e.g.
@@ -4274,7 +4276,7 @@ Thank you for your cooperation.`,
                 }
                 if(onSyncSaleStatus){
                   const saleStatus=newStatus==="RETURN_RECEIVED"?"RETRN RCVD":newStatus==="REFUNDED"?"REFUNDED":(newStatus==="EXCHANGED"||newStatus==="EXCHANGE_REFUND")?"EXCHANGED":null;
-                  const saleExtra=extraUpdates.refundAmount!==undefined?{refundAmt:extraUpdates.refundAmount,adjType:"Return Refund"}:{};
+                  const saleExtra={...(extraUpdates.refundAmount!==undefined?{refundAmt:extraUpdates.refundAmount,adjType:"Return Refund"}:{}),...(saleUpdates||{})};
                   if(saleStatus) await onSyncSaleStatus(ret.saleId,saleStatus,saleExtra);
                 }
                 setReturns(prev=>prev.map(r=>r.id===ret.id?updated:r));
@@ -4518,6 +4520,27 @@ Thank you for your cooperation.`,
                       return(<>
                         <div style={sectionLabel}>Exchange{isBoth?" + Balance Refund":""}</div>
                         <div style={box} onClick={e=>e.stopPropagation()}>
+                          {shopId==="ros-india"&&linkedSale&&(()=>{
+                            const pk=exPick[ret.id]||{text:"",entry:null,line:0};
+                            const sl=Array.isArray(linkedSale.saleLines)?linkedSale.saleLines:[];
+                            const prev=pk.entry?exchangeSaleUpdate(linkedSale,pk.line||0,pk.entry,shopId,{allowAdvance:!isBoth}):null;
+                            const mny=n=>"₹"+Number(n).toLocaleString("en-IN");
+                            return(<div style={{marginBottom:10,paddingBottom:10,borderBottom:"1px dashed "+tint.border}}>
+                              <div style={{fontSize:11,color:tint.accent,marginBottom:5}}>🔄 Exchange item <span style={{color:"#94a3b8"}}>(pick from the price list — the sale's item is updated, the amount paid stays)</span></div>
+                              {sl.length>1&&(<select value={pk.line||0} onChange={e=>setExPick(p=>({...p,[ret.id]:{...pk,line:Number(e.target.value)}}))} style={{...finp,width:"100%",marginBottom:6}}>
+                                {sl.map((l,i)=><option key={i} value={i}>Item being exchanged: {l.name}</option>)}
+                              </select>)}
+                              <ItemSuggestInput value={pk.text} shopId={shopId} placeholder="Search the price list…"
+                                onChange={t=>setExPick(p=>({...p,[ret.id]:{...pk,text:t,entry:null}}))}
+                                onPick={en=>setExPick(p=>({...p,[ret.id]:{...pk,text:en.label,entry:en}}))}
+                                style={{...finp,width:"100%"}}/>
+                              {prev&&(<div style={{marginTop:6,fontSize:11.5,fontWeight:700,color:prev.advance?"#b45309":"#15803d",background:prev.advance?"#fffbeb":"#f0fdf4",border:"1px solid "+(prev.advance?"#fde68a":"#bbf7d0"),borderRadius:7,padding:"5px 9px"}}>
+                                {prev.oldName} → {prev.newName} · paid {mny(prev.paid)} kept
+                                {prev.advance?(" · new item "+mny(prev.newLineTotal)+" → "+mny(prev.extra)+" balance awaited (sale becomes an Advance)")
+                                  :(prev.extra<-0.5?(" · new item is "+mny(-prev.extra)+" cheaper — use Refund/Exchange to refund the difference"):" · same price")}
+                              </div>)}
+                            </div>);
+                          })()}
                           <div style={{display:"flex",alignItems:"center",gap:8}}>
                             <span style={{fontSize:11,color:tint.accent,whiteSpace:"nowrap",flexShrink:0}}>🚚 Tracking No.</span>
                             <input id={"track-"+ret.id} defaultValue={ret.exchangeTrackingNo||""} placeholder="Not shipped yet"
@@ -4556,14 +4579,19 @@ Thank you for your cooperation.`,
                               const despatchEl=document.getElementById('despatch-'+ret.id);
                               const trackingNo=trackEl?trackEl.value.trim():"";
                               const despatchDate=despatchEl&&despatchEl.value?despatchEl.value:today;
+                              // ROS India: a picked exchange item updates the linked sale (name only; a dearer item → Advance, balance awaited).
+                              const pk=exPick[ret.id];
+                              const xr=(shopId==="ros-india"&&linkedSale&&pk&&pk.entry)?exchangeSaleUpdate(linkedSale,pk.line||0,pk.entry,shopId,{allowAdvance:!isBoth}):null;
+                              const xExtra=xr?{saleUpdates:xr.updates,staffNotes:[ret.staffNotes,"Exchanged to "+xr.newName].filter(Boolean).join(" | ")}:{};
+                              const xMsg=xr?("\n\nSale item: "+xr.oldName+" → "+xr.newName+". Amount paid ₹"+xr.paid.toLocaleString("en-IN")+" stays."+(xr.advance?(" The new item costs ₹"+xr.newLineTotal.toLocaleString("en-IN")+", so the sale becomes an Advance with ₹"+xr.extra.toLocaleString("en-IN")+" balance awaited."):"")):"";
                               if(isBoth){
                                 const diffEl=document.getElementById('pricediff-'+ret.id);
                                 const diff=Number(diffEl?.value)||0;
-                                if(!(await showConfirm("Mark as Refund/Exchange — ₹"+diff.toLocaleString("en-IN")+" price difference refunded? This closes the case.")))return;
-                                handleQuickAction("EXCHANGE_REFUND",{refundAmount:diff,exchangeTrackingNo:trackingNo,exchangeDate:despatchDate});
+                                if(!(await showConfirm("Mark as Refund/Exchange — ₹"+diff.toLocaleString("en-IN")+" price difference refunded? This closes the case."+xMsg)))return;
+                                handleQuickAction("EXCHANGE_REFUND",{refundAmount:diff,exchangeTrackingNo:trackingNo,exchangeDate:despatchDate,...xExtra});
                               } else {
-                                if(!(await showConfirm("Mark as Exchanged? This closes the case.")))return;
-                                handleQuickAction("EXCHANGED",{exchangeTrackingNo:trackingNo,exchangeDate:despatchDate}).then(ok=>{ if(ok) openWA(ret.phone,MSG_EXCHANGED(ret.customer,ret.id)); });
+                                if(!(await showConfirm("Mark as Exchanged? This closes the case."+xMsg)))return;
+                                handleQuickAction("EXCHANGED",{exchangeTrackingNo:trackingNo,exchangeDate:despatchDate,...xExtra}).then(ok=>{ if(ok) openWA(ret.phone,MSG_EXCHANGED(ret.customer,ret.id)); });
                               }
                             }} style={{padding:"7px 16px",borderRadius:8,border:"none",background:tint.accent,
                               color:"white",fontSize:12,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
@@ -9594,6 +9622,18 @@ return(
                   }));
                 }}
                 onMarkDelivered={(sale) => setMarkDeliveredSale(sale)}
+                onApplyItemRename={user?.role==="staff" ? undefined : async (renamed) => {
+                  // Fix item names (admin): the sale arrives with ONLY its item name(s) changed — amounts untouched
+                  const cur = sales.find(s => s.id === renamed.id);
+                  if (!cur) return false;
+                  const updated = { ...cur, item: renamed.item, ...(renamed.saleLines ? { saleLines: renamed.saleLines } : {}) };
+                  await dbSaveSale(shopId, updated);
+                  setSalesData(prev => ({
+                    ...prev,
+                    [shopId]: (prev[shopId] || []).map(s => s.id === cur.id ? { ...s, item: updated.item, ...(renamed.saleLines ? { saleLines: renamed.saleLines } : {}) } : s),
+                  }));
+                  return true;
+                }}
                 onMarkDeliveryInformed={async (saleId) => {
                   const sale = sales.find(s => s.id === saleId);
                   if (!sale) return;
@@ -17465,6 +17505,10 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
     dispatchFrom: sale.dispatchFrom||"",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  // "Change item" on an old sale that has no item lines (ROS India staff): name only, the amount paid is not touched.
+  const [lgChange,setLgChange]=useState(false);
+  const [lgText,setLgText]=useState("");
+  const [lgFrom,setLgFrom]=useState("");
 
   // Sales whose item lines were lost (older saves) but whose item text is "NAME(x1), NAME(x1)" are opened in the
   // notebook too, with the old equal-split prices as a starting point, so an admin can set the real prices.
@@ -17481,7 +17525,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
   // Editable saleLines state (for multi-item sales) — notebook style, same figures as New Sale
   const _mkKey=()=>"e"+Math.random().toString(36).slice(2,9);
   const [editLines,setEditLines]=useState(()=>
-    hasLines ? _lines0.map(l=>({...l,_k:_mkKey()})) : []
+    hasLines ? _lines0.map(l=>({...l,_k:_mkKey(),_saved:true,_origName:l.name})) : []
   );
   const _qtyOf=l=>(l.qty===undefined||l.qty===null||l.qty==="")?1:(parseFloat(l.qty)||0);
   const _rowAmt=l=>parseFloat((_qtyOf(l)*(parseFloat(l.price)||0)).toFixed(2));
@@ -17785,6 +17829,8 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
         <SaleNotebook shopId={shopId} shop={shop} lines={viewLines} rowAmts={rowAmts} recvAmts={recvAmts}
           showHint={form.paymentType==="FULL"&&!(Number(form.taxRate)>0)} rosieRefs={rosieFieldRefs}
           lockPrice={isStaff}
+          strictList={isStaff&&shopId==="ros-india"}
+          onChangeItem={isPriceShop(shopId)?((k,en)=>setEditLines(prev=>prev.map(l=>l._k!==k?l:{...l,name:en.label,changedFrom:l.changedFrom||l._origName||l.name,changedOn:localTodayISO(),_swap:true}))):undefined}
           onName={(k,v)=>{const _en=(isStaff&&isPriceShop(shopId))?matchEntry(v):null;const _p=_en?priceFor(_en,shopId):null;if(_p!=null) setMoneyDirty(true);setEditLines(prev=>prev.map(l=>l._k!==k?l:(_p!=null?{...l,name:v,price:String(_p)}:{...l,name:v})));}}
           onPick={(k,en)=>setLineK(k,{name:en.label,price:String(priceFor(en,shopId))})}
           onQty={(k,v)=>setLineK(k,{qty:v})} onPrice={(k,v)=>setLineK(k,{price:v})}
@@ -17808,7 +17854,21 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
         {!hasLines&&(
           <div style={{gridColumn:"1/-1"}}>
             <label style={lbl}>Item / Product</label>
-            <input value={form.item} onChange={e=>set("item",e.target.value)} placeholder="Item name" style={inp} onFocus={fo} onBlur={bl}/>
+            {(isStaff&&shopId==="ros-india")?(<>
+              <div style={{display:"flex",gap:6,alignItems:"center"}}>
+                <div style={{...inp,flex:1,background:"#f1f5f9",color:"#334155",fontWeight:600}}>{form.item||"—"}</div>
+                <button type="button" onClick={()=>{setLgText("");setLgChange(v=>!v);}} title="Change item — the amount paid stays as it is"
+                  style={{flexShrink:0,padding:"8px 12px",borderRadius:9,border:"1px solid "+(lgChange?shop.accent:"#cbd5e1"),background:lgChange?shop.accent:"white",color:lgChange?"white":"#475569",fontWeight:800,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>⇄ Change item</button>
+              </div>
+              {lgChange&&(<div style={{marginTop:8}}>
+                <ItemSuggestInput value={lgText} shopId={shopId} onChange={setLgText}
+                  onPick={en=>{if(!lgFrom)setLgFrom(String(sale.item||form.item||""));set("item",en.label);setLgChange(false);setLgText("");}}
+                  placeholder="Search the price list…" style={inp} onFocus={fo} onBlur={bl}/>
+              </div>)}
+              {lgFrom&&form.item!==lgFrom&&(<div style={{marginTop:6,fontSize:11,fontWeight:700,color:"#1d4ed8",background:"#eff6ff",borderRadius:7,padding:"3px 9px"}}>⇄ Changed from {lgFrom} · amount paid kept</div>)}
+            </>):(
+              <input value={form.item} onChange={e=>set("item",e.target.value)} placeholder="Item name" style={inp} onFocus={fo} onBlur={bl}/>
+            )}
           </div>
         )}
         {!hasLines&&(
@@ -18149,13 +18209,19 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
                 if(!(await showConfirm("This Final payment leaves the sale "+_moneyFmt(_calc.balance)+" short of the expected total ("+_moneyFmt(dealInfo.expected)+"). Save anyway?")))return;
               }
             }
+            // ROS India staff may only use price-list items on new / changed lines (an admin can enter a custom item).
+            if(isStaff&&shopId==="ros-india"&&hasLines){
+              const _bad=editLines.filter(l=>String(l.name||"").trim()&&l.name!==l._origName&&!matchEntry(l.name));
+              if(_bad.length){showAlert("Please pick these items from the price list — staff can't type a different item name:\n\n• "+_bad.map(l=>l.name).join("\n• ")+"\n\nAn admin can add an item that isn't on the list.");return;}
+            }
             // Price list check — only lines whose item or price was changed in this edit (old sales are not re-flagged).
-            const _chg=hasLines?editLines.filter(l=>{const o=_lines0.find(x=>x.id!==undefined&&x.id===l.id)||_lines0[editLines.indexOf(l)];return !o||o.name!==l.name||String(o.price)!==String(l.price);}):[];
+            // Lines changed with the "Change item" button keep the amount paid on purpose, so they are not flagged.
+            const _chg=hasLines?editLines.filter(l=>!l._swap).filter(l=>{const o=_lines0.find(x=>x.id!==undefined&&x.id===l.id)||_lines0[editLines.indexOf(l)];return !o||o.name!==l.name||String(o.price)!==String(l.price);}):[];
             const _mism=(isPriceShop(shopId)&&(form.paymentType||"FULL")==="FULL"&&!(Number(form.taxRate)>0))?priceMismatches(_chg,shopId):[];
             const _reason=editReasonRef.current; editReasonRef.current=null;
             if(_mism.length>0&&!_reason){setEditPriceDiff(_mism);return;}
             let _remOut=(_mism.length>0&&_reason)?[form.remarks,priceNoteText(shopId,_mism,_reason)].filter(x=>x&&String(x).trim()).join(" | "):form.remarks;
-            const _strip=l=>{const {_k,recv,...rest}=l;return rest;};
+            const _strip=l=>{const {_k,recv,_saved,_origName,_swap,...rest}=l;return rest;};
             let _linesOut=(hasLines&&!(_synthLines.length>0&&!moneyDirty))?editLines.map(_strip):sale.saleLines;
             let _amtOut=parseFloat(form.amount)||0, _discOut=parseFloat(form.discount)||0, _othOut=parseFloat(form.otherCharges)||0;
             let _taxOut=form.taxRate, _expOut=form.expectedTotal, _itemOut=form.item, _qtyOut=form.qty, _labelOut=form.otherChargesLabel||"Other Charges";
@@ -18180,6 +18246,15 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
               }
               _itemOut=_filled.map(l=>`${l.name}(x${l.qty})`).join(", ")||_itemOut;
               _qtyOut=String(_filled.reduce((a,l)=>a+_qtyOf(l),0)||1);
+            }
+            // Item changed with "Change item": a Price note keeps the dispatch short-payment check quiet, and the item text follows the new name.
+            const _swaps=hasLines?editLines.filter(l=>l._swap&&l.name!==l.changedFrom):[];
+            if(_swaps.length){
+              _remOut=[_remOut,"Price note — item changed: "+_swaps.map(l=>l.changedFrom+" → "+l.name+" (amount paid "+_moneyFmt(_rowAmt(l))+" kept)").join("; ")].filter(x=>x&&String(x).trim()).join(" | ");
+              if(!_ro) _itemOut=editLines.filter(l=>String(l.name||"").trim()).map(l=>`${l.name}(x${_qtyOf(l)})`).join(", ")||_itemOut;
+            }
+            if(!hasLines&&lgFrom&&form.item!==lgFrom){
+              _remOut=[_remOut,"Price note — item changed: "+lgFrom+" → "+form.item+" (amount paid kept)"].filter(x=>x&&String(x).trim()).join(" | ");
             }
             onSave({...form,id:(form.invAssigned&&form.invoiceNo)?form.invoiceNo:((shopId==="ros-india"&&new Date(form.date||sale.date||0)>=new Date(2026,3,1)&&!String(sale.id||"").includes("-"))?`IN-${Date.now().toString().slice(-6)}`:sale.id),ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),rem:_remOut,amount:_amtOut,item:_itemOut,qty:_qtyOut,taxRate:_taxOut,expectedTotal:_expOut,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:_linesOut,discount:_discOut,otherCharges:_othOut,otherChargesLabel:_labelOut,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""});
           }}
@@ -19496,6 +19571,11 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     const purAmt=parseFloat(form.purAmount)||0;
     const filledLines=lines.filter(l=>l.name.trim()||(parseFloat(l.price)>0));
     if(_ps&&!(receivedTotal>0)){showAlert("Please enter the amount received (the Received box on the item row).");return;}
+    // ROS India staff must pick every item from the price list (an admin can enter a custom item).
+    if(shopId==="ros-india"&&!canDiscount){
+      const _bad=filledLines.filter(l=>!matchEntry(l.name));
+      if(_bad.length){showAlert("Please pick every item from the price list — staff can't type a different item name:\n\n• "+_bad.map(l=>l.name.trim()||"(no item name)").join("\n• ")+"\n\nAn admin can add an item that isn't on the list.");return;}
+    }
     // Price list check (ROS India / ROS Hairlines UK): a line priced differently from the list needs a reason.
     const _mism=(_ps&&["FULL","ADVANCE"].includes(form.paymentType||"FULL")&&!(Number(form.taxRate)>0))?priceMismatches(filledLines,shopId):[];
     if(_mism.length>0&&!priceReason){setPriceDiff(_mism);return;}
@@ -19723,6 +19803,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             {/* Items */}
             {_ps&&(<SaleNotebook topSlot={quickPickUI} shopId={shopId} shop={shop} lines={lines} rowAmts={rowAmts} recvAmts={recvAmts} showHint={!["PART","FINAL"].includes(form.paymentType||"FULL")&&!(Number(form.taxRate)>0)} rosieRefs={rosieFieldRefs}
               lockPrice={!canDiscount}
+              strictList={shopId==="ros-india"&&!canDiscount}
               onName={(id,v)=>setLines(ls=>ls.map(l=>{if(l.id!==id)return l;const _en=(!canDiscount&&isPriceShop(shopId))?matchEntry(v):null;const _p=_en?priceFor(_en,shopId):null;return _p!=null?{...l,name:v,price:String(_p)}:{...l,name:v};}))}
               onPick={(id,en)=>setLines(ls=>ls.map(l=>l.id===id?{...l,name:en.label,price:String(priceFor(en,shopId))}:l))}
               onQty={(id,v)=>updateLine(id,"qty",v)} onPrice={(id,v)=>updateLine(id,"price",v)} onRecv={(id,v)=>updateLine(id,"recv",v)}

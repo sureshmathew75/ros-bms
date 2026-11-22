@@ -4,6 +4,7 @@ import { showAlert, showConfirm } from "./PopupHost";
 import { dbLoadDispatchLog, dbSaveDispatchEntry } from "../db";
 import { BankBadge, BankIcon, BankMenu } from "./BankLogos";
 import { shortfallForSales, shortfallMessage, listPriceOf, listPriceAmounts } from "../priceList";
+import ItemNameCleanup from "./ItemNameCleanup";
 import { returnPolicySection, addressCheckSection, inspectionNoticeSection, arrivalLine } from "../despatchMessage";
 /* ─────────────────────────────────────────────────────────────────────────
    SALES PANEL
@@ -498,7 +499,9 @@ export default function SalesPanel({
   onMarkDelivered,
   onInlineEdit,
   onMarkDeliveryInformed,
+  onApplyItemRename,
 }) {
+  const [showCleanup, setShowCleanup] = useState(false);
   const [hovR,    setHovR]    = useState(null);
   // Manually marking a sale Fulfilled straight from Pending is now an
   // admin-only override (normal despatches auto-fulfil from the Despatch
@@ -1671,6 +1674,17 @@ We hope you enjoy your purchase! 💜
             }}>
             📋 Report
           </button>
+          {shopId === "ros-india" && !isStaff && onApplyItemRename && (
+            <button onClick={() => setShowCleanup(true)} title="Rename hand-typed item names to the price-list item (amounts are not changed)"
+              style={{
+                display: "flex", alignItems: "center", gap: 6,
+                padding: "8px 14px", borderRadius: 9, border: "1px solid #e2e8f0",
+                background: "white", color: "#374151", fontWeight: 700, fontSize: 13,
+                cursor: "pointer", fontFamily: "inherit",
+              }}>
+              🧹 Fix item names
+            </button>
+          )}
           <button onClick={() => setModal("new-sale")}
             style={{
               display: "flex", alignItems: "center", gap: 6,
@@ -3121,6 +3135,10 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
           </div>
         )}
       </div>
+
+      {showCleanup && (
+        <ItemNameCleanup sales={sales} accent={accent} onApply={onApplyItemRename} onClose={() => setShowCleanup(false)} />
+      )}
 
       {/* ══════════════════════════════════════════════════════════
           PENDING REPORT MODAL
