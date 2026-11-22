@@ -17629,7 +17629,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
       if(!(expected>0)){const lt=isPriceShop(shopId)?listTotalForLines(adv.saleLines,shopId):null;expected=lt?lt.total:0;}
     }
     if(!(expected>0)) return null;
-    return {expected,prior,advLabel:adv.id};
+    return {expected,prior,advLabel:adv.id,others:group.filter(x=>x.id!==sale.id).length};
   })();
   const _calc=dealInfo
     ?{mode:"deal",expected:dealInfo.expected,priorReceived:dealInfo.prior,priorLabel:"Received in other instalments",receivedNow:receivedTotal,balance:parseFloat((dealInfo.expected-dealInfo.prior-receivedTotal).toFixed(2)),advLabel:dealInfo.advLabel}
@@ -18285,7 +18285,10 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
             if(!hasLines&&lgFrom&&form.item!==lgFrom){
               _remOut=[_remOut,"Price note — item changed: "+lgFrom+" → "+form.item+" (amount paid kept)"].filter(x=>x&&String(x).trim()).join(" | ");
             }
-            onSave({...form,id:(form.invAssigned&&form.invoiceNo)?form.invoiceNo:((shopId==="ros-india"&&new Date(form.date||sale.date||0)>=new Date(2026,3,1)&&!String(sale.id||"").includes("-"))?`IN-${Date.now().toString().slice(-6)}`:sale.id),ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),rem:_remOut,amount:_amtOut,item:_itemOut,qty:_qtyOut,taxRate:_taxOut,expectedTotal:_expOut,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:_linesOut,discount:_discOut,otherCharges:_othOut,otherChargesLabel:_labelOut,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""});
+            // An Advance that is the deal's only payment and has no balance left is a fully paid sale — save it as Full.
+            const _toFull=_ro&&form.paymentType==="ADVANCE"&&!!dealInfo&&dealInfo.others===0&&_calc.balance<=0.5;
+            const _tagOut=_toFull?String(form.tag||"").split(",").map(t=>t.trim()).filter(t=>t&&!["Advance Sale","Part Payment","Final Payment Sale"].includes(t)).join(", "):form.tag;
+            onSave({...form,...(_toFull?{paymentType:"FULL",tag:_tagOut}:{}),id:(form.invAssigned&&form.invoiceNo)?form.invoiceNo:((shopId==="ros-india"&&new Date(form.date||sale.date||0)>=new Date(2026,3,1)&&!String(sale.id||"").includes("-"))?`IN-${Date.now().toString().slice(-6)}`:sale.id),ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),rem:_remOut,amount:_amtOut,item:_itemOut,qty:_qtyOut,taxRate:_taxOut,expectedTotal:_toFull?"":_expOut,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:_linesOut,discount:_discOut,otherCharges:_othOut,otherChargesLabel:_labelOut,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""});
           }}
           ref={editSaveBtnRef}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
@@ -19649,7 +19652,9 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     }
     const combinedItem=filledLines.map(l=>`${l.name}(x${l.qty})`).join(", ")||"Sale";
     const combinedQty=filledLines.reduce((s,l)=>s+(parseFloat(l.qty)||0),0)||1;
-    onSave({...form,paymentType:_payType,expectedTotal:_expOut,remarks:_remarksOut,item:combinedItem,qty:String(combinedQty),amount:entryAmount,saleLines:_outLines,discount:(_ps&&_recvMode)?0:discountAmt,otherCharges:(_ps&&_recvMode)?0:otherChargesAmt,taxRate:(_ps&&_recvMode)?0:form.taxRate,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||"",dispatchFrom:form.dispatchFrom||""});
+    // An Advance with nothing left to pay (received covers the expected total) is a fully paid sale — save it as Full.
+    const _toFull=_ps&&_payType==="ADVANCE"&&receivedTotal>0&&((Number(_expOut)>0?Number(_expOut):grandTotal)-receivedTotal)<=0.5;
+    onSave({...form,paymentType:_toFull?"FULL":_payType,expectedTotal:_toFull?"":_expOut,remarks:_remarksOut,item:combinedItem,qty:String(combinedQty),amount:entryAmount,saleLines:_outLines,discount:(_ps&&_recvMode)?0:discountAmt,otherCharges:(_ps&&_recvMode)?0:otherChargesAmt,taxRate:(_ps&&_recvMode)?0:form.taxRate,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||"",dispatchFrom:form.dispatchFrom||""});
   };
 
   const rosieFilledLines = lines.filter(l=>l.name.trim());

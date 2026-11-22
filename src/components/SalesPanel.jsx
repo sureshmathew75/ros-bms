@@ -1318,15 +1318,23 @@ We hope you enjoy your purchase! 💜
   // Only show month separator when viewing year, lifetime, or FY (not day/week/single month)
   const showFYSep   = effectivePeriod === "year" || effectivePeriod === "lifetime";
   const showMonSep  = showFYSep; // month separators only useful alongside FY view
-  const kindOf = (sale) => { const t = inferPaymentType(sale); return PAY_KIND[t] ? t : "FULL"; };
+  // An Advance that is the only payment of its deal and has nothing left to pay (balance 0) is simply a fully paid sale.
+  const isSettledLoneAdvance = (sale) => {
+    if (inferPaymentType(sale) !== "ADVANCE") return false;
+    const key = getInstalmentKey(sale);
+    if (!key || (instalmentGroups[key] || []).length !== 1) return false;
+    const exp = Number(sale.expectedTotal) || 0;
+    return exp > 0 && exp - (Number(sale.amount) || 0) <= 0.5;
+  };
+  const kindOf = (sale) => { if (isSettledLoneAdvance(sale)) return "FULL"; const t = inferPaymentType(sale); return PAY_KIND[t] ? t : "FULL"; };
   const kindCounts = useMemo(() => {
     const c = { FULL: 0, ADVANCE: 0, PART: 0, FINAL: 0 };
     sortedSales.forEach(x => { c[kindOf(x)]++; });
     return c;
-  }, [sortedSales]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [sortedSales, instalmentGroups]); // eslint-disable-line react-hooks/exhaustive-deps
   const kindSales = useMemo(
     () => (kindFilter === "ALL" ? sortedSales : sortedSales.filter(x => kindOf(x) === kindFilter)),
-    [sortedSales, kindFilter] // eslint-disable-line react-hooks/exhaustive-deps
+    [sortedSales, kindFilter, instalmentGroups] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const rowsWithSeparators = useMemo(
     () => buildRowsWithSeparators(kindSales, showFYSep, showMonSep),
@@ -2299,9 +2307,8 @@ We hope you enjoy your purchase! 💜
                 const advanceSaleInGroup = instGroup.find(x => instalmentTagType(x) === "advance");
                 const expectedTotal = advanceSaleInGroup ? Number(advanceSaleInGroup.expectedTotal) || 0 : 0;
                 const balance = expectedTotal > 0 ? expectedTotal - totalPaid : null;
-                // Only mark fully paid if group contains an explicit Final Payment Sale
-                const hasFinalPayment = instGroup.some(x => instalmentTagType(x) === "final");
-                const isActuallyFullyPaid = balance !== null && balance <= 0 && hasFinalPayment;
+                // Nothing left to pay on the deal's expected total → fully paid (whatever the payment types are)
+                const isActuallyFullyPaid = balance !== null && balance <= 0.5;
                 const ful = s.ful || s.status || "PENDING";
                 const isH = hovR === s.id;
                 const isDragging = dragId === s.id;
@@ -2404,10 +2411,9 @@ We hope you enjoy your purchase! 💜
                         );
                       })()}
                       {(() => {
-                        const pt = inferPaymentType(s);
                         // Same colour as the card edge: Full green · First (Advance) blue · Part orange · Final pink
                         const badgeColor = kindColor;
-                        const badgeLabel = pt === "ADVANCE" ? "💰 1st · Advance" : pt === "PART" ? "🔄 Part" + (partNo > 0 ? " " + partNo : "") : pt === "FINAL" ? "🏁 Final" : "✅ Full";
+                        const badgeLabel = rowKind === "ADVANCE" ? "💰 1st · Advance" : rowKind === "PART" ? "🔄 Part" + (partNo > 0 ? " " + partNo : "") : rowKind === "FINAL" ? "🏁 Final" : "✅ Full";
                         return (
                           <div style={{ marginTop: 2 }}>
                             <span style={{
@@ -2453,7 +2459,7 @@ We hope you enjoy your purchase! 💜
                           🔗 Linked ({instGroup.length})
                         </div>
                       )}
-                      {isInstalment && instGroup.length === 1 && instType !== "final" && (
+                      {isInstalment && instGroup.length === 1 && instType !== "final" && !isActuallyFullyPaid && (
                         <div
                           onClick={(e) => {
                             e.stopPropagation();
