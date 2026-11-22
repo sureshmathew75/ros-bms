@@ -12,7 +12,7 @@ import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
 import PriceListPanel, { ItemSuggestInput, PriceDiffModal, PriceHint, priceNoteText, FinalShortModal, PartPaidModal } from "./components/PriceListPanel";
 import SaleNotebook from "./components/SaleNotebook";
-import { isPriceShop, priceFor, matchEntry, priceMismatches, listTotalForLines, ukDeliveryFor, exchangeSaleUpdate, listPriceOf, listPriceOfLine, listPriceAmounts } from "./priceList";
+import { isPriceShop, priceFor, matchEntry, priceMismatches, listTotalForLines, ukDeliveryFor, exchangeSaleUpdate, findListEntry, listPriceOf, listPriceOfLine, listPriceAmounts } from "./priceList";
 import PurchasesPanel from "./components/PurchasesPanel";
 import PurchaseNotebook from "./components/PurchaseNotebook";
 import ReportsPanel from "./components/ReportsPanel";
@@ -17838,7 +17838,25 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
           showHint={form.paymentType==="FULL"&&!(Number(form.taxRate)>0)} rosieRefs={rosieFieldRefs}
           lockPrice={isStaff}
           strictList={isStaff&&shopId==="ros-india"}
-          onChangeItem={isPriceShop(shopId)?((k,en)=>{freezeRecv(k);setEditLines(prev=>prev.map(l=>l._k!==k?l:{...l,name:en.label,changedFrom:l.changedFrom||l._origName||l.name,changedOn:localTodayISO(),_swap:true}));}):undefined}
+          onChangeItem={isPriceShop(shopId)?((k,en)=>{
+            // New item → its list price is shown; the amount already received is kept as it is (frozen), so the balance can be worked out.
+            const _np=priceFor(en,shopId);
+            const _paidNow=receivedTotal;
+            freezeRecv(k);setMoneyDirty(true);
+            setEditLines(prev=>prev.map(l=>l._k!==k?l:{...l,name:en.label,...(_np!=null?{price:String(_np)}:{}),changedFrom:l.changedFrom||l._origName||l.name,changedOn:localTodayISO(),_swap:true}));
+            if(_np!=null&&form.paymentType==="ADVANCE"){
+              // Advance: expected total moves by the difference between the new and the old list price (old item's list price must be known)
+              const _ln=editLines.find(l=>l._k===k);
+              const _oldU=_ln?priceFor(findListEntry(_ln.name,shopId),shopId):null;
+              const _exp=Number(form.expectedTotal)||0;
+              if(_ln&&_oldU!=null&&_exp>0) setForm(f=>({...f,expectedTotal:String(parseFloat((_exp+(_np-_oldU)*_qtyOf(_ln)).toFixed(2)))}));
+            }else if(_np!=null&&!_isInst){
+              const _items=editLines.reduce((a,l)=>a+(l._k===k?_qtyOf(l)*_np:_rowAmt(l)),0);
+              const _pre=_items-discountAmt+otherChargesAmt;
+              const _grand=parseFloat((_pre+_pre*((Number(form.taxRate)||0)/100)).toFixed(2));
+              if(_grand-_paidNow>0.5) setForm(f=>({...f,paymentType:"ADVANCE",expectedTotal:String(_grand)}));
+            }
+          }):undefined}
           onName={(k,v)=>{const _en=(isStaff&&isPriceShop(shopId))?matchEntry(v):null;const _p=_en?priceFor(_en,shopId):null;if(_p!=null){freezeRecv(k);setMoneyDirty(true);}setEditLines(prev=>prev.map(l=>l._k!==k?l:(_p!=null?{...l,name:v,price:String(_p)}:{...l,name:v})));}}
           onPick={(k,en)=>setLineK(k,{name:en.label,price:String(priceFor(en,shopId))})}
           onQty={(k,v)=>setLineK(k,{qty:v})} onPrice={(k,v)=>setLineK(k,{price:v})}
@@ -18209,9 +18227,12 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
             }
             // Money check (notebook) — only when a money field was touched; an untouched sale is saved exactly as stored.
             const _ro=hasLines&&moneyDirty;
+            // Item changed to a cheaper one: the amount received is never reduced.
+            const _keepPaid=_ro&&!_isInst&&_calc.balance<-0.5&&editLines.some(l=>l._swap&&l.name!==l.changedFrom);
             if(_ro){
               if(!(receivedTotal>0)){showAlert("Please enter the amount received (the Received box on the item row).");return;}
-              if(_calc.balance<-0.5){showAlert("The amount received is more than the "+(dealInfo?"balance of this sale":"sale total")+" ("+_moneyFmt(Math.abs(_calc.balance))+" too much). Please check the Received amounts.");return;}
+              if(_calc.balance<-0.5&&!_keepPaid){showAlert("The amount received is more than the "+(dealInfo?"balance of this sale":"sale total")+" ("+_moneyFmt(Math.abs(_calc.balance))+" too much). Please check the Received amounts.");return;}
+              if(_keepPaid&&!(await showConfirm("The new item is "+_moneyFmt(Math.abs(_calc.balance))+" cheaper than the amount already received ("+_moneyFmt(receivedTotal)+").\n\nThe amount received is kept as it is on this sale — handle the difference with the customer separately. Save?")))return;
               if(!_isInst&&_calc.balance>0.5){showAlert("Balance due is "+_moneyFmt(_calc.balance)+". If the customer will pay the rest later, set the Payment Type to Advance (or Part / Final); otherwise press “Mark fully received”.");return;}
               if(form.paymentType==="FINAL"&&dealInfo&&_calc.balance>0.5&&!editReasonRef.current){
                 if(!(await showConfirm("This Final payment leaves the sale "+_moneyFmt(_calc.balance)+" short of the expected total ("+_moneyFmt(dealInfo.expected)+"). Save anyway?")))return;
@@ -18238,14 +18259,14 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
               const _filled=editLines.filter(l=>String(l.name||"").trim()||(parseFloat(l.price)>0));
               _linesOut=_filled.map(l=>{
                 const base=_strip(l),_q=_qtyOf(l),_i=editLines.indexOf(l);
-                if(_isInst&&_q>0) base.price=String(parseFloat((recvAmts[_i]/_q).toFixed(4)));
+                if((_isInst||_keepPaid)&&_q>0) base.price=String(parseFloat((recvAmts[_i]/_q).toFixed(4)));
                 return base;
               });
-              _amtOut=_isInst?receivedTotal:grandTotal;
-              _discOut=_isInst?0:discountAmt; _othOut=_isInst?0:otherChargesAmt; _taxOut=_isInst?0:form.taxRate;
+              _amtOut=(_isInst||_keepPaid)?receivedTotal:grandTotal;
+              _discOut=(_isInst||_keepPaid)?0:discountAmt; _othOut=(_isInst||_keepPaid)?0:otherChargesAmt; _taxOut=(_isInst||_keepPaid)?0:form.taxRate;
               if(shopId==="ros-hairlines") _labelOut="Shipping";
               if(form.paymentType==="ADVANCE"&&!(Number(_expOut)>0)) _expOut=String(grandTotal);
-              if(_isInst&&(discountAmt||otherChargesAmt||gstAmt)){
+              if((_isInst||_keepPaid)&&(discountAmt||otherChargesAmt||gstAmt)){
                 const _bits=[_moneyFmt(itemsSubtotal)+" items"];
                 if(otherChargesAmt) _bits.push("+ "+_moneyFmt(otherChargesAmt)+" other charges");
                 if(discountAmt) _bits.push("− "+_moneyFmt(discountAmt)+" discount");
@@ -18258,7 +18279,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
             // Item changed with "Change item": a Price note keeps the dispatch short-payment check quiet, and the item text follows the new name.
             const _swaps=hasLines?editLines.filter(l=>l._swap&&l.name!==l.changedFrom):[];
             if(_swaps.length){
-              _remOut=[_remOut,"Price note — item changed: "+_swaps.map(l=>l.changedFrom+" → "+l.name+" (amount paid "+_moneyFmt(_rowAmt(l))+" kept)").join("; ")].filter(x=>x&&String(x).trim()).join(" | ");
+              _remOut=[_remOut,"Price note — item changed: "+_swaps.map(l=>l.changedFrom+" → "+l.name+" (amount paid "+_moneyFmt(recvAmts[editLines.indexOf(l)])+" kept"+(Math.abs(_rowAmt(l)-recvAmts[editLines.indexOf(l)])>0.5?"; new item "+_moneyFmt(_rowAmt(l)):"")+")").join("; ")].filter(x=>x&&String(x).trim()).join(" | ");
               if(!_ro) _itemOut=editLines.filter(l=>String(l.name||"").trim()).map(l=>`${l.name}(x${_qtyOf(l)})`).join(", ")||_itemOut;
             }
             if(!hasLines&&lgFrom&&form.item!==lgFrom){
