@@ -11,6 +11,8 @@ import InvoicesPanel from "./components/InvoicesPanel";
 import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
 import Rosie, { rosieOutfitFor, OUTFITS, OUTFIT_LABELS } from "./components/Rosie";
+import ROSIE_HELLO_IMG from "./rosie-hello.png";       // exact 3D picture of Rosie, used in her panel
+import ROSIE_SUCCESS_IMG from "./rosie-success.png";   // celebrating Rosie, used in the day wrap-up
 import { answerRosie, buildDayWrapUp, coachNotes, ROSIE_HINTS } from "./components/rosieBrain";
 import PriceListPanel, { ItemSuggestInput, PriceDiffModal, PriceHint, priceNoteText, FinalShortModal, PartPaidModal } from "./components/PriceListPanel";
 import SaleNotebook from "./components/SaleNotebook";
@@ -16968,7 +16970,10 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
       {wrapText!==null && (
         <div onClick={()=>setWrapText(null)} style={{position:"fixed",inset:0,background:"rgba(15,23,42,0.45)",zIndex:400,display:"flex",alignItems:"center",justifyContent:"center",padding:16}}>
           <div onClick={e=>e.stopPropagation()} style={{background:"white",borderRadius:14,width:"100%",maxWidth:420,maxHeight:"85vh",overflowY:"auto",padding:"16px 18px",boxShadow:"0 20px 60px rgba(0,0,0,0.3)"}}>
-            <div style={{fontWeight:800,fontSize:15,color:"#0f172a",marginBottom:8}}>🌙 Day wrap-up</div>
+            <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:8}}>
+              <img src={ROSIE_SUCCESS_IMG} alt="" style={{height:60,width:"auto"}}/>
+              <div style={{fontWeight:800,fontSize:15,color:"#0f172a"}}>🌙 Day wrap-up</div>
+            </div>
             <pre style={{margin:0,whiteSpace:"pre-wrap",wordBreak:"break-word",fontFamily:"inherit",fontSize:13,lineHeight:1.5,color:"#1f2937",background:"#f8fafc",border:"1px solid #e2e8f0",borderRadius:10,padding:"10px 12px"}}>{wrapText}</pre>
             <div style={{display:"flex",gap:8,marginTop:12}}>
               <button onClick={()=>{ try{ navigator.clipboard.writeText(wrapText).then(()=>setWrapCopied(true)); }catch{ setWrapCopied(false); } }}
@@ -16988,7 +16993,14 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
         </div>
       )}
       {open && (
-        <div style={{background:"white",borderRadius:14,boxShadow:"0 12px 40px rgba(0,0,0,0.2)",padding:"14px 16px",width:300,marginBottom:4,maxHeight:440,overflowY:"auto"}}>
+        <div style={{background:"white",borderRadius:14,boxShadow:"0 12px 40px rgba(0,0,0,0.2)",padding:"14px 16px",width:300,marginBottom:4,maxHeight:"min(560px, 75vh)",overflowY:"auto"}}>
+          <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+            <img src={ROSIE_HELLO_IMG} alt="Rosie" style={{height:72,width:"auto",flexShrink:0}}/>
+            <div style={{minWidth:0}}>
+              <div style={{fontWeight:800,fontSize:14,color:"#0f172a"}}>Hi! I'm Rosie 💗</div>
+              <div style={{fontSize:11.5,color:"#64748b",lineHeight:1.35}}>Ask me about sales, balances and parcels.</div>
+            </div>
+          </div>
           {showGreeting && (
             <div style={{marginBottom:12,padding:"10px 12px",background:"#fdf4ff",border:"1px solid #f0abfc",borderRadius:10}}>
               <div style={{fontWeight:800,fontSize:13,color:"#86198f",marginBottom:4}}>
@@ -19705,7 +19717,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <div style={{flex:1,overflowY:"auto",padding:"12px 16px",WebkitOverflowScrolling:"touch"}}>
         <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",margin:"0 0 12px",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,position:"sticky",top:0,zIndex:20,boxShadow:"0 4px 12px rgba(0,0,0,0.08)"}}>
-          <div style={{flexShrink:0,lineHeight:0}}><Rosie mood={rosieNotes.length>0?"worried":"happy"} size={42} pose={rosieAllDone?"idle":"point"}/></div>
+          <div style={{flexShrink:0,lineHeight:0}}><Rosie mood={rosieNotes.length>0?"worried":rosieAllDone?"success":"happy"} size={42} pose={rosieAllDone?"idle":"point"}/></div>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:13.5,color:"#166534",fontWeight:700,lineHeight:1.4}}>{rosieNudge}</div>
             <div style={{display:"flex",gap:4,marginTop:6}}>
