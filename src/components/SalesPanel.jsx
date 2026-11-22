@@ -2481,8 +2481,16 @@ We hope you enjoy your purchase! 💜
                             // For advance sale: use the group-level totals already computed
                             // above (instGroup/totalPaid/balance), which correctly include
                             // any untagged transactions swept into this deal.
+                            // Earlier payments of the same deal (oldest first), shown small and faded under this row's amount,
+                            // and the balance still to pay on the deal's latest row (the Advance row already shows it).
+                            const _orderedGrp = isInstalment ? instGroup.map((x, i) => [x, i]).sort((a, b) => (a[0].date || "").localeCompare(b[0].date || "") || a[1] - b[1]).map(o => o[0]) : [];
+                            const _myIdx = _orderedGrp.findIndex(x => x.id === s.id);
+                            const prevPays = _myIdx > 0 ? _orderedGrp.slice(0, _myIdx).filter(x => (Number(x.amount) || 0) > 0) : [];
+                            const isLatestInGroup = isInstalment && _myIdx >= 0 && _myIdx === _orderedGrp.length - 1;
+                            const prevLabel = (x) => ({ advance: "Advance", part: "Part", final: "Final" }[instalmentTagType(x)] || "Paid");
+                            const prevDate = (d) => { const m = String(d || "").match(/^\d{4}-(\d{2})-(\d{2})/); return m ? m[2] + "/" + m[1] : ""; };
                             let balanceBlock = null;
-                            if (showInstalmentSummary) {
+                            if (showInstalmentSummary || (isLatestInGroup && expectedTotal > 0 && !isActuallyFullyPaid)) {
                               if (expectedTotal > 0) {
                                 balanceBlock = (
                                   <div style={{marginTop:2,textAlign:"right"}}>
@@ -2534,6 +2542,17 @@ We hope you enjoy your purchase! 💜
                                 <div style={{ fontSize: 10, color: "#d97706", whiteSpace: "nowrap" }}>was {fmtVal(orig)}</div>
                               )}
                               {balanceBlock}
+                              {prevPays.length > 0 && (
+                                <div className="ros-prevpays" style={{ marginTop: 3, textAlign: "right", lineHeight: 1.35, opacity: 0.5, transition: "opacity .15s" }}
+                                  onMouseEnter={e => (e.currentTarget.style.opacity = 1)} onMouseLeave={e => (e.currentTarget.style.opacity = 0.5)}
+                                  title="Earlier payments for this order">
+                                  {prevPays.map(x => (
+                                    <div key={x.id} style={{ fontSize: 9.5, color: "#64748b", whiteSpace: "nowrap", fontFamily: "DM Mono,monospace" }}>
+                                      {prevLabel(x)}{prevDate(x.date) ? " · " + prevDate(x.date) : ""} · {fmtVal(Number(x.amount) || 0)}
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
                             </>);
                           })()}
                         </div>
