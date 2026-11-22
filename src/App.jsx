@@ -16962,6 +16962,25 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
   const totalBadge = overdue.length + myTasks.length;
   const mood = overdue.length > 10 ? "crying" : totalBadge===0 ? "happy" : totalBadge<=3 ? "neutral" : "worried";
 
+  // When everything is caught up (she is happy) she does a little dance — shortly after the page opens, when her
+  // panel is opened, and every half minute or so after that. Never while she is sleepy, and she stays put while dancing.
+  const [dancing, setDancing] = React.useState(false);
+  const danceRef = React.useRef(null);
+  const startDance = React.useCallback((ms) => {
+    setDancing(true);
+    if (danceRef.current) clearTimeout(danceRef.current);
+    danceRef.current = setTimeout(() => setDancing(false), ms);
+  }, []);
+  const canDance = enabled && mood === "happy" && idleState === "active";
+  React.useEffect(() => {
+    if (!canDance) { setDancing(false); return undefined; }
+    const first = setTimeout(() => startDance(6000), 2500);
+    const every = setInterval(() => startDance(6000), 32000);
+    return () => { clearTimeout(first); clearInterval(every); };
+  }, [canDance, startDance]);
+  React.useEffect(() => { if (open && canDance) startDance(5000); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+  React.useEffect(() => () => { if (danceRef.current) clearTimeout(danceRef.current); }, []);
+
   if (!enabled) return null;
 
   return (
@@ -17118,9 +17137,9 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
           )}
         </div>
       )}
-      <div style={{ animation: (open || idleState!=="active") ? "none" : "petRoam 16s ease-in-out infinite" }}>
+      <div style={{ animation: (open || dancing || idleState!=="active") ? "none" : "petRoam 16s ease-in-out infinite" }}>
         <button onClick={()=>setOpen(o=>!o)} title="Rosie" style={{position:"relative",border:"none",background:"transparent",cursor:"pointer",padding:0,lineHeight:0}}>
-          <Rosie mood={mood} outfit={outfit} shopId={shopId} pose={idleState==="lying" ? "lie" : idleState==="sitting" ? "sit" : (open?"idle":"walk")} />
+          <Rosie mood={mood} outfit={outfit} shopId={shopId} pose={idleState==="lying" ? "lie" : idleState==="sitting" ? "sit" : dancing ? "dance" : (open?"idle":"walk")} />
           {totalBadge>0 && (
             <span style={{position:"absolute",top:-2,right:-2,background:"#dc2626",color:"white",fontSize:10,fontWeight:800,borderRadius:999,minWidth:18,height:18,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px",animation:"petPop 0.3s ease"}}>
               {totalBadge}

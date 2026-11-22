@@ -4,7 +4,7 @@ import React from "react";
    Rosie — the app's floating assistant: a cheerful little girl with a ponytail and bow, drawn entirely in SVG
    (no image files, so it stays light).
    Props: mood ("happy" | "neutral" | "worried" | "crying" | "success"), size, pose
-   ("idle" | "walk" | "point" | "fly" | "sit" | "lie" | "cheer"), and optionally
+   ("idle" | "walk" | "point" | "fly" | "sit" | "lie" | "cheer" | "dance"), and optionally
      outfit  — one of OUTFITS below (otherwise picked from today's date + the shop: see rosieOutfitFor)
    Her eyes blink and follow the mouse, brows and mouth change with her mood, and she wears festival outfits
    (Onam, Vishu, Diwali, Christmas, New Year) on the right days.
@@ -60,7 +60,7 @@ export default function Rosie({ mood = "happy", size = 56, pose = "idle", outfit
   const P = PALETTE[key];
   const skin = "#fbdcc0", skinHi = "#ffeedd", skinLo = "#ecb48c";
   const walking = pose === "walk", pointing = pose === "point", flying = pose === "fly";
-  const sitting = pose === "sit", lying = pose === "lie";
+  const sitting = pose === "sit", lying = pose === "lie", dancing = pose === "dance";
   const sleepy = sitting || lying;
   const success = mood === "success", cheer = pose === "cheer" || success;
   const crying = mood === "crying", worried = mood === "worried", neutral = mood === "neutral";
@@ -70,7 +70,7 @@ export default function Rosie({ mood = "happy", size = 56, pose = "idle", outfit
   const ref = React.useRef(null);
   const [look, setLook] = React.useState({ x: 0, y: 0 });
   React.useEffect(() => {
-    if (sleepy || cheer) return undefined;
+    if (sleepy || cheer || dancing) return undefined;
     let last = 0;
     const move = (e) => {
       const now = Date.now(); if (now - last < 60) return; last = now;
@@ -83,7 +83,7 @@ export default function Rosie({ mood = "happy", size = 56, pose = "idle", outfit
     };
     window.addEventListener("mousemove", move, { passive: true });
     return () => window.removeEventListener("mousemove", move);
-  }, [sleepy, cheer]);
+  }, [sleepy, cheer, dancing]);
 
   const hipL = 44, hipR = 56;
   const lx = sitting ? 30 : flying ? 45 : 43, rx2 = sitting ? 70 : flying ? 55 : 57;
@@ -94,10 +94,10 @@ export default function Rosie({ mood = "happy", size = 56, pose = "idle", outfit
 
   return (
     <svg ref={ref} width={size} height={size * 1.5} viewBox="0 0 100 150" style={{
-      animation: (walking || flying || lying) ? "none" : "petBob 2.2s ease-in-out infinite",
-      overflow: "visible", transform: lying ? "rotate(90deg)" : "none", transformOrigin: "50px 90px",
+      animation: dancing ? "rsDance 0.8s ease-in-out infinite" : (walking || flying || lying) ? "none" : "petBob 2.2s ease-in-out infinite",
+      overflow: "visible", transform: lying ? "rotate(90deg)" : "none", transformOrigin: dancing ? "50% 100%" : "50px 90px",
     }}>
-      <style>{`@keyframes rsBlink{0%,92%,100%{transform:scaleY(1)}96%{transform:scaleY(.08)}}`}</style>
+      <style>{`@keyframes rsBlink{0%,92%,100%{transform:scaleY(1)}96%{transform:scaleY(.08)}}@keyframes rsDance{0%,100%{transform:translateY(0) rotate(-3deg)}25%{transform:translateY(-7px) rotate(0deg)}50%{transform:translateY(0) rotate(3deg)}75%{transform:translateY(-7px) rotate(0deg)}}@keyframes rsArmA{0%,100%{transform:rotate(125deg)}50%{transform:rotate(0deg)}}@keyframes rsArmB{0%,100%{transform:rotate(0deg)}50%{transform:rotate(-125deg)}}@keyframes rsNote{0%{transform:translateY(0);opacity:0}20%{opacity:1}100%{transform:translateY(-22px);opacity:0}}`}</style>
       <defs>
         <radialGradient id={id + "s"} cx="45%" cy="38%" r="70%"><stop offset="0" stopColor={skinHi} /><stop offset="0.7" stopColor={skin} /><stop offset="1" stopColor={skinLo} /></radialGradient>
         <linearGradient id={id + "h"} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#6a4430" /><stop offset="0.45" stopColor="#3d2417" /><stop offset="1" stopColor="#24140c" /></linearGradient>
@@ -106,6 +106,10 @@ export default function Rosie({ mood = "happy", size = 56, pose = "idle", outfit
       </defs>
 
       <ellipse cx="50" cy="144" rx="22" ry="3.4" fill={(flying || lying) ? "transparent" : "#00000016"} />
+      {dancing && (<g fontSize="13" fill="#ec4899" fontWeight="800">
+        <text x="84" y="40" style={{ animation: "rsNote 1.6s ease-out infinite" }}>♪</text>
+        <text x="4" y="52" style={{ animation: "rsNote 1.6s ease-out 0.8s infinite" }} fill="#a855f7">♫</text>
+      </g>)}
       {lying && <text x="78" y="20" fontSize="16" fill="#94a3b8" style={{ transform: "rotate(-90deg)", transformOrigin: "78px 20px" }}>Zzz</text>}
 
       {/* wings only while flying */}
@@ -129,7 +133,7 @@ export default function Rosie({ mood = "happy", size = 56, pose = "idle", outfit
 
       {/* legs, socks and sneakers */}
       {[["L", hipL, lx, "petLegSwingL"], ["R", hipR, rx2, "petLegSwingR"]].map(([n, hx, fx, anim]) => (
-        <g key={n} style={{ transformOrigin: hx + "px 122px", animation: walking ? anim + " 0.45s ease-in-out infinite" : "none", opacity: flying ? 0.75 : 1 }}>
+        <g key={n} style={{ transformOrigin: hx + "px 122px", animation: (walking || dancing) ? anim + (dancing ? " 0.4s" : " 0.45s") + " ease-in-out infinite" : "none", opacity: flying ? 0.75 : 1 }}>
           <line x1={hx} y1="120" x2={sitting ? fx : (flying ? hx : fx)} y2={sitting ? 126 : 131} stroke={skin} strokeWidth="5.2" strokeLinecap="round" />
           {!sitting && <rect x={fx - 3.1} y="129" width="6.2" height="6.6" rx="2" fill="#fff" stroke="#e5e7eb" strokeWidth="0.4" />}
           {sitting && <line x1={fx} y1="126" x2={fx} y2="134" stroke={skin} strokeWidth="5" strokeLinecap="round" />}
@@ -171,7 +175,7 @@ export default function Rosie({ mood = "happy", size = 56, pose = "idle", outfit
 
       {/* arms */}
       {!flying && !cheer && (
-        <g style={{ transformOrigin: "35px 75px", animation: walking ? "petArmSwing 0.45s ease-in-out infinite" : "none" }}>
+        <g style={{ transformOrigin: "35px 75px", animation: dancing ? "rsArmA 0.8s ease-in-out infinite" : walking ? "petArmSwing 0.45s ease-in-out infinite" : "none" }}>
           <line x1="35" y1="76" x2="29" y2="98" stroke={skin} strokeWidth="5" strokeLinecap="round" />
           {sleeve(35, 75.5)}
           <circle cx="28.6" cy="99" r="3.5" fill={skin} />
@@ -184,7 +188,7 @@ export default function Rosie({ mood = "happy", size = 56, pose = "idle", outfit
         <ellipse cx="91" cy="55" rx="4.1" ry="3.4" fill={skin} transform="rotate(-38 91 55)" />
         <path d="M92 51.5 L96.5 49 M93.8 54 L98.5 53.2 M92.8 57 L97 57.8" stroke={skin} strokeWidth="2" strokeLinecap="round" />
       </>) : (
-        <g style={{ transformOrigin: "65px 75px", animation: walking ? "petArmSwing 0.45s ease-in-out infinite reverse" : "none" }}>
+        <g style={{ transformOrigin: "65px 75px", animation: dancing ? "rsArmB 0.8s ease-in-out infinite" : walking ? "petArmSwing 0.45s ease-in-out infinite reverse" : "none" }}>
           <line x1="65" y1="76" x2="71" y2="98" stroke={skin} strokeWidth="5" strokeLinecap="round" />
           {sleeve(65, 75.5)}
           <circle cx="71.4" cy="99" r="3.5" fill={skin} />
