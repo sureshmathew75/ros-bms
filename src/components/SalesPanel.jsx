@@ -3185,6 +3185,34 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
         )}
       </div>
 
+      {/* Guide for new staff: what the card colours mean */}
+      <details open style={{ marginTop: 14, background: "white", border: "1px solid #f1f5f9", borderRadius: 14, padding: "12px 18px", boxShadow: "0 2px 12px rgba(0,0,0,0.04)" }}>
+        <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 800, color: "#475569", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+          🎨 How to read the card colours
+        </summary>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(230px, 1fr))", gap: 10, marginTop: 12 }}>
+          {[
+            [PAY_KIND.FULL.color, "Green — Full payment", "The customer paid the whole amount in one go."],
+            [PAY_KIND.ADVANCE.color, "Blue — First payment (Advance)", "The customer paid part of the amount first. The balance is still to come."],
+            [PAY_KIND.PART.color, "Orange — Part payment", "Another instalment towards the same order. Check the balance on the row."],
+            [PAY_KIND.FINAL.color, "Pink — Final payment", "The last instalment that completes the order."],
+            ["#dc2626", "Red — Recheck", "This sale was marked for rechecking. Red always comes first."],
+          ].map(([col, title, text]) => (
+            <div key={title} style={{ display: "flex", gap: 10, alignItems: "stretch" }}>
+              <div style={{ width: 5, borderRadius: 3, background: col, flexShrink: 0 }} />
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 800, color: "#0f172a" }}>{title}</div>
+                <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 1, lineHeight: 1.4 }}>{text}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ marginTop: 12, paddingTop: 10, borderTop: "1px dashed #e2e8f0", fontSize: 11.5, color: "#64748b", lineHeight: 1.55 }}>
+          <b style={{ color: "#475569" }}>Tips:</b> on Blue and Orange cards the coloured part of the edge shows how much of the order has been paid so far — a full edge means fully paid.
+          Hover over one card to light up all the other payments of the same order. Click a colour above the table to see only that payment type.
+        </div>
+      </details>
+
       {showCleanup && (
         <ItemNameCleanup sales={sales} accent={accent} onApply={onApplyItemRename} onClose={() => setShowCleanup(false)} />
       )}
