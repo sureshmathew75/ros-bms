@@ -90,7 +90,7 @@ export const ItemSuggestInput = ({ value, onChange, onPick, shopId, placeholder,
         <div ref={panelRef} onClick={(e) => e.stopPropagation()} style={{
           position: "fixed", left: pos.left, width: pos.width, zIndex: 100000,
           ...(pos.above ? { bottom: pos.edge } : { top: pos.edge }),
-          background: "white", border: "1.5px solid #94a3b8", borderRadius: 14, overflow: "hidden",
+          fontFamily: "Arial, Helvetica, sans-serif", background: "white", border: "1.5px solid #94a3b8", borderRadius: 14, overflow: "hidden",
           boxShadow: "0 24px 60px rgba(15,23,42,0.35), 0 4px 14px rgba(15,23,42,0.18)", display: "flex", flexDirection: "column", maxHeight: pos.maxH,
         }}>
           <div style={{ padding: "9px 14px", background: "#f1f5f9", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
