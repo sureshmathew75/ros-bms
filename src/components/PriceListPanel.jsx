@@ -1,4 +1,5 @@
-import React, { useState, useMemo, useRef, useEffect } from "react";
+import React, { useState, useMemo, useRef, useEffect, useLayoutEffect } from "react";
+import { createPortal } from "react-dom";
 import {
   PRICE_PRODUCTS, PRICE_GROUPS, PRICE_LIST_EFFECTIVE, PRICE_LIST_GST, UK_DELIVERY, UK_DELIVERY_LOW, UK_DELIVERY_THRESHOLD, REFUND_TIERS,
   priceFor, priceSymbol, searchPriceList, isPriceShop, matchEntry,
@@ -17,11 +18,23 @@ const money = (shopId, n) => {
   return priceSymbol(shopId) + Number(n).toLocaleString(shopId === "ros-india" ? "en-IN" : "en-GB");
 };
 
+/* Bold-highlights the typed words inside an item name */
+const hilite = (text, query) => {
+  const toks = String(query || "").toLowerCase().split(/[^a-z0-9″×]+/).filter(t => t.length > 0);
+  if (!toks.length) return text;
+  const re = new RegExp("(" + toks.map(t => t.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|") + ")", "ig");
+  return String(text).split(re).map((part, i) => (i % 2 === 1
+    ? <mark key={i} style={{ background: "#fef08a", color: "inherit", borderRadius: 3, padding: "0 1px" }}>{part}</mark>
+    : part));
+};
+
 /* ── Item box with suggestions ─────────────────────────────────────────────── */
 export const ItemSuggestInput = ({ value, onChange, onPick, shopId, placeholder, style, inputRef, onFocus, onBlur }) => {
   const [open, setOpen] = useState(false);
   const [hi, setHi] = useState(0);
   const wrapRef = useRef(null);
+  const panelRef = useRef(null);
+  const [pos, setPos] = useState(null);   // where the big suggestion panel sits (fixed to the screen, so a modal can't clip it)
   const scrollRef = useRef(null);
   const byKey = useRef(false); // true while moving with the arrow keys, so the list follows the highlight
   const list = useMemo(() => (isPriceShop(shopId) ? searchPriceList(value, shopId, 80) : []), [value, shopId]);
@@ -33,9 +46,27 @@ export const ItemSuggestInput = ({ value, onChange, onPick, shopId, placeholder,
     const el = scrollRef.current.children[hi];
     if (el && el.scrollIntoView) el.scrollIntoView({ block: "nearest" });
   }, [hi]);
+  // Place the panel ABOVE the box when there's room (it is then never hidden under the Save bar), otherwise below.
+  useLayoutEffect(() => {
+    if (!show) return;
+    const place = () => {
+      if (!wrapRef.current) return;
+      const r = wrapRef.current.getBoundingClientRect();
+      const vw = window.innerWidth, vh = window.innerHeight;
+      const width = Math.min(Math.max(r.width, 520), vw - 24);
+      const left = Math.max(12, Math.min(r.left, vw - width - 12));
+      const above = r.top >= 300 || r.top > vh - r.bottom;
+      const room = (above ? r.top : vh - r.bottom) - 22;
+      setPos({ left, width, above, maxH: Math.max(180, Math.min(room, 560)), edge: above ? vh - r.top + 6 : r.bottom + 6 });
+    };
+    place();
+    window.addEventListener("resize", place);
+    window.addEventListener("scroll", place, true);
+    return () => { window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
+  }, [show, list.length]);
   useEffect(() => {
     if (!open) return;
-    const h = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    const h = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target) && !(panelRef.current && panelRef.current.contains(e.target))) setOpen(false); };
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, [open]);
@@ -55,27 +86,41 @@ export const ItemSuggestInput = ({ value, onChange, onPick, shopId, placeholder,
           else if (e.key === "Escape") { setOpen(false); }
         }}
       />
-      {show && (
-        <div style={{
-          position: "absolute", top: "100%", left: 0, zIndex: 300, marginTop: 3, minWidth: 270, width: "max-content", maxWidth: "min(380px, 88vw)",
-          background: "white", border: "1px solid #cbd5e1", borderRadius: 10, boxShadow: "0 12px 30px rgba(15,23,42,0.22)", overflow: "hidden",
+      {show && pos && createPortal(
+        <div ref={panelRef} onClick={(e) => e.stopPropagation()} style={{
+          position: "fixed", left: pos.left, width: pos.width, zIndex: 100000,
+          ...(pos.above ? { bottom: pos.edge } : { top: pos.edge }),
+          background: "white", border: "1.5px solid #94a3b8", borderRadius: 14, overflow: "hidden",
+          boxShadow: "0 24px 60px rgba(15,23,42,0.35), 0 4px 14px rgba(15,23,42,0.18)", display: "flex", flexDirection: "column", maxHeight: pos.maxH,
         }}>
-          <div ref={scrollRef} style={{ maxHeight: 280, overflowY: "auto", overscrollBehavior: "contain" }}>
+          <div style={{ padding: "9px 14px", background: "#f1f5f9", borderBottom: "1px solid #e2e8f0", display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+            <span style={{ fontSize: 13 }}>🔎</span>
+            <span style={{ fontSize: 12.5, fontWeight: 800, color: "#0f172a" }}>Pick the item</span>
+            <span style={{ fontSize: 11.5, color: "#64748b" }}>· {list.length} match{list.length === 1 ? "" : "es"}{String(value || "").trim() ? <> for “<b style={{ color: "#0f172a" }}>{String(value).trim()}</b>”</> : ""}</span>
+            <span style={{ marginLeft: "auto", fontSize: 10.5, color: "#94a3b8", whiteSpace: "nowrap" }}>Price list {PRICE_LIST_EFFECTIVE}</span>
+          </div>
+          <div ref={scrollRef} style={{ overflowY: "auto", overscrollBehavior: "contain", flex: 1, minHeight: 0 }}>
           {list.map((e, i) => (
             <div key={e.id} onMouseDown={(ev) => { ev.preventDefault(); pick(e); }} onMouseEnter={() => setHi(i)}
               style={{
-                display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, padding: "8px 11px", cursor: "pointer",
-                background: i === hi ? "#eff6ff" : "white", borderBottom: i < list.length - 1 ? "1px solid #f1f5f9" : "none",
+                display: "flex", justifyContent: "space-between", alignItems: "center", gap: 16, padding: "11px 14px 11px 12px", cursor: "pointer",
+                background: i === hi ? "#eff6ff" : "white", borderLeft: "4px solid " + (i === hi ? "#2563eb" : "transparent"),
+                borderBottom: i < list.length - 1 ? "1px solid #f1f5f9" : "none",
               }}>
-              <span style={{ fontSize: 12.5, fontWeight: 700, color: "#0f172a" }}>{e.label}
-                {e.spec && <span style={{ fontWeight: 500, color: "#94a3b8", marginLeft: 6, fontSize: 11 }}>{e.spec}</span>}
+              <span style={{ minWidth: 0 }}>
+                <span style={{ display: "block", fontSize: 14.5, fontWeight: 700, color: "#0f172a", lineHeight: 1.3 }}>{hilite(e.label, value)}</span>
+                <span style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 6, marginTop: 3 }}>
+                  {e.group && <span style={{ fontSize: 10, fontWeight: 800, color: "#475569", background: "#e2e8f0", borderRadius: 999, padding: "1px 8px", textTransform: "uppercase", letterSpacing: "0.04em" }}>{e.group}</span>}
+                  {e.spec && <span style={{ fontSize: 12, color: "#64748b", lineHeight: 1.35 }}>{e.spec}</span>}
+                </span>
               </span>
-              <span style={{ fontSize: 12.5, fontWeight: 800, color: "#166534", whiteSpace: "nowrap" }}>{money(shopId, priceFor(e, shopId))}</span>
+              <span style={{ fontSize: 16, fontWeight: 900, color: "#166534", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 9, padding: "5px 11px", whiteSpace: "nowrap", fontVariantNumeric: "tabular-nums" }}>{money(shopId, priceFor(e, shopId))}</span>
             </div>
           ))}
           </div>
-          <div style={{ padding: "5px 11px", fontSize: 10, color: "#94a3b8", background: "#f8fafc", borderTop: "1px solid #f1f5f9" }}>{list.length} item{list.length === 1 ? "" : "s"} · Price list {PRICE_LIST_EFFECTIVE} · scroll or ↑↓ then Enter, or click</div>
-        </div>
+          <div style={{ padding: "7px 14px", fontSize: 11, color: "#64748b", background: "#f8fafc", borderTop: "1px solid #e2e8f0", flexShrink: 0 }}>↑ ↓ to move · <b>Enter</b> to pick · <b>Esc</b> to close · or just click an item</div>
+        </div>,
+        document.body
       )}
     </div>
   );
