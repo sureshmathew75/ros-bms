@@ -1,6 +1,7 @@
 import { useState, useMemo, useRef, useEffect as useEff } from "react";
 import { formatDate } from "../utils";
 import { showAlert, showConfirm } from "./PopupHost";
+import { isAwaitingDetails } from "./awaiting";
 import { dbLoadDispatchLog, dbSaveDispatchEntry } from "../db";
 import { BankBadge, BankIcon, BankMenu } from "./BankLogos";
 import { shortfallForSales, shortfallMessage, listPriceOf, listPriceAmounts } from "../priceList";
@@ -525,6 +526,7 @@ export default function SalesPanel({
   const [hovR,    setHovR]    = useState(null);
   const [hovKey,  setHovKey]  = useState(null);      // instalment-group key of the hovered row (lights up the whole deal)
   const [kindFilter, setKindFilter] = useState("ALL"); // legend filter: ALL | FULL | ADVANCE | PART | FINAL
+  const [awaitFilter, setAwaitFilter] = useState(false); // show only bank payments still waiting for customer / item details
   // Manually marking a sale Fulfilled straight from Pending is now an
   // admin-only override (normal despatches auto-fulfil from the Despatch
   // Log once tracking + shipper are entered) — reserved for edge cases
@@ -1345,9 +1347,10 @@ We hope you enjoy your purchase! 💜
     sortedSales.forEach(x => { c[kindOf(x)]++; });
     return c;
   }, [sortedSales, instalmentGroups]); // eslint-disable-line react-hooks/exhaustive-deps
+  const awaitDetailsCount = useMemo(() => sortedSales.filter(isAwaitingDetails).length, [sortedSales]);
   const kindSales = useMemo(
-    () => (kindFilter === "ALL" ? sortedSales : sortedSales.filter(x => kindOf(x) === kindFilter)),
-    [sortedSales, kindFilter, instalmentGroups] // eslint-disable-line react-hooks/exhaustive-deps
+    () => (awaitFilter ? sortedSales.filter(isAwaitingDetails) : (kindFilter === "ALL" ? sortedSales : sortedSales.filter(x => kindOf(x) === kindFilter))),
+    [sortedSales, kindFilter, awaitFilter, instalmentGroups] // eslint-disable-line react-hooks/exhaustive-deps
   );
   const rowsWithSeparators = useMemo(
     () => buildRowsWithSeparators(kindSales, showFYSep, showMonSep),
@@ -2106,6 +2109,17 @@ We hope you enjoy your purchase! 💜
             </button>
           );
         })}
+        {(awaitDetailsCount > 0 || awaitFilter) && (
+          <button onClick={() => setAwaitFilter(f => !f)}
+            title="Bank payments waiting for the customer name and items (click again for all)"
+            style={{
+              display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 11px", borderRadius: 999, fontSize: 11, fontWeight: 800,
+              cursor: "pointer", fontFamily: "inherit", marginLeft: 6,
+              border: "1px solid #8b5cf6", background: awaitFilter ? "#8b5cf6" : "#f5f3ff", color: awaitFilter ? "white" : "#6d28d9",
+            }}>
+            💳 Awaiting details <span style={{ opacity: 0.85, fontWeight: 700 }}>{awaitDetailsCount}</span>
+          </button>
+        )}
       </div>
 
       {/* ══════════════════════════════════════════════════════════
@@ -2308,7 +2322,7 @@ We hope you enjoy your purchase! 💜
                 // Colour is shared across the whole group, not just this row's own tag
                 // Card edge / badges use THIS row's own payment-type colour (Full green · First blue · Part orange · Final pink)
                 const rowKind   = kindOf(s);
-                const kindColor = PAY_KIND[rowKind].color;
+                const kindColor = isAwaitingDetails(s) ? "#8b5cf6" : PAY_KIND[rowKind].color;
                 const instColor = isInstalment ? kindColor : "transparent";
                 const instBg    = isInstalment ? instColor + "0d" : "transparent";
                 // Show instalment summary row only on the advance sale
@@ -2452,6 +2466,11 @@ We hope you enjoy your purchase! 💜
                     {showCol("Customer") && (
                     <td style={{ padding: "12px 16px" }}>
                       <div style={{ fontWeight: 700, fontSize: 13, color: "#0f172a", textTransform: "uppercase" }}>{s.customer}</div>
+                      {isAwaitingDetails(s) && (
+                        <div style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 10.5, fontWeight: 800, padding: "2px 9px", borderRadius: 999, background: "#f5f3ff", color: "#6d28d9", border: "1px solid #c4b5fd", whiteSpace: "nowrap", marginTop: s.customer ? 3 : 0 }}>
+                          💳 Awaiting details
+                        </div>
+                      )}
                       {s.phone && <div style={{ fontSize: 11, color: "#94a3b8", marginTop: 1 }}>{s.phone}</div>}
                       {s.paidBy && String(s.paidBy).trim() !== "" && (
                         <div style={{ fontSize: 10, color: "#b6c0cd", marginTop: 1 }}>{s.paidBy}</div>
@@ -3187,6 +3206,14 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                     {/* Actions */}
                     <td style={{ padding: "12px 16px", textAlign: "right" }}>
                       <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+                        {isAwaitingDetails(s) && (
+                          <button
+                            onClick={e => { e.stopPropagation(); setEditRow(s); setModal("complete-sale"); }}
+                            title="Add the customer and items for this bank payment"
+                            style={{ height: 30, padding: "0 10px", borderRadius: 8, border: "none", background: "#8b5cf6", color: "white", cursor: "pointer", fontSize: 11.5, fontWeight: 800, fontFamily: "inherit", whiteSpace: "nowrap" }}>
+                            ➕ Add details
+                          </button>
+                        )}
                         <button
                           onClick={e => { e.stopPropagation(); setInvoiceRow(s); }}
                           title="View Invoice"
@@ -3248,6 +3275,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
             [PAY_KIND.ADVANCE.color, "Blue — First payment (Advance)", "The customer paid part of the amount first. The balance is still to come."],
             [PAY_KIND.PART.color, "Orange — Part payment", "Another instalment towards the same order. Check the balance on the row."],
             [PAY_KIND.FINAL.color, "Pink — Final payment", "The last instalment that completes the order."],
+            ["#8b5cf6", "Purple — Awaiting details", "A bank payment was recorded but the customer and items are not added yet. Press “Add details”."],
             ["#dc2626", "Red — Recheck", "This sale was marked for rechecking. Red always comes first."],
           ].map(([col, title, text]) => (
             <div key={title} style={{ display: "flex", gap: 10, alignItems: "stretch" }}>

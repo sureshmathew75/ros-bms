@@ -14,6 +14,7 @@ import Rosie, { rosieOutfitFor, OUTFITS, OUTFIT_LABELS } from "./components/Rosi
 import ROSIE_HELLO_IMG from "./rosie-hello.png";       // exact 3D picture of Rosie, used in her panel
 import ROSIE_SUCCESS_IMG from "./rosie-success.png";   // celebrating Rosie, used in the day wrap-up
 import { answerRosie, buildDayWrapUp, coachNotes, ROSIE_HINTS } from "./components/rosieBrain";
+import { AWAITING_TAG, isAwaitingDetails } from "./components/awaiting";
 import PriceListPanel, { ItemSuggestInput, PriceDiffModal, PriceHint, priceNoteText, FinalShortModal, PartPaidModal } from "./components/PriceListPanel";
 import SaleNotebook from "./components/SaleNotebook";
 import { isPriceShop, priceFor, matchEntry, priceMismatches, listTotalForLines, ukDeliveryFor, exchangeSaleUpdate, findListEntry, listPriceOf, listPriceOfLine, listPriceAmounts } from "./priceList";
@@ -8194,6 +8195,47 @@ const addSale = async (form) => {
     dbSaveCustomer(shopId, updatedCust).then(()=>console.log("Customer saved ✅")).catch(err=>console.error("❌ Customer save failed:",err));
   }
 };
+  // Staff (or admin) adding the customer and items to a bank payment an admin recorded earlier. The sale keeps its invoice
+  // number, date, account, payer and money; only the customer / items / delivery details are filled in, and the
+  // "Awaiting Details" tag is dropped (the form has already removed it).
+  const completeAwaitingSale = (form) => {
+    const existing = (sales||[]).find(x=>x.id===(editRow&&editRow.id)) || editRow;
+    if(!existing) return;
+    const saleLines = Array.isArray(form.saleLines)&&form.saleLines.length>0 ? form.saleLines : null;
+    const merged = {
+      ...existing, ...form,
+      id: existing.id, date: existing.date, invoiceNo: existing.invoiceNo||existing.id,
+      amount: Number(form.amount)||0,
+      taxRate: form.taxRate!==undefined&&form.taxRate!==null ? form.taxRate : 0,
+      taxInclusive: form.taxRate===0 ? true : form.taxInclusive!==false,
+      contact: form.contact||"", phone: form.contact||"", address: form.address||"",
+      qty: form.qty||"1", item: form.item||"", saleLines,
+      ful: form.status||existing.ful||"PENDING", pay: existing.pay||form.payBy||"SHOP", rem: form.remarks||"",
+      paidBy: existing.paidBy||form.paidBy||"", paymentMethod: existing.paymentMethod||form.paymentMethod||"",
+    };
+    commitEditSave(merged);
+    if(form.customer){
+      const prior=customers.find(c=>c.name===form.customer);
+      const updatedCust={
+        id: prior?.id||("CUST-"+Date.now().toString().slice(-6)),
+        name: form.customer,
+        phone: form.contact||prior?.phone||"",
+        whatsapp: form.contact||prior?.whatsapp||"",
+        address: form.address||prior?.address||"",
+        tag: prior?.tag||"New Customer",
+        notes: prior?.notes||"",
+        purchases: (prior?.purchases||0)+1,
+        spend: (prior?.spend||0)+(Number(form.amount)||0),
+        last: (()=>{const dt=new Date();return `${String(dt.getDate()).padStart(2,"0")}/${String(dt.getMonth()+1).padStart(2,"0")}/${String(dt.getFullYear()).slice(-2)}`;})(),
+      };
+      setCustomers(prev=>{
+        const idx=prev.findIndex(c=>c.name===form.customer);
+        if(idx>=0){const n=[...prev];n[idx]=updatedCust;return n;}
+        return [...prev,updatedCust];
+      });
+      dbSaveCustomer(shopId, updatedCust).catch(err=>console.error("❌ Customer save failed:",err));
+    }
+  };
   const TD=({ch,mono,fw,c})=><td style={{padding:"13px 16px",fontSize:13,color:c||"#374151",fontFamily:mono?"DM Mono,monospace":"inherit",fontWeight:fw||400}}>{ch}</td>;
 
   const setSalesPeriod=(p)=>{
@@ -10199,6 +10241,20 @@ return(
               const updated={...(shopItems||{}),[shopId]:current.filter(i=>i!==item)};
               setShopItems(updated); dbDeleteShopItem(shopId,item);
             }}
+          />
+        </Modal>
+      )}
+      {modal==="complete-sale"&&editRow&&(
+        <Modal title={"➕ Add details — "+editRow.id} onClose={()=>{setModal(null);setEditRow(null);}} accent={shop.accent}>
+          <NewSaleForm
+            shopId={shopId} shop={shop} completing={editRow}
+            isSuperadmin={user?.role==="superadmin"}
+            canDiscount={user?.role==="superadmin"||user?.role==="admin"}
+            onSave={()=>{}} onComplete={completeAwaitingSale} onClose={()=>{setModal(null);setEditRow(null);}}
+            lastInvoiceNum={0}
+            customers={customers}
+            sales={sales}
+            shopItems={(shopItems||{})[shopId]||[]}
           />
         </Modal>
       )}
@@ -16948,6 +17004,7 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
     const nagMs = Date.now() - (nagDays ?? 14)*24*60*60*1000;
     const cutoffTime = cutoffDate ? new Date(cutoffDate).getTime() : null;
     return (sales||[]).filter(s => {
+      if (isAwaitingDetails(s)) return false;   // no customer yet — listed separately below
       const status = (s.ful||s.status||"").toUpperCase();
       const isOpenStatus = ["PENDING","TO ORDER","UNFULFILLED"].includes(status);
       const hasTracking = !!(s.trackingNo && String(s.trackingNo).trim());
@@ -16959,7 +17016,9 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
     }).sort((a,b)=>(a.date||"").localeCompare(b.date||""));
   }, [sales, nagDays, cutoffDate]);
 
-  const totalBadge = overdue.length + myTasks.length;
+  // Bank payments an admin recorded that still need the customer name / items (staff add them from Sales)
+  const awaitingDetails = React.useMemo(() => (sales||[]).filter(isAwaitingDetails), [sales]);
+  const totalBadge = overdue.length + myTasks.length + awaitingDetails.length;
   const mood = overdue.length > 10 ? "crying" : totalBadge===0 ? "happy" : totalBadge<=3 ? "neutral" : "worried";
 
   // When everything is caught up (she is happy) she does a little dance — shortly after the page opens, when her
@@ -17050,6 +17109,14 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+          {awaitingDetails.length>0 && (
+            <div style={{marginBottom:12,padding:"9px 11px",background:"#f5f3ff",border:"1px solid #c4b5fd",borderRadius:10}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#6d28d9"}}>💳 {awaitingDetails.length} payment{awaitingDetails.length!==1?"s":""} waiting for customer details</div>
+              <div style={{fontSize:11.5,color:"#7c3aed",lineHeight:1.4,margin:"3px 0 6px"}}>The money is in — please add who it was for and what was bought.</div>
+              <button onClick={()=>{setOpen(false); if(onOpenSales) onOpenSales();}}
+                style={{fontSize:11.5,fontWeight:800,padding:"5px 12px",borderRadius:8,border:"none",background:"#8b5cf6",color:"white",cursor:"pointer",fontFamily:"inherit"}}>Open Sales → Awaiting details</button>
             </div>
           )}
           <div style={{fontWeight:800,fontSize:13,color:"#0f172a",marginBottom:8}}>
@@ -19391,13 +19458,15 @@ const AddTabInput=({onAdd,accent})=>{
   );
 };
 
-const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,onDeleteShopItem,customers=[],sales=[],isSuperadmin=false,canDiscount=false,onAdjustExpected})=>{
+const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAddShopItem,onDeleteShopItem,customers=[],sales=[],isSuperadmin=false,canDiscount=false,onAdjustExpected,completing=null,onComplete})=>{
   const rosieFieldRefs=useRef({});
   const [priceDiff,setPriceDiff]=useState(null); // line prices that differ from the price list — Advance? / reason is asked before saving
   const [typeManual,setTypeManual]=useState(false); // staff picked the payment type themselves — stop auto-suggesting
   const [partPaidAsk,setPartPaidAsk]=useState(null); // received < sale total: "Is this an Advance?"
   const [finalShort,setFinalShort]=useState(null); // Final payment leaves the deal short of the Expected total / price list
   const [paymentTypeAcked,setPaymentTypeAcked]=useState(false);
+  const [bankMode,setBankMode]=useState(false);     // admin only: record just the bank payment — staff add the customer / items later
+  const [bankAmount,setBankAmount]=useState("");
   const [contactTouched,setContactTouched]=useState(false);   // Rosie checks the phone number once the box has been left
   const [showAddressModal,setShowAddressModal]=useState(false);
   const defaultPay = shopId === "ros-india" ? "SIB" : "SHOP";
@@ -19438,12 +19507,13 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
   // ── Multi-item lines state ──
   const blankLine=()=>({id:Date.now()+Math.random(),name:"",qty:"1",price:""});
   const [lines,setLines]=useState([blankLine()]);
+  const _c=completing;   // when set: adding the customer / items to a bank payment recorded earlier (its money is locked)
 
   const [form,setForm]=useState({
-    date:        new Date().toISOString().slice(0,10),
+    date:        _c?(_c.date||new Date().toISOString().slice(0,10)):new Date().toISOString().slice(0,10),
     // ros-india: no invoice number until a superadmin assigns one
-    invoiceNo:   shopId==="ros-india" ? "" : autoInv,
-    invAssigned: shopId==="ros-india" ? false : true,
+    invoiceNo:   _c ? _c.id : (shopId==="ros-india" ? "" : autoInv),
+    invAssigned: _c ? true : (shopId==="ros-india" ? false : true),
     invEditing:  false,
     customer:    "",
     contact:     "",
@@ -19455,20 +19525,20 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     // It is stored in Other Charges, labelled "Shipping".
     otherCharges:shopId==="ros-hairlines"?String(ukDeliveryFor(0)):"",
     otherChargesLabel:shopId==="ros-hairlines"?"Shipping":"Other Charges",
-    payBy:       defaultPay,
-    shopInvoiceNo: "",
-    paidBy:      "",
-    paymentMethod: "",
+    payBy:       _c?(_c.pay||defaultPay):defaultPay,
+    shopInvoiceNo: _c?(_c.shopInvoiceNo||""):"",
+    paidBy:      _c?(_c.paidBy||""):"",
+    paymentMethod: _c?(_c.paymentMethod||""):"",
     trackingNo:  "",
-    dispatchFrom: shopId==="ros-india" ? "India-Unit1" : "",
-    status:      "PENDING",
+    dispatchFrom: _c?(_c.dispatchFrom||(shopId==="ros-india" ? "India-Unit1" : "")):(shopId==="ros-india" ? "India-Unit1" : ""),
+    status:      _c?String(_c.ful||_c.status||"PENDING").toUpperCase():"PENDING",
     sentDate:    "",
     returnReqDate: "",
     returnRcvd:  "",
     refundAmt:   "",
-    tag:         "",
+    tag:         _c?joinTags(parseTags(_c.tag).filter(t=>t!==AWAITING_TAG)):"",
     paymentType: "FULL",
-    remarks:     "",
+    remarks:     _c?(_c.rem||_c.remarks||""):"",
     address:     "",
     purInvNo:    "",
     purInvDate:  "",
@@ -19543,6 +19613,16 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     :_openDeal?((_openDeal.expected-_openDeal.prior-receivedTotal)<=0.5?"FINAL":"PART")
     :((grandTotal-receivedTotal)<=0.5?"FULL":"ADVANCE");
   useEffect(()=>{ if(_suggest&&!typeManual) setForm(f=>f.paymentType===_suggest?f:{...f,paymentType:_suggest}); },[_suggest,typeManual]);
+  // Adding details to a bank payment: with a single item the whole bank amount is what was received for it (staff can still split it
+  // across several items; the total must always match the bank payment).
+  const _lineSig=lines.map(l=>l.name+"|"+l.price+"|"+l.qty).join("§");
+  useEffect(()=>{
+    if(!_c) return;
+    const filled=lines.filter(l=>l.name.trim()||parseFloat(l.price)>0);
+    if(filled.length===1&&(parseFloat(filled[0].recv)||0)!==Number(_c.amount)){
+      setLines(ls=>ls.map(l=>l.id===filled[0].id?{...l,recv:String(Number(_c.amount))}:l));
+    }
+  },[_lineSig]); // eslint-disable-line react-hooks/exhaustive-deps
   // Hairlines UK: keep the standard shipping (£5 / £7) in step with the items until staff change the shipping box themselves.
   const [shipDirty,setShipDirty]=useState(false);
   const _shipStd=shopId==="ros-hairlines"?String(ukDeliveryFor(itemsSubtotal)):null;
@@ -19569,6 +19649,27 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     if(form.date && form.date>localTodayISO()){
       showAlert("Sale date can't be in the future. Please pick today's date or an earlier one.");
       return;
+    }
+    // Admin recording a bank payment only: just who paid, how much, and the account — staff add the rest later.
+    if(bankMode&&!_c){
+      const _amt=parseFloat(bankAmount)||0;
+      if(!(_amt>0)){showAlert("Please enter the amount received.");return;}
+      if(!form.paidBy||!form.paidBy.trim()){showAlert("Please enter who paid (the name shown on the bank statement).");return;}
+      if(shopId==="ros-india"&&INDIA_ACCT_PAYS.includes(form.payBy)&&(!form.paymentMethod||!form.paymentMethod.trim())){
+        showAlert("Please select how the payment was made — UPI, Bank Transfer, International, or Other.");
+        return;
+      }
+      onSave({...form,customer:"",contact:"",address:"",item:"",qty:"1",amount:_amt,saleLines:[],paymentType:"FULL",expectedTotal:"",discount:0,otherCharges:0,taxRate:0,
+        tag:joinTags([...parseTags(form.tag).filter(t=>t!==AWAITING_TAG),AWAITING_TAG]),paidBy:form.paidBy.trim(),paymentMethod:(form.paymentMethod||"").trim(),remarks:form.remarks||""});
+      return;
+    }
+    if(_c){
+      if(!form.customer.trim()){showAlert("Please enter who this payment was for (the customer's name).");return;}
+      if(!lines.some(l=>l.name.trim())){showAlert("Please add what was bought (at least one item).");return;}
+      if(Math.abs(receivedTotal-Number(_c.amount))>0.5){
+        showAlert("The amounts received on the item rows must add up to the bank payment of "+shop.symbol+Number(_c.amount).toLocaleString()+" — they add up to "+shop.symbol+receivedTotal.toLocaleString()+" now.");
+        return;
+      }
     }
     // ROS India, paid via SIB/HDFC: staff must record how the money moved
     // and who actually sent it — this used to only get filled in later by
@@ -19637,7 +19738,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     const combinedQty=filledLines.reduce((s,l)=>s+(parseFloat(l.qty)||0),0)||1;
     // An Advance with nothing left to pay (received covers the expected total) is a fully paid sale — save it as Full.
     const _toFull=_ps&&_payType==="ADVANCE"&&receivedTotal>0&&((Number(_expOut)>0?Number(_expOut):grandTotal)-receivedTotal)<=0.5;
-    onSave({...form,paymentType:_toFull?"FULL":_payType,expectedTotal:_toFull?"":_expOut,remarks:_remarksOut,item:combinedItem,qty:String(combinedQty),amount:entryAmount,saleLines:_outLines,discount:(_ps&&_recvMode)?0:discountAmt,otherCharges:(_ps&&_recvMode)?0:otherChargesAmt,taxRate:(_ps&&_recvMode)?0:form.taxRate,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||"",dispatchFrom:form.dispatchFrom||""});
+    (_c&&onComplete?onComplete:onSave)({...form,paymentType:_toFull?"FULL":_payType,expectedTotal:_toFull?"":_expOut,remarks:_remarksOut,item:combinedItem,qty:String(combinedQty),amount:(_c&&Math.abs(entryAmount-Number(_c.amount))<=0.5)?Number(_c.amount):entryAmount,saleLines:_outLines,discount:(_ps&&_recvMode)?0:discountAmt,otherCharges:(_ps&&_recvMode)?0:otherChargesAmt,taxRate:(_ps&&_recvMode)?0:form.taxRate,otherChargesLabel:form.otherChargesLabel,address:form.address||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||"",dispatchFrom:form.dispatchFrom||""});
   };
 
   const rosieFilledLines = lines.filter(l=>l.name.trim());
@@ -19735,6 +19836,36 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     {/* ── Single column layout ── */}
     <div style={{display:"flex",flexDirection:"column",height:"100%"}}>
       <div style={{flex:1,overflowY:"auto",padding:"12px 16px",WebkitOverflowScrolling:"touch"}}>
+        {canDiscount&&!_c&&(
+          <div onClick={()=>setBankMode(b=>!b)} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",margin:"0 0 10px",background:bankMode?"#f5f3ff":"#f8fafc",border:"1px solid "+(bankMode?"#c4b5fd":"#e2e8f0"),borderRadius:10,cursor:"pointer"}}>
+            <button type="button" style={{pointerEvents:"none",width:34,height:19,borderRadius:999,border:"none",cursor:"pointer",padding:0,position:"relative",flexShrink:0,background:bankMode?"#8b5cf6":"#cbd5e1",transition:"background 0.15s"}}>
+              <span style={{position:"absolute",top:2,left:bankMode?17:2,width:15,height:15,borderRadius:"50%",background:"white",transition:"left 0.15s",boxShadow:"0 1px 2px rgba(0,0,0,0.2)"}}/>
+            </button>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:12.5,fontWeight:800,color:bankMode?"#6d28d9":"#334155"}}>💳 Bank payment only</div>
+              <div style={{fontSize:11,color:"#64748b",lineHeight:1.35}}>Record who paid and how much from the bank statement — staff add the customer and items later.</div>
+            </div>
+          </div>
+        )}
+        {_c&&(
+          <div style={{padding:"11px 14px",margin:"0 0 12px",background:"#f5f3ff",border:"1px solid #c4b5fd",borderRadius:12}}>
+            <div style={{fontWeight:800,fontSize:13,color:"#6d28d9"}}>💳 Bank payment {shop.symbol}{Number(_c.amount).toLocaleString()}{_c.paidBy?" · paid by "+_c.paidBy:""}</div>
+            <div style={{fontSize:11.5,color:"#7c3aed",lineHeight:1.45,marginTop:2}}>Add who it was for and what was bought. The date, account, payer and amount are locked. The amounts received on the item rows must add up to {shop.symbol}{Number(_c.amount).toLocaleString()} — now {shop.symbol}{receivedTotal.toLocaleString()}.</div>
+          </div>
+        )}
+        {bankMode&&!_c&&(
+          <div style={{background:"#f5f3ff",border:"1px solid #c4b5fd",borderRadius:12,padding:"12px 14px",marginBottom:8}}>
+            <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:"#6d28d9",textTransform:"uppercase",letterSpacing:"0.07em"}}>💳 Bank payment</p>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
+              <div><label style={lbl}>Paid By <span style={{color:"#dc2626"}}>*</span></label>
+                <input value={form.paidBy} onChange={e=>set("paidBy",e.target.value)} placeholder="Name on the bank statement" style={inp} onFocus={fo} onBlur={bl}/></div>
+              <div><label style={lbl}>Amount received ({shop.symbol}) <span style={{color:"#dc2626"}}>*</span></label>
+                <input type="number" value={bankAmount} onChange={e=>setBankAmount(e.target.value)} placeholder="0" style={{...inp,fontFamily:"DM Mono,monospace",fontWeight:700}} onFocus={fo} onBlur={bl}/></div>
+            </div>
+            <div><label style={lbl}>Remarks</label><input value={form.remarks} onChange={e=>set("remarks",e.target.value)} placeholder="Notes for staff… (optional)" style={inp} onFocus={fo} onBlur={bl}/></div>
+          </div>
+        )}
+        {!bankMode&&(
         <div style={{display:"flex",alignItems:"center",gap:12,padding:"12px 14px",margin:"0 0 12px",background:"#f0fdf4",border:"1px solid #bbf7d0",borderRadius:12,position:"sticky",top:0,zIndex:20,boxShadow:"0 4px 12px rgba(0,0,0,0.08)"}}>
           <div style={{flexShrink:0,lineHeight:0}}><Rosie mood={rosieNotes.length>0?"worried":rosieAllDone?"success":"happy"} size={42} pose={rosieAllDone?"idle":"point"}/></div>
           <div style={{flex:1,minWidth:0}}>
@@ -19755,14 +19886,17 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
             </button>
           )}
         </div>
+        )}
 
             {/* Basic Info */}
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>📋 Basic Info</p>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7}}>
-                <div><label style={lbl}>Date</label><input type="date" value={form.date} max={localTodayISO()} onChange={e=>set("date",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
+                <div><label style={lbl}>Date</label><input type="date" value={form.date} max={localTodayISO()} readOnly={!!_c} onChange={_c?undefined:e=>set("date",e.target.value)} style={{...inp,...(_c?{background:"#f8fafc",color:"#94a3b8"}:{})}} onFocus={fo} onBlur={bl}/></div>
                 <div><label style={lbl}>Invoice No.</label>
-                  {shopId==="ros-india" && !isSuperadmin ? (
+                  {_c ? (
+                    <div style={{...inp,background:"#f8fafc",color:"#94a3b8",fontFamily:"DM Mono,monospace",fontSize:10,display:"flex",alignItems:"center"}}>{_c.id}</div>
+                  ) : shopId==="ros-india" && !isSuperadmin ? (
                     <div style={{...inp,background:"#f8fafc",color:"#94a3b8",fontFamily:"DM Mono,monospace",fontSize:10,display:"flex",alignItems:"center"}}>{form.invAssigned&&form.invoiceNo?form.invoiceNo:"\u2014"}</div>
                   ) : (
                   <>
@@ -19792,6 +19926,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               </div>
             </div>
 
+            {!bankMode&&(<>
             {/* Customer */}
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>👤 Customer</p>
@@ -19837,11 +19972,12 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               {suggestBanner}
               {payTypeUI}
             </div>)}
+            </>)}
             {/* Payment & Delivery */}
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🚚 Payment & Delivery</p>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:7,marginBottom:7}}>
-                <div style={shopId==="ros-india"?{gridColumn:"1 / -1"}:undefined}><label style={lbl}>Payment To</label>{shopId==="ros-india"
+                <div style={{...(shopId==="ros-india"?{gridColumn:"1 / -1"}:{}),...(_c?{pointerEvents:"none",opacity:0.6}:{})}}><label style={lbl}>Payment To</label>{shopId==="ros-india"
                   ? <BankPicker innerRef={el=>{rosieFieldRefs.current.payBy=el;}} value={form.payBy} options={PAY_OPTIONS} onChange={v=>set("payBy",v)} />
                   : <select ref={el=>{rosieFieldRefs.current.payBy=el;}} value={form.payBy} onChange={e=>set("payBy",e.target.value)} style={inp}>{PAY_OPTIONS.map(o=><option key={o}>{o}</option>)}</select>}</div>
                 {(form.payBy==="SHOP"||form.payBy==="SHOPIFY") ? (
@@ -19853,7 +19989,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                   Shopify-paid orders, e.g. international customers checking
                   out via the Shopify storefront, silently leaving them on
                   the India-Unit1 default with no way to change it). */}
-              {shopId==="ros-india"&&(
+              {shopId==="ros-india"&&!bankMode&&(
                 <div style={{marginBottom:7}}>
                   <label style={lbl}>Dispatch Unit</label>
                   <select value={form.dispatchFrom} onChange={e=>set("dispatchFrom",e.target.value)} style={{...inp,width:"auto",minWidth:170,maxWidth:"100%"}}>
@@ -19870,7 +20006,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                     <select
                       value={PAYMENT_METHOD_PRESETS.includes(form.paymentMethod)?form.paymentMethod:(form.paymentMethod?"OTHER":"")}
                       onChange={e=>set("paymentMethod",e.target.value==="OTHER"?" ":e.target.value)}
-                      style={inp}>
+                      disabled={!!_c} style={inp}>
                       <option value="">Select…</option>
                       {PAYMENT_METHOD_PRESETS.map(o=><option key={o} value={o}>{o}</option>)}
                       <option value="OTHER">Other…</option>
@@ -19882,13 +20018,14 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                         style={{...inp,marginTop:6,border:"1px solid "+shop.accent}} onFocus={fo} onBlur={bl}/>
                     )}
                   </div>
-                  <div>
+                  {!bankMode&&(<div>
                     <label style={lbl}>Paid By <span style={{color:"#dc2626"}}>*</span></label>
-                    <input value={form.paidBy} onChange={e=>set("paidBy",e.target.value)}
-                      placeholder="Who sent the money…" style={inp} onFocus={fo} onBlur={bl}/>
-                  </div>
+                    <input value={form.paidBy} onChange={e=>set("paidBy",e.target.value)} readOnly={!!_c}
+                      placeholder="Who sent the money…" style={{...inp,...(_c?{background:"#f8fafc",color:"#94a3b8"}:{})}} onFocus={fo} onBlur={bl}/>
+                  </div>)}
                 </div>
               )}
+              {!bankMode&&(<>
               <div style={{marginBottom:7}}>
                 <label style={lbl}>Status</label><select value={form.status} onChange={e=>set("status",e.target.value)} style={{...inp,fontSize:10,fontWeight:700,color:statusColor[form.status]||"#374151"}}>{(shopId==="ros-india"?["PENDING","FULFILLED","RETURN RQSTD","RETURN RCVD","EXCHANGED","REFUNDED","GOOD FEEDBACK RCVD","NEGATIVE FEEDBACK RCVD"]:["PENDING","FULFILLED","GOOD FEEDBACK","RTRN REQSTD","RETRN RCVD","EXCHANGED","REFUNDED"]).map(o=>(<option key={o}>{o}</option>))}</select>
               </div>
@@ -19896,8 +20033,10 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
                 <div><label style={lbl}>Dispatch Date</label><input type="date" value={form.sentDate} onChange={e=>set("sentDate",e.target.value)} style={inp} onFocus={fo} onBlur={bl}/></div>
                 <div><label style={{...lbl,color:"#0369a1"}}>📦 Tracking No.</label><input value={form.trackingNo} onChange={e=>set("trackingNo",e.target.value.toUpperCase())} placeholder="e.g. AB123456789GB" style={{...inp,fontFamily:"DM Mono,monospace",border:"1px solid #7dd3fc"}} onFocus={fo} onBlur={bl}/></div>
               </div>
+              </>)}
             </div>
 
+            {!bankMode&&(<>
             {/* Tags & Remarks */}
             <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:8,border:"1px solid #f1f5f9"}}>
               <p style={{margin:"0 0 8px",fontSize:10,fontWeight:800,color:shop.accent,textTransform:"uppercase",letterSpacing:"0.07em"}}>🏷️ Tags & Notes</p>
@@ -19905,7 +20044,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
 
               <div style={{marginTop:7}}><label style={lbl}>Remarks</label><input value={form.remarks} onChange={e=>set("remarks",e.target.value)} placeholder="Notes…" style={inp} onFocus={fo} onBlur={bl}/></div>
             </div>
-
+            </>)}
             {/* Purchase Details are added later via Edit Sale, not at creation time */}
 
         <div style={{height:80}}/>{/* spacer for sticky bottom bar */}
@@ -19915,13 +20054,13 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
       <div style={{flexShrink:0,borderTop:"1px solid #f1f5f9",background:"white",padding:"10px 16px"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div>
-            <p style={{margin:0,fontSize:10,color:"#94a3b8",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em"}}>{_ps?"Received now":"Total"}</p>
-            <p style={{margin:0,fontSize:20,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace",letterSpacing:"-0.5px"}}>{shop.symbol}{(_ps?receivedTotal:grandTotal).toLocaleString()}</p>
-            {_ps&&_calc.balance>0.5&&(<p style={{margin:"1px 0 0",fontSize:11,fontWeight:800,color:"#b45309"}}>Balance due {shop.symbol}{_calc.balance.toLocaleString()}</p>)}
+            <p style={{margin:0,fontSize:10,color:"#94a3b8",fontWeight:600,textTransform:"uppercase",letterSpacing:"0.05em"}}>{bankMode?"Bank payment":(_ps?"Received now":"Total")}</p>
+            <p style={{margin:0,fontSize:20,fontWeight:900,color:shop.accent,fontFamily:"DM Mono,monospace",letterSpacing:"-0.5px"}}>{shop.symbol}{(bankMode?(parseFloat(bankAmount)||0):(_ps?receivedTotal:grandTotal)).toLocaleString()}</p>
+            {_ps&&!bankMode&&_calc.balance>0.5&&(<p style={{margin:"1px 0 0",fontSize:11,fontWeight:800,color:"#b45309"}}>Balance due {shop.symbol}{_calc.balance.toLocaleString()}</p>)}
           </div>
           <div style={{display:"flex",gap:8}}>
             <button onClick={onClose} style={{padding:"10px 18px",borderRadius:10,border:"1px solid #e2e8f0",background:"white",color:"#64748b",fontWeight:700,fontSize:13,cursor:"pointer",fontFamily:"inherit"}}>Cancel</button>
-            <button onClick={()=>handleSave()} style={{padding:"10px 24px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44",display:"flex",alignItems:"center",gap:6}}><span>🛒</span> Save Sale</button>
+            <button onClick={()=>handleSave()} style={{padding:"10px 24px",borderRadius:10,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:13,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44",display:"flex",alignItems:"center",gap:6}}><span>{bankMode?"💳":"🛒"}</span> {bankMode?"Save Bank Payment":(_c?"Save Details":"Save Sale")}</button>
           </div>
         </div>
       </div>

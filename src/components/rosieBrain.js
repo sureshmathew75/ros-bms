@@ -14,6 +14,8 @@
    }
    ───────────────────────────────────────────────────────────────────────────── */
 
+import { isAwaitingDetails } from "./awaiting";
+
 export const ROSIE_HINTS = [
   "Who owes balance?",
   "Balance of Jency",
@@ -103,7 +105,7 @@ const payLine = (byPay, fmt) => Object.entries(byPay).sort((a, b) => b[1] - a[1]
 
 const awaitingDispatch = (ctx) => (ctx.sales || []).filter((s) => {
   const st = String(s.ful || s.status || "PENDING").toUpperCase();
-  return st === "PENDING" && !(s.trackingNo && String(s.trackingNo).trim());
+  return st === "PENDING" && !isAwaitingDetails(s) && !(s.trackingNo && String(s.trackingNo).trim());
 }).sort((a, b) => String(a.date || "").localeCompare(String(b.date || "")));
 
 export const answerRosie = (question, ctx) => {
@@ -202,6 +204,7 @@ export const buildDayWrapUp = (ctx) => {
   const deals = openDeals(ctx);
   const owed = deals.reduce((a, d) => a + d.balance, 0);
   const wait = awaitingDispatch(ctx);
+  const noDetails = (ctx.sales || []).filter(isAwaitingDetails);
   const d = new Date(today + "T00:00:00");
   const pretty = d.toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long" });
   const lines = [];
@@ -222,6 +225,10 @@ export const buildDayWrapUp = (ctx) => {
     if (deals.length > 5) lines.push("• …and " + (deals.length - 5) + " more");
   }
   lines.push("");
+  if (noDetails.length > 0) {
+    lines.push("*Bank payments waiting for customer details:* " + noDetails.length + " · " + fmt(noDetails.reduce((a, x) => a + money0(x.amount), 0)));
+    lines.push("");
+  }
   if (wait.length === 0) lines.push("*Parcels waiting to be sent:* none ✅");
   else {
     lines.push("*Parcels waiting to be sent:* " + wait.length);
