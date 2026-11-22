@@ -1351,15 +1351,27 @@ We hope you enjoy your purchase! 💜
   // (otherwise the table's own bar is only reachable after scrolling right to the end of a long list).
   const tblWrapRef = useRef(null);
   const tblBarRef = useRef(null);
+  const tblBarSlotRef = useRef(null);
   const tblBarInnerRef = useRef(null);
   useEff(() => {
-    const w = tblWrapRef.current, b = tblBarRef.current, inner = tblBarInnerRef.current;
-    if (!w || !b || !inner) return undefined;
+    const w = tblWrapRef.current, b = tblBarRef.current, inner = tblBarInnerRef.current, slot = tblBarSlotRef.current;
+    if (!w || !b || !inner || !slot) return undefined;
     const tbl = w.querySelector("table");
+    // The bar normally sits just under the table; while that spot is below the bottom of the screen it is pinned to the
+    // bottom edge of the screen instead (position: fixed — sticky does not work here because the page itself scrolls).
+    const place = () => {
+      const overflow = w.scrollWidth > w.clientWidth + 1;
+      slot.style.display = overflow ? "block" : "none";
+      if (!overflow) return;
+      const r = w.getBoundingClientRect(), sr = slot.getBoundingClientRect();
+      const floating = sr.top + 18 > window.innerHeight && r.top < window.innerHeight - 40;
+      if (floating) { b.style.position = "fixed"; b.style.left = r.left + "px"; b.style.width = r.width + "px"; b.style.bottom = "0px"; }
+      else { b.style.position = "relative"; b.style.left = "0px"; b.style.width = "100%"; b.style.bottom = "auto"; }
+    };
     const sync = () => {
       inner.style.width = w.scrollWidth + "px";
-      b.style.display = w.scrollWidth > w.clientWidth + 1 ? "block" : "none";
       if (b.scrollLeft !== w.scrollLeft) b.scrollLeft = w.scrollLeft;
+      place();
     };
     const onW = () => { if (b.scrollLeft !== w.scrollLeft) b.scrollLeft = w.scrollLeft; };
     const onB = () => { if (w.scrollLeft !== b.scrollLeft) w.scrollLeft = b.scrollLeft; };
@@ -1368,8 +1380,10 @@ We hope you enjoy your purchase! 💜
     let ro = null;
     if (typeof ResizeObserver !== "undefined") { ro = new ResizeObserver(sync); ro.observe(w); if (tbl) ro.observe(tbl); }
     window.addEventListener("resize", sync);
+    window.addEventListener("scroll", place, true);   // capture: also fires when an inner container (not the window) is the one scrolling
     sync();
-    return () => { w.removeEventListener("scroll", onW); b.removeEventListener("scroll", onB); window.removeEventListener("resize", sync); if (ro) ro.disconnect(); };
+    const t = setTimeout(sync, 600);                   // once more after fonts / data have settled
+    return () => { clearTimeout(t); w.removeEventListener("scroll", onW); b.removeEventListener("scroll", onB); window.removeEventListener("resize", sync); window.removeEventListener("scroll", place, true); if (ro) ro.disconnect(); };
   }, []);
   const awaitDetailsCount = useMemo(() => sortedSales.filter(isAwaitingDetails).length, [sortedSales]);
   const kindSales = useMemo(
@@ -3285,10 +3299,12 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
       </div>
 
       {/* Left/right scroll bar that stays at the bottom of the screen while the table is in view */}
-      <div ref={tblBarRef} title="Scroll the table left / right"
-        style={{ position: "sticky", bottom: 0, zIndex: 30, overflowX: "scroll", overflowY: "hidden", height: 18, marginTop: 4, display: "none",
-          background: "rgba(255,255,255,0.96)", borderRadius: 9, border: "1px solid #e2e8f0", boxShadow: "0 -2px 10px rgba(15,23,42,0.08)" }}>
-        <div ref={tblBarInnerRef} style={{ height: 1 }} />
+      <div ref={tblBarSlotRef} style={{ height: 18, marginTop: 4, display: "none" }}>
+        <div ref={tblBarRef} title="Scroll the table left / right"
+          style={{ position: "relative", zIndex: 30, overflowX: "scroll", overflowY: "hidden", height: 18, width: "100%", boxSizing: "border-box",
+            background: "rgba(255,255,255,0.97)", borderRadius: 9, border: "1px solid #e2e8f0", boxShadow: "0 -2px 10px rgba(15,23,42,0.10)" }}>
+          <div ref={tblBarInnerRef} style={{ height: 1 }} />
+        </div>
       </div>
 
       {/* Guide for new staff: what the card colours mean */}
