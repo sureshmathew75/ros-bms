@@ -2164,8 +2164,9 @@ We hope you enjoy your purchase! 💜
           SALES TABLE
          ══════════════════════════════════════════════════════════ */}
       <div style={{
-        background: "white", borderRadius: 16, border: "1px solid #f1f5f9",
-        overflow: "hidden", boxShadow: "0 2px 12px rgba(0,0,0,0.04)",
+        // Same grey as the page background, slightly recessed, so every transaction card stands out of it
+        background: "#f0f4f8", borderRadius: 16, border: "1px solid #e2e8f0",
+        overflow: "hidden", boxShadow: "inset 0 2px 10px rgba(15,23,42,0.06)",
       }}>
         <div ref={tblWrapRef} className="ros-tbl-wrap" style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", scrollbarWidth: "none" }}>
           <style>{`
@@ -2202,7 +2203,7 @@ We hope you enjoy your purchase! 💜
           `}</style>
           <table style={{ width: "100%", borderCollapse: "separate", borderSpacing: "0 10px", minWidth: 720 }}>
             <thead>
-              <tr style={{ background: "#f8fafc" }}>
+              <tr style={{ background: "transparent" }}>
                 {["Invoice", "Date", "Customer", "Item", "Amount", ...(isIndiaShop ? ["Verified"] : []), "Refund", "Payment", "Status", "Tags",
                   ...(isIndiaShop&&!isStaff ? ["Pur. Amount"] : []),
                   ...(isIndiaShop&&user?.role==="superadmin" ? ["P/L"] : []),
@@ -3283,7 +3284,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
         {sortedSales.length > 0 && (
           <div style={{
             display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "10px 20px", borderTop: "1px solid #f1f5f9", background: "#f8fafc",
+            padding: "10px 20px", borderTop: "1px solid #e2e8f0", background: "transparent",
           }}>
             <span style={{ fontSize: 12, color: "#94a3b8", marginLeft: "auto" }}>
               {sortedSales.length} record{sortedSales.length !== 1 ? "s" : ""}
