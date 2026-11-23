@@ -17562,9 +17562,17 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
   // Sales whose item lines were lost (older saves) but whose item text is "NAME(x1), NAME(x1)" are opened in the
   // notebook too, with the old equal-split prices as a starting point, so an admin can set the real prices.
   const _realLines=Array.isArray(sale.saleLines)&&sale.saleLines.length>0;
+  // Old sales with a plain item text (no lines at all) get ONE starter line too, priced so the stored amount is unchanged.
   const _synthLines=(!_realLines&&String(sale.item||"").includes("(x"))
     ?parseLegacyItems(sale.item,sale.qty,Number(sale.amount)||0).map(l=>({name:l.name,qty:String(l.qty),price:String(l.price)}))
-    :[];
+    :(!_realLines?(()=>{
+      const _q=parseFloat(sale.qty)||1;
+      const _t=(Number(sale.taxRate)||0)/100;
+      const _pre=(sale.taxInclusive!==false&&_t>0)?(Number(sale.amount)||0)/(1+_t):(Number(sale.amount)||0);
+      const _items=_pre+(parseFloat(sale.discount)||0)-(parseFloat(sale.otherCharges)||0);
+      const _nm=String(sale.item||"").trim();
+      return [{name:(_nm==="—"||_nm==="-")?"":_nm,qty:String(_q),price:_items?String(parseFloat((_items/_q).toFixed(4))):""}];
+    })():[]);
   const hasLines=_realLines||_synthLines.length>0;
   const _lines0=_realLines?sale.saleLines:_synthLines;
   const [editPriceDiff,setEditPriceDiff]=useState(null);   // changed lines priced differently from the price list
@@ -17707,7 +17715,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
     ?(<div style={{margin:"0 0 8px",padding:"8px 11px",borderRadius:9,background:"#fffbeb",border:"1px solid #fde68a",fontSize:12,fontWeight:700,color:"#92400e"}}>⚠ Balance due {_moneyFmt(_calc.balance)} — if the customer will pay the rest later, choose <b>Advance</b> (or Part / Final) below. Otherwise press “Mark fully received”.</div>)
     :null;
   return(
-    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",padding:"4px 20px 20px"}}>
+    <div style={{display:"flex",flexDirection:"column",gap:0,maxHeight:"68vh",overflowY:"auto",padding:"4px 20px 0"}}>
       <div style={{padding:"0 20px"}}>
       {isStaff&&(
         <div style={{background:"#eff6ff",border:"1px solid #bfdbfe",borderRadius:10,padding:"10px 14px",marginBottom:12,marginTop:8,display:"flex",alignItems:"center",gap:8}}>
@@ -18259,7 +18267,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
       )}
 
       </div>{/* end padding wrapper */}
-      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,background:"white",padding:"6px 20px 2px",borderTop:"1px solid #f1f5f9"}}>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,position:"sticky",bottom:0,zIndex:15,background:"white",margin:"0 -20px",padding:"10px 20px 12px",borderTop:"1px solid #e2e8f0",boxShadow:"0 -6px 12px rgba(15,23,42,0.06)"}}>
         <button onClick={async()=>{
             if(form.date&&form.date>localTodayISO()){
               showAlert("Sale date can't be in the future. Please pick today's date or an earlier one.");
@@ -18300,7 +18308,9 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
             if(_mism.length>0&&!_reason){setEditPriceDiff(_mism);return;}
             let _remOut=(_mism.length>0&&_reason)?[form.remarks,priceNoteText(shopId,_mism,_reason)].filter(x=>x&&String(x).trim()).join(" | "):form.remarks;
             const _strip=l=>{const {_k,recv,_saved,_origName,_swap,...rest}=l;return rest;};
-            let _linesOut=(hasLines&&!(_synthLines.length>0&&!moneyDirty))?editLines.map(_strip):sale.saleLines;
+            // Starter lines (old sales) are only saved as lines once something was changed; a name-only change keeps the stored amount.
+            const _synthEdit=_synthLines.length>0&&!moneyDirty&&editLines.some(l=>l.name!==l._origName);
+            let _linesOut=(hasLines&&!(_synthLines.length>0&&!moneyDirty&&!_synthEdit))?editLines.map(_strip):sale.saleLines;
             let _amtOut=parseFloat(form.amount)||0, _discOut=parseFloat(form.discount)||0, _othOut=parseFloat(form.otherCharges)||0;
             let _taxOut=form.taxRate, _expOut=form.expectedTotal, _itemOut=form.item, _qtyOut=form.qty, _labelOut=form.otherChargesLabel||"Other Charges";
             if(_ro){
@@ -18331,6 +18341,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
               _remOut=[_remOut,"Price note — item changed: "+_swaps.map(l=>l.changedFrom+" → "+l.name+" (amount paid "+_moneyFmt(recvAmts[editLines.indexOf(l)])+" kept"+(Math.abs(_rowAmt(l)-recvAmts[editLines.indexOf(l)])>0.5?"; new item "+_moneyFmt(_rowAmt(l)):"")+")").join("; ")].filter(x=>x&&String(x).trim()).join(" | ");
               if(!_ro) _itemOut=editLines.filter(l=>String(l.name||"").trim()).map(l=>`${l.name}(x${_qtyOf(l)})`).join(", ")||_itemOut;
             }
+            if(_synthEdit&&!_swaps.length) _itemOut=editLines.filter(l=>String(l.name||"").trim()).map(l=>`${l.name}(x${_qtyOf(l)})`).join(", ")||_itemOut;
             if(!hasLines&&lgFrom&&form.item!==lgFrom){
               _remOut=[_remOut,"Price note — item changed: "+lgFrom+" → "+form.item+" (amount paid kept)"].filter(x=>x&&String(x).trim()).join(" | ");
             }
