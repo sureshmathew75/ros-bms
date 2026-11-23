@@ -1151,6 +1151,21 @@ We hope you enjoy your purchase! 💜
     return { expectedTotal, received, balance: expectedTotal - received };
   };
 
+  /* Item column wording for a Part / Final payment: the stage, the item the Advance was taken for, and the Advance it belongs to.
+     Display only — the saved item text is not changed. A blank or placeholder item ("Sale") takes the Advance's item name. */
+  const instalmentItemText = (s) => {
+    const pt = inferPaymentType(s);
+    if (pt !== "PART" && pt !== "FINAL") return s.item || "—";
+    const raw = String(s.item || "").trim();
+    const isGeneric = (t) => { const x = String(t || "").trim(); return !x || x === "—" || /^sale$/i.test(x); };
+    const gk = getInstalmentKey(s);
+    const adv = gk ? (instalmentGroups[gk] || []).find(x => x.id !== s.id && instalmentTagType(x) === "advance") : null;
+    const base = !isGeneric(raw) ? raw : (adv && !isGeneric(adv.item) ? String(adv.item).trim() : "");
+    const stage = pt === "FINAL" ? "Final payment" : "Part payment";
+    if (/^(part|final) payment/i.test(base)) return base;
+    return stage + (base ? " – " + base : "") + (adv ? " (Adv " + adv.id + ")" : "");
+  };
+
   /* Apply a status change to every sale in the same instalment group,
      then briefly flash those rows so it's obvious the cascade ran. */
   const applyCascade = async (saleId, newStatus, groupIds) => {
@@ -2579,7 +2594,7 @@ We hope you enjoy your purchase! 💜
                     {showCol("Item") && (
                     <td style={{ padding: "12px 16px" }}>
                       <span style={{ fontSize: 12, color: "#374151" }}>
-                        {s.item || "—"}
+                        {instalmentItemText(s)}
                         {s.qty && s.qty !== "1" && (
                           <span style={{ color: "#94a3b8", marginLeft: 4 }}>×{s.qty}</span>
                         )}
