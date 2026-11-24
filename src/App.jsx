@@ -9933,6 +9933,7 @@ return(
               shop={shop}
               user={user}
               sales={sales}
+              staffAccounts={rosIndiaStaffAccounts}
               // Plain field save — no status/fulfilment side effects — used
               // only for manually linking two sale records together
               // (manualLinkGroup) from the Despatch tab's "🔗 Link orders"
@@ -9963,12 +9964,15 @@ return(
                 // silently undo further progress (e.g. a return raised after
                 // delivery) — this keeps delivery confirmation independent of
                 // fulfilment status, exactly like it already is elsewhere.
-                if ("deliveryDate" in changes && Object.keys(changes).filter(k => k !== "fulfil").length === 1) {
+                if ("deliveryDate" in changes && Object.keys(changes).filter(k => k !== "fulfil" && k !== "deliveryNote").length === 1) {
                   // Marked delivered by hand (e.g. confirmed with the customer by phone, tracking never entered):
                   // a sale that is still PENDING becomes FULFILLED too. Any other status (returns, refunds…) is never touched.
                   const _curSt = String(sale.ful || sale.status || "PENDING").toUpperCase();
-                  if (changes.fulfil && changes.deliveryDate && _curSt === "PENDING") {
-                    const fulfilled = { ...sale, deliveryDate: changes.deliveryDate, ful: "FULFILLED", status: "FULFILLED", sentDate: sale.sentDate || changes.deliveryDate };
+                  const _willFulfil = !!changes.fulfil && !!changes.deliveryDate && _curSt === "PENDING";
+                  if (_willFulfil || (changes.deliveryNote && changes.deliveryDate)) {
+                    // deliveryNote (how it was confirmed + which staff member) is added to the sale's remarks.
+                    const _newRem = changes.deliveryNote ? [sale.rem, changes.deliveryNote].filter(x => x && String(x).trim()).join(" | ") : (sale.rem || "");
+                    const fulfilled = { ...sale, deliveryDate: changes.deliveryDate, rem: _newRem, ...(_willFulfil ? { ful: "FULFILLED", status: "FULFILLED", sentDate: sale.sentDate || changes.deliveryDate } : {}) };
                     try {
                       await dbSaveSale(shopId, fulfilled);
                     } catch (err) {
@@ -9977,7 +9981,7 @@ return(
                     }
                     setSalesData(prev => ({
                       ...prev,
-                      [shopId]: (prev[shopId] || []).map(s => s.id === saleId ? { ...s, deliveryDate: fulfilled.deliveryDate, ful: "FULFILLED", status: "FULFILLED", sentDate: fulfilled.sentDate } : s),
+                      [shopId]: (prev[shopId] || []).map(s => s.id === saleId ? { ...s, deliveryDate: fulfilled.deliveryDate, rem: fulfilled.rem, ful: fulfilled.ful, status: fulfilled.status, sentDate: fulfilled.sentDate } : s),
                     }));
                     return { ok: true };
                   }

@@ -332,6 +332,15 @@ const daysBetween = (a, b) => {
 // Delivery state used by the Status filter: delivered / in transit (has
 // tracking, not yet delivered) / awaiting tracking (nothing to track yet).
 const rowTrackState = (e) => e.lost ? "lost" : e.delivered ? "delivered" : (e.trackingNo ? "transit" : "notrack");
+// How a delivery was confirmed (picked in the Delivery pop-up, stored with the staff member who dealt with it).
+const DELIVERY_TRACK_LABEL = "Courier tracking shows delivered";
+const DELIVERY_CONFIRM_OPTIONS = [
+  DELIVERY_TRACK_LABEL,
+  "Phone call with the customer",
+  "Customer confirmed by WhatsApp / message",
+  "Courier / delivery partner confirmed",
+  "Other",
+];
 // ROS India: a parcel still open this many days after despatch is marked delivered automatically, unless staff marked it Lost.
 const AUTO_DELIVER_DAYS = 45;
 const addDaysISO = (iso, n) => { const [y, m, d] = iso.split("-").map(Number); return localISO(new Date(y, m - 1, d + n)); };
@@ -642,7 +651,7 @@ function saveDismissed(shopId, map) {
 /* ═══════════════════════════════════════════════════════════════════════
    DISPATCH PANEL
    ═══════════════════════════════════════════════════════════════════════ */
-export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate, onSaleFieldEdit }) {
+export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate, onSaleFieldEdit, staffAccounts = [] }) {
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   // Which date chip is selected in the Log view — "all" shows every
@@ -688,6 +697,9 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   const [dxPopup, setDxPopup] = useState(null);                // { type: "addr" | "remark", uuid } — small detail pop-ups from the table
   const [remarkDraft, setRemarkDraft] = useState("");
   const [delivDraft, setDelivDraft] = useState(todayISO());   // date picked in the Delivery pop-up
+  const [delivConfirm, setDelivConfirm] = useState("");         // how the delivery was confirmed (Delivery pop-up)
+  const [delivBy, setDelivBy] = useState("");                   // staff member who dealt with it (Delivery pop-up)
+  const [delivNote, setDelivNote] = useState("");               // optional note (required when "Other")
   const [dxCopied, setDxCopied] = useState(false);
   const [orphanBusy, setOrphanBusy] = useState(false);          // "Add all to the log" in progress
   const [addedNote, setAddedNote] = useState("");               // "✓ Added …" line in the Add Despatch pop-up
@@ -1409,8 +1421,9 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   // popup this replaces, the warning is still there whenever anyone next
   // opens the Despatch tab, not just for whoever was at the row when it
   // happened.
-  const setLinkWarning = async (uuid, text) => {
-    const current = entries.find(e => e.uuid === uuid);
+  const setLinkWarning = async (uuid, text, base) => {
+    // base = the row as just saved (passed by saveEntry), so this never writes back an older copy of the row.
+    const current = base || entries.find(e => e.uuid === uuid);
     if (!current || current.linkWarning === text) return;
     updateEntry(uuid, { linkWarning: text });
     await persist(uuid, { ...current, linkWarning: text });
@@ -1445,6 +1458,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     updateEntry(uuid, patch);
     const res = await persist(uuid, merged);
     if (res?.error) { showAlert("Could not save change: " + res.error); return; }
+    if (res?.warning && ("deliveryConfirm" in patch)) showAlert(res.warning);
     // Once both tracking number and shipper are on the row — the same
     // point that unlocks the "Send Notification" button — push it back
     // to the linked sale (tracking + carrier) and mark that sale Fulfilled.
@@ -1466,9 +1480,9 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
       if (failures.length) {
         const msg = `Couldn't update the linked sale (${failures.map(f=>f.id).join(", ")}) to Fulfilled: ${failures[0].message}`;
         showAlert(`Tracking saved here, but ${msg}\n\nPlease flip its status manually on the Sales tab.`);
-        await setLinkWarning(uuid, msg);
+        await setLinkWarning(uuid, msg, merged);
       } else {
-        await setLinkWarning(uuid, "");
+        await setLinkWarning(uuid, "", merged);
       }
     }
     // Tracking CLEARED here → clear it on the linked sale(s) too (plain field
@@ -1489,13 +1503,16 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     // first saved.
     if ("delivered" in patch && merged.saleId && onSaleUpdate) {
       // fulfil: a parcel marked delivered by hand also fulfils a still-Pending sale (e.g. delivery confirmed by phone, tracking never entered).
-      const failures = await pushToLinkedSales(merged, { deliveryDate: merged.delivered ? (merged.deliveredDate || todayISO()) : "", ...(merged.delivered ? { fulfil: true } : {}) }, "delivery");
+      // A manual confirmation (phone call, message …) is also written on the sale's remarks, with the staff member's name.
+      const _manualConf = merged.delivered && ("deliveryConfirm" in patch) && merged.deliveryConfirm && merged.deliveryConfirm !== DELIVERY_TRACK_LABEL;
+      const _delNote = _manualConf ? `Delivery confirmed: ${merged.deliveryConfirm} — handled by ${merged.deliveredBy || "—"} on ${ddmmyyyy(merged.deliveredDate || todayISO())}` : "";
+      const failures = await pushToLinkedSales(merged, { deliveryDate: merged.delivered ? (merged.deliveredDate || todayISO()) : "", ...(merged.delivered ? { fulfil: true } : {}), ...(_delNote ? { deliveryNote: _delNote } : {}) }, "delivery");
       if (failures.length) {
         const msg = `Couldn't update the linked sale (${failures.map(f=>f.id).join(", ")}) with delivery status: ${failures[0].message}`;
         showAlert(`Delivery status saved here, but ${msg}`);
-        await setLinkWarning(uuid, msg);
+        await setLinkWarning(uuid, msg, merged);
       } else {
-        await setLinkWarning(uuid, "");
+        await setLinkWarning(uuid, "", merged);
       }
     }
   };
@@ -1538,8 +1555,8 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
   // the green date badge (see the Delivery column below). Undo clears both
   // the flag and the date, including on the linked sale, in case it was
   // marked by mistake.
-  const markDelivered = (entry, date) => {
-    saveEntry(entry.uuid, { delivered: true, deliveredDate: date || todayISO() });
+  const markDelivered = (entry, date, confirm) => {
+    saveEntry(entry.uuid, { delivered: true, deliveredDate: date || todayISO(), ...(confirm ? { deliveryConfirm: confirm.text, deliveredBy: confirm.by } : {}) });
     setOpenDeliveryUuid(null);
   };
   const undoDelivered = (entry) => {
@@ -1547,7 +1564,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
       showAlert(`This parcel was despatched ${AUTO_DELIVER_DAYS}+ days ago, so it is marked delivered automatically.\n\nIf it never arrived, use the Lost button instead.`);
       return;
     }
-    saveEntry(entry.uuid, { delivered: false, deliveredDate: "", autoDelivered: false });
+    saveEntry(entry.uuid, { delivered: false, deliveredDate: "", autoDelivered: false, deliveryConfirm: "", deliveredBy: "" });
   };
   // Staff-marked "Lost": the parcel is never auto-delivered and drops out of Pending Delivery.
   const markLost = async (entry) => {
@@ -1885,7 +1902,7 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
         <td style={{ width: 128 }}>
           <div className="dx-dcell">
             <button className={"dx-dbtn " + (e.lost ? "lost" : e.delivered ? "ok" : "open")}
-              onClick={() => { setDelivDraft(e.deliveredDate || todayISO()); setDxPopup({ type: "delivery", uuid: e.uuid }); }}
+              onClick={() => { setDelivDraft(e.deliveredDate || todayISO()); setDelivConfirm(e.deliveryConfirm ? (DELIVERY_CONFIRM_OPTIONS.find(o => e.deliveryConfirm === o || e.deliveryConfirm.startsWith(o + " — ")) || "Other") : ((e.trackingNo && e.shipper) ? DELIVERY_TRACK_LABEL : "")); setDelivBy(e.deliveredBy || user?.fullName || user?.name || ""); setDelivNote(""); setDxPopup({ type: "delivery", uuid: e.uuid }); }}
               aria-label="Delivery options"
               title={e.lost ? `Lost ${shortDateMaybeY(e.lostDate || todayISO())} — click for options` : e.delivered ? `Delivered ${shortDateMaybeY(e.deliveredDate || todayISO())} — click for options` : "Mark delivered or lost"}>
               {e.lost ? <IcoX /> : e.delivered ? <IcoCheck /> : <IcoBox />}
@@ -2062,17 +2079,43 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
                       <span className={"dx-st " + st}>{st === "lost" ? "Lost" : st === "delivered" ? (pe.autoDelivered ? "Delivered · auto" : "Delivered") : st === "transit" ? "In transit" : "Awaiting tracking"}</span>
                       {pe.trackingNo && <span className="mono" style={{ marginLeft: 10, fontSize: 12, color: "#64748b" }}>{pe.trackingNo}</span>}
                     </div>
-                    {!pe.lost && (
+                    {!pe.lost && (() => {
+                      // Delivery can be marked with or without a tracking number, but always with HOW it was confirmed and WHICH staff member dealt with it.
+                      const confOpts = DELIVERY_CONFIRM_OPTIONS.filter(o => o !== DELIVERY_TRACK_LABEL || canMark);
+                      const staffNames = Array.from(new Set([user?.fullName || user?.name, ...(staffAccounts || []).map(a => a.fullName || a.name), delivBy].map(x => String(x || "").trim()).filter(Boolean)));
+                      const noteNeeded = delivConfirm === "Other" && !delivNote.trim();
+                      const ready = !!delivDraft && !!delivConfirm && !!delivBy.trim() && !noteNeeded;
+                      const confText = delivConfirm + (delivNote.trim() ? " — " + delivNote.trim() : "");
+                      return (
                       <>
+                        {pe.delivered && pe.deliveryConfirm && (
+                          <div style={{ marginBottom: 12, fontSize: 12, color: "#475569", background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: 8, padding: "8px 10px" }}>
+                            <b>Confirmed:</b> {pe.deliveryConfirm}{pe.deliveredBy ? <> · <b>Handled by:</b> {pe.deliveredBy}</> : null}
+                          </div>
+                        )}
                         <div className="dx-modal-l">Delivery date</div>
                         <input type="date" className="dx-dinput" style={{ width: "100%", marginBottom: 10, padding: "8px 10px", fontSize: 13 }} value={delivDraft} max={todayISO()} onChange={ev => setDelivDraft(ev.target.value)} />
-                        <button className="dx-btn pri" style={{ width: "100%", justifyContent: "center" }} disabled={!canMark || !delivDraft}
-                          onClick={() => { markDelivered(pe, delivDraft); close(); }}>
-                          <IcoCheck /> {pe.delivered ? "Update delivered date" : "Mark Delivered"}
+                        <div className="dx-modal-l">How was the delivery confirmed?</div>
+                        <select className="dx-dinput" style={{ width: "100%", marginBottom: 10, padding: "8px 10px", fontSize: 13 }} value={delivConfirm} onChange={ev => setDelivConfirm(ev.target.value)}>
+                          <option value="">Select…</option>
+                          {confOpts.map(o => <option key={o} value={o}>{o}</option>)}
+                        </select>
+                        <div className="dx-modal-l">Handled by (staff member)</div>
+                        <select className="dx-dinput" style={{ width: "100%", marginBottom: 10, padding: "8px 10px", fontSize: 13 }} value={delivBy} onChange={ev => setDelivBy(ev.target.value)}>
+                          <option value="">Select…</option>
+                          {staffNames.map(n => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                        <div className="dx-modal-l">Note {delivConfirm === "Other" ? "(required)" : "(optional)"}</div>
+                        <input type="text" className="dx-dinput" style={{ width: "100%", marginBottom: 10, padding: "8px 10px", fontSize: 13 }} value={delivNote} onChange={ev => setDelivNote(ev.target.value)} placeholder="e.g. spoke to the customer, parcel received" />
+                        <button className="dx-btn pri" style={{ width: "100%", justifyContent: "center" }} disabled={!ready}
+                          onClick={() => { markDelivered(pe, delivDraft, { text: confText, by: delivBy.trim() }); close(); }}>
+                          <IcoCheck /> {pe.delivered ? "Update delivery" : "Mark Delivered"}
                         </button>
-                        {!canMark && <div style={{ marginTop: 6, fontSize: 11.5, color: "#94a3b8" }}>Add the tracking number and shipper first to mark this delivered.</div>}
+                        {!ready && <div style={{ marginTop: 6, fontSize: 11.5, color: "#94a3b8" }}>Choose how the delivery was confirmed and who handled it{noteNeeded ? ", and add a note" : ""}.</div>}
+                        {!canMark && <div style={{ marginTop: 6, fontSize: 11.5, color: "#94a3b8" }}>No tracking number on this parcel — the sale will be marked Fulfilled, with this confirmation noted on it.</div>}
                       </>
-                    )}
+                      );
+                    })()}
                     <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
                       {!pe.lost && <button className="dx-btn" style={{ flex: 1, justifyContent: "center", color: "#b91c1c", borderColor: "#fecaca" }} onClick={() => { close(); markLost(pe); }}><IcoX /> Mark as Lost</button>}
                       {pe.lost && <button className="dx-btn" style={{ flex: 1, justifyContent: "center" }} onClick={() => { close(); undoLost(pe); }}>Remove Lost mark</button>}

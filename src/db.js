@@ -2082,8 +2082,17 @@ export const dbSaveDispatchEntry = async (shopId, e) => {
     return { error, uuid: data?.id };
   };
 
-  let res = await write({ ...payload, ...extra });
+  // Delivery confirmation (how a delivery was confirmed + which staff member handled it; columns: dispatch_delivery_confirm.sql).
+  // If those columns are missing the entry is still saved (without them), and a warning is returned only when something was set.
+  const conf = { delivery_confirm: e.deliveryConfirm || '', delivered_by: e.deliveredBy || '' };
+  const confSet = !!(e.deliveryConfirm || e.deliveredBy);
+  let res = await write({ ...payload, ...extra, ...conf });
   let warning = null;
+  if (res.error) {
+    console.warn('⚠️ Dispatch save with delivery-confirmation columns failed, retrying without them:', res.error.message);
+    res = await write({ ...payload, ...extra });
+    if (!res.error && confSet) warning = 'Saved, but the delivery confirmation (method / staff name) was NOT stored — run dispatch_delivery_confirm.sql once in Supabase.';
+  }
   if (res.error) {
     console.warn('⚠️ Dispatch save with lost/auto flags failed, retrying without them:', res.error.message);
     res = await write(payload);
@@ -2116,6 +2125,8 @@ export const dbLoadDispatchLog = async (shopId) => {
     lost:         !!r.lost,
     lostDate:     r.lost_date || '',
     autoDelivered: !!r.auto_delivered,
+    deliveryConfirm: r.delivery_confirm || '',
+    deliveredBy:  r.delivered_by || '',
     linkWarning:  r.link_warning || '',
     createdAt:    r.created_at || '',
   }));
