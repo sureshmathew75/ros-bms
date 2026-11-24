@@ -37,7 +37,7 @@ export default function SaleNotebook({
   shopId, shop, lines, rowAmts, recvAmts, showHint, rosieRefs, topSlot,
   onName, onPick, onQty, onPrice, onRecv, onFillRecv, onRemove, onAdd,
   calc, other, discount, onOther, onDiscount, taxRate, onTax, lockPrice,
-  strictList, onChangeItem,
+  strictList, onChangeItem, dealDiscount, onDealDiscount,
 }) {
   // "Change item" on a saved line: pick another list item; only the name changes, the price / qty / amount paid stay.
   const [changing, setChanging] = React.useState(null);
@@ -167,6 +167,7 @@ export default function SaleNotebook({
         {calc.mode === "deal" ? (
           <>
             <Line label={"Sale total (Advance" + (calc.advLabel ? " " + calc.advLabel : "") + ")"} value={sym + num(shopId, calc.expected)} />
+            {onDealDiscount && <Line label="− Discount"><MoneyInput sym={sym} accent={accent} value={dealDiscount} onChange={onDealDiscount} /></Line>}
             <Line label={calc.priorLabel || "Received earlier"} value={sym + num(shopId, calc.priorReceived)} />
             <Line label="Received now" value={sym + num(shopId, calc.receivedNow)} />
           </>

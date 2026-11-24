@@ -7716,6 +7716,11 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
   };
 
   const commitEditSave=(merged)=>{
+    // A discount on a Part / Final payment lowers the Advance's Expected Total (saved before this sale so a reload never shows the old figure).
+    const _adv=merged._advAdjust||null;
+    if(_adv){ const {_advAdjust:_drop,...rest}=merged; merged=rest; }
+    const _advSale=_adv?(sales||[]).find(x=>x.id===_adv.id):null;
+    if(_advSale) setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>x.id===_advSale.id?{...x,expectedTotal:_adv.expectedTotal}:x)}));
     // If a tracking number was entered but the status is still Pending,
     // auto-upgrade it — matches the same protection the quick "+Add
     // Tracking" button already has, so status stays consistent no matter
@@ -7730,7 +7735,7 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     setSalesData(prev=>({...prev,[shopId]:(prev[shopId]||[]).map(x=>x.id===merged.id?{...x,...merged}:x)}));
     setModal(null);setEditRow(null);
     // Persist to Supabase then reload to confirm sync
-    dbSaveSale(shopId,merged).then(reloadSalesData).catch(err=>{
+    (_advSale?dbSaveSale(shopId,{..._advSale,expectedTotal:_adv.expectedTotal}):Promise.resolve()).then(()=>dbSaveSale(shopId,merged)).then(reloadSalesData).catch(err=>{
       console.error("❌ Edit save failed:",err);
       showAlert("Couldn't save this sale — please check your connection and try again.");
     });
@@ -10403,6 +10408,8 @@ return(
               const groupIds=statusChanged?findInstalmentGroupIds(merged,sales):[merged.id];
               if(statusChanged && (merged.status||merged.ful)==="FULFILLED" && groupIds.length>1){
                 const balInfo=getGroupBalanceInfo(groupIds,sales);
+                // a discount being saved on this payment lowers what is still expected
+                if(balInfo && merged._advAdjust) balInfo.balance=balInfo.balance-(balInfo.expectedTotal-Number(merged._advAdjust.expectedTotal));
                 if(balInfo && balInfo.balance>0){
                   setEditBalanceBlockInfo({sale:merged,...balInfo});
                   return;
@@ -17659,15 +17666,6 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
   const _fillIdx=editLines.map((l,i)=>(String(l.name||"").trim()||parseFloat(l.price)>0)?i:-1).filter(i=>i>=0);
   const _lastIdx=_fillIdx.length?_fillIdx[_fillIdx.length-1]:-1;
   const rowAmts=editLines.map(_rowAmt);
-  const itemsSubtotal=parseFloat(rowAmts.reduce((a,x)=>a+x,0).toFixed(2));
-  const discountAmt=parseFloat(form.discount)||0;
-  const otherChargesAmt=parseFloat(form.otherCharges)||0;
-  const gstAmt=parseFloat(((itemsSubtotal-discountAmt+otherChargesAmt)*((Number(form.taxRate)||0)/100)).toFixed(2));
-  const grandTotal=parseFloat((itemsSubtotal-discountAmt+otherChargesAmt+gstAmt).toFixed(2));
-  const autoRecv=(i)=>parseFloat((rowAmts[i]+(i===_lastIdx?grandTotal-itemsSubtotal:0)).toFixed(2));
-  const recvAmts=editLines.map((l,i)=>recvAuto?autoRecv(i):(parseFloat(l.recv)||0));
-  const receivedTotal=parseFloat(recvAmts.reduce((a,x)=>a+x,0).toFixed(2));
-  const viewLines=editLines.map((l,i)=>({...l,id:l._k,recv:recvAuto?(autoRecv(i)?String(autoRecv(i)):""):(l.recv===undefined?"":l.recv)}));
   // Advance / Part / Final: balance is worked out against the Advance's Expected total and the group's other payments.
   const dealInfo=(()=>{
     if(!hasLines||!_isInst) return null;
@@ -17688,15 +17686,32 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
     if(!(expected>0)) return null;
     return {expected,prior,advLabel:adv.id,others:group.filter(x=>x.id!==sale.id).length};
   })();
+  const _isDealDisc=!!dealInfo&&(form.paymentType==="PART"||form.paymentType==="FINAL");
+  const itemsSubtotal=parseFloat(rowAmts.reduce((a,x)=>a+x,0).toFixed(2));
+  // On a Part / Final payment the discount is taken off the deal (see below), not off this payment's own sale total.
+  const discountAmt=_isDealDisc?0:(parseFloat(form.discount)||0);
+  const otherChargesAmt=parseFloat(form.otherCharges)||0;
+  const gstAmt=parseFloat(((itemsSubtotal-discountAmt+otherChargesAmt)*((Number(form.taxRate)||0)/100)).toFixed(2));
+  const grandTotal=parseFloat((itemsSubtotal-discountAmt+otherChargesAmt+gstAmt).toFixed(2));
+  const autoRecv=(i)=>parseFloat((rowAmts[i]+(i===_lastIdx?grandTotal-itemsSubtotal:0)).toFixed(2));
+  const recvAmts=editLines.map((l,i)=>recvAuto?autoRecv(i):(parseFloat(l.recv)||0));
+  const receivedTotal=parseFloat(recvAmts.reduce((a,x)=>a+x,0).toFixed(2));
+  const viewLines=editLines.map((l,i)=>({...l,id:l._k,recv:recvAuto?(autoRecv(i)?String(autoRecv(i)):""):(l.recv===undefined?"":l.recv)}));
+  // Discount on a Part / Final payment: it lowers what is still expected on the deal. The Advance's Expected Total is lowered by the same amount when saved,
+  // so every balance in the app agrees; the discount itself is kept on this payment's row. _origDisc = what this row already had saved.
+  const _origDisc=["PART","FINAL"].includes(inferPaymentType(sale))?(parseFloat(sale.discount)||0):0;
+  const _dealDiscAmt=_isDealDisc?Math.max(0,parseFloat(form.discount)||0):0;
+  const _agreed=dealInfo?parseFloat((dealInfo.expected+(_isDealDisc?_origDisc:0)).toFixed(2)):0;
   const _calc=dealInfo
-    ?{mode:"deal",expected:dealInfo.expected,priorReceived:dealInfo.prior,priorLabel:"Received in other instalments",receivedNow:receivedTotal,balance:parseFloat((dealInfo.expected-dealInfo.prior-receivedTotal).toFixed(2)),advLabel:dealInfo.advLabel}
+    ?{mode:"deal",expected:_agreed,priorReceived:dealInfo.prior,priorLabel:"Received in other instalments",receivedNow:receivedTotal,balance:parseFloat((_agreed-_dealDiscAmt-dealInfo.prior-receivedTotal).toFixed(2)),advLabel:dealInfo.advLabel}
     :{mode:"normal",itemsTotal:itemsSubtotal,gstAmt,saleTotal:grandTotal,receivedNow:receivedTotal,balance:parseFloat((grandTotal-receivedTotal).toFixed(2))};
   const _moneyFmt=n=>shop.symbol+Number(n).toLocaleString();
   const editPayTypeUI=(<>
     <div ref={el=>{rosieFieldRefs.current.paymentType=el;}}>
       <PaymentTypeControl value={form.paymentType} onChange={v=>{
         setMoneyDirty(true);
-        setForm(f=>({...f,paymentType:v,expectedTotal:(v==="ADVANCE"&&!(Number(f.expectedTotal)>0)&&grandTotal>0)?String(grandTotal):f.expectedTotal}));
+        setForm(f=>({...f,paymentType:v,expectedTotal:(v==="ADVANCE"&&!(Number(f.expectedTotal)>0)&&grandTotal>0)?String(grandTotal):f.expectedTotal,
+          ...(((v==="PART"||v==="FINAL")&&!["PART","FINAL"].includes(inferPaymentType(sale)))?{discount:""}:null)}));
       }} accent={shop.accent}/>
     </div>
     {form.paymentType==="ADVANCE"&&(
@@ -17926,6 +17941,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
           onRemove={removeLine} onAdd={addLine}
           calc={_calc} other={form.otherCharges} discount={form.discount}
           onOther={v=>{setMoneyDirty(true);set("otherCharges",v);}} onDiscount={v=>{setMoneyDirty(true);set("discount",v);}}
+          dealDiscount={_isDealDisc&&!isStaff?form.discount:undefined} onDealDiscount={_isDealDisc&&!isStaff?(v=>{setMoneyDirty(true);set("discount",v);}):undefined}
           taxRate={Number(form.taxRate)||0} onTax={r=>{setMoneyDirty(true);set("taxRate",Number(r));}}/>
         <div style={{background:"#f8fafc",borderRadius:12,padding:"11px 12px",marginBottom:12,border:"1px solid #f1f5f9"}}>
           {editTypeBanner}
@@ -18292,7 +18308,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
               if(_keepPaid&&!(await showConfirm("The new item is "+_moneyFmt(Math.abs(_calc.balance))+" cheaper than the amount already received ("+_moneyFmt(receivedTotal)+").\n\nThe amount received is kept as it is on this sale — handle the difference with the customer separately. Save?")))return;
               if(!_isInst&&_calc.balance>0.5){showAlert("Balance due is "+_moneyFmt(_calc.balance)+". If the customer will pay the rest later, set the Payment Type to Advance (or Part / Final); otherwise press “Mark fully received”.");return;}
               if(form.paymentType==="FINAL"&&dealInfo&&_calc.balance>0.5&&!editReasonRef.current){
-                if(!(await showConfirm("This Final payment leaves the sale "+_moneyFmt(_calc.balance)+" short of the expected total ("+_moneyFmt(dealInfo.expected)+"). Save anyway?")))return;
+                if(!(await showConfirm("This Final payment leaves the sale "+_moneyFmt(_calc.balance)+" short of the expected total ("+_moneyFmt(_agreed-_dealDiscAmt)+"). Save anyway?")))return;
               }
             }
             // ROS India staff may only use price-list items on new / changed lines (an admin can enter a custom item).
@@ -18322,18 +18338,26 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
                 return base;
               });
               _amtOut=(_isInst||_keepPaid)?receivedTotal:grandTotal;
-              _discOut=(_isInst||_keepPaid)?0:discountAmt; _othOut=(_isInst||_keepPaid)?0:otherChargesAmt; _taxOut=(_isInst||_keepPaid)?0:form.taxRate;
+              _discOut=_isDealDisc?_dealDiscAmt:((_isInst||_keepPaid)?0:discountAmt); _othOut=(_isInst||_keepPaid)?0:otherChargesAmt; _taxOut=(_isInst||_keepPaid)?0:form.taxRate;
               if(shopId==="ros-hairlines") _labelOut="Shipping";
               if(form.paymentType==="ADVANCE"&&!(Number(_expOut)>0)) _expOut=String(grandTotal);
-              if((_isInst||_keepPaid)&&(discountAmt||otherChargesAmt||gstAmt)){
+              if((_isInst||_keepPaid)&&((_isDealDisc?0:discountAmt)||otherChargesAmt||gstAmt)){
                 const _bits=[_moneyFmt(itemsSubtotal)+" items"];
                 if(otherChargesAmt) _bits.push("+ "+_moneyFmt(otherChargesAmt)+" other charges");
-                if(discountAmt) _bits.push("− "+_moneyFmt(discountAmt)+" discount");
+                if(discountAmt&&!_isDealDisc) _bits.push("− "+_moneyFmt(discountAmt)+" discount");
                 if(gstAmt) _bits.push("+ "+_moneyFmt(gstAmt)+" GST");
                 _remOut=[_remOut,"Sale total "+_moneyFmt(grandTotal)+" ("+_bits.join(" ")+") — received "+_moneyFmt(receivedTotal)+", balance "+_moneyFmt(grandTotal-receivedTotal)].filter(x=>x&&String(x).trim()).join(" | ");
               }
               _itemOut=_filled.map(l=>`${l.name}(x${l.qty})`).join(", ")||_itemOut;
               _qtyOut=String(_filled.reduce((a,l)=>a+_qtyOf(l),0)||1);
+            }
+            // Discount on a Part / Final payment: note it, and lower the Advance's Expected Total by the change in discount.
+            let _advAdjust=null;
+            if(_ro&&_isDealDisc&&Math.abs(_dealDiscAmt-_origDisc)>0.004){
+              const _newExp=parseFloat((dealInfo.expected+_origDisc-_dealDiscAmt).toFixed(2));
+              if(!(_newExp>0)){showAlert("The discount can't be as large as the whole sale total.");return;}
+              _advAdjust={id:dealInfo.advLabel,expectedTotal:String(_newExp)};
+              _remOut=[_remOut,"Discount "+_moneyFmt(_dealDiscAmt)+" given on this "+(form.paymentType==="FINAL"?"final":"part")+" payment — sale total "+_moneyFmt(_agreed)+" → "+_moneyFmt(_newExp)].filter(x=>x&&String(x).trim()).join(" | ");
             }
             // Item changed with "Change item": a Price note keeps the dispatch short-payment check quiet, and the item text follows the new name.
             const _swaps=hasLines?editLines.filter(l=>l._swap&&l.name!==l.changedFrom):[];
@@ -18348,7 +18372,7 @@ const EditSaleForm=({shopId,shop,sale,onSave,onClose,customers=[],allSales=[],is
             // An Advance that is the deal's only payment and has no balance left is a fully paid sale — save it as Full.
             const _toFull=_ro&&form.paymentType==="ADVANCE"&&!!dealInfo&&dealInfo.others===0&&_calc.balance<=0.5;
             const _tagOut=_toFull?String(form.tag||"").split(",").map(t=>t.trim()).filter(t=>t&&!["Advance Sale","Part Payment","Final Payment Sale"].includes(t)).join(", "):form.tag;
-            onSave({...form,...(_toFull?{paymentType:"FULL",tag:_tagOut}:{}),id:(form.invAssigned&&form.invoiceNo)?form.invoiceNo:((shopId==="ros-india"&&new Date(form.date||sale.date||0)>=new Date(2026,3,1)&&!String(sale.id||"").includes("-"))?`IN-${Date.now().toString().slice(-6)}`:sale.id),ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),rem:_remOut,amount:_amtOut,item:_itemOut,qty:_qtyOut,taxRate:_taxOut,expectedTotal:_toFull?"":_expOut,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:_linesOut,discount:_discOut,otherCharges:_othOut,otherChargesLabel:_labelOut,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||""});
+            onSave({...form,...(_toFull?{paymentType:"FULL",tag:_tagOut}:{}),id:(form.invAssigned&&form.invoiceNo)?form.invoiceNo:((shopId==="ros-india"&&new Date(form.date||sale.date||0)>=new Date(2026,3,1)&&!String(sale.id||"").includes("-"))?`IN-${Date.now().toString().slice(-6)}`:sale.id),ful:form.status,pay:form.payBy,shopInvoiceNo:form.shopInvoiceNo||"",paidBy:form.paidBy||"",paymentMethod:(form.paymentMethod||"").trim(),rem:_remOut,amount:_amtOut,item:_itemOut,qty:_qtyOut,taxRate:_taxOut,expectedTotal:_toFull?"":_expOut,phoneSavedOn:form.phoneSavedOn,address:form.address||"",saleLines:_linesOut,discount:_discOut,otherCharges:_othOut,otherChargesLabel:_labelOut,contact:form.contact,phone:form.contact,returnReqDate:form.returnReqDate,returnRcvd:form.returnRcvd,refundAmt:form.refundAmt,refundDate:form.refundDate||"",exchangeDate:form.exchangeDate||"",adjType:form.adjType||"",adjAmt:parseFloat(form.adjAmt)||0,adjDate:form.adjDate||"",adjNote:form.adjNote||"",purInvNo:form.purInvNo||"",purInvDate:form.purInvDate||"",purAmount:purAmt,trackingNo:form.trackingNo||"",deliveryDate:form.deliveryDate||"",deliveryTime:form.deliveryTime||"",...(_advAdjust?{_advAdjust}:{})});
           }}
           ref={editSaveBtnRef}
           style={{padding:"12px 0",borderRadius:11,border:"none",background:shop.accent,color:"white",fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 4px 14px "+shop.accent+"44"}}>
