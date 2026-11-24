@@ -1488,7 +1488,8 @@ export default function DispatchPanel({ shop, shopId, user, sales, onSaleUpdate,
     // Fulfilled push above since this can happen well after tracking was
     // first saved.
     if ("delivered" in patch && merged.saleId && onSaleUpdate) {
-      const failures = await pushToLinkedSales(merged, { deliveryDate: merged.delivered ? (merged.deliveredDate || todayISO()) : "" }, "delivery");
+      // fulfil: a parcel marked delivered by hand also fulfils a still-Pending sale (e.g. delivery confirmed by phone, tracking never entered).
+      const failures = await pushToLinkedSales(merged, { deliveryDate: merged.delivered ? (merged.deliveredDate || todayISO()) : "", ...(merged.delivered ? { fulfil: true } : {}) }, "delivery");
       if (failures.length) {
         const msg = `Couldn't update the linked sale (${failures.map(f=>f.id).join(", ")}) with delivery status: ${failures[0].message}`;
         showAlert(`Delivery status saved here, but ${msg}`);

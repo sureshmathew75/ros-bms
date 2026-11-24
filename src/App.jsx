@@ -9963,7 +9963,24 @@ return(
                 // silently undo further progress (e.g. a return raised after
                 // delivery) — this keeps delivery confirmation independent of
                 // fulfilment status, exactly like it already is elsewhere.
-                if ("deliveryDate" in changes && Object.keys(changes).length === 1) {
+                if ("deliveryDate" in changes && Object.keys(changes).filter(k => k !== "fulfil").length === 1) {
+                  // Marked delivered by hand (e.g. confirmed with the customer by phone, tracking never entered):
+                  // a sale that is still PENDING becomes FULFILLED too. Any other status (returns, refunds…) is never touched.
+                  const _curSt = String(sale.ful || sale.status || "PENDING").toUpperCase();
+                  if (changes.fulfil && changes.deliveryDate && _curSt === "PENDING") {
+                    const fulfilled = { ...sale, deliveryDate: changes.deliveryDate, ful: "FULFILLED", status: "FULFILLED", sentDate: sale.sentDate || changes.deliveryDate };
+                    try {
+                      await dbSaveSale(shopId, fulfilled);
+                    } catch (err) {
+                      console.error("dbSaveSale failed in onSaleUpdate (delivered → fulfilled):", err);
+                      return { error: err?.message || String(err) };
+                    }
+                    setSalesData(prev => ({
+                      ...prev,
+                      [shopId]: (prev[shopId] || []).map(s => s.id === saleId ? { ...s, deliveryDate: fulfilled.deliveryDate, ful: "FULFILLED", status: "FULFILLED", sentDate: fulfilled.sentDate } : s),
+                    }));
+                    return { ok: true };
+                  }
                   try {
                     await dbSaveDelivery(shopId, saleId, changes.deliveryDate);
                   } catch (err) {
