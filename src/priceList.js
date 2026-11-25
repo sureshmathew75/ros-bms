@@ -25,7 +25,8 @@ const RAW = [
   ["Clip-in Patches", "Three Clip Patch", "Size 4.5″ × 1", [[10,6000,1080,7080,80],[12,7000,1260,8260,90],[14,8000,1440,9440,110],[16,9000,1620,10620,130],[18,10000,1800,11800,140],[20,11000,1980,12980,150],[22,12000,2160,14160,160]]],
   ["Ponytails", "Ponytail with Clip — Budget", "Removable clip extension", [[8,3500,630,4130,null],[10,4200,756,4956,null],[12,4800,864,5664,null],[14,5200,936,6136,null],[16,6200,1116,7316,null],[18,7500,1350,8850,null],[20,8500,1530,10030,null],[22,9500,1710,11210,null],[24,11000,1980,12980,null]]],
   ["Ponytails", "Ponytail with Clip — Premium", "Removable clip extension", [[8,4500,810,5310,70],[10,5500,990,6490,80],[12,6500,1170,7670,90],[14,7500,1350,8850,110],[16,8500,1530,10030,120],[18,9500,1710,11210,130],[20,10500,1890,12390,140],[22,11500,2070,13570,150],[24,12500,2250,14750,160]]],
-  ["Ponytails", "Ponytail with Tie / Claw Clip", "Removable clip extension", [[8,5500,990,6490,80],[10,6500,1170,7670,90],[12,7500,1350,8850,110],[14,8500,1530,10030,120],[16,9500,1710,11210,140],[18,11500,2070,13570,160],[20,12500,2250,14750,180],[22,13500,2430,15930,200],[24,14500,2610,17110,220]]],
+  ["Ponytails", "Ponytail with Tie", "Removable clip extension", [[8,5500,990,6490,80],[10,6500,1170,7670,90],[12,7500,1350,8850,110],[14,8500,1530,10030,120],[16,9500,1710,11210,140],[18,11500,2070,13570,160],[20,12500,2250,14750,180],[22,13500,2430,15930,200],[24,14500,2610,17110,220]]],
+  ["Ponytails", "Ponytail with Claw Clip", "Removable clip extension", [[8,5500,990,6490,80],[10,6500,1170,7670,90],[12,7500,1350,8850,110],[14,8500,1530,10030,120],[16,9500,1710,11210,140],[18,11500,2070,13570,160],[20,12500,2250,14750,180],[22,13500,2430,15930,200],[24,14500,2610,17110,220]]],
   ["Volumizers & Patches", "Back Patch Volumizer — Budget", "Size 6.5″ × 1.5″", [[8,6000,1080,7080,null],[10,6500,1170,7670,null],[12,7000,1260,8260,null],[14,8000,1440,9440,null],[16,9000,1620,10620,null],[18,11500,2070,13570,null],[20,13000,2340,15340,null],[22,14000,2520,16520,null],[24,15500,2790,18290,null]]],
   ["Volumizers & Patches", "Back Patch Volumizer — Premium", "6.5″ × 1.5″ · Avg. 90–100 g", [[8,8000,1440,9440,100],[10,10000,1800,11800,140],[12,12500,2250,14750,155],[14,14500,2610,17110,165],[16,16500,2970,19470,175],[18,18500,3330,21830,185],[20,20500,3690,24190,200],[22,22500,4050,26550,220],[24,24500,4410,28910,240]]],
   ["Volumizers & Patches", "Cover Up Patch", "Lightweight cover patch", [[16,3800,684,4484,45],[18,4300,774,5074,50],[20,4800,864,5664,55],[22,5500,990,6490,60],[24,6000,1080,7080,65]]],
@@ -94,6 +95,9 @@ export const normName = (s) => clean(s).toLowerCase()
 
 const HAY = PRICE_ENTRIES.map(e => ({ e, hay: normName(`${e.label} ${e.spec}`), key: normName(e.label) }));
 const BY_KEY = new Map(HAY.map(h => [h.key, h.e]));
+/* "Ponytail with Tie / Claw Clip" used to be one product; it is now two (Tie, Claw Clip) with identical prices. Sales saved under the old
+   name still find their price: the old name maps to the Tie entry (same price either way). New sales use the two separate names. */
+HAY.filter(h => h.e.product === "Ponytail with Tie").forEach(h => BY_KEY.set(normName(labelOf("Ponytail with Tie / Claw Clip", h.e.length)), h.e));
 
 /* Exact (after normalising) match of a typed/picked item name to a price-list entry, else null. */
 export const matchEntry = (name) => BY_KEY.get(normName(name)) || null;

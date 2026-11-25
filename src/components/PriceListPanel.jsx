@@ -297,10 +297,12 @@ export default function PriceListPanel({ shop, shopId }) {
   const accent = shop?.accent || "#0f172a";
 
   const matchIds = useMemo(() => (q.trim() ? new Set(searchPriceList(q, null, 200).map(e => e.id)) : null), [q]);
+  // UK (Hairlines): items the shop doesn't sell in the UK (no £ price) are left off the list; India shows everything.
+  const soldHere = (e) => isIndia || priceFor(e, shopId) != null;
   const cards = useMemo(() => PRICE_PRODUCTS
     .filter(p => group === "ALL" || p.group === group)
-    .map(p => ({ ...p, rows: matchIds ? p.entries.filter(e => matchIds.has(e.id)) : p.entries }))
-    .filter(p => p.rows.length > 0), [group, matchIds]);
+    .map(p => ({ ...p, rows: (matchIds ? p.entries.filter(e => matchIds.has(e.id)) : p.entries).filter(soldHere) }))
+    .filter(p => p.rows.length > 0), [group, matchIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const messageFor = (e) => {
     const price = priceFor(e, shopId);
@@ -317,8 +319,8 @@ export default function PriceListPanel({ shop, shopId }) {
   const printList = () => {
     const w = window.open("", "_blank"); if (!w) return;
     const sym = priceSymbol(shopId);
-    const body = PRICE_PRODUCTS.map(p => `<h3>${p.name} <small>${p.spec || ""}</small></h3><table><thead><tr><th>Length</th>${isIndia ? "<th>Net</th><th>GST 18%</th><th>Gross</th>" : "<th>Price</th>"}</tr></thead><tbody>${
-      p.entries.map(e => `<tr><td>${e.length ? e.length + "″" : "—"}</td>${isIndia ? `<td>${money(shopId, e.net)}</td><td>${money(shopId, e.gst)}</td><td><b>${money(shopId, e.gross)}</b></td>` : `<td><b>${money(shopId, e.uk)}</b></td>`}</tr>`).join("")}</tbody></table>`).join("");
+    const body = PRICE_PRODUCTS.filter(p => p.entries.some(soldHere)).map(p => `<h3>${p.name} <small>${p.spec || ""}</small></h3><table><thead><tr><th>Length</th>${isIndia ? "<th>Net</th><th>GST 18%</th><th>Gross</th>" : "<th>Price</th>"}</tr></thead><tbody>${
+      p.entries.filter(soldHere).map(e => `<tr><td>${e.length ? e.length + "″" : "—"}</td>${isIndia ? `<td>${money(shopId, e.net)}</td><td>${money(shopId, e.gst)}</td><td><b>${money(shopId, e.gross)}</b></td>` : `<td><b>${money(shopId, e.uk)}</b></td>`}</tr>`).join("")}</tbody></table>`).join("");
     w.document.write(`<html><head><title>ROS ${isIndia ? "India" : "Hairlines UK"} price list</title><style>body{font-family:Arial,sans-serif;padding:20px;color:#0f172a}h2{margin:0}h3{margin:16px 0 4px;font-size:13px}h3 small{font-weight:400;color:#64748b}table{border-collapse:collapse;width:100%;max-width:520px;font-size:11px}th,td{border:1px solid #cbd5e1;padding:3px 7px;text-align:right}th:first-child,td:first-child{text-align:left}th{background:#f1f5f9}.cols{column-count:2;column-gap:28px}h3,table{break-inside:avoid}@media print{.cols{column-count:2}}</style></head><body><h2>ROS ${isIndia ? "INDIA" : "HAIRLINES UK"} — Hair Products Price List</h2><div style="font-size:11px;color:#64748b;margin-bottom:8px">Effective from ${PRICE_LIST_EFFECTIVE} · ${isIndia ? "India prices: Net + GST 18% = Gross" : "Prices in " + sym} · Prices subject to change without prior notice</div><div class="cols">${body}</div></body></html>`);
     w.document.close(); setTimeout(() => w.print(), 300);
   };

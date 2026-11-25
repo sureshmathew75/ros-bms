@@ -28,6 +28,10 @@ import { returnPolicySection, addressCheckSection, inspectionNoticeSection, arri
    which builds the same grouping key independently; if this ever changes,
    it has to change in both places or the two tabs will disagree about
    which sales are linked. */
+/* Display only: a single item doesn't need "(x1)" beside its name — only quantities of 2 or more are shown ("Side Bangs(x2)").
+   The saved item text is not changed (it keeps "(x1)" so the lines can still be read back). */
+const showItem = (t) => String(t == null ? "" : t).replace(/\s*\(x1\)/gi, "");
+
 function normCustomerName(name) {
   return (name || "")
     .toLowerCase()
@@ -1155,12 +1159,12 @@ We hope you enjoy your purchase! 💜
      Display only — the saved item text is not changed. A blank or placeholder item ("Sale") takes the Advance's item name. */
   const instalmentItemText = (s) => {
     const pt = inferPaymentType(s);
-    if (pt !== "PART" && pt !== "FINAL") return s.item || "—";
-    const raw = String(s.item || "").trim();
+    if (pt !== "PART" && pt !== "FINAL") return showItem(s.item) || "—";
+    const raw = showItem(s.item).trim();
     const isGeneric = (t) => { const x = String(t || "").trim(); return !x || x === "—" || /^sale$/i.test(x); };
     const gk = getInstalmentKey(s);
     const adv = gk ? (instalmentGroups[gk] || []).find(x => x.id !== s.id && instalmentTagType(x) === "advance") : null;
-    const base = !isGeneric(raw) ? raw : (adv && !isGeneric(adv.item) ? String(adv.item).trim() : "");
+    const base = !isGeneric(raw) ? raw : (adv && !isGeneric(adv.item) ? showItem(adv.item).trim() : "");
     const stage = pt === "FINAL" ? "Final payment" : "Part payment";
     if (/^(part|final) payment/i.test(base)) return base;
     return stage + (base ? " – " + base : "") + (adv ? " (Adv " + adv.id + ")" : "");
@@ -2595,7 +2599,7 @@ We hope you enjoy your purchase! 💜
                     <td style={{ padding: "12px 16px" }}>
                       <span style={{ fontSize: 12, color: "#374151" }}>
                         {instalmentItemText(s)}
-                        {s.qty && s.qty !== "1" && (
+                        {s.qty && s.qty !== "1" && !/\(x\d+\)/i.test(String(s.item || "")) && (
                           <span style={{ color: "#94a3b8", marginLeft: 4 }}>×{s.qty}</span>
                         )}
                       </span>
@@ -3500,14 +3504,14 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
 
             const itemCellInner = s._grouped
               ? `<span style="background:#e0e7ff;color:#4338ca;padding:1px 6px;border-radius:999px;font-size:10px;font-weight:700">🔗 ${s._linkedCount} linked</span>`
-                + `<div style="margin-top:4px">` + (s._grp||[]).map(x=>`<div style="font-size:11px;margin-bottom:2px">• ${x.item||"—"}</div>`).join("") + `</div>`
+                + `<div style="margin-top:4px">` + (s._grp||[]).map(x=>`<div style="font-size:11px;margin-bottom:2px">• ${showItem(x.item)||"—"}</div>`).join("") + `</div>`
                 + (()=>{
                     const addrs = Array.from(new Set((s._grp||[]).map(x=>(x.address||"").trim()).filter(Boolean)));
                     const rmks = Array.from(new Set((s._grp||[]).map(x=>(x.rem||x.remarks||"").trim()).filter(Boolean)));
                     return addrs.map(a=>`<div style="font-size:10px;color:#94a3b8;margin-top:3px">📍 ${a}</div>`).join("")
                       + rmks.map(r=>`<div style="font-size:10px;color:#94a3b8;margin-top:2px;font-style:italic">📝 ${r}</div>`).join("");
                   })()
-              : (s.item||"—");
+              : (showItem(s.item)||"—");
 
             // One HTML string per possible column — only the ones the user
             // (and the privacy rules in colOn) left switched on get joined
@@ -3745,7 +3749,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                               </span>
                               <div style={{marginTop:4}}>
                                 {(s._grp||[]).map(x=>(
-                                  <div key={x.id} style={{fontSize:11,marginBottom:2}}>• {x.item||"—"}{listPriceNote(x, shop)&&<span style={{fontSize:10,color:"#c3cddb",marginLeft:6,whiteSpace:"nowrap",fontFamily:"DM Mono,monospace"}}>{listPriceNote(x, shop)}</span>}</div>
+                                  <div key={x.id} style={{fontSize:11,marginBottom:2}}>• {showItem(x.item)||"—"}{listPriceNote(x, shop)&&<span style={{fontSize:10,color:"#c3cddb",marginLeft:6,whiteSpace:"nowrap",fontFamily:"DM Mono,monospace"}}>{listPriceNote(x, shop)}</span>}</div>
                                 ))}
                               </div>
                               {(() => {
@@ -3761,7 +3765,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                                 </>);
                               })()}
                             </div>
-                          ) : (<>{s.item||"—"}{listPriceNote(s, shop)&&<div style={{fontSize:10,color:"#c3cddb",marginTop:1,whiteSpace:"nowrap",fontFamily:"DM Mono,monospace"}}>{listPriceNote(s, shop)}</div>}</>)}
+                          ) : (<>{showItem(s.item)||"—"}{listPriceNote(s, shop)&&<div style={{fontSize:10,color:"#c3cddb",marginTop:1,whiteSpace:"nowrap",fontFamily:"DM Mono,monospace"}}>{listPriceNote(s, shop)}</div>}</>)}
                         </td>
                         )}
                         {colOn("Amount")&&(
@@ -3988,7 +3992,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                         <span style={{ fontFamily: "DM Mono,monospace", fontWeight: 700, fontSize: 12, color: accent }}>{gs.id}</span>
                         <span style={{ fontSize: 11, color: "#94a3b8" }}>{gs.date || ""}</span>
                       </div>
-                      <div style={{ fontSize: 12, color: "#374151" }}>{gs.item || "—"}</div>
+                      <div style={{ fontSize: 12, color: "#374151" }}>{showItem(gs.item) || "—"}</div>
                       {listPriceNote(gs, shop) && (
                         <div style={{ fontSize: 11, color: "#b4c0d0", marginTop: 1, fontFamily: "DM Mono,monospace" }}>{listPriceNote(gs, shop)}</div>
                       )}
@@ -4078,7 +4082,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                     <div style={{ minWidth: 0 }}>
                       <div style={{ fontWeight: 700, color: "#0f172a" }}>{gs.customer || "Customer"}</div>
                       <div style={{ color: "#64748b", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 220 }}>
-                        {gs.date || ""} · {gs.item || ""}
+                        {gs.date || ""} · {showItem(gs.item) || ""}
                       </div>
                     </div>
                     <div style={{ textAlign: "right", flexShrink: 0, fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap" }}>
@@ -4237,7 +4241,7 @@ Thank you for your cooperation and for shopping with ${signOff}.`;
                       }}>
                       <div style={{ minWidth:0 }}>
                         <div style={{ fontWeight:700, fontSize:12.5, color:"#0f172a" }}>{s.customer||"Customer"}</div>
-                        <div style={{ fontSize:11, color:"#64748b" }}>{s.date} · {s.item||"—"}</div>
+                        <div style={{ fontSize:11, color:"#64748b" }}>{s.date} · {showItem(s.item)||"—"}</div>
                       </div>
                       <div style={{ textAlign:"right", flexShrink:0 }}>
                         <div style={{ fontWeight:800, fontSize:13, color:"#0f172a" }}>{fmt?fmt(shopId,Number(s.amount)||0):s.amount}</div>
