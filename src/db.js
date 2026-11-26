@@ -861,6 +861,7 @@ export const dbSaveReturn = async (ret) => {
     refund_deduction: Number(ret.refundDeduction) || 0,
     exchange_sale_id: ret.exchangeSaleId || '',
     exchange_tracking_no: ret.exchangeTrackingNo || '',
+    requested_resolution: ret.requestedResolution || '',
   };
   const { data: existing } = await sb.from('returns').select('id').eq('id', ret.id).maybeSingle();
   const { error } = existing
@@ -918,6 +919,7 @@ export const dbLoadReturns = async (shopId) => {
     refundDeduction:      Number(r.refund_deduction) || 0,
     exchangeSaleId:       r.exchange_sale_id || '',
     exchangeTrackingNo:   r.exchange_tracking_no || '',
+    requestedResolution:  r.requested_resolution || '',
   }));
 };
 

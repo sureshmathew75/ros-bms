@@ -10,6 +10,7 @@ import ROS_INDIA_LOGO from "./ros-india-logo.png";   // registered-brand ROS IND
 import InvoicesPanel from "./components/InvoicesPanel";
 import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
+import ReturnBrief from "./components/ReturnBrief";
 import Rosie, { rosieOutfitFor, OUTFITS, OUTFIT_LABELS } from "./components/Rosie";
 import ROSIE_HELLO_IMG from "./rosie-hello.png";       // exact 3D picture of Rosie, used in her panel
 import ROSIE_SUCCESS_IMG from "./rosie-success.png";   // celebrating Rosie, used in the day wrap-up
@@ -4265,7 +4266,9 @@ Thank you for your cooperation.`,
                 // the customer want?" panel once the item is actually back,
                 // so a case never skips the Received tab and lands straight
                 // in Exchange in Progress before that confirmation happens.
-                if(newStatus==="RETURN_RECEIVED"){ updates.receivedDate=today; updates.resolution="undecided"; }
+                if(newStatus==="RETURN_RECEIVED"){ updates.receivedDate=today; updates.resolution="undecided";
+                  // keep what the customer originally asked for, so the card can still show it after the reset
+                  if(!ret.requestedResolution&&ret.resolution&&ret.resolution!=="undecided") updates.requestedResolution=ret.resolution; }
                 if(newStatus==="REFUNDED") updates.refundDate=today;
                 // exchangeDate defaults to today but respects an explicit
                 // despatch date passed in via extraUpdates (the "Date of
@@ -4458,26 +4461,15 @@ Thank you for your cooperation.`,
 
                   <div style={{marginTop:10,marginLeft:27,borderTop:"1px solid #f1f5f9"}}/>
 
-                  {/* Expecting-stage summary: delivered / requested / return-window
-                      dates right on the card, no need to expand — this is the info
-                      that matters most while a return is still awaited back. */}
-                  {["RETURN_APPROVED","MSG_SENT","RETURN_IN_TRANSIT"].includes(ret.status) && (()=>{
+                  {/* Case brief: what the customer asked for + why, the order/items, window, parcel,
+                      progress and the next step — on every card, no need to expand. */}
+                  {(()=>{
                     const delivDate=getDeliveryDate(ret.saleId);
-                    // Always derive the window-closes date from the delivery
-                    // date (return policy: 14 days from delivery) rather than
-                    // trusting the stored value, which may have been saved
-                    // wrong before this was fixed — this self-corrects on
-                    // display without needing to touch old records.
+                    // Window-closes is always derived from the delivery date (return policy: 14 days from delivery)
                     const windowCloses=computeReturnDeadline(delivDate,ret.returnDeadline);
-                    const days=daysRemaining(windowCloses);
-                    return (
-                      <div style={{marginTop:8,paddingLeft:27,display:"flex",flexWrap:"wrap",alignItems:"center",gap:"4px 14px"}}>
-                        <span style={{fontSize:11,color:"#374151"}}>🚚 <span style={{color:"#94a3b8"}}>Delivered:</span> <strong>{delivDate?fmtShort(delivDate):"—"}</strong></span>
-                        <span style={{fontSize:11,color:"#374151"}}>📋 <span style={{color:"#94a3b8"}}>Requested:</span> <strong>{ret.createdAt?fmtShort(ret.createdAt):"—"}</strong></span>
-                        <span style={{fontSize:11,color:"#374151"}}>⏳ <span style={{color:"#94a3b8"}}>Window closes:</span> <strong>{windowCloses?fmtShort(windowCloses):"—"}</strong></span>
-                        <DaysChip days={days}/>
-                      </div>
-                    );
+                    return <ReturnBrief ret={ret} sale={linkedSale} accent={shop.accent} symbol={shop.symbol||"₹"}
+                      delivDate={delivDate} windowCloses={windowCloses} daysLeft={daysRemaining(windowCloses)}
+                      serviceCharge={shopId==="ros-india"?calcReturnServiceCharge(shopId,linkedSale?Number(linkedSale.amount)||0:0):0}/>;
                   })()}
 
                   {/* Resolve-on-receipt panel: once an item is back with us,
