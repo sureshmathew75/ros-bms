@@ -2,8 +2,10 @@ import React, { useState, useMemo, useRef, useEffect, useLayoutEffect } from "re
 import { createPortal } from "react-dom";
 import {
   PRICE_PRODUCTS, PRICE_GROUPS, PRICE_LIST_EFFECTIVE, PRICE_LIST_GST, UK_DELIVERY, UK_DELIVERY_LOW, UK_DELIVERY_THRESHOLD, REFUND_TIERS,
-  priceFor, priceSymbol, searchPriceList, isPriceShop, matchEntry,
+  priceFor, priceSymbol, searchPriceList, isPriceShop, matchEntry, applyPriceOverrides, gstOf,
 } from "../priceList";
+import { dbLoadPriceOverrides, dbSavePriceOverride, dbDeletePriceOverride } from "../db";
+import { showAlert, showConfirm } from "./PopupHost";
 
 /* ─────────────────────────────────────────────────────────────────────────────
    Price List — the tab staff use to answer "how much is …?" calls, plus two small
@@ -288,8 +290,44 @@ export const FinalShortModal = ({ shopId, info, canWaive, onCancel, onSaveAnyway
 );
 
 /* ── The Price List tab ───────────────────────────────────────────────────── */
-export default function PriceListPanel({ shop, shopId }) {
+export default function PriceListPanel({ shop, shopId, user }) {
   const isIndia = shopId === "ros-india";
+  // Admins can change prices here (India: the Net price — GST 18% and Gross follow; UK: the £ price). Saved in the price_overrides table.
+  const isAdmin = user?.role === "admin" || user?.role === "superadmin";
+  const [ov, setOv] = useState(null);            // saved changes (null = the price_overrides table is not set up yet)
+  const [, setVer] = useState(0);                // bumps a re-render after entries are updated in place
+  const [editMode, setEditMode] = useState(false);
+  const [draft, setDraft] = useState({});        // entry id -> typed price
+  const [saving, setSaving] = useState(false);
+  useEffect(() => { dbLoadPriceOverrides().then(rows => { if (rows) applyPriceOverrides(rows); setOv(rows); setVer(v => v + 1); }); }, []);
+  const curOf = (e) => (isIndia ? e.net : e.uk);
+  const baseOf = (e) => (isIndia ? e.base.net : e.base.uk);
+  const changedDraft = () => PRICE_PRODUCTS.flatMap(p => p.entries).filter(e => {
+    const v = draft[e.id]; return v !== undefined && v !== "" && Number(v) > 0 && Number(v) !== curOf(e) && priceFor(e, shopId) != null;
+  });
+  const savePrices = async () => {
+    const list = changedDraft();
+    if (!list.length) { setEditMode(false); setDraft({}); return; }
+    const sym = priceSymbol(shopId);
+    const preview = list.slice(0, 8).map(e => "• " + e.label + ": " + sym + Number(curOf(e)).toLocaleString() + " → " + sym + Number(draft[e.id]).toLocaleString()).join("\n") + (list.length > 8 ? "\n…and " + (list.length - 8) + " more" : "");
+    if (!(await showConfirm("Change " + list.length + " price" + (list.length !== 1 ? "s" : "") + (isIndia ? " (Net price — GST 18% is added on top)" : "") + "?\n\n" + preview + "\n\nNew sales and price checks use the new prices straight away. Sales already saved keep their own amounts."))) return;
+    setSaving(true);
+    let failed = "";
+    for (const e of list) {
+      const existing = (ov || []).find(r => r.id === e.id) || {};
+      const val = Number(draft[e.id]);
+      const same = val === baseOf(e);                       // back to the built-in price → remove the override for that field
+      const net = isIndia ? (same ? null : val) : (existing.net == null ? null : existing.net);
+      const uk = isIndia ? (existing.uk == null ? null : existing.uk) : (same ? null : val);
+      const res = (net == null && uk == null) ? await dbDeletePriceOverride(e.id) : await dbSavePriceOverride({ id: e.id, net, uk, by: user?.fullName || user?.name || "" });
+      if (res && res.error) { failed = res.error; break; }
+    }
+    const rows = await dbLoadPriceOverrides();
+    if (rows) { applyPriceOverrides(rows); setOv(rows); }
+    setVer(v => v + 1); setSaving(false);
+    if (failed) { showAlert("Couldn't save every price — " + failed + "\n\nIf this keeps happening, the one-time SQL step (price_overrides.sql) has not been run in Supabase yet."); return; }
+    setDraft({}); setEditMode(false);
+  };
   const [q, setQ] = useState("");
   const [group, setGroup] = useState("ALL");
   const [view, setView] = useState("gross");     // India only: "gross" | "net"
@@ -339,7 +377,14 @@ export default function PriceListPanel({ shop, shopId }) {
             Effective from <b>{PRICE_LIST_EFFECTIVE}</b> · {isIndia ? `India prices: Net + GST ${PRICE_LIST_GST}% = Gross (the Gross price is what the customer pays)` : "UK prices in £ · N/A = not available in the UK"} · prices are subject to change without prior notice
           </p>
         </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {isAdmin && !editMode && <button onClick={() => { setDraft({}); setEditMode(true); }} style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #d3deeb", background: "white", color: "#334155", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>✏️ Edit prices</button>}
+        {isAdmin && editMode && <>
+          <button onClick={savePrices} disabled={saving} style={{ padding: "8px 14px", borderRadius: 10, border: "none", background: accent, color: "white", fontWeight: 800, fontSize: 12.5, cursor: saving ? "default" : "pointer", fontFamily: "inherit", opacity: saving ? 0.6 : 1 }}>{saving ? "Saving…" : "💾 Save prices" + (changedDraft().length ? " (" + changedDraft().length + ")" : "")}</button>
+          <button onClick={() => { setEditMode(false); setDraft({}); }} disabled={saving} style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #d3deeb", background: "white", color: "#334155", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit" }}>Cancel</button>
+        </>}
         <button onClick={printList} style={{ padding: "8px 14px", borderRadius: 10, border: "1px solid #d3deeb", background: "white", color: "#334155", fontWeight: 700, fontSize: 12.5, cursor: "pointer", fontFamily: "inherit", boxShadow: "0 2px 4px rgba(15,23,42,.08)" }}>🖨️ Print / PDF</button>
+        </div>
       </div>
 
       <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search — e.g.  topper 5x5 20   ·   wig 18   ·   side bangs   ·   ponytail 12" autoFocus
@@ -375,9 +420,31 @@ export default function PriceListPanel({ shop, shopId }) {
                       <td style={{ padding: "8px 14px", fontWeight: 700, color: "#334155", width: 70 }}>{e.length ? e.length + "″" : "—"}</td>
                       <td style={{ padding: "8px 6px", textAlign: "right" }}>
                         {na ? <span style={{ color: "#cbd5e1", fontWeight: 700 }}>N/A</span>
+                          : editMode ? (() => {
+                              const typed = draft[e.id];
+                              const val = typed !== undefined ? typed : String(curOf(e));
+                              const numv = Number(val);
+                              const changed = typed !== undefined && typed !== "" && numv > 0 && numv !== curOf(e);
+                              return (
+                                <span style={{ display: "inline-flex", alignItems: "center", gap: 6, flexWrap: "wrap", justifyContent: "flex-end" }}>
+                                  <span style={{ fontSize: 11, color: "#64748b" }}>{isIndia ? "Net " : ""}{priceSymbol(shopId)}</span>
+                                  <input type="number" min="0" step="any" value={val} onChange={ev => setDraft(d => ({ ...d, [e.id]: ev.target.value }))}
+                                    style={{ width: 84, padding: "5px 6px", borderRadius: 7, border: "1.5px solid " + (changed ? accent : "#cbd5e1"), background: changed ? "#fffbeb" : "white", fontSize: 13, fontWeight: 700, textAlign: "right", fontFamily: "inherit" }} />
+                                  {isIndia && numv > 0 && <span style={{ fontSize: 11, color: "#166534", fontWeight: 700 }}>= {money(shopId, parseFloat((numv + gstOf(numv)).toFixed(2)))}</span>}
+                                  {(changed || numv !== baseOf(e)) && (
+                                    <button onClick={() => setDraft(d => ({ ...d, [e.id]: String(baseOf(e)) }))} title={"Back to the built-in list price (" + money(shopId, baseOf(e)) + ")"}
+                                      style={{ padding: "2px 6px", borderRadius: 6, border: "1px solid #d3deeb", background: "white", color: "#64748b", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}>↺</button>
+                                  )}
+                                </span>
+                              );
+                            })()
                           : isIndia && view === "net"
                             ? <span><b style={{ color: "#0f172a" }}>{money(shopId, e.net)}</b> <span style={{ fontSize: 11, color: "#94a3b8" }}>+ {money(shopId, e.gst)} GST</span></span>
                             : <b style={{ color: "#166534", fontSize: 14 }}>{money(shopId, price)}</b>}
+                        {!na && !editMode && e.edited && (isIndia ? e.edited.net : e.edited.uk) && (
+                          <span title={"Price changed by " + (e.edited.by || "admin") + (e.edited.at ? " on " + String(e.edited.at).slice(0, 10) : "") + " — built-in list price " + money(shopId, baseOf(e))}
+                            style={{ marginLeft: 6, padding: "1px 6px", borderRadius: 6, background: "#fef3c7", color: "#92400e", fontSize: 10, fontWeight: 800, verticalAlign: "middle" }}>edited</span>
+                        )}
                       </td>
                       <td style={{ padding: "6px 10px 6px 4px", textAlign: "right", width: 64 }}>
                         {!na && (

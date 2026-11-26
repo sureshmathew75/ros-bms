@@ -2411,3 +2411,27 @@ export const dbListWeeklyRoutines = async (shopId) => {
     completedBy: r.completed_by || '', completedAt: r.completed_at || null,
   }));
 };
+
+/* ── Price list changes made by an admin in ORBIT (table: price_overrides.sql). They sit on top of the price list in priceList.js.
+   dbLoadPriceOverrides returns null if the table has not been created yet. net = ROS India Net price, uk = ROS Hairlines UK £ price. ── */
+export const dbLoadPriceOverrides = async () => {
+  if (!sb) return null;
+  const { data, error } = await sb.from('price_overrides').select('*');
+  if (error) { console.warn('Load price overrides error (run price_overrides.sql?):', error.message); return null; }
+  return (data || []).map(r => ({
+    id: r.id, net: r.net == null ? null : Number(r.net), uk: r.uk == null ? null : Number(r.uk),
+    updatedBy: r.updated_by || '', updatedAt: r.updated_at || '',
+  }));
+};
+export const dbSavePriceOverride = async ({ id, net = null, uk = null, by = '' }) => {
+  if (!sb) return { error: 'No Supabase client' };
+  const { error } = await sb.from('price_overrides').upsert({ id, net, uk, updated_by: by || '', updated_at: new Date().toISOString() });
+  if (error) { console.error('Save price override error:', error); return { error: error.message }; }
+  return { ok: true };
+};
+export const dbDeletePriceOverride = async (id) => {
+  if (!sb) return { error: 'No Supabase client' };
+  const { error } = await sb.from('price_overrides').delete().eq('id', id);
+  if (error) { console.error('Delete price override error:', error); return { error: error.message }; }
+  return { ok: true };
+};

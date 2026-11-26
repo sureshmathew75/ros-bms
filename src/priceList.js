@@ -40,7 +40,7 @@ const RAW = [
   ["Ladies Toppers", "Ladies Topper HD 6×6", "Base size 6 × 6", [[16,28000,5040,33040,300],[18,30000,5400,35400,320],[20,33000,5940,38940,350],[22,36000,6480,42480,380],[24,40000,7200,47200,400]]],
   ["Wigs & Hairlines", "Hairline Topper HD", "HD lace hairline", [[16,26500,4770,31270,300],[18,30500,5490,35990,325],[20,34500,6210,40710,350],[22,39500,7110,46610,375],[24,44000,7920,51920,400]]],
   ["Wigs & Hairlines", "Wig", "Full wig", [[16,32500,5850,38350,330],[18,36500,6570,43070,370],[20,38500,6930,45430,390],[22,42500,7650,50150,430],[24,46000,8280,54280,470]]],
-  ["Wigs & Hairlines", "Wig HD", "Full wig, HD lace", [[16,36000,6480,42480,360],[18,42000,7560,49560,425],[20,47000,8460,55460,475],[22,54000,9720,63720,550],[24,60000,10800,70800,600]]],
+  ["Wigs & Hairlines", "Wig HD", "Full wig, HD lace", [[16,46000,8280,54280,360],[18,52000,9360,61360,425],[20,57000,10260,67260,475],[22,64000,11520,75520,550],[24,70000,12600,82600,600]]],
   ["Wigs & Hairlines", "Hairlines with Band HD", "HD hairline on band", [[16,16500,2970,19470,195],[18,18500,3330,21830,215],[20,20500,3690,24190,235],[22,22500,4050,26550,255],[24,24500,4410,28910,280]]],
   ["Accessories", "Scrunchies", "Hair accessories", [[null,2700,486,3186,35]]],
   ["Accessories", "Plain Updo", "Hair accessories", [[null,1800,324,2124,25]]],
@@ -70,7 +70,7 @@ const labelOf = (name, len) => len ? `${name} ${len}″` : name;
 export const PRICE_ENTRIES = [];
 RAW.forEach(([group, name, spec, rows]) => {
   rows.forEach(([len, net, gst, gross, uk]) => {
-    PRICE_ENTRIES.push({ id: `${name}|${len || ""}`, group, product: name, spec, length: len, net, gst, gross, uk, label: labelOf(name, len) });
+    PRICE_ENTRIES.push({ id: `${name}|${len || ""}`, group, product: name, spec, length: len, net, gst, gross, uk, label: labelOf(name, len), base: { net, gst, gross, uk } });
   });
 });
 export const PRICE_PRODUCTS = RAW.map(([group, name, spec, rows]) => ({
@@ -78,6 +78,21 @@ export const PRICE_PRODUCTS = RAW.map(([group, name, spec, rows]) => ({
   entries: PRICE_ENTRIES.filter(e => e.product === name),
 }));
 export const PRICE_GROUPS = Array.from(new Set(RAW.map(r => r[0])));
+
+/* Prices an admin changed in ORBIT (stored in the price_overrides table, see price_overrides.sql) sit on top of the list above.
+   Entries are updated in place, so every screen that reads priceFor() sees the new price. Call with the full list of overrides
+   ({ id, net, uk, updatedBy, updatedAt }); entries without an override go back to the list price. India: edit the Net price —
+   GST (18%) and Gross follow. UK: edit the £ price. */
+export const gstOf = (net) => Math.round((Number(net) || 0) * PRICE_LIST_GST) / 100;
+export const applyPriceOverrides = (rows) => {
+  PRICE_ENTRIES.forEach(e => { e.net = e.base.net; e.gst = e.base.gst; e.gross = e.base.gross; e.uk = e.base.uk; e.edited = null; });
+  (rows || []).forEach(r => {
+    const e = PRICE_ENTRIES.find(x => x.id === r.id); if (!e) return;
+    if (r.net != null && Number.isFinite(Number(r.net))) { e.net = Number(r.net); e.gst = gstOf(e.net); e.gross = parseFloat((e.net + e.gst).toFixed(2)); }
+    if (r.uk != null && Number.isFinite(Number(r.uk)) && e.base.uk != null) e.uk = Number(r.uk);
+    e.edited = { net: r.net != null, uk: r.uk != null, by: r.updatedBy || "", at: r.updatedAt || "" };
+  });
+};
 
 /* The price a customer pays in this shop: India = Gross (incl. GST), Hairlines UK = £. null = not sold there. */
 export const priceFor = (entry, shopId) => {

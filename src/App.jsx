@@ -17,7 +17,7 @@ import { answerRosie, buildDayWrapUp, coachNotes, ROSIE_HINTS } from "./componen
 import { AWAITING_TAG, isAwaitingDetails } from "./components/awaiting";
 import PriceListPanel, { ItemSuggestInput, PriceDiffModal, PriceHint, priceNoteText, FinalShortModal, PartPaidModal } from "./components/PriceListPanel";
 import SaleNotebook from "./components/SaleNotebook";
-import { isPriceShop, priceFor, matchEntry, priceMismatches, listTotalForLines, ukDeliveryFor, exchangeSaleUpdate, findListEntry, listPriceOf, listPriceOfLine, listPriceAmounts } from "./priceList";
+import { isPriceShop, priceFor, matchEntry, priceMismatches, listTotalForLines, ukDeliveryFor, exchangeSaleUpdate, findListEntry, listPriceOf, listPriceOfLine, listPriceAmounts, applyPriceOverrides } from "./priceList";
 import PurchasesPanel from "./components/PurchasesPanel";
 import PurchaseNotebook from "./components/PurchaseNotebook";
 import ReportsPanel from "./components/ReportsPanel";
@@ -52,7 +52,7 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadAuditDismissals, dbDismissAuditFinding,
   dbLoadAttendanceRecords, dbClockIn, dbClockOut, dbSetAttendanceRecord,
   dbLoadAttendanceHolidays, dbAddAttendanceHoliday, dbRemoveAttendanceHoliday,
-  dbLoadInventoryItems, dbAddInventoryItem, dbUpdateInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement, dbLoadStockChecks, dbAddStockCheck, dbDeleteInventoryMovement, dbResetInventoryItems, dbSetInventoryItemOrder,
+  dbLoadInventoryItems, dbAddInventoryItem, dbUpdateInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement, dbLoadStockChecks, dbAddStockCheck, dbLoadPriceOverrides, dbDeleteInventoryMovement, dbResetInventoryItems, dbSetInventoryItemOrder,
   dbLoadUpfrontRefunds, dbAddUpfrontRefund, dbDeleteUpfrontRefund,
   dbLoadGiftVouchers, dbAddGiftVoucher, dbUpdateGiftVoucher, dbDeleteGiftVoucher,
   dbLoadStaffSalaries, dbSaveStaffSalary, dbLoadStaffPositions, dbSaveStaffPosition, dbLoadCarryForward, dbUpdateCarryForward,
@@ -7890,6 +7890,11 @@ const ShopDashboard=({shopId,onBack,user,onLogout,salesData,setSalesData,custome
     dbLoadLogistics(shopId).then(d=>{if(d)setLogData(d);}).catch(()=>{});
   },[shopId]);
 
+  // Prices an admin changed on the Price List tab sit on top of the built-in list — load them once so New Sale, Edit Sale and the checks use them.
+  useEffect(()=>{
+    if(!isPriceShop(shopId)) return;
+    dbLoadPriceOverrides().then(rows=>{ if(rows) applyPriceOverrides(rows); }).catch(()=>{});
+  },[shopId]);
   // Re-fetch this shop's sales on mount — ensures data is fresh after page refresh
   useEffect(()=>{
     dbLoadSales(shopId).then(data=>{
@@ -9917,7 +9922,7 @@ return(
 
           {/* ── INVENTORY (ROS India only) ── */}
           {tab==="pricelist"&&isPriceShop(shopId)&&(
-            <PriceListPanel shop={shop} shopId={shopId}/>
+            <PriceListPanel shop={shop} shopId={shopId} user={user}/>
           )}
           {tab==="inventory"&&shopId==="ros-india"&&(
             <InventoryPage shopId={shopId} shop={shop} user={user} sales={sales} returns={returns} setReturns={setReturns} />
