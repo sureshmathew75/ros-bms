@@ -1858,15 +1858,36 @@ export const dbLoadInventoryMovements = async (shopId) => {
   return (data || []).map(r => ({
     id: r.id, itemId: r.item_id, type: r.type, qty: Number(r.qty) || 0,
     date: r.date, saleId: r.sale_id, customer: r.customer, note: r.note || '',
+    byName: r.by_name || '', loggedAt: r.logged_at || '',
   }));
 };
 
-export const dbAddInventoryMovement = async (shopId, itemId, type, qty, date, saleId, customer, note) => {
+/* ── Stock checks: "a person looked at the stock" — recorded even when nothing changed (columns / table: stock_checks.sql).
+   itemId '' = the whole Hair / Clothes window was checked. dbLoadStockChecks returns null if the table has not been created yet. ── */
+export const dbLoadStockChecks = async (shopId) => {
+  if (!sb) return null;
+  const { data, error } = await sb.from('stock_checks').select('*').eq('shop_id', shopId).order('checked_at', { ascending: false }).limit(2000);
+  if (error) { console.warn('Load stock checks error (run stock_checks.sql?):', error.message); return null; }
+  return (data || []).map(r => ({ id: r.id, itemId: r.item_id || '', itemType: r.item_type || 'hair', checkedAt: r.checked_at || '', byName: r.by_name || '', note: r.note || '' }));
+};
+export const dbAddStockCheck = async (shopId, { itemId = '', itemType = 'hair', by = '', note = '' } = {}) => {
+  if (!sb) return { error: 'No Supabase client' };
+  const id = `CHK-${Date.now().toString().slice(-8)}-${Math.floor(Math.random() * 1000)}`;
+  const { error } = await sb.from('stock_checks').insert({ id, shop_id: shopId, item_id: itemId || null, item_type: itemType || 'hair', checked_at: new Date().toISOString(), by_name: by || '', note: note || '' });
+  if (error) { console.error('Add stock check error:', error); return { error: error.message }; }
+  return { ok: true };
+};
+
+export const dbAddInventoryMovement = async (shopId, itemId, type, qty, date, saleId, customer, note, by) => {
   if (!sb) return false;
   const id = `MOV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random()*1000)}`;
-  const { error: moveErr } = await sb.from('inventory_movements').insert({
-    id, item_id: itemId, shop_id: shopId, type, qty, date, sale_id: saleId, customer, note: note || '',
-  });
+  const row = { id, item_id: itemId, shop_id: shopId, type, qty, date, sale_id: saleId, customer, note: note || '' };
+  // Who made the change and when (columns: stock_checks.sql). If they have not been added yet the movement is still saved without them.
+  let { error: moveErr } = await sb.from('inventory_movements').insert({ ...row, by_name: by || '', logged_at: new Date().toISOString() });
+  if (moveErr) {
+    console.warn('Add inventory movement with staff name failed, retrying without it:', moveErr.message);
+    ({ error: moveErr } = await sb.from('inventory_movements').insert(row));
+  }
   if (moveErr) { console.error('Add inventory movement error:', moveErr); return false; }
 
   const { data: item, error: fetchErr } = await sb.from('inventory_items').select('current_stock,total_stocked').eq('id', itemId).maybeSingle();

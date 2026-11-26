@@ -52,7 +52,7 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadAuditDismissals, dbDismissAuditFinding,
   dbLoadAttendanceRecords, dbClockIn, dbClockOut, dbSetAttendanceRecord,
   dbLoadAttendanceHolidays, dbAddAttendanceHoliday, dbRemoveAttendanceHoliday,
-  dbLoadInventoryItems, dbAddInventoryItem, dbUpdateInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement, dbDeleteInventoryMovement, dbResetInventoryItems, dbSetInventoryItemOrder,
+  dbLoadInventoryItems, dbAddInventoryItem, dbUpdateInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement, dbLoadStockChecks, dbAddStockCheck, dbDeleteInventoryMovement, dbResetInventoryItems, dbSetInventoryItemOrder,
   dbLoadUpfrontRefunds, dbAddUpfrontRefund, dbDeleteUpfrontRefund,
   dbLoadGiftVouchers, dbAddGiftVoucher, dbUpdateGiftVoucher, dbDeleteGiftVoucher,
   dbLoadStaffSalaries, dbSaveStaffSalary, dbLoadStaffPositions, dbSaveStaffPosition, dbLoadCarryForward, dbUpdateCarryForward,
@@ -12851,6 +12851,9 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   const [invView, setInvView] = React.useState("items"); // "items" | "log" | "monthly" — list view only
   const [collapsedLogDates, setCollapsedLogDates] = React.useState({}); // date -> bool, daily-log view
   const [sheetMonth, setSheetMonth] = React.useState(new Date().toISOString().slice(0,7)); // "YYYY-MM" shown in the Stock Sheet
+  const [checks, setChecks] = React.useState(null);        // stock checks (null = the stock_checks table is not set up yet)
+  const [checkOpen, setCheckOpen] = React.useState(false); // per-item "last checked" list open?
+  const who = user?.fullName || user?.name || "";           // saved with every stock change / check
 
   // Admin quick correction: type the actual quantity straight into the sheet,
   // confirm, and it is logged as a stock correction (same as ⚖️ Correct Stock).
@@ -12860,7 +12863,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
     if (!(Number(newQty) >= 0) || delta === 0) return false;
     const sign = delta > 0 ? "+" : "";
     if (!(await showConfirm("Change stock of "+item.name+" from "+cur+" to "+newQty+" ("+sign+delta+")? This is logged as a stock correction on the item's history."))) return false;
-    const ok = await dbAddInventoryMovement(shopId, item.id, "correction", delta, new Date().toISOString().slice(0,10), null, null, "Quick stock correction by admin");
+    const ok = await dbAddInventoryMovement(shopId, item.id, "correction", delta, new Date().toISOString().slice(0,10), null, null, "Quick stock correction by admin", who);
     if (ok) { load(); return true; }
     showAlert("Couldn't save — please check your connection and try again.");
     return false;
@@ -12868,8 +12871,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
 
   const load = React.useCallback(() => {
     setLoading(true);
-    Promise.all([dbLoadInventoryItems(shopId), dbLoadInventoryMovements(shopId)]).then(([i, m]) => {
-      setItems(i); setMovements(m); setLoading(false);
+    Promise.all([dbLoadInventoryItems(shopId), dbLoadInventoryMovements(shopId), dbLoadStockChecks(shopId)]).then(([i, m, c]) => {
+      setItems(i); setMovements(m); setChecks(c); setLoading(false);
     });
   }, [shopId]);
   React.useEffect(() => { load(); }, [load]);
@@ -12998,6 +13001,63 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
     ["RETURN_RECEIVED","EXCHANGED","REFUNDED","EXCHANGE_REFUND"].includes(r.status) && (r.stockStatus||"in_office")==="in_office"
   ), [returns]);
 
+  /* ── Stock checks: who looked at the stock and when (recorded even when nothing changed) ── */
+  const secType = stockSection === "clothes" ? "clothes" : "hair";
+  const STALE_DAYS = 7;
+  const fmtWhen = (iso) => { try { return new Date(iso).toLocaleString("en-GB",{day:"numeric",month:"short",hour:"numeric",minute:"2-digit",hour12:true}); } catch { return iso || ""; } };
+  const ageDays = (iso) => iso ? (Date.now() - new Date(iso).getTime()) / 86400000 : Infinity;
+  const lastCheckOf = (item) => { let best = null; (checks || []).forEach(c => { if ((c.itemId === item.id || (!c.itemId && c.itemType === (item.itemType || "hair"))) && (!best || c.checkedAt > best.checkedAt)) best = c; }); return best; };
+  const markChecked = async (item) => {
+    if (!item && !(await showConfirm("Mark ALL " + activeItems.length + " " + (secType === "clothes" ? "clothes" : "hair") + " stock items as checked now?\n\nThis records today's date, the time and your name."))) return;
+    const res = await dbAddStockCheck(shopId, { itemId: item ? item.id : "", itemType: secType, by: who });
+    if (res && res.ok) dbLoadStockChecks(shopId).then(c => setChecks(c));
+    else showAlert("Couldn't save the stock check — " + ((res && res.error) || "please check your connection") + "\n\nIf this keeps happening, the one-time SQL step (stock_checks.sql) has not been run in Supabase yet.");
+  };
+  const checkBtn = { padding: "7px 13px", borderRadius: 9, border: "1px solid #cbd5e1", background: "white", color: "#334155", fontWeight: 700, fontSize: 12, cursor: "pointer", fontFamily: "inherit" };
+  const itemChecks = activeItems.map(lastCheckOf);
+  const newestCheck = itemChecks.reduce((b, c) => (c && (!b || c.checkedAt > b.checkedAt)) ? c : b, null);
+  const staleCount = activeItems.filter((it, i) => ageDays(itemChecks[i] && itemChecks[i].checkedAt) > STALE_DAYS).length;
+  const lastMove = movements.filter(m => activeItemIds.has(m.itemId)).reduce((b, m) => (((m.loggedAt || m.date || "") > (b ? (b.loggedAt || b.date || "") : "")) ? m : b), null);
+  const checkPanel = (
+    <div style={{ ...stkCard("white", "#d3deeb"), padding: "12px 14px", marginBottom: 16 }}>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+        <div style={{ minWidth: 0 }}>
+          <div style={{ fontSize: 13, fontWeight: 800, color: "#0f172a" }}>🔍 Stock check</div>
+          <div style={{ fontSize: 12, color: (checks !== null && newestCheck) ? "#334155" : "#b45309", marginTop: 2 }}>
+            {checks === null ? "Not set up yet — run stock_checks.sql once in Supabase"
+              : newestCheck ? <>Last checked <b>{fmtWhen(newestCheck.checkedAt)}</b>{newestCheck.byName ? <> by <b>{newestCheck.byName}</b></> : null}</>
+              : "Never checked"}
+            {lastMove && <span style={{ color: "#94a3b8" }}> · Last stock change {lastMove.loggedAt ? fmtWhen(lastMove.loggedAt) : fmtDate(lastMove.date)}{lastMove.byName ? " by " + lastMove.byName : ""}</span>}
+          </div>
+          {checks !== null && staleCount > 0 && <div style={{ fontSize: 11, fontWeight: 700, color: "#b45309", marginTop: 2 }}>⚠ {staleCount} item{staleCount !== 1 ? "s" : ""} not checked in the last {STALE_DAYS} days</div>}
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button onClick={() => setCheckOpen(v => !v)} style={checkBtn}>Per item {checkOpen ? "▲" : "▼"}</button>
+          <button onClick={() => markChecked(null)} disabled={activeItems.length === 0}
+            style={{ ...checkBtn, border: "none", background: shop.accent, color: "white", fontWeight: 800 }}>✓ I've checked all stock</button>
+        </div>
+      </div>
+      {checkOpen && (
+        <div style={{ marginTop: 10, borderTop: "1px solid #eef2f7" }}>
+          {activeItems.map((it, i) => {
+            const lc = itemChecks[i]; const stale = ageDays(lc && lc.checkedAt) > STALE_DAYS;
+            return (
+              <div key={it.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, padding: "7px 0", borderBottom: "1px solid #f1f5f9" }}>
+                <span style={{ fontSize: 12.5, fontWeight: 700, color: "#0f172a", textTransform: "uppercase", minWidth: 0 }}>{it.name}</span>
+                <span style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                  <span style={{ fontSize: 11.5, fontWeight: 600, color: lc ? (stale ? "#b45309" : "#64748b") : "#dc2626" }}>
+                    {lc ? <>{fmtWhen(lc.checkedAt)}{lc.byName ? " · " + lc.byName : ""}</> : "Never checked"}
+                  </span>
+                  <button onClick={() => markChecked(it)} style={{ ...checkBtn, padding: "4px 10px", fontSize: 11 }}>✓ Checked</button>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
   if (loading) return <div style={{padding:60,textAlign:"center",color:"#94a3b8"}}>Loading inventory…</div>;
 
   // Shared Hair/Clothes/Returned tab toggle — shown at the top of both
@@ -13056,6 +13116,12 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           <div>
             <h2 style={{margin:0,fontSize:19,fontWeight:800,color:"#0f172a"}}>{selectedItem.name}</h2>
             <p style={{margin:"2px 0 0",fontSize:12,color:"#64748b"}}>Stock ledger — every unit in and out</p>
+            {(() => { const lc = lastCheckOf(selectedItem); return (
+              <div style={{marginTop:6,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:12,color:"#475569"}}>
+                <span>🔍 {checks===null ? "Stock check not set up yet" : lc ? <>Last checked <b>{fmtWhen(lc.checkedAt)}</b>{lc.byName ? <> by <b>{lc.byName}</b></> : null}</> : "Never checked"}</span>
+                <button onClick={()=>markChecked(selectedItem)} style={{...checkBtn,padding:"4px 10px",fontSize:11}}>✓ Checked</button>
+              </div>
+            ); })()}
           </div>
           <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
             <button onClick={()=>setSoldFor({id:selectedItem.id,name:selectedItem.name})}
@@ -13112,7 +13178,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
                   {m.type==="sale" && m.customer && <span style={{color:"#64748b",fontWeight:600,textTransform:"uppercase"}}> to {m.customer}</span>}
                 </div>
                 <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>
-                  {fmtDate(m.date)}{m.saleId?` · Invoice ${m.saleId}`:""}{m.note?` · ${m.note}`:""}
+                  {fmtDate(m.date)}{m.loggedAt?` · ${fmtWhen(m.loggedAt)}`:""}{m.byName?` · by ${m.byName}`:""}{m.saleId?` · Invoice ${m.saleId}`:""}{m.note?` · ${m.note}`:""}
                 </div>
               </div>
               <div style={{display:"flex",alignItems:"center",gap:10}}>
@@ -13137,7 +13203,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
 
         {restockFor && (
           <RestockModal item={restockFor} onClose={()=>setRestockFor(null)} onSave={async(qty,note,date)=>{
-            const ok = await dbAddInventoryMovement(shopId, restockFor.id, "restock", qty, date||new Date().toISOString().slice(0,10), null, null, note);
+            const ok = await dbAddInventoryMovement(shopId, restockFor.id, "restock", qty, date||new Date().toISOString().slice(0,10), null, null, note, who);
             if (ok) { setRestockFor(null); load(); }
             else showAlert("Couldn't save — please check your connection and try again.");
           }}/>
@@ -13145,7 +13211,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
 
         {soldFor && (
           <LogSaleModal item={soldFor} onClose={()=>setSoldFor(null)} onSave={async(qty,customer,date,note)=>{
-            const ok = await dbAddInventoryMovement(shopId, soldFor.id, "sale", qty, date, null, customer, note);
+            const ok = await dbAddInventoryMovement(shopId, soldFor.id, "sale", qty, date, null, customer, note, who);
             if (ok) { setSoldFor(null); load(); }
             else showAlert("Couldn't save — please check your connection and try again.");
           }}/>
@@ -13154,7 +13220,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
         {correctFor && (
           <CorrectStockModal item={correctFor} onClose={()=>setCorrectFor(null)} onSave={async(delta,note)=>{
             if(!(await showConfirm("Change stock of "+correctFor.name+" from "+correctFor.currentStock+" to "+(Number(correctFor.currentStock)+Number(delta))+" ("+(delta>0?"+":"")+delta+")?")))return;
-            const ok = await dbAddInventoryMovement(shopId, correctFor.id, "correction", delta, new Date().toISOString().slice(0,10), null, null, note);
+            const ok = await dbAddInventoryMovement(shopId, correctFor.id, "correction", delta, new Date().toISOString().slice(0,10), null, null, note, who);
             if (ok) { setCorrectFor(null); load(); }
             else showAlert("Couldn't save — please check your connection and try again.");
           }}/>
@@ -13214,6 +13280,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           </div>
         )}
       </div>
+
+      {checkPanel}
 
       {/* ── View toggle: Excel-style stock sheet vs. day-by-day movement log ── */}
       <div style={{display:"flex",gap:6,marginBottom:16}}>
@@ -13358,6 +13426,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
                                 {m.type==="restock"?"🟢 Restocked":isCorrection?"⚖️ Corrected":"🔴 Sold"} · <span style={{textTransform:"uppercase"}}>{it?.name||"(deleted item)"}</span>
                                 {m.type==="sale" && m.customer && <span style={{color:"#64748b",fontWeight:600,textTransform:"uppercase"}}> — {m.customer}</span>}
                               </div>
+                              {(m.byName || m.loggedAt) && <div style={{fontSize:10.5,color:"#64748b",marginTop:1}}>{m.loggedAt ? fmtWhen(m.loggedAt) : ""}{m.byName ? (m.loggedAt ? " · " : "") + "by " + m.byName : ""}</div>}
                               {m.note && <div style={{fontSize:10.5,color:"#94a3b8",marginTop:1}}>{m.note}</div>}
                             </div>
                             <div style={{fontSize:13,fontWeight:800,color:amountColor,whiteSpace:"nowrap"}}>
@@ -13402,7 +13471,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
 
       {soldFor && (
         <LogSaleModal item={soldFor} onClose={()=>setSoldFor(null)} onSave={async(qty,customer,date,note)=>{
-          const ok = await dbAddInventoryMovement(shopId, soldFor.id, "sale", qty, date, null, customer, note);
+          const ok = await dbAddInventoryMovement(shopId, soldFor.id, "sale", qty, date, null, customer, note, who);
           if (ok) { setSoldFor(null); load(); }
           else showAlert("Couldn't save — please check your connection and try again.");
         }}/>
@@ -13410,7 +13479,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
 
       {restockFor && (
         <RestockModal item={restockFor} onClose={()=>setRestockFor(null)} onSave={async(qty,note,date)=>{
-          const ok = await dbAddInventoryMovement(shopId, restockFor.id, "restock", qty, date||new Date().toISOString().slice(0,10), null, null, note);
+          const ok = await dbAddInventoryMovement(shopId, restockFor.id, "restock", qty, date||new Date().toISOString().slice(0,10), null, null, note, who);
           if (ok) { setRestockFor(null); load(); }
           else showAlert("Couldn't save — please check your connection and try again.");
         }}/>
