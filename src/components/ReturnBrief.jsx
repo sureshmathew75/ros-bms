@@ -65,7 +65,12 @@ export default function ReturnBrief({ ret, sale, accent = "#0f172a", symbol = "â
   // What the customer originally asked for. Before the item arrives that is the saved resolution; once it
   // arrives the resolution is reset to "undecided", so the original request is kept in requestedResolution.
   const askedKey = (received || closed) ? (ret.requestedResolution || "") : (decided ? ret.resolution : "");
-  const ask = ASK[askedKey] || NOT_SET;
+  // A closed case shows how it was actually resolved (never "not decided"); older cases may have no saved original request.
+  const outcomeKey = ret.status === "EXCHANGED" ? "exchange" : ret.status === "EXCHANGE_REFUND" ? "exchange_refund" : ret.status === "REFUNDED" ? (ret.resolution === "voucher" ? "voucher" : "refund") : "";
+  const CLOSED_SUB = { exchange: "replacement item sent", refund: "money refunded", exchange_refund: "replacement sent + balance refunded", voucher: "gift voucher issued" };
+  const shownKey = closed ? outcomeKey : askedKey;
+  const ask = ASK[shownKey] || NOT_SET;
+  const askedDiffers = closed && askedKey && outcomeKey && askedKey !== outcomeKey;
   const nowKey = decided ? ret.resolution : "";
   const changed = (received || closed) && askedKey && nowKey && askedKey !== nowKey;
 
@@ -93,16 +98,21 @@ export default function ReturnBrief({ ret, sale, accent = "#0f172a", symbol = "â
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "stretch" }}>
         <div style={{ flex: "1 1 230px", minWidth: 0, background: ask.bg, border: "1.5px solid " + ask.bd, borderRadius: 12, padding: "10px 12px" }}>
           <div style={{ fontSize: 9, fontWeight: 800, color: ask.fg, letterSpacing: "0.08em", textTransform: "uppercase", opacity: 0.8 }}>
-            {(received || closed) ? "Customer originally asked for" : "Customer wants"}
+            {closed ? "Case resolved as" : received ? "Customer originally asked for" : "Customer wants"}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
             <span style={{ fontSize: 22, lineHeight: 1 }}>{ask.icon}</span>
             <div style={{ minWidth: 0 }}>
               <div style={{ fontSize: 15, fontWeight: 800, color: ask.fg, lineHeight: 1.1 }}>{ask.label}</div>
-              <div style={{ fontSize: 11, color: "#64748b" }}>{ask.sub}</div>
+              <div style={{ fontSize: 11, color: "#64748b" }}>{closed ? (CLOSED_SUB[outcomeKey] || ask.sub) : ask.sub}</div>
             </div>
           </div>
-          {changed && (
+          {askedDiffers && (
+            <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700, color: "#92400e", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 7, padding: "3px 8px", display: "inline-block" }}>
+              Customer originally asked for: {ASK[askedKey].icon} {ASK[askedKey].label}
+            </div>
+          )}
+          {!closed && changed && (
             <div style={{ marginTop: 6, fontSize: 11, fontWeight: 700, color: "#92400e", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 7, padding: "3px 8px", display: "inline-block" }}>
               Now handled as: {(ASK[nowKey] || NOT_SET).icon} {(ASK[nowKey] || NOT_SET).label}
             </div>
