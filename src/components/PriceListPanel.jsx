@@ -344,7 +344,7 @@ export default function PriceListPanel({ shop, shopId, user }) {
 
   const messageFor = (e) => {
     const price = priceFor(e, shopId);
-    if (isIndia) return `${e.label} — ${money(shopId, e.gross)} (incl. ${PRICE_LIST_GST}% GST). Free delivery across India.`;
+    if (isIndia) return `${e.label} — ${money(shopId, e.gross)} (incl. GST). Free delivery across India.`;
     return `${e.label} — ${money(shopId, price)}. Delivery ${money(shopId, UK_DELIVERY_LOW)} per order under ${money(shopId, UK_DELIVERY_THRESHOLD)}, ${money(shopId, UK_DELIVERY)} from ${money(shopId, UK_DELIVERY_THRESHOLD)}.`;
   };
   const copy = async (e) => {
