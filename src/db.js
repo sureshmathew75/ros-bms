@@ -1880,6 +1880,55 @@ export const dbAddStockCheck = async (shopId, { itemId = '', itemType = 'hair', 
   return { ok: true };
 };
 
+/* ── Stock shortages: the admin types a physical count that is LOWER than the system stock; the difference waits here until
+   staff explain it (who / when / why). Each explanation becomes a stock-out ("sale") on its own date. Needs stock_shortages.sql —
+   dbLoadStockShortages returns null if that table has not been created yet. ── */
+const shortageRow = (r) => ({
+  id: r.id, itemId: r.item_id, itemName: r.item_name || '', systemQty: Number(r.system_qty) || 0, countedQty: Number(r.counted_qty) || 0,
+  shortQty: Number(r.short_qty) || 0, explainedQty: Number(r.explained_qty) || 0, status: r.status || 'PENDING',
+  foundBy: r.found_by || '', foundAt: r.found_at || '', closedAt: r.closed_at || '', log: r.log || '',
+});
+export const dbLoadStockShortages = async (shopId) => {
+  if (!sb) return null;
+  const { data, error } = await sb.from('stock_shortages').select('*').eq('shop_id', shopId).order('found_at', { ascending: false }).limit(1000);
+  if (error) { console.warn('Load stock shortages error (run stock_shortages.sql?):', error.message); return null; }
+  return (data || []).map(shortageRow);
+};
+export const dbAddStockShortage = async (shopId, { itemId, itemName = '', systemQty = 0, countedQty = 0, by = '' } = {}) => {
+  if (!sb) return { error: 'No Supabase client' };
+  const id = `SHT-${Date.now().toString().slice(-8)}-${Math.floor(Math.random() * 1000)}`;
+  const shortQty = Number(systemQty) - Number(countedQty);
+  if (!(shortQty > 0)) return { error: 'Nothing is short' };
+  const { error } = await sb.from('stock_shortages').insert({ id, shop_id: shopId, item_id: itemId, item_name: itemName, system_qty: Number(systemQty), counted_qty: Number(countedQty), short_qty: shortQty, explained_qty: 0, status: 'PENDING', found_by: by || '', found_at: new Date().toISOString() });
+  if (error) { console.error('Add stock shortage error:', error); return { error: error.message }; }
+  return { ok: true, id };
+};
+export const dbCancelStockShortage = async (id) => {
+  if (!sb) return { error: 'No Supabase client' };
+  const { error } = await sb.from('stock_shortages').update({ status: 'CANCELLED', closed_at: new Date().toISOString() }).eq('id', id);
+  if (error) { console.error('Cancel stock shortage error:', error); return { error: error.message }; }
+  return { ok: true };
+};
+// One explanation from staff: logs the stock-out on the date they give, then records it against the shortage.
+export const dbExplainStockShortage = async (shopId, shortage, { qty, date, reason = '', customer = '', by = '', note = '' } = {}) => {
+  if (!sb) return { error: 'No Supabase client' };
+  const q = Number(qty) || 0;
+  const remaining = (Number(shortage.shortQty) || 0) - (Number(shortage.explainedQty) || 0);
+  if (!(q > 0) || q > remaining) return { error: 'Quantity must be between 1 and ' + remaining };
+  const movNote = 'Short found in stock count (' + shortage.id + ')' + (reason ? ' · ' + reason : '') + (note ? ' · ' + note : '');
+  const ok = await dbAddInventoryMovement(shopId, shortage.itemId, 'sale', q, date, null, customer || reason || 'Stock short', movNote, by);
+  if (!ok) return { error: 'Could not save the stock entry' };
+  const newExplained = (Number(shortage.explainedQty) || 0) + q;
+  const done = newExplained >= (Number(shortage.shortQty) || 0);
+  const line = [date, q + ' pc', reason, customer, by].filter(Boolean).join(' · ');
+  const { error } = await sb.from('stock_shortages').update({
+    explained_qty: newExplained, status: done ? 'EXPLAINED' : 'PENDING', closed_at: done ? new Date().toISOString() : '',
+    log: (shortage.log ? shortage.log + '\n' : '') + line,
+  }).eq('id', shortage.id);
+  if (error) { console.error('Update stock shortage error:', error); return { error: 'The stock-out was saved, but the shortage record could not be updated: ' + error.message, saved: true }; }
+  return { ok: true };
+};
+
 export const dbAddInventoryMovement = async (shopId, itemId, type, qty, date, saleId, customer, note, by) => {
   if (!sb) return false;
   const id = `MOV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random()*1000)}`;

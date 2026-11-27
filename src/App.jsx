@@ -10,6 +10,7 @@ import ROS_INDIA_LOGO from "./ros-india-logo.png";   // registered-brand ROS IND
 import InvoicesPanel from "./components/InvoicesPanel";
 import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
+import ExplainShortModal from "./components/StockShortModal";
 import ReturnBrief from "./components/ReturnBrief";
 import Rosie, { rosieOutfitFor, OUTFITS, OUTFIT_LABELS } from "./components/Rosie";
 import ROSIE_HELLO_IMG from "./rosie-hello.png";       // exact 3D picture of Rosie, used in her panel
@@ -53,7 +54,7 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadAuditDismissals, dbDismissAuditFinding,
   dbLoadAttendanceRecords, dbClockIn, dbClockOut, dbSetAttendanceRecord,
   dbLoadAttendanceHolidays, dbAddAttendanceHoliday, dbRemoveAttendanceHoliday,
-  dbLoadInventoryItems, dbAddInventoryItem, dbUpdateInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement, dbLoadStockChecks, dbAddStockCheck, dbLoadPriceOverrides, dbDeleteInventoryMovement, dbResetInventoryItems, dbSetInventoryItemOrder,
+  dbLoadInventoryItems, dbAddInventoryItem, dbUpdateInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement, dbLoadStockChecks, dbAddStockCheck, dbLoadStockShortages, dbAddStockShortage, dbCancelStockShortage, dbExplainStockShortage, dbLoadPriceOverrides, dbDeleteInventoryMovement, dbResetInventoryItems, dbSetInventoryItemOrder,
   dbLoadUpfrontRefunds, dbAddUpfrontRefund, dbDeleteUpfrontRefund,
   dbLoadGiftVouchers, dbAddGiftVoucher, dbUpdateGiftVoucher, dbDeleteGiftVoucher,
   dbLoadStaffSalaries, dbSaveStaffSalary, dbLoadStaffPositions, dbSaveStaffPosition, dbLoadCarryForward, dbUpdateCarryForward,
@@ -11793,6 +11794,7 @@ return(
         shopId={shopId}
         sales={sales}
         onOpenSales={()=>setTab("sales")}
+        onOpenStock={()=>setTab("inventory")}
         shopAccent={shop.accent}
         enabled={petEnabled}
         myTasks={rosieTasks.filter(t=>t.assignedTo===user?.id && isRosieTaskDue(t))}
@@ -12853,6 +12855,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   const [sheetMonth, setSheetMonth] = React.useState(new Date().toISOString().slice(0,7)); // "YYYY-MM" shown in the Stock Sheet
   const [checks, setChecks] = React.useState(null);        // stock checks (null = the stock_checks table is not set up yet)
   const [checkOpen, setCheckOpen] = React.useState(false); // per-item "last checked" list open?
+  const [shortages, setShortages] = React.useState(null);  // stock shortages found in a physical count (null = the stock_shortages table is not set up yet)
+  const [explainFor, setExplainFor] = React.useState(null); // shortage being explained by staff
   const who = user?.fullName || user?.name || "";           // saved with every stock change / check
 
   // Admin quick correction: type the actual quantity straight into the sheet,
@@ -12861,6 +12865,17 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
     const cur = Number(item.currentStock) || 0;
     const delta = Number(newQty) - cur;
     if (!(Number(newQty) >= 0) || delta === 0) return false;
+    // A physical count LOWER than the system: record it as a shortage for staff to explain (who / when / why). Stock changes
+    // only when they explain — each explanation is saved as a sale on its own date. (Needs stock_shortages.sql.)
+    if (delta < 0 && shortages !== null) {
+      const short = -delta;
+      if (!(await showConfirm(item.name+": the system shows "+cur+" but you counted "+newQty+" — "+short+" short.\n\nStaff will be asked to explain where "+(short===1?"it":"they")+" went (who, when, why). The stock stays "+cur+" until they do; each explanation is then saved as a sale on its date and the closing stock drops.\n\nRecord this shortage?"))) return false;
+      for (const old of shortages.filter(x => x.itemId === item.id && x.status === "PENDING")) await dbCancelStockShortage(old.id); // a new count replaces an earlier unexplained one
+      const res = await dbAddStockShortage(shopId, { itemId: item.id, itemName: item.name, systemQty: cur, countedQty: Number(newQty), by: who });
+      if (res && res.ok) { load(); return true; }
+      showAlert("Couldn't record the shortage — " + ((res && res.error) || "please check your connection") + ".");
+      return false;
+    }
     const sign = delta > 0 ? "+" : "";
     if (!(await showConfirm("Change stock of "+item.name+" from "+cur+" to "+newQty+" ("+sign+delta+")? This is logged as a stock correction on the item's history."))) return false;
     const ok = await dbAddInventoryMovement(shopId, item.id, "correction", delta, new Date().toISOString().slice(0,10), null, null, "Quick stock correction by admin", who);
@@ -12871,8 +12886,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
 
   const load = React.useCallback(() => {
     setLoading(true);
-    Promise.all([dbLoadInventoryItems(shopId), dbLoadInventoryMovements(shopId), dbLoadStockChecks(shopId)]).then(([i, m, c]) => {
-      setItems(i); setMovements(m); setChecks(c); setLoading(false);
+    Promise.all([dbLoadInventoryItems(shopId), dbLoadInventoryMovements(shopId), dbLoadStockChecks(shopId), dbLoadStockShortages(shopId)]).then(([i, m, c, sh]) => {
+      setItems(i); setMovements(m); setChecks(c); setShortages(sh); setLoading(false);
     });
   }, [shopId]);
   React.useEffect(() => { load(); }, [load]);
@@ -13018,6 +13033,44 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   const newestCheck = itemChecks.reduce((b, c) => (c && (!b || c.checkedAt > b.checkedAt)) ? c : b, null);
   const staleCount = activeItems.filter((it, i) => ageDays(itemChecks[i] && itemChecks[i].checkedAt) > STALE_DAYS).length;
   const lastMove = movements.filter(m => activeItemIds.has(m.itemId)).reduce((b, m) => (((m.loggedAt || m.date || "") > (b ? (b.loggedAt || b.date || "") : "")) ? m : b), null);
+  // Shortages found in a physical count that staff have not fully explained yet
+  const pendingShorts = (shortages || []).filter(x => x.status === "PENDING" && (x.shortQty - x.explainedQty) > 0);
+  const shortByItem = {};
+  pendingShorts.forEach(x => { shortByItem[x.itemId] = (shortByItem[x.itemId] || 0) + (x.shortQty - x.explainedQty); });
+  const openExplain = (itemId) => { const sh = pendingShorts.find(x => x.itemId === itemId); if (sh) setExplainFor(sh); };
+  const explainItem = explainFor ? items.find(i => i.id === explainFor.itemId) : null;
+  const explainModalEl = (explainFor && explainItem) ? (
+    <ExplainShortModal item={explainItem} shortage={explainFor} who={who} isAdmin={isAdmin}
+      onClose={() => setExplainFor(null)}
+      onCancelShort={async () => {
+        if (!(await showConfirm("Cancel this shortage for "+explainItem.name+"? Use this only if the count was wrong. Nothing is changed in the stock."))) return;
+        const res = await dbCancelStockShortage(explainFor.id);
+        if (res && res.ok) { setExplainFor(null); load(); } else showAlert("Couldn't cancel — please try again.");
+      }}
+      onSave={async (e) => {
+        const res = await dbExplainStockShortage(shopId, explainFor, e);
+        if (res && res.ok) { setExplainFor(null); load(); }
+        else { showAlert((res && res.error) || "Couldn't save — please check your connection and try again."); if (res && res.saved) { setExplainFor(null); load(); } }
+      }}/>
+  ) : null;
+  const shortBanner = pendingShorts.length > 0 ? (
+    <div style={{ ...stkCard("#fef2f2", "#fecaca"), padding: "12px 14px", marginBottom: 16 }}>
+      <div style={{ fontSize: 13, fontWeight: 800, color: "#991b1b" }}>⚠ {pendingShorts.length} stock shortage{pendingShorts.length !== 1 ? "s" : ""} waiting for an explanation</div>
+      <div style={{ fontSize: 11.5, color: "#7f1d1d", margin: "3px 0 8px" }}>These items were short in the physical count. Please say where they went — it is then saved as a sale on that date.</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {pendingShorts.map(x => (
+          <div key={x.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", background: "white", border: "1px solid #fecaca", borderRadius: 10, padding: "7px 10px" }}>
+            <span style={{ fontSize: 12.5, fontWeight: 700, color: "#0f172a" }}>
+              <span style={{ textTransform: "uppercase" }}>{x.itemName || (items.find(i => i.id === x.itemId) || {}).name}</span>
+              <span style={{ color: "#b91c1c" }}> · {x.shortQty - x.explainedQty} short</span>
+              <span style={{ color: "#94a3b8", fontWeight: 600 }}> (system {x.systemQty}, counted {x.countedQty}{x.foundBy ? " by " + x.foundBy : ""})</span>
+            </span>
+            <button onClick={() => setExplainFor(x)} style={{ padding: "5px 12px", borderRadius: 8, border: "none", background: "#b91c1c", color: "white", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Explain</button>
+          </div>
+        ))}
+      </div>
+    </div>
+  ) : null;
   const checkPanel = (
     <div style={{ ...stkCard("white", "#d3deeb"), padding: "12px 14px", marginBottom: 16 }}>
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
@@ -13120,6 +13173,9 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
               <div style={{marginTop:6,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:12,color:"#475569"}}>
                 <span>🔍 {checks===null ? "Stock check not set up yet" : lc ? <>Last checked <b>{fmtWhen(lc.checkedAt)}</b>{lc.byName ? <> by <b>{lc.byName}</b></> : null}</> : "Never checked"}</span>
                 <button onClick={()=>markChecked(selectedItem)} style={{...checkBtn,padding:"4px 10px",fontSize:11}}>✓ Checked</button>
+                {shortByItem[selectedItem.id] > 0 && (
+                  <button onClick={()=>openExplain(selectedItem.id)} style={{padding:"4px 10px",borderRadius:9,border:"1px solid #fca5a5",background:"#fef2f2",color:"#b91c1c",fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⚠ {shortByItem[selectedItem.id]} short · Explain</button>
+                )}
               </div>
             ); })()}
           </div>
@@ -13209,6 +13265,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           }}/>
         )}
 
+        {explainModalEl}
+
         {soldFor && (
           <LogSaleModal item={soldFor} onClose={()=>setSoldFor(null)} onSave={async(qty,customer,date,note)=>{
             const ok = await dbAddInventoryMovement(shopId, soldFor.id, "sale", qty, date, null, customer, note, who);
@@ -13281,6 +13339,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
         )}
       </div>
 
+      {shortBanner}
       {checkPanel}
 
       {/* ── View toggle: Excel-style stock sheet vs. day-by-day movement log ── */}
@@ -13314,6 +13373,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           onLogSale={(item)=>setSoldFor({id:item.id,name:item.name})}
           onRestock={isAdmin ? (item)=>setRestockFor({id:item.id,name:item.name}) : null}
           onSetStock={isAdmin ? setStockQuickly : null}
+          shortByItem={shortByItem}
+          onExplainShort={openExplain}
           onSelectItem={(id)=>setSelectedItemId(id)}
           fmtDate={fmtDate}
           returnedStock={returnedStockNow}
@@ -13469,6 +13530,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           }}/>
       )}
 
+      {explainModalEl}
+
       {soldFor && (
         <LogSaleModal item={soldFor} onClose={()=>setSoldFor(null)} onSave={async(qty,customer,date,note)=>{
           const ok = await dbAddInventoryMovement(shopId, soldFor.id, "sale", qty, date, null, customer, note, who);
@@ -13543,7 +13606,7 @@ function rectOf(el) {
   return { top:r.top, bottom:r.bottom, left:r.left, right:r.right, width:r.width, height:r.height };
 }
 
-const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSetStock, onSelectItem, fmtDate, returnedStock = [],
+const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSetStock, onSelectItem, fmtDate, returnedStock = [], shortByItem = {}, onExplainShort = null,
   sectionLabel = "Fresh Stock", sectionIcon = "📦", includeReturnedStock = true,
   onReorderItems = null }) => {
   const [arrange, setArrange] = React.useState(false); // admin-only: show drag handle + ▲▼ to re-order products
@@ -13768,6 +13831,12 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                         </span>
                       )}
                       <span style={{ fontWeight:700, fontSize:13, color:"#0f172a", lineHeight:1.3, textTransform:"uppercase" }}>{item.name}</span>
+                      {shortByItem[item.id] > 0 && onExplainShort && (
+                        <button onClick={(e)=>{ e.stopPropagation(); onExplainShort(item.id); }} title="Short in the physical count — click to explain where it went"
+                          style={{ marginLeft:6, padding:"2px 8px", borderRadius:999, border:"1px solid #fca5a5", background:"#fef2f2", color:"#b91c1c", fontSize:10.5, fontWeight:800, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
+                          ⚠ {shortByItem[item.id]} short · Explain
+                        </button>
+                      )}
                     </div>
                   </td>
                   <td title="What this item's stock stood at when the month began"
@@ -17043,7 +17112,7 @@ const FlyingRosie = ({ getTargets, activeIndex = 0, loop = false, mood = "happy"
   );
 };
 
-const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMarkTaskDone, isAdmin=false, onManageTasks, nagDays=14, cutoffDate="", onTalkToRosie, showGreeting=false, timeGreeting="Hello", userName="", onDismissGreeting, shopId }) => {
+const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMarkTaskDone, isAdmin=false, onManageTasks, nagDays=14, cutoffDate="", onTalkToRosie, showGreeting=false, timeGreeting="Hello", userName="", onDismissGreeting, shopId, onOpenStock }) => {
   const [open, setOpen] = React.useState(false);
   // Outfit: automatic by date / shop (festivals), or one an admin picked to preview.
   const [outfitPref, setOutfitPref] = React.useState(() => { try { return localStorage.getItem("rosie_outfit") || "auto"; } catch { return "auto"; } });
@@ -17115,7 +17184,17 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
 
   // Bank payments an admin recorded that still need the customer name / items (staff add them from Sales)
   const awaitingDetails = React.useMemo(() => (sales||[]).filter(isAwaitingDetails), [sales]);
-  const totalBadge = overdue.length + myTasks.length + awaitingDetails.length;
+  // ROS India: stock shortages found in a physical count that staff still have to explain (see the Stock page)
+  const [stockShorts, setStockShorts] = React.useState(0);
+  React.useEffect(() => {
+    if (shopId !== "ros-india" || !enabled) return undefined;
+    let alive = true;
+    const pull = () => dbLoadStockShortages(shopId).then(rows => { if (alive && rows) setStockShorts(rows.filter(x => x.status === "PENDING" && (x.shortQty - x.explainedQty) > 0).length); });
+    pull();
+    const t = setInterval(pull, 180000);
+    return () => { alive = false; clearInterval(t); };
+  }, [shopId, enabled, open]);
+  const totalBadge = overdue.length + myTasks.length + awaitingDetails.length + stockShorts;
   const mood = overdue.length > 10 ? "crying" : totalBadge===0 ? "happy" : totalBadge<=3 ? "neutral" : "worried";
 
   // When everything is caught up (she is happy) she does a little dance — shortly after the page opens, when her
@@ -17226,6 +17305,14 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+          {stockShorts>0 && (
+            <div style={{marginBottom:12,padding:"9px 11px",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10}}>
+              <div style={{fontWeight:800,fontSize:13,color:"#991b1b"}}>📦 {stockShorts} stock shortage{stockShorts!==1?"s":""} to explain</div>
+              <div style={{fontSize:11.5,color:"#b91c1c",lineHeight:1.4,margin:"3px 0 6px"}}>Some items were short in the physical count — please say where they went.</div>
+              <button onClick={()=>{setOpen(false); if(onOpenStock) onOpenStock();}}
+                style={{fontSize:11.5,fontWeight:800,padding:"5px 12px",borderRadius:8,border:"none",background:"#dc2626",color:"white",cursor:"pointer",fontFamily:"inherit"}}>Open Stock →</button>
             </div>
           )}
           {awaitingDetails.length>0 && (
