@@ -1396,7 +1396,7 @@ const MessagesPanel=({shopId,shop,messages,setMessages,user,sales})=>{
     if(typeFilter!=="ALL"&&m.messageType!==typeFilter)return false;
     if(search){
       const q=search.toLowerCase();
-      if(!m.customer.toLowerCase().includes(q)&&!m.saleId.toLowerCase().includes(q)&&!m.phone.includes(q))return false;
+      if(!String(m.customer||"").toLowerCase().includes(q)&&!String(m.saleId||"").toLowerCase().includes(q)&&!String(m.phone||"").includes(q))return false;
     }
     return true;
   });
@@ -4068,7 +4068,7 @@ Thank you for your cooperation.`,
       :filter==="RETURN_RECEIVED"?(r.status==="RETURN_RECEIVED"&&!isExchangeInProgress(r))
       :r.status===filter;
     const q=search.toLowerCase();
-    const matchSearch=!q||r.id.toLowerCase().includes(q)||r.customer.toLowerCase().includes(q)||r.saleId.toLowerCase().includes(q)||r.phone.includes(q);
+    const matchSearch=!q||String(r.id||"").toLowerCase().includes(q)||String(r.customer||"").toLowerCase().includes(q)||String(r.saleId||"").toLowerCase().includes(q)||String(r.phone||"").includes(q);
     return matchStatus&&matchSearch;
   });
   // Exchange in Progress reads oldest-first — the longest-waiting exchange
