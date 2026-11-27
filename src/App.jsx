@@ -17324,7 +17324,7 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
       <div style={{ animation: (open || dancing || idleState!=="active") ? "none" : "petRoam 18s ease-in-out infinite" }}>
         <div style={{ animation: (hop && !open && !dancing && idleState==="active") ? "petHop 0.75s ease-out 2" : "none", transformOrigin:"50% 100%" }}>
         <button onClick={()=>setOpen(o=>!o)} onMouseEnter={()=>{ if (idleState==="active" && !open && !dancing && mood!=="worried" && mood!=="crying") startCheer(1800); }} title="Rosie" style={{position:"relative",border:"none",background:"transparent",cursor:"pointer",padding:0,lineHeight:0}}>
-          <Rosie size={112} mood={mood} outfit={outfit} shopId={shopId} pose={idleState==="lying" ? "lie" : idleState==="sitting" ? "sit" : dancing ? "dance" : (cheering && !open) ? "cheer" : (open?"idle":"walk")} />
+          <Rosie size={84} mood={mood} outfit={outfit} shopId={shopId} pose={idleState==="lying" ? "lie" : idleState==="sitting" ? "sit" : dancing ? "dance" : (cheering && !open) ? "cheer" : (open?"idle":"walk")} />
           {totalBadge>0 && (
             <span style={{position:"absolute",top:-2,right:-2,background:"#dc2626",color:"white",fontSize:10,fontWeight:800,borderRadius:999,minWidth:18,height:18,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px",animation:"petPop 0.3s ease"}}>
               {totalBadge}
