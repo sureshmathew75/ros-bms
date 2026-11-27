@@ -97,7 +97,7 @@ export default function Rosie({ mood = "happy", size = 56, pose = "idle", outfit
       animation: dancing ? "rsDance 0.8s ease-in-out infinite" : (walking || flying || lying) ? "none" : "petBob 2.2s ease-in-out infinite",
       overflow: "visible", transform: lying ? "rotate(90deg)" : "none", transformOrigin: dancing ? "50% 100%" : "50px 90px",
     }}>
-      <style>{`@keyframes rsBlink{0%,92%,100%{transform:scaleY(1)}96%{transform:scaleY(.08)}}@keyframes rsDance{0%,100%{transform:translateY(0) rotate(-3deg)}25%{transform:translateY(-7px) rotate(0deg)}50%{transform:translateY(0) rotate(3deg)}75%{transform:translateY(-7px) rotate(0deg)}}@keyframes rsArmA{0%,100%{transform:rotate(125deg)}50%{transform:rotate(0deg)}}@keyframes rsArmB{0%,100%{transform:rotate(0deg)}50%{transform:rotate(-125deg)}}@keyframes rsNote{0%{transform:translateY(0);opacity:0}20%{opacity:1}100%{transform:translateY(-22px);opacity:0}}`}</style>
+      <style>{`@keyframes rsBlink{0%,92%,100%{transform:scaleY(1)}96%{transform:scaleY(.08)}}@keyframes rsDance{0%,100%{transform:translateY(0) rotate(-3deg)}25%{transform:translateY(-7px) rotate(0deg)}50%{transform:translateY(0) rotate(3deg)}75%{transform:translateY(-7px) rotate(0deg)}}@keyframes rsArmA{0%,100%{transform:rotate(125deg)}50%{transform:rotate(0deg)}}@keyframes rsArmB{0%,100%{transform:rotate(0deg)}50%{transform:rotate(-125deg)}}@keyframes rsUpA{0%,100%{transform:rotate(-9deg)}50%{transform:rotate(11deg)}}@keyframes rsUpB{0%,100%{transform:rotate(9deg)}50%{transform:rotate(-11deg)}}@keyframes rsArmsHide{0%,28%{opacity:1}34%,72%{opacity:0}78%,100%{opacity:1}}@keyframes rsCover{0%,28%{opacity:0;transform:translateY(12px)}34%,72%{opacity:1;transform:translateY(0)}78%,100%{opacity:0;transform:translateY(12px)}}@keyframes rsSob{0%,100%{transform:translateY(0)}50%{transform:translateY(-1.6px)}}@keyframes rsNote{0%{transform:translateY(0);opacity:0}20%{opacity:1}100%{transform:translateY(-22px);opacity:0}}`}</style>
       <defs>
         <radialGradient id={id + "s"} cx="45%" cy="38%" r="70%"><stop offset="0" stopColor={skinHi} /><stop offset="0.7" stopColor={skin} /><stop offset="1" stopColor={skinLo} /></radialGradient>
         <linearGradient id={id + "h"} x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#6a4430" /><stop offset="0.45" stopColor="#3d2417" /><stop offset="1" stopColor="#24140c" /></linearGradient>
@@ -174,26 +174,34 @@ export default function Rosie({ mood = "happy", size = 56, pose = "idle", outfit
       {key === "christmas" && <path d="M43 70 Q50 77 57 70" stroke="#fff" strokeWidth="2.6" fill="none" strokeLinecap="round" />}
 
       {/* arms */}
-      {!flying && !cheer && (
-        <g style={{ transformOrigin: "35px 75px", animation: dancing ? "rsArmA 0.8s ease-in-out infinite" : walking ? "petArmSwing 0.45s ease-in-out infinite" : "none" }}>
+      {!flying && !cheer && !dancing && (
+        <g style={{ transformOrigin: "35px 75px", animation: crying ? "rsArmsHide 7s ease-in-out infinite" : walking ? "petArmSwing 0.45s ease-in-out infinite" : "none" }}>
           <line x1="35" y1="76" x2="29" y2="98" stroke={skin} strokeWidth="5" strokeLinecap="round" />
           {sleeve(35, 75.5)}
           <circle cx="28.6" cy="99" r="3.5" fill={skin} />
           {key === "diwali" && !pointing && <g><path d="M22 101 L31 101 L29 105 L24 105 Z" fill="#b45309" /><path d="M26.5 93 Q23 98 26.5 101 Q30 98 26.5 93 Z" fill="#fbbf24" style={{ animation: "petBob 0.9s ease-in-out infinite" }} /></g>}
         </g>
       )}
-      {!flying && !cheer && (pointing ? (<>
+      {!flying && !cheer && !dancing && (pointing ? (<>
         <line x1="65" y1="76" x2="88" y2="58" stroke={skin} strokeWidth="5" strokeLinecap="round" />
         {sleeve(65, 75.5)}
         <ellipse cx="91" cy="55" rx="4.1" ry="3.4" fill={skin} transform="rotate(-38 91 55)" />
         <path d="M92 51.5 L96.5 49 M93.8 54 L98.5 53.2 M92.8 57 L97 57.8" stroke={skin} strokeWidth="2" strokeLinecap="round" />
       </>) : (
-        <g style={{ transformOrigin: "65px 75px", animation: dancing ? "rsArmB 0.8s ease-in-out infinite" : walking ? "petArmSwing 0.45s ease-in-out infinite reverse" : "none" }}>
+        <g style={{ transformOrigin: "65px 75px", animation: crying ? "rsArmsHide 7s ease-in-out infinite" : walking ? "petArmSwing 0.45s ease-in-out infinite reverse" : "none" }}>
           <line x1="65" y1="76" x2="71" y2="98" stroke={skin} strokeWidth="5" strokeLinecap="round" />
           {sleeve(65, 75.5)}
           <circle cx="71.4" cy="99" r="3.5" fill={skin} />
         </g>
       ))}
+      {!flying && dancing && (<>
+        <g style={{ transformOrigin: "35px 76px", animation: "rsUpA 0.8s ease-in-out infinite" }}>
+          <line x1="35" y1="76" x2="14" y2="30" stroke={skin} strokeWidth="5" strokeLinecap="round" />{sleeve(35, 75.5)}<circle cx="13" cy="26.5" r="4.4" fill={skin} />
+        </g>
+        <g style={{ transformOrigin: "65px 76px", animation: "rsUpB 0.8s ease-in-out infinite" }}>
+          <line x1="65" y1="76" x2="86" y2="30" stroke={skin} strokeWidth="5" strokeLinecap="round" />{sleeve(65, 75.5)}<circle cx="87" cy="26.5" r="4.4" fill={skin} />
+        </g>
+      </>)}
       {!flying && cheer && (<>
         <line x1="35" y1="76" x2="21" y2="56" stroke={skin} strokeWidth="5" strokeLinecap="round" />{sleeve(35, 75.5)}<circle cx="19.8" cy="53.6" r="4" fill={skin} />
         <line x1="65" y1="76" x2="79" y2="56" stroke={skin} strokeWidth="5" strokeLinecap="round" />{sleeve(65, 75.5)}<circle cx="80.2" cy="53.6" r="4" fill={skin} />
@@ -286,6 +294,19 @@ export default function Rosie({ mood = "happy", size = 56, pose = "idle", outfit
                 <path d="M45.5 61.4 Q50 65.2 54.5 61.4 Q50 59.2 45.5 61.4 Z" fill="#ef7a8c" />
               </g>)}
       </g>
+
+      {/* crying: now and then she covers her face with both hands */}
+      {crying && !sleepy && !flying && !cheer && !dancing && (
+        <g style={{ animation: "rsCover 7s ease-in-out infinite" }}>
+          <g style={{ animation: "rsSob 0.55s ease-in-out infinite" }}>
+            <polyline points="35,76 28,63 35,50" fill="none" stroke={skin} strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />{sleeve(35, 75.5)}
+            <polyline points="65,76 72,63 65,50" fill="none" stroke={skin} strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />{sleeve(65, 75.5)}
+            <ellipse cx="40.5" cy="47" rx="10" ry="8.8" fill={skin} stroke="#d9976f" strokeWidth="1.2" />
+            <ellipse cx="59.5" cy="47" rx="10" ry="8.8" fill={skin} stroke="#d9976f" strokeWidth="1.2" />
+            <path d="M33.5 41.5 L34 47 M37.5 39.5 L38 46.5 M41.5 39.2 L42 46.5 M66.5 41.5 L66 47 M62.5 39.5 L62 46.5 M58.5 39.2 L58 46.5" stroke="#d9976f" strokeWidth="0.9" fill="none" strokeLinecap="round" />
+          </g>
+        </g>
+      )}
     </svg>
   );
 }
