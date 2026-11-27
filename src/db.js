@@ -1936,6 +1936,23 @@ export const dbExplainStockShortage = async (shopId, shortage, { qty, date, reas
   return { ok: true };
 };
 
+// Explains an EARLIER unexplained stock correction (the "Now N" figure on the Stock sheet): the stock-out ("sale") or stock-in
+// ("restock") is logged on the date given, and the old correction is reversed by the same quantity, so today's stock stays exactly
+// the same while the Sold / Added / Closing figures now carry the explained entry on its own date.
+export const dbExplainCorrection = async (shopId, itemId, kind, { qty, date, reason = '', customer = '', by = '', note = '' } = {}) => {
+  const q = Number(qty) || 0;
+  if (!(q > 0)) return { error: 'Enter a quantity' };
+  const extra = kind === 'extra';
+  const movNote = (extra ? 'Extra explained (earlier stock correction)' : 'Short explained (earlier stock correction)') + (reason ? ' · ' + reason : '') + (customer && extra ? ' · ' + customer : '') + (note ? ' · ' + note : '');
+  const ok = extra
+    ? await dbAddInventoryMovement(shopId, itemId, 'restock', q, date, null, null, movNote, by)
+    : await dbAddInventoryMovement(shopId, itemId, 'sale', q, date, null, customer || reason || 'Stock short', movNote, by);
+  if (!ok) return { error: 'Could not save the stock entry' };
+  const rev = await dbAddInventoryMovement(shopId, itemId, 'correction', extra ? -q : q, new Date().toISOString().slice(0, 10), null, null, 'Reverses the earlier correction — now explained above', by);
+  if (!rev) return { error: 'The explained entry was saved, but the old correction could not be reversed — stock now shows ' + q + ' ' + (extra ? 'too many' : 'too few') + '. Please ask admin to fix it with Correct Stock.', saved: true };
+  return { ok: true };
+};
+
 export const dbAddInventoryMovement = async (shopId, itemId, type, qty, date, saleId, customer, note, by) => {
   if (!sb) return false;
   const id = `MOV-${Date.now().toString().slice(-6)}-${Math.floor(Math.random()*1000)}`;

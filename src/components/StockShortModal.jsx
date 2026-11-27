@@ -18,7 +18,7 @@ const EXTRA_REASONS = [
   { id: "other",    label: "Other reason",                   who: "Details (optional)",                 needWho: false },
 ];
 
-export default function ExplainShortModal({ item, shortage, who = "", isAdmin = false, onClose, onSave, onCancelShort }) {
+export default function ExplainShortModal({ item, shortage, who = "", isAdmin = false, onClose, onSave, onCancelShort, cancelLabel = "" }) {
   const extra = shortage.kind === "extra";
   const LIST = extra ? EXTRA_REASONS : REASONS;
   const remaining = Math.max(0, (Number(shortage.shortQty) || 0) - (Number(shortage.explainedQty) || 0));
@@ -90,7 +90,7 @@ export default function ExplainShortModal({ item, shortage, who = "", isAdmin = 
         </div>
         {isAdmin && onCancelShort && (
           <button onClick={onCancelShort} style={{ marginTop: 10, width: "100%", padding: "7px 0", borderRadius: 9, border: "1px dashed #cbd5e1", background: "transparent", color: "#64748b", fontWeight: 700, fontSize: 11.5, cursor: "pointer", fontFamily: "inherit" }}>
-            Count was wrong — cancel this {extra ? "difference" : "shortage"}
+            {cancelLabel || ("Count was wrong — cancel this " + (extra ? "difference" : "shortage"))}
           </button>
         )}
       </div>

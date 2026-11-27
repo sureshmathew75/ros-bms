@@ -54,7 +54,7 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadAuditDismissals, dbDismissAuditFinding,
   dbLoadAttendanceRecords, dbClockIn, dbClockOut, dbSetAttendanceRecord,
   dbLoadAttendanceHolidays, dbAddAttendanceHoliday, dbRemoveAttendanceHoliday,
-  dbLoadInventoryItems, dbAddInventoryItem, dbUpdateInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement, dbLoadStockChecks, dbAddStockCheck, dbLoadStockShortages, dbAddStockShortage, dbCancelStockShortage, dbExplainStockShortage, dbLoadPriceOverrides, dbDeleteInventoryMovement, dbResetInventoryItems, dbSetInventoryItemOrder,
+  dbLoadInventoryItems, dbAddInventoryItem, dbUpdateInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement, dbLoadStockChecks, dbAddStockCheck, dbLoadStockShortages, dbAddStockShortage, dbCancelStockShortage, dbExplainStockShortage, dbExplainCorrection, dbLoadPriceOverrides, dbDeleteInventoryMovement, dbResetInventoryItems, dbSetInventoryItemOrder,
   dbLoadUpfrontRefunds, dbAddUpfrontRefund, dbDeleteUpfrontRefund,
   dbLoadGiftVouchers, dbAddGiftVoucher, dbUpdateGiftVoucher, dbDeleteGiftVoucher,
   dbLoadStaffSalaries, dbSaveStaffSalary, dbLoadStaffPositions, dbSaveStaffPosition, dbLoadCarryForward, dbUpdateCarryForward,
@@ -13054,13 +13054,22 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   const explainModalEl = (explainFor && explainItem) ? (
     <ExplainShortModal item={explainItem} shortage={explainFor} who={who} isAdmin={isAdmin}
       onClose={() => setExplainFor(null)}
+      cancelLabel={explainFor.corr ? "Undo the earlier correction — stock goes back to " + explainFor.systemQty : ""}
       onCancelShort={async () => {
+        if (explainFor.corr) {
+          // the "Now N" figure came from an earlier stock correction that nobody explained: undo it
+          if (!(await showConfirm("Undo the earlier correction for "+explainItem.name+"? The stock goes back from "+explainFor.countedQty+" to "+explainFor.systemQty+" (what the sheet's Opening + Added − Sold gives)."))) return;
+          const delta = explainFor.systemQty - explainFor.countedQty;
+          const ok = await dbAddInventoryMovement(shopId, explainFor.itemId, "correction", delta, new Date().toISOString().slice(0,10), null, null, "Earlier unexplained correction undone by admin", who);
+          if (ok) { setExplainFor(null); load(); } else showAlert("Couldn't save — please try again.");
+          return;
+        }
         if (!(await showConfirm("Cancel this shortage for "+explainItem.name+"? Use this only if the count was wrong. Nothing is changed in the stock."))) return;
         const res = await dbCancelStockShortage(explainFor.id);
         if (res && res.ok) { setExplainFor(null); load(); } else showAlert("Couldn't cancel — please try again.");
       }}
       onSave={async (e) => {
-        const res = await dbExplainStockShortage(shopId, explainFor, e);
+        const res = explainFor.corr ? await dbExplainCorrection(shopId, explainFor.itemId, explainFor.kind, e) : await dbExplainStockShortage(shopId, explainFor, e);
         if (res && res.ok) { setExplainFor(null); load(); }
         else { showAlert((res && res.error) || "Couldn't save — please check your connection and try again."); if (res && res.saved) { setExplainFor(null); load(); } }
       }}/>
@@ -13387,6 +13396,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           onSetStock={isAdmin ? setStockQuickly : null}
           shortByItem={shortByItem}
           onExplainShort={openExplain}
+          onExplainCorrection={(item, closing, now) => setExplainFor({ id: "CORR-"+item.id, corr: true, itemId: item.id, kind: now > closing ? "extra" : "short", systemQty: closing, countedQty: now, shortQty: Math.abs(now - closing), explainedQty: 0, foundBy: "", foundAt: "", log: "" })}
           onSelectItem={(id)=>setSelectedItemId(id)}
           fmtDate={fmtDate}
           returnedStock={returnedStockNow}
@@ -13618,7 +13628,7 @@ function rectOf(el) {
   return { top:r.top, bottom:r.bottom, left:r.left, right:r.right, width:r.width, height:r.height };
 }
 
-const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSetStock, onSelectItem, fmtDate, returnedStock = [], shortByItem = {}, onExplainShort = null,
+const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSetStock, onSelectItem, fmtDate, returnedStock = [], shortByItem = {}, onExplainShort = null, onExplainCorrection = null,
   sectionLabel = "Fresh Stock", sectionIcon = "📦", includeReturnedStock = true,
   onReorderItems = null }) => {
   const [arrange, setArrange] = React.useState(false); // admin-only: show drag handle + ▲▼ to re-order products
@@ -13910,6 +13920,13 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                             }}>{closingBalance}</span>
                           {sheetMonth === todayStr.slice(0,7) && nowStock !== closingBalance && (
                             <span title="Actual stock now, after admin corrections" style={{ fontSize:9.5, fontWeight:800, color:"#0369a1", background:"#e0f2fe", borderRadius:5, padding:"1px 5px", whiteSpace:"nowrap" }}>Now {nowStock}</span>
+                          )}
+                          {sheetMonth === todayStr.slice(0,7) && nowStock !== closingBalance && onExplainCorrection && !(shortByItem[item.id] && shortByItem[item.id].qty > 0) && (
+                            <button onClick={(e)=>{ e.stopPropagation(); onExplainCorrection(item, closingBalance, nowStock); }}
+                              title={"The sheet's Opening + Added − Sold gives "+closingBalance+" but the real stock is "+nowStock+" because of an earlier stock correction. Click to say "+(nowStock > closingBalance ? "how the extra "+(nowStock-closingBalance)+" came" : "where the missing "+(closingBalance-nowStock)+" went")+"."}
+                              style={{ padding:"1px 7px", borderRadius:999, border:"1px solid #7dd3fc", background:"white", color:"#0369a1", fontSize:9.5, fontWeight:800, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
+                              Explain
+                            </button>
                           )}
                         </div>
                       );
