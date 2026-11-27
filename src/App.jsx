@@ -12557,10 +12557,13 @@ const PET_CSS = `
 @keyframes petTailWag { 0%,100%{transform:rotate(-10deg);} 50%{transform:rotate(14deg);} }
 @keyframes petWingFlap { 0%,100%{transform:rotate(-25deg) scaleY(1);} 50%{transform:rotate(10deg) scaleY(0.8);} }
 @keyframes petRoam {
-  0%, 6%   { transform: translateX(0); }
-  46%, 54% { transform: translateX(-220px); }
-  94%, 100%{ transform: translateX(0); }
+  0%, 4%   { transform: translateX(0); }
+  22%, 28% { transform: translateX(max(-190px, -28vw)); }
+  52%, 60% { transform: translateX(max(-440px, -58vw)); }
+  80%, 84% { transform: translateX(max(-250px, -34vw)); }
+  96%, 100%{ transform: translateX(0); }
 }
+@keyframes petHop { 0%,100%{transform:translateY(0) scale(1,1);} 20%{transform:translateY(0) scale(1.06,0.92);} 50%{transform:translateY(-34px) scale(0.96,1.06);} 80%{transform:translateY(0) scale(1.06,0.92);} }
 `;
 const NEW_SALE_STEP_EXPLAIN = {
   FULL: "Marked as Full — the customer paid the whole amount today, nothing more to collect. 👍",
@@ -17127,10 +17130,30 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
   const canDance = enabled && mood === "happy" && idleState === "active";
   React.useEffect(() => {
     if (!canDance) { setDancing(false); return undefined; }
-    const first = setTimeout(() => startDance(6000), 2500);
-    const every = setInterval(() => startDance(6000), 32000);
+    const first = setTimeout(() => startDance(7000), 2500);
+    const every = setInterval(() => startDance(7000), 22000);
     return () => { clearTimeout(first); clearInterval(every); };
   }, [canDance, startDance]);
+
+  // More life: she hops now and then, waves her arms when you hover over her, and cheers every so often.
+  const [hop, setHop] = React.useState(false);
+  const [cheering, setCheering] = React.useState(false);
+  const cheerRef = React.useRef(null);
+  const startCheer = React.useCallback((ms) => {
+    setCheering(true);
+    if (cheerRef.current) clearTimeout(cheerRef.current);
+    cheerRef.current = setTimeout(() => setCheering(false), ms);
+  }, []);
+  const canAct = enabled && idleState === "active" && !open && !dancing;
+  React.useEffect(() => {
+    if (!canAct) { setHop(false); return undefined; }
+    let t1 = null;
+    const doHop = () => { setHop(true); t1 = setTimeout(() => setHop(false), 1500); };
+    const hopEvery = setInterval(doHop, 9000);
+    const cheerEvery = mood !== "worried" && mood !== "crying" ? setInterval(() => startCheer(2200), 15000) : null;
+    return () => { clearInterval(hopEvery); if (cheerEvery) clearInterval(cheerEvery); if (t1) clearTimeout(t1); };
+  }, [canAct, mood, startCheer]);
+  React.useEffect(() => () => { if (cheerRef.current) clearTimeout(cheerRef.current); }, []);
   React.useEffect(() => { if (open && canDance) startDance(5000); }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   React.useEffect(() => () => { if (danceRef.current) clearTimeout(danceRef.current); }, []);
 
@@ -17298,15 +17321,17 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
           )}
         </div>
       )}
-      <div style={{ animation: (open || dancing || idleState!=="active") ? "none" : "petRoam 16s ease-in-out infinite" }}>
-        <button onClick={()=>setOpen(o=>!o)} title="Rosie" style={{position:"relative",border:"none",background:"transparent",cursor:"pointer",padding:0,lineHeight:0}}>
-          <Rosie mood={mood} outfit={outfit} shopId={shopId} pose={idleState==="lying" ? "lie" : idleState==="sitting" ? "sit" : dancing ? "dance" : (open?"idle":"walk")} />
+      <div style={{ animation: (open || dancing || idleState!=="active") ? "none" : "petRoam 18s ease-in-out infinite" }}>
+        <div style={{ animation: (hop && !open && !dancing && idleState==="active") ? "petHop 0.75s ease-out 2" : "none", transformOrigin:"50% 100%" }}>
+        <button onClick={()=>setOpen(o=>!o)} onMouseEnter={()=>{ if (idleState==="active" && !open && !dancing && mood!=="worried" && mood!=="crying") startCheer(1800); }} title="Rosie" style={{position:"relative",border:"none",background:"transparent",cursor:"pointer",padding:0,lineHeight:0}}>
+          <Rosie size={112} mood={mood} outfit={outfit} shopId={shopId} pose={idleState==="lying" ? "lie" : idleState==="sitting" ? "sit" : dancing ? "dance" : (cheering && !open) ? "cheer" : (open?"idle":"walk")} />
           {totalBadge>0 && (
             <span style={{position:"absolute",top:-2,right:-2,background:"#dc2626",color:"white",fontSize:10,fontWeight:800,borderRadius:999,minWidth:18,height:18,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 4px",animation:"petPop 0.3s ease"}}>
               {totalBadge}
             </span>
           )}
         </button>
+        </div>
       </div>
     </div>
   );
