@@ -12864,18 +12864,30 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   const setStockQuickly = async (item, newQty) => {
     const cur = Number(item.currentStock) || 0;
     const delta = Number(newQty) - cur;
-    if (!(Number(newQty) >= 0) || delta === 0) return false;
-    // A physical count LOWER than the system: record it as a shortage for staff to explain (who / when / why). Stock changes
-    // only when they explain — each explanation is saved as a sale on its own date. (Needs stock_shortages.sql.)
-    if (delta < 0 && shortages !== null) {
-      const short = -delta;
-      if (!(await showConfirm(item.name+": the system shows "+cur+" but you counted "+newQty+" — "+short+" short.\n\nStaff will be asked to explain where "+(short===1?"it":"they")+" went (who, when, why). The stock stays "+cur+" until they do; each explanation is then saved as a sale on its date and the closing stock drops.\n\nRecord this shortage?"))) return false;
-      for (const old of shortages.filter(x => x.itemId === item.id && x.status === "PENDING")) await dbCancelStockShortage(old.id); // a new count replaces an earlier unexplained one
+    if (!(Number(newQty) >= 0)) return false;
+    // A physical count that differs from the system is recorded as a SHORT (less) or EXTRA (more) for staff to explain —
+    // who / when / why (or where from). Stock changes only when they explain: a short is saved as a sale and an extra as
+    // stock added, each on its own date. A new count replaces an earlier unexplained one. (Needs stock_shortages.sql.)
+    if (shortages !== null) {
+      const stale = shortages.filter(x => x.itemId === item.id && x.status === "PENDING");
+      if (delta === 0) {
+        if (stale.length === 0) return false;
+        if (!(await showConfirm(item.name+": your count ("+newQty+") matches the system, so the pending stock difference is cancelled.\n\nContinue?"))) return false;
+        for (const old of stale) await dbCancelStockShortage(old.id);
+        load(); return true;
+      }
+      const n = Math.abs(delta), isExtra = delta > 0;
+      const msg = isExtra
+        ? item.name+": the system shows "+cur+" but you counted "+newQty+" — "+n+" extra.\n\nStaff will be asked how "+(n===1?"it":"they")+" came (from where, when, why). The stock stays "+cur+" until they do; each explanation is then saved as stock added on its date.\n\nRecord this?"
+        : item.name+": the system shows "+cur+" but you counted "+newQty+" — "+n+" short.\n\nStaff will be asked to explain where "+(n===1?"it":"they")+" went (who, when, why). The stock stays "+cur+" until they do; each explanation is then saved as a sale on its date and the closing stock drops.\n\nRecord this shortage?";
+      if (!(await showConfirm(msg))) return false;
+      for (const old of stale) await dbCancelStockShortage(old.id);
       const res = await dbAddStockShortage(shopId, { itemId: item.id, itemName: item.name, systemQty: cur, countedQty: Number(newQty), by: who });
       if (res && res.ok) { load(); return true; }
-      showAlert("Couldn't record the shortage — " + ((res && res.error) || "please check your connection") + ".");
+      showAlert("Couldn't record the stock difference — " + ((res && res.error) || "please check your connection") + ".");
       return false;
     }
+    if (delta === 0) return false;
     const sign = delta > 0 ? "+" : "";
     if (!(await showConfirm("Change stock of "+item.name+" from "+cur+" to "+newQty+" ("+sign+delta+")? This is logged as a stock correction on the item's history."))) return false;
     const ok = await dbAddInventoryMovement(shopId, item.id, "correction", delta, new Date().toISOString().slice(0,10), null, null, "Quick stock correction by admin", who);
@@ -13035,8 +13047,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   const lastMove = movements.filter(m => activeItemIds.has(m.itemId)).reduce((b, m) => (((m.loggedAt || m.date || "") > (b ? (b.loggedAt || b.date || "") : "")) ? m : b), null);
   // Shortages found in a physical count that staff have not fully explained yet
   const pendingShorts = (shortages || []).filter(x => x.status === "PENDING" && (x.shortQty - x.explainedQty) > 0);
-  const shortByItem = {};
-  pendingShorts.forEach(x => { shortByItem[x.itemId] = (shortByItem[x.itemId] || 0) + (x.shortQty - x.explainedQty); });
+  const shortByItem = {};   // itemId -> { qty: pieces still unexplained, extra: true when the count was HIGHER than the system }
+  pendingShorts.forEach(x => { const o = shortByItem[x.itemId] || { qty: 0, extra: x.kind === "extra" }; o.qty += (x.shortQty - x.explainedQty); shortByItem[x.itemId] = o; });
   const openExplain = (itemId) => { const sh = pendingShorts.find(x => x.itemId === itemId); if (sh) setExplainFor(sh); };
   const explainItem = explainFor ? items.find(i => i.id === explainFor.itemId) : null;
   const explainModalEl = (explainFor && explainItem) ? (
@@ -13055,17 +13067,17 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   ) : null;
   const shortBanner = pendingShorts.length > 0 ? (
     <div style={{ ...stkCard("#fef2f2", "#fecaca"), padding: "12px 14px", marginBottom: 16 }}>
-      <div style={{ fontSize: 13, fontWeight: 800, color: "#991b1b" }}>⚠ {pendingShorts.length} stock shortage{pendingShorts.length !== 1 ? "s" : ""} waiting for an explanation</div>
-      <div style={{ fontSize: 11.5, color: "#7f1d1d", margin: "3px 0 8px" }}>These items were short in the physical count. Please say where they went — it is then saved as a sale on that date.</div>
+      <div style={{ fontSize: 13, fontWeight: 800, color: "#991b1b" }}>⚠ {pendingShorts.length} stock count difference{pendingShorts.length !== 1 ? "s" : ""} waiting for an explanation</div>
+      <div style={{ fontSize: 11.5, color: "#7f1d1d", margin: "3px 0 8px" }}>These items did not match the physical count. Please say where the missing pieces went, or how the extra ones came — it is then saved on that date.</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {pendingShorts.map(x => (
           <div key={x.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap", background: "white", border: "1px solid #fecaca", borderRadius: 10, padding: "7px 10px" }}>
             <span style={{ fontSize: 12.5, fontWeight: 700, color: "#0f172a" }}>
               <span style={{ textTransform: "uppercase" }}>{x.itemName || (items.find(i => i.id === x.itemId) || {}).name}</span>
-              <span style={{ color: "#b91c1c" }}> · {x.shortQty - x.explainedQty} short</span>
+              <span style={{ color: x.kind === "extra" ? "#1d4ed8" : "#b91c1c" }}> · {x.shortQty - x.explainedQty} {x.kind === "extra" ? "extra" : "short"}</span>
               <span style={{ color: "#94a3b8", fontWeight: 600 }}> (system {x.systemQty}, counted {x.countedQty}{x.foundBy ? " by " + x.foundBy : ""})</span>
             </span>
-            <button onClick={() => setExplainFor(x)} style={{ padding: "5px 12px", borderRadius: 8, border: "none", background: "#b91c1c", color: "white", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Explain</button>
+            <button onClick={() => setExplainFor(x)} style={{ padding: "5px 12px", borderRadius: 8, border: "none", background: x.kind === "extra" ? "#1d4ed8" : "#b91c1c", color: "white", fontWeight: 800, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Explain</button>
           </div>
         ))}
       </div>
@@ -13173,8 +13185,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
               <div style={{marginTop:6,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:12,color:"#475569"}}>
                 <span>🔍 {checks===null ? "Stock check not set up yet" : lc ? <>Last checked <b>{fmtWhen(lc.checkedAt)}</b>{lc.byName ? <> by <b>{lc.byName}</b></> : null}</> : "Never checked"}</span>
                 <button onClick={()=>markChecked(selectedItem)} style={{...checkBtn,padding:"4px 10px",fontSize:11}}>✓ Checked</button>
-                {shortByItem[selectedItem.id] > 0 && (
-                  <button onClick={()=>openExplain(selectedItem.id)} style={{padding:"4px 10px",borderRadius:9,border:"1px solid #fca5a5",background:"#fef2f2",color:"#b91c1c",fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>⚠ {shortByItem[selectedItem.id]} short · Explain</button>
+                {shortByItem[selectedItem.id] && shortByItem[selectedItem.id].qty > 0 && (
+                  <button onClick={()=>openExplain(selectedItem.id)} style={{padding:"4px 10px",borderRadius:9,border:"1px solid "+(shortByItem[selectedItem.id].extra?"#93c5fd":"#fca5a5"),background:shortByItem[selectedItem.id].extra?"#eff6ff":"#fef2f2",color:shortByItem[selectedItem.id].extra?"#1d4ed8":"#b91c1c",fontWeight:800,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{shortByItem[selectedItem.id].extra?"➕":"⚠"} {shortByItem[selectedItem.id].qty} {shortByItem[selectedItem.id].extra?"extra":"short"} · Explain</button>
                 )}
               </div>
             ); })()}
@@ -13831,12 +13843,12 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                         </span>
                       )}
                       <span style={{ fontWeight:700, fontSize:13, color:"#0f172a", lineHeight:1.3, textTransform:"uppercase" }}>{item.name}</span>
-                      {shortByItem[item.id] > 0 && onExplainShort && (
-                        <button onClick={(e)=>{ e.stopPropagation(); onExplainShort(item.id); }} title="Short in the physical count — click to explain where it went"
-                          style={{ marginLeft:6, padding:"2px 8px", borderRadius:999, border:"1px solid #fca5a5", background:"#fef2f2", color:"#b91c1c", fontSize:10.5, fontWeight:800, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
-                          ⚠ {shortByItem[item.id]} short · Explain
+                      {shortByItem[item.id] && shortByItem[item.id].qty > 0 && onExplainShort && (() => { const d = shortByItem[item.id]; return (
+                        <button onClick={(e)=>{ e.stopPropagation(); onExplainShort(item.id); }} title={d.extra ? "More than the system in the physical count — click to say how it came" : "Short in the physical count — click to explain where it went"}
+                          style={{ marginLeft:6, padding:"2px 8px", borderRadius:999, border:"1px solid "+(d.extra?"#93c5fd":"#fca5a5"), background:d.extra?"#eff6ff":"#fef2f2", color:d.extra?"#1d4ed8":"#b91c1c", fontSize:10.5, fontWeight:800, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
+                          {d.extra ? "➕" : "⚠"} {d.qty} {d.extra ? "extra" : "short"} · Explain
                         </button>
-                      )}
+                      ); })()}
                     </div>
                   </td>
                   <td title="What this item's stock stood at when the month began"
@@ -13859,7 +13871,7 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                         const submit = async () => {
                           const v = editStock.value === "" ? NaN : Number(editStock.value);
                           if (isNaN(v) || v < 0) return;
-                          if (v === nowStock) { setEditStock(null); return; }
+                          if (v === nowStock && !(shortByItem[item.id] && shortByItem[item.id].qty > 0)) { setEditStock(null); return; }
                           setSavingStock(true);
                           const ok = await onSetStock(item, v);
                           setSavingStock(false);
@@ -17309,8 +17321,8 @@ const PetWidget = ({ sales, onOpenSales, shopAccent, enabled, myTasks=[], onMark
           )}
           {stockShorts>0 && (
             <div style={{marginBottom:12,padding:"9px 11px",background:"#fef2f2",border:"1px solid #fecaca",borderRadius:10}}>
-              <div style={{fontWeight:800,fontSize:13,color:"#991b1b"}}>📦 {stockShorts} stock shortage{stockShorts!==1?"s":""} to explain</div>
-              <div style={{fontSize:11.5,color:"#b91c1c",lineHeight:1.4,margin:"3px 0 6px"}}>Some items were short in the physical count — please say where they went.</div>
+              <div style={{fontWeight:800,fontSize:13,color:"#991b1b"}}>📦 {stockShorts} stock count difference{stockShorts!==1?"s":""} to explain</div>
+              <div style={{fontSize:11.5,color:"#b91c1c",lineHeight:1.4,margin:"3px 0 6px"}}>Some items did not match the physical count — please say where they went, or how the extra ones came.</div>
               <button onClick={()=>{setOpen(false); if(onOpenStock) onOpenStock();}}
                 style={{fontSize:11.5,fontWeight:800,padding:"5px 12px",borderRadius:8,border:"none",background:"#dc2626",color:"white",cursor:"pointer",fontFamily:"inherit"}}>Open Stock →</button>
             </div>

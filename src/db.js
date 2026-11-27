@@ -1886,7 +1886,7 @@ export const dbAddStockCheck = async (shopId, { itemId = '', itemType = 'hair', 
 const shortageRow = (r) => ({
   id: r.id, itemId: r.item_id, itemName: r.item_name || '', systemQty: Number(r.system_qty) || 0, countedQty: Number(r.counted_qty) || 0,
   shortQty: Number(r.short_qty) || 0, explainedQty: Number(r.explained_qty) || 0, status: r.status || 'PENDING',
-  foundBy: r.found_by || '', foundAt: r.found_at || '', closedAt: r.closed_at || '', log: r.log || '',
+  foundBy: r.found_by || '', foundAt: r.found_at || '', closedAt: r.closed_at || '', log: r.log || '', kind: r.kind === 'extra' ? 'extra' : 'short',
 });
 export const dbLoadStockShortages = async (shopId) => {
   if (!sb) return null;
@@ -1897,11 +1897,14 @@ export const dbLoadStockShortages = async (shopId) => {
 export const dbAddStockShortage = async (shopId, { itemId, itemName = '', systemQty = 0, countedQty = 0, by = '' } = {}) => {
   if (!sb) return { error: 'No Supabase client' };
   const id = `SHT-${Date.now().toString().slice(-8)}-${Math.floor(Math.random() * 1000)}`;
-  const shortQty = Number(systemQty) - Number(countedQty);
-  if (!(shortQty > 0)) return { error: 'Nothing is short' };
-  const { error } = await sb.from('stock_shortages').insert({ id, shop_id: shopId, item_id: itemId, item_name: itemName, system_qty: Number(systemQty), counted_qty: Number(countedQty), short_qty: shortQty, explained_qty: 0, status: 'PENDING', found_by: by || '', found_at: new Date().toISOString() });
-  if (error) { console.error('Add stock shortage error:', error); return { error: error.message }; }
-  return { ok: true, id };
+  const diff = Number(systemQty) - Number(countedQty);     // > 0 short, < 0 extra
+  if (diff === 0) return { error: 'The count matches the system' };
+  const kind = diff < 0 ? 'extra' : 'short';
+  const base = { id, shop_id: shopId, item_id: itemId, item_name: itemName, system_qty: Number(systemQty), counted_qty: Number(countedQty), short_qty: Math.abs(diff), explained_qty: 0, status: 'PENDING', found_by: by || '', found_at: new Date().toISOString() };
+  let { error } = await sb.from('stock_shortages').insert({ ...base, kind });
+  if (error && kind === 'short') ({ error } = await sb.from('stock_shortages').insert(base));   // older table without the kind column: a short still works
+  if (error) { console.error('Add stock shortage error:', error); return { error: error.message + (kind === 'extra' ? ' (run stock_shortages.sql again in Supabase)' : '') }; }
+  return { ok: true, id, kind };
 };
 export const dbCancelStockShortage = async (id) => {
   if (!sb) return { error: 'No Supabase client' };
@@ -1915,8 +1918,12 @@ export const dbExplainStockShortage = async (shopId, shortage, { qty, date, reas
   const q = Number(qty) || 0;
   const remaining = (Number(shortage.shortQty) || 0) - (Number(shortage.explainedQty) || 0);
   if (!(q > 0) || q > remaining) return { error: 'Quantity must be between 1 and ' + remaining };
-  const movNote = 'Short found in stock count (' + shortage.id + ')' + (reason ? ' · ' + reason : '') + (note ? ' · ' + note : '');
-  const ok = await dbAddInventoryMovement(shopId, shortage.itemId, 'sale', q, date, null, customer || reason || 'Stock short', movNote, by);
+  const extra = shortage.kind === 'extra';
+  const movNote = (extra ? 'Extra found in stock count (' : 'Short found in stock count (') + shortage.id + ')' + (reason ? ' · ' + reason : '') + (customer && extra ? ' · ' + customer : '') + (note ? ' · ' + note : '');
+  // short = stock went out on that date ("sale"); extra = stock came in on that date ("restock")
+  const ok = extra
+    ? await dbAddInventoryMovement(shopId, shortage.itemId, 'restock', q, date, null, null, movNote, by)
+    : await dbAddInventoryMovement(shopId, shortage.itemId, 'sale', q, date, null, customer || reason || 'Stock short', movNote, by);
   if (!ok) return { error: 'Could not save the stock entry' };
   const newExplained = (Number(shortage.explainedQty) || 0) + q;
   const done = newExplained >= (Number(shortage.shortQty) || 0);
