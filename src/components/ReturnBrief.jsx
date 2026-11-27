@@ -64,7 +64,8 @@ export default function ReturnBrief({ ret, sale, accent = "#0f172a", symbol = "�
 
   // What the customer originally asked for. Before the item arrives that is the saved resolution; once it
   // arrives the resolution is reset to "undecided", so the original request is kept in requestedResolution.
-  const askedKey = (received || closed) ? (ret.requestedResolution || "") : (decided ? ret.resolution : "");
+  // Older received cases have no saved original request — then the decision already recorded on the card is what the customer wants.
+  const askedKey = (received || closed) ? (ret.requestedResolution || (decided ? ret.resolution : "")) : (decided ? ret.resolution : "");
   // A closed case shows how it was actually resolved (never "not decided"); older cases may have no saved original request.
   const outcomeKey = ret.status === "EXCHANGED" ? "exchange" : ret.status === "EXCHANGE_REFUND" ? "exchange_refund" : ret.status === "REFUNDED" ? (ret.resolution === "voucher" ? "voucher" : "refund") : "";
   const CLOSED_SUB = { exchange: "replacement item sent", refund: "money refunded", exchange_refund: "replacement sent + balance refunded", voucher: "gift voucher issued" };
@@ -87,7 +88,7 @@ export default function ReturnBrief({ ret, sale, accent = "#0f172a", symbol = "�
   if (ret.status === "RETURN_APPROVED") todo = "Send the return instructions to the customer.";
   else if (ret.status === "MSG_SENT") todo = "Waiting for the customer to post the parcel" + (ret.trackingNo ? " — tracking added." : " — no tracking yet.");
   else if (ret.status === "RETURN_IN_TRANSIT") todo = "Parcel is on its way back — mark it received when it arrives.";
-  else if (received && !decided) todo = askedKey ? "Item is back. Customer originally asked for " + ASK[askedKey].label.toLowerCase() + " — confirm below." : "Item is back. Ask the customer what they want, then choose below.";
+  else if (received && !decided) todo = askedKey ? "Item is back. Customer asked for " + ASK[askedKey].label.toLowerCase() + " — confirm below." : "Item is back. Ask the customer what they want, then choose below.";
   else if (received && (ret.resolution === "exchange" || ret.resolution === "exchange_refund")) todo = ret.exchangeTrackingNo ? "Replacement despatched — close the case when done." : "Send the replacement and add its tracking number.";
   else if (received && (ret.resolution === "refund" || ret.resolution === "voucher")) todo = "Refund the customer, then mark the case refunded.";
   else if (closed) todo = "Case closed" + (ret.refundAmount ? " — " + money(ret.refundAmount) + (ret.refundMethod ? " via " + ret.refundMethod : "") + " refunded" : "") + ".";
@@ -98,7 +99,7 @@ export default function ReturnBrief({ ret, sale, accent = "#0f172a", symbol = "�
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10, alignItems: "stretch" }}>
         <div style={{ flex: "1 1 230px", minWidth: 0, background: ask.bg, border: "1.5px solid " + ask.bd, borderRadius: 12, padding: "10px 12px" }}>
           <div style={{ fontSize: 9, fontWeight: 800, color: ask.fg, letterSpacing: "0.08em", textTransform: "uppercase", opacity: 0.8 }}>
-            {closed ? "Case resolved as" : received ? "Customer originally asked for" : "Customer wants"}
+            {closed ? "Case resolved as" : (received && ret.requestedResolution) ? "Customer originally asked for" : "Customer wants"}
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 3 }}>
             <span style={{ fontSize: 22, lineHeight: 1 }}>{ask.icon}</span>
