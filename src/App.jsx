@@ -19857,6 +19857,16 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
     purAmount:   "",
   });
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
+  // ROS India dispatch unit follows the items: any price-list item → Unit 2; only items that are not on the list → Unit 1
+  // (a mix of both → Unit 2). Once staff pick a unit by hand in the dropdown, we stop changing it.
+  const [dispManual,setDispManual]=useState(!!(_c&&_c.dispatchFrom));
+  useEffect(()=>{
+    if(shopId!=="ros-india"||dispManual)return;
+    const _filled=lines.filter(l=>String(l.name||"").trim());
+    if(_filled.length===0)return;
+    const _want=_filled.some(l=>matchEntry(l.name))?"India-Unit2":"India-Unit1";
+    setForm(f=>f.dispatchFrom===_want?f:{...f,dispatchFrom:_want});
+  },[lines,dispManual,shopId]);
   // Paid By is never auto-filled from the customer name — it stayed silently
   // "satisfied" that way even when nobody had actually looked at it, which
   // defeated the point of it being a required field. Staff now always have
@@ -20304,7 +20314,7 @@ const NewSaleForm=({shopId,shop,onSave,onClose,lastInvoiceNum,shopItems=[],onAdd
               {shopId==="ros-india"&&!bankMode&&(
                 <div style={{marginBottom:7}}>
                   <label style={lbl}>Dispatch Unit</label>
-                  <select value={form.dispatchFrom} onChange={e=>set("dispatchFrom",e.target.value)} style={{...inp,width:"auto",minWidth:170,maxWidth:"100%"}}>
+                  <select value={form.dispatchFrom} onChange={e=>{setDispManual(true);set("dispatchFrom",e.target.value);}} style={{...inp,width:"auto",minWidth:170,maxWidth:"100%"}}>
                     <option value="India-Unit1">🇮🇳 Unit 1 (Default)</option>
                     <option value="India-Unit2">🇮🇳 Unit 2</option>
                     <option value="UK-Unit">🇬🇧 UK Unit</option>
