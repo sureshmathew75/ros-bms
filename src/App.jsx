@@ -12,6 +12,7 @@ import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
 import ExplainShortModal from "./components/StockShortModal";
 import SaleLinkInput, { saleDateIso } from "./components/SaleLinkInput";
+import EditStockEntryModal from "./components/EditStockEntryModal";
 import ReturnBrief from "./components/ReturnBrief";
 import Rosie, { rosieOutfitFor, OUTFITS, OUTFIT_LABELS } from "./components/Rosie";
 import ROSIE_HELLO_IMG from "./rosie-hello.png";       // exact 3D picture of Rosie, used in her panel
@@ -55,7 +56,7 @@ import { dbLoadSales, dbSaveSale, dbDeleteSale, dbSaveCustomer, dbLoadCustomers,
   dbLoadAuditDismissals, dbDismissAuditFinding,
   dbLoadAttendanceRecords, dbClockIn, dbClockOut, dbSetAttendanceRecord,
   dbLoadAttendanceHolidays, dbAddAttendanceHoliday, dbRemoveAttendanceHoliday,
-  dbLoadInventoryItems, dbAddInventoryItem, dbUpdateInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement, dbLoadStockChecks, dbAddStockCheck, dbLoadStockShortages, dbAddStockShortage, dbCancelStockShortage, dbExplainStockShortage, dbExplainCorrection, dbLoadPriceOverrides, dbDeleteInventoryMovement, dbResetInventoryItems, dbSetInventoryItemOrder,
+  dbLoadInventoryItems, dbAddInventoryItem, dbUpdateInventoryItem, dbDeleteInventoryItem, dbLoadInventoryMovements, dbAddInventoryMovement, dbLoadStockChecks, dbAddStockCheck, dbLoadStockShortages, dbAddStockShortage, dbCancelStockShortage, dbExplainStockShortage, dbExplainCorrection, dbUpdateInventoryMovement, dbLoadPriceOverrides, dbDeleteInventoryMovement, dbResetInventoryItems, dbSetInventoryItemOrder,
   dbLoadUpfrontRefunds, dbAddUpfrontRefund, dbDeleteUpfrontRefund,
   dbLoadGiftVouchers, dbAddGiftVoucher, dbUpdateGiftVoucher, dbDeleteGiftVoucher,
   dbLoadStaffSalaries, dbSaveStaffSalary, dbLoadStaffPositions, dbSaveStaffPosition, dbLoadCarryForward, dbUpdateCarryForward,
@@ -12858,6 +12859,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   const [checkOpen, setCheckOpen] = React.useState(false); // per-item "last checked" list open?
   const [shortages, setShortages] = React.useState(null);  // stock shortages found in a physical count (null = the stock_shortages table is not set up yet)
   const [explainFor, setExplainFor] = React.useState(null); // shortage being explained by staff
+  const [editMove, setEditMove] = React.useState(null);     // stock entry being edited
   const who = user?.fullName || user?.name || "";           // saved with every stock change / check
 
   // Admin quick correction: type the actual quantity straight into the sheet,
@@ -13052,6 +13054,24 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   pendingShorts.forEach(x => { const o = shortByItem[x.itemId] || { qty: 0, extra: x.kind === "extra" }; o.qty += (x.shortQty - x.explainedQty); shortByItem[x.itemId] = o; });
   const openExplain = (itemId) => { const sh = pendingShorts.find(x => x.itemId === itemId); if (sh) setExplainFor(sh); };
   const explainItem = explainFor ? items.find(i => i.id === explainFor.itemId) : null;
+  // Fixing / deleting a wrongly typed stock entry: admin can change any; a staff member can change a sale they entered themselves in the last 24 hours.
+  const canChangeMove = (m) => isAdmin || (m.type === "sale" && !!m.byName && m.byName === who && !!m.loggedAt && (Date.now() - new Date(m.loggedAt).getTime()) < 24 * 3600 * 1000);
+  const canEditMove = (m) => m.type !== "correction" && canChangeMove(m);
+  const deleteMove = async (m) => {
+    const label = m.type === "restock" ? "restock of " : m.type === "sale" ? "sale of " : "stock correction of ";
+    if (!(await showConfirm("Delete this " + label + m.qty + " on " + fmtDate(m.date) + (m.customer ? " (" + m.customer + ")" : "") + "?\n\nThe item's stock is adjusted back automatically, and a line in the history records that it was deleted."))) return;
+    const ok = await dbDeleteInventoryMovement(shopId, m.id, who);
+    if (ok) load(); else showAlert("Couldn't delete — please check your connection and try again.");
+  };
+  const editItem = editMove ? items.find(i => i.id === editMove.itemId) : null;
+  const editModalEl = (editMove && editItem) ? (
+    <EditStockEntryModal movement={editMove} item={editItem} sales={sales}
+      onClose={() => setEditMove(null)}
+      onSave={async (f) => {
+        const res = await dbUpdateInventoryMovement(shopId, editMove.id, f, who);
+        if (res && res.ok) { setEditMove(null); load(); } else showAlert((res && res.error) || "Couldn't save — please check your connection and try again.");
+      }}/>
+  ) : null;
   const explainModalEl = (explainFor && explainItem) ? (
     <ExplainShortModal item={explainItem} shortage={explainFor} who={who} isAdmin={isAdmin} sales={sales}
       onClose={() => setExplainFor(null)}
@@ -13263,14 +13283,12 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
                 <div style={{fontSize:14,fontWeight:800,color:amountColor}}>
                   {signedQty>0?"+":""}{signedQty}
                 </div>
-                {isAdmin && (
-                  <button title="Delete this entry (stock is adjusted back)"
-                    onClick={async()=>{
-                      if(!(await showConfirm("Delete this stock entry ("+(signedQty>0?"+":"")+signedQty+" on "+fmtDate(m.date)+")? The stock count will be adjusted back automatically.")))return;
-                      const ok = await dbDeleteInventoryMovement(shopId, m.id);
-                      if (ok) load();
-                      else showAlert("Couldn't delete — please check your connection and try again.");
-                    }}
+                {canEditMove(m) && (
+                  <button title="Edit this entry (stock is adjusted automatically)" onClick={()=>setEditMove(m)}
+                    style={{border:"1px solid #bfdbfe",background:"#eff6ff",color:"#1d4ed8",borderRadius:7,width:26,height:26,cursor:"pointer",fontSize:12,lineHeight:1,padding:0,fontFamily:"inherit"}}>✏️</button>
+                )}
+                {canChangeMove(m) && (
+                  <button title="Delete this entry (stock is adjusted back)" onClick={()=>deleteMove(m)}
                     style={{border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",borderRadius:7,width:26,height:26,cursor:"pointer",fontSize:12,lineHeight:1,padding:0,fontFamily:"inherit"}}>🗑</button>
                 )}
               </div>
@@ -13288,6 +13306,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
         )}
 
         {explainModalEl}
+{editModalEl}
 
         {soldFor && (
           <LogSaleModal item={soldFor} sales={sales} onClose={()=>setSoldFor(null)} onSave={async(qty,customer,date,note,saleId)=>{
@@ -13513,8 +13532,18 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
                               {(m.byName || m.loggedAt) && <div style={{fontSize:10.5,color:"#64748b",marginTop:1}}>{m.loggedAt ? fmtWhen(m.loggedAt) : ""}{m.byName ? (m.loggedAt ? " · " : "") + "by " + m.byName : ""}</div>}
                               {m.note && <div style={{fontSize:10.5,color:"#94a3b8",marginTop:1}}>{m.note}</div>}
                             </div>
-                            <div style={{fontSize:13,fontWeight:800,color:amountColor,whiteSpace:"nowrap"}}>
-                              {signedQty>0?"+":""}{signedQty}
+                            <div style={{display:"flex",alignItems:"center",gap:8}}>
+                              <div style={{fontSize:13,fontWeight:800,color:amountColor,whiteSpace:"nowrap"}}>
+                                {signedQty>0?"+":""}{signedQty}
+                              </div>
+                              {canEditMove(m) && (
+                                <button title="Edit this entry (stock is adjusted automatically)" onClick={()=>setEditMove(m)}
+                                  style={{border:"1px solid #bfdbfe",background:"#eff6ff",color:"#1d4ed8",borderRadius:7,width:24,height:24,cursor:"pointer",fontSize:11,lineHeight:1,padding:0,fontFamily:"inherit"}}>✏️</button>
+                              )}
+                              {canChangeMove(m) && (
+                                <button title="Delete this entry (stock is adjusted back)" onClick={()=>deleteMove(m)}
+                                  style={{border:"1px solid #fecaca",background:"#fff5f5",color:"#dc2626",borderRadius:7,width:24,height:24,cursor:"pointer",fontSize:11,lineHeight:1,padding:0,fontFamily:"inherit"}}>🗑</button>
+                              )}
                             </div>
                           </div>
                         );
@@ -13554,6 +13583,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
       )}
 
       {explainModalEl}
+{editModalEl}
 
       {soldFor && (
         <LogSaleModal item={soldFor} sales={sales} onClose={()=>setSoldFor(null)} onSave={async(qty,customer,date,note,saleId)=>{

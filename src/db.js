@@ -1987,7 +1987,24 @@ export const dbAddInventoryMovement = async (shopId, itemId, type, qty, date, sa
 // Removes a single movement and reverses its effect on the item's counters
 // (restock: stock and total-ever-stocked go back down; sale: stock goes back
 // up; correction: the signed adjustment is undone).
-export const dbDeleteInventoryMovement = async (shopId, movementId) => {
+// Keeps a shortage record (stock_shortages.sql) in step when an entry that explained it is edited or deleted.
+const adjustShortageFor = async (note, qtyChange) => {
+  const mt = String(note || '').match(/\((SHT-[^)]+)\)/);
+  if (!mt || !qtyChange) return;
+  const { data: sh } = await sb.from('stock_shortages').select('*').eq('id', mt[1]).maybeSingle();
+  if (!sh) return;
+  const explained = Math.max(0, (Number(sh.explained_qty) || 0) + qtyChange);
+  const done = explained >= (Number(sh.short_qty) || 0);
+  await sb.from('stock_shortages').update({ explained_qty: explained, status: done ? 'EXPLAINED' : 'PENDING', closed_at: done ? (sh.closed_at || new Date().toISOString()) : '' }).eq('id', sh.id);
+};
+const MOVE_LABEL = { sale: 'Sold', restock: 'Restocked', correction: 'Corrected' };
+
+// Removes a single movement and reverses its effect on the item's counters
+// (restock: stock and total-ever-stocked go back down; sale: stock goes back
+// up; correction: the signed adjustment is undone). A zero-quantity "Corrected" line is left
+// behind saying who deleted what, so the history keeps a trace. If the entry was explaining a
+// stock-count shortage, that shortage goes back to "waiting for an explanation".
+export const dbDeleteInventoryMovement = async (shopId, movementId, by = '') => {
   if (!sb) return false;
   const { data: m, error: mErr } = await sb.from('inventory_movements').select('*').eq('id', movementId).eq('shop_id', shopId).maybeSingle();
   if (mErr || !m) { console.error('Find inventory movement error:', mErr); return false; }
@@ -2007,7 +2024,46 @@ export const dbDeleteInventoryMovement = async (shopId, movementId) => {
     const { error: uErr } = await sb.from('inventory_items').update(patch).eq('id', m.item_id);
     if (uErr) { console.error('Update inventory stock after delete error:', uErr); return false; }
   }
+  if (m.type !== 'correction') await adjustShortageFor(m.note, -qty);
+  if (qty !== 0) {
+    await dbAddInventoryMovement(shopId, m.item_id, 'correction', 0, new Date().toISOString().slice(0, 10), null, null,
+      'Entry deleted by ' + (by || 'staff') + ': ' + (MOVE_LABEL[m.type] || m.type) + ' ' + qty + ' on ' + String(m.date || '').slice(0, 10) + (m.customer ? ' to ' + m.customer : '') + (m.by_name ? ' (entered by ' + m.by_name + ')' : ''), by);
+  }
   return true;
+};
+
+// Edits a sale / restock entry (quantity, date, customer, sale link, note) and adjusts the item's stock by the difference.
+// Corrections cannot be edited (delete and re-enter them). A zero-quantity "Corrected" line records who changed what.
+export const dbUpdateInventoryMovement = async (shopId, movementId, { qty, date, customer = '', note = '', saleId = '' } = {}, by = '') => {
+  if (!sb) return { error: 'No Supabase client' };
+  const { data: m, error: mErr } = await sb.from('inventory_movements').select('*').eq('id', movementId).eq('shop_id', shopId).maybeSingle();
+  if (mErr || !m) return { error: 'Could not find this entry' };
+  if (m.type === 'correction') return { error: 'A stock correction cannot be edited' };
+  const oldQty = Number(m.qty) || 0, newQty = Number(qty) || 0;
+  if (!(newQty > 0)) return { error: 'Enter a quantity' };
+  const { data: item, error: iErr } = await sb.from('inventory_items').select('current_stock,total_stocked').eq('id', m.item_id).maybeSingle();
+  if (iErr || !item) return { error: 'Could not find the item' };
+  const isSale = m.type === 'sale';
+  const patch = { qty: newQty, date, note: note || '' };
+  if (isSale) { patch.customer = customer; patch.sale_id = saleId || null; }
+  const { error: uErr } = await sb.from('inventory_movements').update(patch).eq('id', movementId).eq('shop_id', shopId);
+  if (uErr) return { error: uErr.message };
+  const diff = newQty - oldQty;
+  if (diff !== 0) {
+    const cur = Number(item.current_stock || 0), tot = Number(item.total_stocked || 0);
+    const stockPatch = isSale ? { current_stock: cur - diff } : { current_stock: cur + diff, total_stocked: Math.max(0, tot + diff) };
+    const { error: sErr } = await sb.from('inventory_items').update(stockPatch).eq('id', m.item_id);
+    if (sErr) return { error: 'The entry was changed, but the stock count could not be updated: ' + sErr.message };
+    await adjustShortageFor(m.note, diff);
+  }
+  const bits = [];
+  if (diff !== 0) bits.push('qty ' + oldQty + ' → ' + newQty);
+  if (String(m.date || '').slice(0, 10) !== date) bits.push('date ' + String(m.date || '').slice(0, 10) + ' → ' + date);
+  if (isSale && (m.customer || '') !== customer) bits.push('customer ' + (m.customer || '—') + ' → ' + (customer || '—'));
+  if (isSale && (m.sale_id || '') !== (saleId || '')) bits.push('invoice ' + (m.sale_id || '—') + ' → ' + (saleId || '—'));
+  if ((m.note || '') !== (note || '')) bits.push('note changed');
+  if (bits.length) await dbAddInventoryMovement(shopId, m.item_id, 'correction', 0, new Date().toISOString().slice(0, 10), null, null, 'Entry edited by ' + (by || 'staff') + ' (' + (MOVE_LABEL[m.type] || m.type) + '): ' + bits.join(', '), by);
+  return { ok: true };
 };
 
 // Resets the given items: every movement (history) is removed and the counters go

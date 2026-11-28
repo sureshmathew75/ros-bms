@@ -24,7 +24,10 @@ const dayLabel = (raw) => {
 export default function SaleLinkInput({ sales = [], value, onChange, linkedId = "", onPick, placeholder = "Customer name", style = {}, autoFocus = false }) {
   const [open, setOpen] = React.useState(false);
   const [linked, setLinked] = React.useState(null);
-  React.useEffect(() => { if (!linkedId) setLinked(null); }, [linkedId]);
+  React.useEffect(() => {
+    if (!linkedId) setLinked(null);
+    else setLinked(cur => (cur && cur.id === linkedId) ? cur : ((sales || []).find(x => x.id === linkedId) || { id: linkedId }));   // an already-linked entry being edited
+  }, [linkedId, sales]);
   const q = String(value || "").trim().toLowerCase();
   const matches = React.useMemo(() => {
     if (q.length < 2 || linked) return [];
