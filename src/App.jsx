@@ -13416,6 +13416,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
           onSetStock={isAdmin ? setStockQuickly : null}
           shortByItem={shortByItem}
           onExplainShort={openExplain}
+          moveRights={{ canEdit: canEditMove, canChange: canChangeMove, onEdit: (m)=>setEditMove(m), onDelete: deleteMove }}
           onExplainCorrection={(item, closing, now) => setExplainFor({ id: "CORR-"+item.id, corr: true, itemId: item.id, kind: now > closing ? "extra" : "short", systemQty: closing, countedQty: now, shortQty: Math.abs(now - closing), explainedQty: 0, foundBy: "", foundAt: "", log: "" })}
           onSelectItem={(id)=>setSelectedItemId(id)}
           fmtDate={fmtDate}
@@ -13659,7 +13660,7 @@ function rectOf(el) {
   return { top:r.top, bottom:r.bottom, left:r.left, right:r.right, width:r.width, height:r.height };
 }
 
-const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSetStock, onSelectItem, fmtDate, returnedStock = [], shortByItem = {}, onExplainShort = null, onExplainCorrection = null,
+const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onLogSale, onRestock, onSetStock, onSelectItem, fmtDate, returnedStock = [], shortByItem = {}, onExplainShort = null, onExplainCorrection = null, moveRights = null,
   sectionLabel = "Fresh Stock", sectionIcon = "📦", includeReturnedStock = true,
   onReorderItems = null }) => {
   const [arrange, setArrange] = React.useState(false); // admin-only: show drag handle + ▲▼ to re-order products
@@ -14026,7 +14027,7 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
         if (!row) return null;
         return (
           <CellMovementPopover item={row.item} date={cellPopover.date} anchor={cellPopover.anchor}
-            movements={movementsByItem[row.item.id]||[]} fmtDate={fmtDate} onClose={()=>setCellPopover(null)} />
+            movements={movementsByItem[row.item.id]||[]} fmtDate={fmtDate} onClose={()=>setCellPopover(null)} rights={moveRights} />
         );
       })()}
       {monthPopover && (() => {
@@ -14034,7 +14035,7 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
         if (!row) return null;
         return (
           <MonthMovementsPopover item={row.item} type={monthPopover.type} anchor={monthPopover.anchor} monthLabel={monthLabel}
-            moves={row.monthMoves.filter(m=>m.type===monthPopover.type)} fmtDate={fmtDate} onClose={()=>setMonthPopover(null)} />
+            moves={row.monthMoves.filter(m=>m.type===monthPopover.type)} fmtDate={fmtDate} onClose={()=>setMonthPopover(null)} rights={moveRights} />
         );
       })()}
     </div>
@@ -14073,16 +14074,28 @@ function usePopoverOutsideClose(onClose) {
 function popoverFixedStyle(anchor, width, estHeight) {
   if (!anchor) return { position:"fixed", top:80, left:80, width };
   const vw = window.innerWidth, vh = window.innerHeight, pad = 8;
-  let left = Math.min(Math.max(anchor.left, pad), vw - width - pad);
+  let left = Math.min(Math.max(anchor.left, pad), vw - width - pad - 28);   // 28 = the popover's own padding + border, which sit outside `width`
   let top = anchor.bottom + 6;
   if (top + estHeight > vh - pad) top = Math.max(anchor.top - estHeight - 6, pad);
   return { position:"fixed", top, left, width };
 }
 
-const CellMovementPopover = ({ item, date, anchor, movements, fmtDate, onClose }) => {
+// ✏️ / 🗑 for one stock entry inside a popover (only the buttons the person is allowed to use).
+const MoveActionBtns = ({ m, rights, onClose }) => {
+  if (!rights) return null;
+  const mini = (bd, bg, fg) => ({ border:"1px solid "+bd, background:bg, color:fg, borderRadius:6, width:20, height:20, cursor:"pointer", fontSize:10, lineHeight:1, padding:0, fontFamily:"inherit", flexShrink:0 });
+  return (
+    <span style={{ display:"inline-flex", gap:4, marginLeft:6, verticalAlign:"middle" }}>
+      {rights.canEdit(m) && <button title="Edit this entry (stock is adjusted automatically)" onClick={()=>{ onClose(); rights.onEdit(m); }} style={mini("#bfdbfe","#eff6ff","#1d4ed8")}>✏️</button>}
+      {rights.canChange(m) && <button title="Delete this entry (stock is adjusted back)" onClick={()=>{ onClose(); rights.onDelete(m); }} style={mini("#fecaca","#fff5f5","#dc2626")}>🗑</button>}
+    </span>
+  );
+};
+
+const CellMovementPopover = ({ item, date, anchor, movements, fmtDate, onClose, rights = null }) => {
   const ref = usePopoverOutsideClose(onClose);
   const dayMoves = movements.filter(m => m.date === date);
-  const style = popoverFixedStyle(anchor, 210, 44 + Math.max(dayMoves.length,1)*24);
+  const style = popoverFixedStyle(anchor, rights ? 250 : 210, 44 + Math.max(dayMoves.length,1)*(rights ? 30 : 24));
   return ReactDOM.createPortal(
     <div ref={ref} onClick={e=>e.stopPropagation()} style={{
       ...style, zIndex:300, background:"white", border:"1px solid #e2e8f0", borderRadius:10,
@@ -14100,7 +14113,7 @@ const CellMovementPopover = ({ item, date, anchor, movements, fmtDate, onClose }
               {m.type==="restock"?"🟢 Restocked":isCorrection?"⚖️ Corrected":"🔴 Sold"}
               {m.customer ? <span style={{textTransform:"uppercase"}}> — {m.customer}</span> : ""}
             </span>
-            <span style={{ fontWeight:800, color: signedQty>0?"#166534":"#991b1b", whiteSpace:"nowrap" }}>{signedQty>0?"+":""}{signedQty}</span>
+            <span style={{ fontWeight:800, color: signedQty>0?"#166534":"#991b1b", whiteSpace:"nowrap" }}>{signedQty>0?"+":""}{signedQty}<MoveActionBtns m={m} rights={rights} onClose={onClose} /></span>
           </div>
         );
       })}
@@ -14113,7 +14126,7 @@ const CellMovementPopover = ({ item, date, anchor, movements, fmtDate, onClose }
 // behind that number (who it was sold to, or the restock note), sorted
 // oldest first. This is the "-5, click to see who" the Sold column exists
 // for.
-const MonthMovementsPopover = ({ item, type, anchor, monthLabel, moves, fmtDate, onClose }) => {
+const MonthMovementsPopover = ({ item, type, anchor, monthLabel, moves, fmtDate, onClose, rights = null }) => {
   const ref = usePopoverOutsideClose(onClose);
   const sorted = [...moves].sort((a,b)=> a.date.localeCompare(b.date));
   // Sale/restock quantities are stored unsigned (always positive); a
@@ -14122,7 +14135,7 @@ const MonthMovementsPopover = ({ item, type, anchor, monthLabel, moves, fmtDate,
   // ledger is read.
   const total = sorted.reduce((s,m)=>s+(Number(m.qty)||0),0);
   const typeLabel = type==="sale" ? "Sold" : type==="restock" ? "Added" : "Corrected";
-  const style = popoverFixedStyle(anchor, 230, 56 + Math.max(sorted.length,1)*24);
+  const style = popoverFixedStyle(anchor, rights ? 270 : 230, 56 + Math.max(sorted.length,1)*(rights ? 30 : 24));
   return ReactDOM.createPortal(
     <div ref={ref} onClick={e=>e.stopPropagation()} style={{
       ...style, zIndex:300, background:"white", border:"1px solid #e2e8f0", borderRadius:10,
@@ -14138,7 +14151,7 @@ const MonthMovementsPopover = ({ item, type, anchor, monthLabel, moves, fmtDate,
             {fmtDate(m.date)}{type==="sale" && m.customer ? <span style={{textTransform:"uppercase"}}> — {m.customer}</span> : ""}{(type==="restock"||type==="correction") && m.note ? " — "+m.note : ""}
           </span>
           <span style={{ fontWeight:800, color: type==="sale"?"#991b1b":type==="restock"?"#166534":(Number(m.qty)>=0?"#166534":"#991b1b"), whiteSpace:"nowrap" }}>
-            {type==="sale" ? "−" : type==="restock" ? "+" : (Number(m.qty)>=0?"+":"")}{Number(m.qty)||0}
+            {type==="sale" ? "−" : type==="restock" ? "+" : (Number(m.qty)>=0?"+":"")}{Number(m.qty)||0}<MoveActionBtns m={m} rights={rights} onClose={onClose} />
           </span>
         </div>
       ))}
