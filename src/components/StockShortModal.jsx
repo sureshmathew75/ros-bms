@@ -1,4 +1,5 @@
 import React from "react";
+import SaleLinkInput, { saleDateIso } from "./SaleLinkInput";
 
 /* ExplainShortModal — staff explain a difference found in the physical count.
    SHORT (less than the system): how many, who got them, on which date, why → saved as a sale on that date (closing stock drops).
@@ -18,7 +19,7 @@ const EXTRA_REASONS = [
   { id: "other",    label: "Other reason",                   who: "Details (optional)",                 needWho: false },
 ];
 
-export default function ExplainShortModal({ item, shortage, who = "", isAdmin = false, onClose, onSave, onCancelShort, cancelLabel = "" }) {
+export default function ExplainShortModal({ item, shortage, who = "", isAdmin = false, onClose, onSave, onCancelShort, cancelLabel = "", sales = [] }) {
   const extra = shortage.kind === "extra";
   const LIST = extra ? EXTRA_REASONS : REASONS;
   const remaining = Math.max(0, (Number(shortage.shortQty) || 0) - (Number(shortage.explainedQty) || 0));
@@ -27,6 +28,7 @@ export default function ExplainShortModal({ item, shortage, who = "", isAdmin = 
   const [date, setDate] = React.useState(today);
   const [reason, setReason] = React.useState(extra ? "received" : "sold");
   const [customer, setCustomer] = React.useState("");
+  const [saleId, setSaleId] = React.useState("");   // the sale this stock-out belongs to (when "Sold to a customer" and one is picked)
   const [staff, setStaff] = React.useState(who);
   const [note, setNote] = React.useState("");
   const [saving, setSaving] = React.useState(false);
@@ -38,7 +40,7 @@ export default function ExplainShortModal({ item, shortage, who = "", isAdmin = 
   const save = async () => {
     if (!canSave || saving) return;
     setSaving(true);
-    await onSave({ qty: q, date, reason: R.label, customer: customer.trim(), by: staff.trim(), note: note.trim() });
+    await onSave({ qty: q, date, reason: R.label, customer: customer.trim(), by: staff.trim(), note: note.trim(), saleId: (!extra && reason === "sold") ? saleId : "" });
     setSaving(false);
   };
   return (
@@ -65,13 +67,16 @@ export default function ExplainShortModal({ item, shortage, who = "", isAdmin = 
         </div>
         <div style={{ marginBottom: 12 }}>
           <label style={lbl}>What happened</label>
-          <select value={reason} onChange={e => setReason(e.target.value)} style={inp}>
+          <select value={reason} onChange={e => { setReason(e.target.value); setSaleId(""); }} style={inp}>
             {LIST.map(r => <option key={r.id} value={r.id}>{r.label}</option>)}
           </select>
         </div>
         <div style={{ marginBottom: 12 }}>
           <label style={lbl}>{R.who}</label>
-          <input value={customer} onChange={e => setCustomer(e.target.value)} placeholder={R.needWho ? "Name" : ""} style={inp} />
+          {(!extra && reason === "sold")
+            ? <SaleLinkInput sales={sales} value={customer} onChange={setCustomer} linkedId={saleId} style={inp} placeholder="Name"
+                onPick={s => { setSaleId(s ? s.id : ""); const d = s ? saleDateIso(s.date) : ""; if (d && d <= today) setDate(d); }} />
+            : <input value={customer} onChange={e => setCustomer(e.target.value)} placeholder={R.needWho ? "Name" : ""} style={inp} />}
         </div>
         <div style={{ marginBottom: 12 }}>
           <label style={lbl}>Your name</label>

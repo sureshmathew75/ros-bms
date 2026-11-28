@@ -11,6 +11,7 @@ import InvoicesPanel from "./components/InvoicesPanel";
 import LogisticsPanel from "./components/LogisticsPanel";
 import ProductsPanel from "./components/ProductsPanel";
 import ExplainShortModal from "./components/StockShortModal";
+import SaleLinkInput, { saleDateIso } from "./components/SaleLinkInput";
 import ReturnBrief from "./components/ReturnBrief";
 import Rosie, { rosieOutfitFor, OUTFITS, OUTFIT_LABELS } from "./components/Rosie";
 import ROSIE_HELLO_IMG from "./rosie-hello.png";       // exact 3D picture of Rosie, used in her panel
@@ -13052,7 +13053,7 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
   const openExplain = (itemId) => { const sh = pendingShorts.find(x => x.itemId === itemId); if (sh) setExplainFor(sh); };
   const explainItem = explainFor ? items.find(i => i.id === explainFor.itemId) : null;
   const explainModalEl = (explainFor && explainItem) ? (
-    <ExplainShortModal item={explainItem} shortage={explainFor} who={who} isAdmin={isAdmin}
+    <ExplainShortModal item={explainItem} shortage={explainFor} who={who} isAdmin={isAdmin} sales={sales}
       onClose={() => setExplainFor(null)}
       cancelLabel={explainFor.corr ? "Undo the earlier correction — stock goes back to " + explainFor.systemQty : ""}
       onCancelShort={async () => {
@@ -13289,8 +13290,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
         {explainModalEl}
 
         {soldFor && (
-          <LogSaleModal item={soldFor} onClose={()=>setSoldFor(null)} onSave={async(qty,customer,date,note)=>{
-            const ok = await dbAddInventoryMovement(shopId, soldFor.id, "sale", qty, date, null, customer, note, who);
+          <LogSaleModal item={soldFor} sales={sales} onClose={()=>setSoldFor(null)} onSave={async(qty,customer,date,note,saleId)=>{
+            const ok = await dbAddInventoryMovement(shopId, soldFor.id, "sale", qty, date, saleId||null, customer, note, who);
             if (ok) { setSoldFor(null); load(); }
             else showAlert("Couldn't save — please check your connection and try again.");
           }}/>
@@ -13555,8 +13556,8 @@ const InventoryPage = ({ shopId, shop, user, sales, returns=[], setReturns }) =>
       {explainModalEl}
 
       {soldFor && (
-        <LogSaleModal item={soldFor} onClose={()=>setSoldFor(null)} onSave={async(qty,customer,date,note)=>{
-          const ok = await dbAddInventoryMovement(shopId, soldFor.id, "sale", qty, date, null, customer, note, who);
+        <LogSaleModal item={soldFor} sales={sales} onClose={()=>setSoldFor(null)} onSave={async(qty,customer,date,note,saleId)=>{
+          const ok = await dbAddInventoryMovement(shopId, soldFor.id, "sale", qty, date, saleId||null, customer, note, who);
           if (ok) { setSoldFor(null); load(); }
           else showAlert("Couldn't save — please check your connection and try again.");
         }}/>
@@ -14457,9 +14458,10 @@ const RestockModal = ({ item, onClose, onSave }) => {
 // Logs a unit (or several) sold from this item's stock, with who bought it
 // and when — separate from the formal Sales panel, for a quick counter-sale
 // record. Available to staff and admin alike; this is an everyday action.
-const LogSaleModal = ({ item, onClose, onSave }) => {
+const LogSaleModal = ({ item, onClose, onSave, sales = [] }) => {
   const [qty, setQty] = React.useState("1");
   const [customer, setCustomer] = React.useState("");
+  const [saleId, setSaleId] = React.useState("");   // sale picked from the suggestions (its invoice no. is saved on the stock entry)
   const [date, setDate] = React.useState(() => new Date().toISOString().slice(0,10));
   const [note, setNote] = React.useState("");
   const [saving, setSaving] = React.useState(false);
@@ -14477,7 +14479,8 @@ const LogSaleModal = ({ item, onClose, onSave }) => {
         </div>
         <div style={{marginBottom:12}}>
           <label style={lbl}>Customer Name</label>
-          <input value={customer} onChange={e=>setCustomer(e.target.value)} placeholder="Who bought it" style={inp}/>
+          <SaleLinkInput sales={sales} value={customer} onChange={setCustomer} linkedId={saleId} style={inp} placeholder="Who bought it — type to find the sale"
+            onPick={s=>{ setSaleId(s?s.id:""); const d = s?saleDateIso(s.date):""; if(d && d<=new Date().toISOString().slice(0,10)) setDate(d); }}/>
         </div>
         <div style={{marginBottom:12}}>
           <label style={lbl}>Date Sold</label>
@@ -14496,7 +14499,7 @@ const LogSaleModal = ({ item, onClose, onSave }) => {
             onClick={async()=>{
               if(!canSave) return;
               setSaving(true);
-              await onSave(Number(qty)||0, customer.trim(), date, note);
+              await onSave(Number(qty)||0, customer.trim(), date, note, saleId);
               setSaving(false);
             }}
             disabled={!canSave||saving}
