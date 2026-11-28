@@ -13859,6 +13859,16 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                           {d.extra ? "➕" : "⚠"} {d.qty} {d.extra ? "extra" : "short"} · Explain
                         </button>
                       ); })()}
+                      {onExplainCorrection && sheetMonth === todayStr.slice(0,7) && !(shortByItem[item.id] && shortByItem[item.id].qty > 0) && (Number(item.currentStock)||0) !== closingBalance && (() => {
+                        const now = Number(item.currentStock) || 0, extra = now > closingBalance, n = Math.abs(now - closingBalance);
+                        return (
+                          <button onClick={(e)=>{ e.stopPropagation(); onExplainCorrection(item, closingBalance, now); }}
+                            title={"The sheet's Opening + Added − Sold gives "+closingBalance+" but the real stock is "+now+" because of an earlier stock correction. Click to say "+(extra ? "how the extra "+n+" came" : "where the missing "+n+" went")+"."}
+                            style={{ marginLeft:6, padding:"2px 8px", borderRadius:999, border:"1px solid "+(extra?"#93c5fd":"#fca5a5"), background:extra?"#eff6ff":"#fef2f2", color:extra?"#1d4ed8":"#b91c1c", fontSize:10.5, fontWeight:800, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
+                            {extra ? "➕" : "⚠"} {n} {extra ? "extra" : "short"} · Explain
+                          </button>
+                        );
+                      })()}
                     </div>
                   </td>
                   <td title="What this item's stock stood at when the month began"
@@ -13920,13 +13930,6 @@ const StockSheetView = ({ items, movements, shop, sheetMonth, setSheetMonth, onL
                             }}>{closingBalance}</span>
                           {sheetMonth === todayStr.slice(0,7) && nowStock !== closingBalance && (
                             <span title="Actual stock now, after admin corrections" style={{ fontSize:9.5, fontWeight:800, color:"#0369a1", background:"#e0f2fe", borderRadius:5, padding:"1px 5px", whiteSpace:"nowrap" }}>Now {nowStock}</span>
-                          )}
-                          {sheetMonth === todayStr.slice(0,7) && nowStock !== closingBalance && onExplainCorrection && !(shortByItem[item.id] && shortByItem[item.id].qty > 0) && (
-                            <button onClick={(e)=>{ e.stopPropagation(); onExplainCorrection(item, closingBalance, nowStock); }}
-                              title={"The sheet's Opening + Added − Sold gives "+closingBalance+" but the real stock is "+nowStock+" because of an earlier stock correction. Click to say "+(nowStock > closingBalance ? "how the extra "+(nowStock-closingBalance)+" came" : "where the missing "+(closingBalance-nowStock)+" went")+"."}
-                              style={{ padding:"1px 7px", borderRadius:999, border:"1px solid #7dd3fc", background:"white", color:"#0369a1", fontSize:9.5, fontWeight:800, cursor:"pointer", fontFamily:"inherit", whiteSpace:"nowrap" }}>
-                              Explain
-                            </button>
                           )}
                         </div>
                       );
